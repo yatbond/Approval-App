@@ -25,19 +25,28 @@ function safeEqual(left: string, right: string) {
   );
 }
 
-export async function createSession(username: string) {
+export function createSessionToken(username: string) {
   const expiresAt = Date.now() + maxAgeSeconds * 1000;
   const payload = `${username}.${expiresAt}`;
-  const token = `${payload}.${sign(payload)}`;
-  const cookieStore = await cookies();
+  return `${payload}.${sign(payload)}`;
+}
 
-  cookieStore.set(cookieName, token, {
+export function getSessionCookieOptions() {
+  return {
     httpOnly: true,
     maxAge: maxAgeSeconds,
     path: "/",
-    sameSite: "lax",
+    sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
-  });
+  };
+}
+
+export { cookieName };
+
+export async function createSession(username: string) {
+  const cookieStore = await cookies();
+
+  cookieStore.set(cookieName, createSessionToken(username), getSessionCookieOptions());
 }
 
 export async function clearSession() {
