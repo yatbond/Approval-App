@@ -11,6 +11,7 @@ import {
   FileText,
   Image as ImageIcon,
   Loader2,
+  LogOut,
   MessageSquare,
   Plus,
   RotateCcw,
@@ -25,11 +26,9 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   approvalTasks,
-  departments,
   notifications,
-  workflowTemplates,
 } from "@/lib/mock-data";
-import type { ApprovalAction, ApprovalTask } from "@/lib/types";
+import type { ApprovalAction, ApprovalTask, WorkflowTemplate } from "@/lib/types";
 
 type Tab = "queue" | "upload" | "workflow" | "admin";
 
@@ -79,7 +78,17 @@ const actionConfig: Record<
   },
 };
 
-export default function ApprovalWorkspace({ initialTab }: { initialTab: Tab }) {
+export default function ApprovalWorkspace({
+  initialTab,
+  sessionUser,
+  departments,
+  workflowTemplates,
+}: {
+  initialTab: Tab;
+  sessionUser: string;
+  departments: string[];
+  workflowTemplates: WorkflowTemplate[];
+}) {
   const activeTab = initialTab;
   const [selectedTaskId, setSelectedTaskId] = useState(approvalTasks[0]?.id);
   const [comment, setComment] = useState("");
@@ -194,6 +203,16 @@ export default function ApprovalWorkspace({ initialTab }: { initialTab: Tab }) {
                 <Bell size={16} className="text-amber-200" />
                 <span>{unreadCount} unread</span>
               </div>
+              <div className="hidden h-10 items-center rounded-md border border-white/10 bg-white/[0.03] px-3 text-sm text-neutral-300 md:flex">
+                {sessionUser}
+              </div>
+              <Link
+                href="/logout"
+                title="Sign out"
+                className="flex size-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-neutral-300 transition hover:border-white/20 hover:bg-white/[0.07]"
+              >
+                <LogOut size={16} />
+              </Link>
               <Link
                 href="/?tab=upload"
                 className="flex h-10 items-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
@@ -229,9 +248,11 @@ export default function ApprovalWorkspace({ initialTab }: { initialTab: Tab }) {
               />
             )}
 
-            {activeTab === "workflow" && <WorkflowView />}
+            {activeTab === "workflow" && (
+              <WorkflowView workflowTemplates={workflowTemplates} />
+            )}
 
-            {activeTab === "admin" && <AdminView />}
+            {activeTab === "admin" && <AdminView departments={departments} />}
           </div>
         </section>
       </div>
@@ -530,8 +551,23 @@ function UploadView({
   );
 }
 
-function WorkflowView() {
+function WorkflowView({
+  workflowTemplates,
+}: {
+  workflowTemplates: WorkflowTemplate[];
+}) {
   const workflow = workflowTemplates[0];
+
+  if (!workflow) {
+    return (
+      <section className="rounded-md border border-white/10 bg-white/[0.03] p-5">
+        <h2 className="font-semibold">No workflow templates</h2>
+        <p className="mt-1 text-sm text-neutral-400">
+          Add a workflow template in Supabase to configure approval routing.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
@@ -634,7 +670,7 @@ function WorkflowView() {
   );
 }
 
-function AdminView() {
+function AdminView({ departments }: { departments: string[] }) {
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
       <section className="rounded-md border border-white/10 bg-white/[0.03]">
