@@ -21,6 +21,7 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   approvalTasks,
@@ -160,7 +161,7 @@ export default function ApprovalWorkspace({ initialTab }: { initialTab: Tab }) {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
               return (
-                <a
+                <Link
                   key={tab.id}
                   href={`/?tab=${tab.id}`}
                   title={tab.label}
@@ -172,7 +173,7 @@ export default function ApprovalWorkspace({ initialTab }: { initialTab: Tab }) {
                 >
                   <Icon size={18} />
                   <span className="hidden lg:inline">{tab.label}</span>
-                </a>
+                </Link>
               );
             })}
           </nav>
@@ -193,13 +194,13 @@ export default function ApprovalWorkspace({ initialTab }: { initialTab: Tab }) {
                 <Bell size={16} className="text-amber-200" />
                 <span>{unreadCount} unread</span>
               </div>
-              <button
-                type="button"
+              <Link
+                href="/?tab=upload"
                 className="flex h-10 items-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
               >
                 <Plus size={16} />
                 New request
-              </button>
+              </Link>
             </div>
           </header>
 
