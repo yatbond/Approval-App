@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import {
   chooseParserStrategy,
-  extractImageFieldsWithOpenAI,
+  extractImageFields,
 } from "@/lib/parser";
 import type { WorkflowField } from "@/lib/types";
 
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   }
 
   if (strategy === "image-ai") {
-    const parsed = await extractImageFieldsWithOpenAI({
+    const parsed = await extractImageFields({
       imageBase64: buffer.toString("base64"),
       mimeType: file.type || "image/jpeg",
       fields: fallbackFields,

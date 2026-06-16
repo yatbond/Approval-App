@@ -50,8 +50,17 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5.4-mini
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL=~openai/gpt-latest
+OPENROUTER_SITE_URL=https://approval-app-three.vercel.app
+OPENROUTER_APP_TITLE=Approval App
 APP_ADMIN_EMAIL=
 ```
+
+For local AI parsing through OpenRouter, fill `OPENROUTER_API_KEY` in `.env`.
+Use `AI_PROVIDER=openrouter` to route image parsing through OpenRouter, or
+`AI_PROVIDER=openai` to use OpenAI directly.
 
 ## Supabase
 

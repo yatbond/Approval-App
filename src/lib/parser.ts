@@ -11,6 +11,17 @@ export type ParsedDocumentDraft = {
   notes: string[];
 };
 
+type OpenRouterChatCompletion = {
+  choices?: {
+    message?: {
+      content?: string;
+    };
+  }[];
+  error?: {
+    message?: string;
+  };
+};
+
 export function chooseParserStrategy(file: File): ParserStrategy {
   if (file.type.includes("pdf")) {
     return "pdf-ocr";
@@ -55,6 +66,104 @@ export function normalizeUserCorrections(
   );
 }
 
+function parseFieldJson(text: string) {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const jsonText = fenced?.[1] || trimmed;
+
+  try {
+    return extractedFieldSchema.safeParse(JSON.parse(jsonText));
+  } catch {
+    return extractedFieldSchema.safeParse({});
+  }
+}
+
+export async function extractImageFields(params: {
+  imageBase64: string;
+  mimeType: string;
+  fields: WorkflowField[];
+  languageHint: string;
+}): Promise<ParsedDocumentDraft> {
+  if (process.env.AI_PROVIDER === "openai") {
+    return extractImageFieldsWithOpenAI(params);
+  }
+
+  return extractImageFieldsWithOpenRouter(params);
+}
+
+export async function extractImageFieldsWithOpenRouter(params: {
+  imageBase64: string;
+  mimeType: string;
+  fields: WorkflowField[];
+  languageHint: string;
+}): Promise<ParsedDocumentDraft> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+
+  if (!apiKey) {
+    return {
+      strategy: "image-ai",
+      fields: {},
+      confidence: {},
+      notes: ["OPENROUTER_API_KEY is not configured yet."],
+    };
+  }
+
+  const prompt = buildExtractionPrompt(params.fields, params.languageHint);
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer":
+        process.env.OPENROUTER_SITE_URL || "https://approval-app-three.vercel.app",
+      "X-OpenRouter-Title": process.env.OPENROUTER_APP_TITLE || "Approval App",
+    },
+    body: JSON.stringify({
+      model: process.env.OPENROUTER_MODEL || "~openai/gpt-latest",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${params.mimeType};base64,${params.imageBase64}`,
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  const payload = (await response.json()) as OpenRouterChatCompletion;
+
+  if (!response.ok) {
+    return {
+      strategy: "image-ai",
+      fields: {},
+      confidence: {},
+      notes: [
+        payload.error?.message ||
+          `OpenRouter request failed with status ${response.status}.`,
+      ],
+    };
+  }
+
+  const content = payload.choices?.[0]?.message?.content || "{}";
+  const parsed = parseFieldJson(content);
+
+  return {
+    strategy: "image-ai",
+    fields: parsed.success ? parsed.data : {},
+    confidence: {},
+    notes: parsed.success
+      ? [`Parsed with OpenRouter model ${process.env.OPENROUTER_MODEL || "~openai/gpt-latest"}.`]
+      : ["OpenRouter output could not be parsed as field JSON."],
+  };
+}
+
 export async function extractImageFieldsWithOpenAI(params: {
   imageBase64: string;
   mimeType: string;
@@ -92,14 +201,14 @@ export async function extractImageFieldsWithOpenAI(params: {
     ],
   });
 
-  const parsed = extractedFieldSchema.safeParse(
-    JSON.parse(response.output_text || "{}"),
-  );
+  const parsed = parseFieldJson(response.output_text || "{}");
 
   return {
     strategy: "image-ai",
     fields: parsed.success ? parsed.data : {},
     confidence: {},
-    notes: parsed.success ? [] : ["AI output could not be parsed as field JSON."],
+    notes: parsed.success
+      ? [`Parsed with OpenAI model ${process.env.OPENAI_MODEL || "gpt-5.4-mini"}.`]
+      : ["AI output could not be parsed as field JSON."],
   };
 }
