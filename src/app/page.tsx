@@ -1,15 +1,15 @@
-import ApprovalWorkspace from "@/app/approval-workspace";
+import ApprovalWorkspaceLoader from "@/app/approval-workspace-loader";
 import { getDepartments, getWorkflowTemplates } from "@/lib/supabase-data";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/supabase/server";
 
-const allowedTabs = ["queue", "upload", "workflow", "admin"] as const;
+const allowedTabs = ["queue", "tracking", "upload", "workflow", "admin"] as const;
 type Tab = (typeof allowedTabs)[number];
 
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; request?: string }>;
 }) {
   const params = await searchParams;
   const requestedTab = params.tab;
@@ -28,11 +28,12 @@ export default async function Home({
   ]);
 
   return (
-    <ApprovalWorkspace
+    <ApprovalWorkspaceLoader
       initialTab={initialTab}
       sessionUser={user.email || "Signed in"}
       departments={departments}
       workflowTemplates={workflowTemplates}
+      requestId={params.request || ""}
     />
   );
 }

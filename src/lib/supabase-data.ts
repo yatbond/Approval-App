@@ -3,6 +3,7 @@ import {
   departments as fallbackDepartments,
   workflowTemplates as fallbackWorkflowTemplates,
 } from "@/lib/mock-data";
+import { createTtlCache } from "@/lib/performance-cache";
 import type { WorkflowTemplate } from "@/lib/types";
 
 type WorkflowTemplateRow = {
@@ -43,6 +44,26 @@ function getReadClient() {
 }
 
 export async function getDepartments() {
+  return departmentsCache.get();
+}
+
+export async function getWorkflowTemplates() {
+  return workflowTemplatesCache.get();
+}
+
+const directoryCacheTtlMs = 60_000;
+
+const departmentsCache = createTtlCache({
+  ttlMs: directoryCacheTtlMs,
+  load: loadDepartments,
+});
+
+const workflowTemplatesCache = createTtlCache({
+  ttlMs: directoryCacheTtlMs,
+  load: loadWorkflowTemplates,
+});
+
+async function loadDepartments() {
   const supabase = getReadClient();
 
   if (!supabase) {
@@ -62,7 +83,7 @@ export async function getDepartments() {
   return data.map((department) => department.name);
 }
 
-export async function getWorkflowTemplates() {
+async function loadWorkflowTemplates() {
   const supabase = getReadClient();
 
   if (!supabase) {
@@ -82,13 +103,9 @@ export async function getWorkflowTemplates() {
     return fallbackWorkflowTemplates;
   }
 
-  return data.map((template) => ({
-    id: template.id,
-    name: template.name,
-    department: template.departments?.name || "General",
-    documentTypes: template.document_types,
-    languages: template.supported_languages,
-    fields: template.workflow_fields
+  return data.map((template) => {
+    const department = template.departments?.name || "General";
+    const fields = template.workflow_fields
       .sort((left, right) => left.display_order - right.display_order)
       .map((field) => ({
         name: field.name,
@@ -97,18 +114,42 @@ export async function getWorkflowTemplates() {
         required: field.is_required,
         source: field.source,
         instructions: field.instructions || "",
-      })),
-    steps: template.workflow_steps
+        documentId: "document-1",
+      }));
+
+    return {
+      id: template.id,
+      name: template.name,
+      business: "Asia Allied Infrastructure",
+      department,
+      documentTypes: template.document_types,
+      documents: [
+        {
+          id: "document-1",
+          documentType: template.document_types[0] || "General document",
+          format: "pdf" as const,
+          required: true,
+          fields,
+        },
+      ],
+      languages: template.supported_languages,
+      fields,
+      steps: template.workflow_steps
       .sort((left, right) => left.display_order - right.display_order)
       .map((step) => ({
         name: step.name,
         role: step.approver_role,
+        approverName: step.approver_role,
+        approverEmail: "approver@example.com",
         department: step.departments?.name || "Requester department",
         dueInHours: step.due_in_hours,
         escalationRole: step.escalation_role || "Department head",
+        escalationName: step.escalation_role || "Department head",
+        escalationEmail: "escalation@example.com",
         condition: formatBranchCondition(step.branch_condition),
       })),
-  }));
+    };
+  });
 }
 
 function formatBranchCondition(condition: Record<string, unknown>) {
