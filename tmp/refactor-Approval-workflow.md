@@ -1453,3 +1453,31 @@ Verification:
 - `git diff --check`: passed with CRLF warnings only.
 - Live browser preview: passed; Template Library showed `Open in Canvas` and `Duplicate as New Template`, `Open in Canvas` switched to Canvas, Upload showed an available request template instead of `No published templates`, and no browser console errors were reported.
 - Review: no actionable findings after checking the lifecycle diff. One persistence mismatch risk was found and fixed by preferring the template snapshot version over task history when normalizing template rows.
+
+## Step 54 - Template Delete Remote-Missing Recovery
+
+Status: complete.
+
+Plan:
+- Trace the `PATCH failed: 503` Template Library delete path.
+- Preserve the workspace API failure reason so the UI can distinguish a missing remote row from other Supabase failures.
+- Allow local template removal when the remote normalized template version is already missing, because the subsequent workspace save can persist the corrected template list.
+- Keep other remote deactivation failures blocking.
+- Verify with red/green tests, typecheck, lint, build, and browser attempt.
+
+Root cause:
+- Template Library delete first soft-deactivated the normalized Supabase template version. If the local template existed but the matching `workflow_template_versions` row did not, the API returned 503 and the client only surfaced `PATCH failed: 503`, then blocked the local delete.
+
+Implementation notes:
+- `deactivateRemoteWorkspaceAdminRecord` now includes the API response reason in non-OK failures.
+- Added `getAdminRecordDeleteFailureState` to classify a missing template version as already removed remotely and safe to continue locally.
+- Rewired the workspace delete path to use the classifier before deciding whether to block local deletion.
+
+Verification:
+- Red step: focused tests failed before the failure reason was preserved and before the missing-template classifier existed.
+- `npm test -- src/lib/workspace-sync.test.mjs src/lib/workspace-admin-record-state.test.mjs`: passed.
+- `npm test`: passed, 235/235.
+- `npx tsc --noEmit`: passed.
+- `npm run build`: passed with the known non-fatal webpack cache `ENOENT` warning.
+- `npm run lint`: passed after an initial environment timeout retry.
+- Browser verification was attempted, but the browser connector failed to attach to an active/new tab in this run. Automated tests cover the reported failing path.

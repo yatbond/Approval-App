@@ -36,6 +36,7 @@ import {
   getUpdatedTemplateRecordState,
 } from "@/lib/workspace-template-record-state";
 import {
+  getAdminRecordDeleteFailureState,
   getAdminRecordDeleteSyncState,
   getUpdatedBusinessDirectoryRecordState,
   getUpdatedRoleAssignmentRecordState,
@@ -385,8 +386,12 @@ function ApprovalWorkspaceBody({
 
     const result = await deactivateRemoteWorkspaceAdminRecord(record);
     if (result.mode !== "supabase") {
-      setAdminRecordError(result.reason || "Unable to persist admin delete.");
-      return false;
+      const failureState = getAdminRecordDeleteFailureState({
+        record,
+        reason: result.reason || "",
+      });
+      setAdminRecordError(failureState.error);
+      return failureState.canContinue;
     }
 
     setAdminRecordError("");

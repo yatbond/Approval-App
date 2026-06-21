@@ -53,7 +53,13 @@ export async function deactivateRemoteWorkspaceAdminRecord(
       body: JSON.stringify({ action: "deactivate_admin_record", record }),
     });
     if (!response.ok) {
-      return { mode: "local", reason: `PATCH failed: ${response.status}` };
+      const reason = await readFailureReason(response);
+      return {
+        mode: "local",
+        reason: reason
+          ? `PATCH failed: ${response.status} - ${reason}`
+          : `PATCH failed: ${response.status}`,
+      };
     }
 
     return (await response.json()) as WorkspaceSyncResult;
@@ -63,5 +69,14 @@ export async function deactivateRemoteWorkspaceAdminRecord(
       reason:
         error instanceof Error ? error.message : "Remote admin update failed",
     };
+  }
+}
+
+async function readFailureReason(response: Response) {
+  try {
+    const payload = (await response.json()) as { reason?: unknown };
+    return typeof payload.reason === "string" ? payload.reason : "";
+  } catch {
+    return "";
   }
 }

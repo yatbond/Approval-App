@@ -55,3 +55,31 @@ test("reports local mode when admin deactivation fails", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("includes the workspace API failure reason when admin deactivation fails", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 503,
+    json: async () => ({
+      mode: "local",
+      reason: "No active template version matched this delete request.",
+    }),
+  });
+
+  try {
+    const result = await deactivateRemoteWorkspaceAdminRecord({
+      type: "template",
+      templateKey: "missing-template",
+      versionNumber: 10,
+    });
+
+    assert.deepEqual(result, {
+      mode: "local",
+      reason:
+        "PATCH failed: 503 - No active template version matched this delete request.",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

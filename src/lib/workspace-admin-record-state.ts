@@ -2,6 +2,7 @@ import type {
   BusinessUnit,
   UserRoleAssignment,
 } from "./types.ts";
+import type { WorkspaceAdminDeactivation } from "./normalized-workspace-store.ts";
 
 export type WorkspaceAdminRecordSyncMode = "loading" | "supabase" | "local";
 
@@ -23,6 +24,30 @@ export function getAdminRecordDeleteSyncState({
     canContinue: true,
     shouldDeactivateRemote: workspaceSyncMode === "supabase",
     error: "",
+  };
+}
+
+export function getAdminRecordDeleteFailureState({
+  record,
+  reason,
+}: {
+  record: WorkspaceAdminDeactivation;
+  reason: string;
+}) {
+  if (
+    record.type === "template" &&
+    /No active template version matched/i.test(reason)
+  ) {
+    return {
+      canContinue: true,
+      error:
+        "Remote template version was already missing; removed locally and will resync.",
+    };
+  }
+
+  return {
+    canContinue: false,
+    error: reason || "Unable to persist admin delete.",
   };
 }
 

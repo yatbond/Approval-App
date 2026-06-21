@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  getAdminRecordDeleteFailureState,
   getAdminRecordDeleteSyncState,
   getUpdatedBusinessDirectoryRecordState,
   getUpdatedRoleAssignmentRecordState,
@@ -84,4 +85,32 @@ test("requires remote deactivation only in supabase sync mode", () => {
       error: "",
     },
   );
+});
+
+test("allows local template delete when the remote template row is already missing", () => {
+  const state = getAdminRecordDeleteFailureState({
+    record: {
+      type: "template",
+      templateKey: "missing-template",
+      versionNumber: 10,
+    },
+    reason:
+      "PATCH failed: 503 - No active template version matched this delete request.",
+  });
+
+  assert.equal(state.canContinue, true);
+  assert.match(state.error, /already missing/i);
+});
+
+test("blocks local delete for other remote deactivation failures", () => {
+  const state = getAdminRecordDeleteFailureState({
+    record: {
+      type: "business",
+      businessId: "business-aai-db",
+    },
+    reason: "PATCH failed: 503 - database timeout",
+  });
+
+  assert.equal(state.canContinue, false);
+  assert.equal(state.error, "PATCH failed: 503 - database timeout");
 });
