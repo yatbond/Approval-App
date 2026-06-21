@@ -642,3 +642,29 @@ Verification:
 - `npm test -- --runInBand`: passed, 139/139.
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 23 findings. Noted residual gap: authenticated canvas remount behavior was not exercised in browser automation.
+
+## Step 24 - Approval Workspace Task State Boundary
+
+Status: complete.
+
+Plan:
+- Extract actionable task, tracking task, selected task, selected task template, and missing current-node document derivation out of `ApprovalWorkspaceBody`.
+- Add a pure orchestration helper over the existing approval visibility, task template lookup, and request-builder document checks.
+- Preserve queue/tracking visibility, selected-task fallback order, template lookup, and current-node missing document behavior.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/approval-workspace-task-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/approval-workspace-task-state.ts` for workspace task state assembly.
+- Rewired `ApprovalWorkspaceBody` in `src/app/approval-workspace.tsx` to use `getApprovalWorkspaceTaskState`.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/approval-workspace-task-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/approval-workspace-task-state.test.mjs`: passed, 2/2.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=queue` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated queue/tracking task selection behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 141/141.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 24 findings. Added selected tracking-only fallback assertion after reviewer noted it as coverage depth.
+- Final focused recheck after coverage addition: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/approval-workspace-task-state.test.mjs` passed, 3/3.

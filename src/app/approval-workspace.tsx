@@ -12,8 +12,6 @@ import {
 } from "@/lib/mock-data";
 import {
   applyTaskAction,
-  isActionableBy,
-  isVisibleToParticipant,
 } from "@/lib/approval-state";
 import {
   createWorkflowTemplateFromDraft,
@@ -100,6 +98,7 @@ import {
 } from "@/lib/workspace-template-record-state";
 import { getWorkflowCanvasSelectionState } from "@/lib/workflow-canvas-selection-state";
 import { getWorkflowCanvasInstanceKey } from "@/lib/workflow-canvas-instance-state";
+import { getApprovalWorkspaceTaskState } from "@/lib/approval-workspace-task-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -197,13 +196,15 @@ function ApprovalWorkspaceBody({
     requestId,
     workflowTemplates,
   });
-  const actionableTasks = useMemo(
-    () => tasks.filter((task) => isActionableBy(task, activeUser.email)),
-    [activeUser.email, tasks],
-  );
-  const trackingTasks = useMemo(
-    () => tasks.filter((task) => isVisibleToParticipant(task, activeUser.email)),
-    [activeUser.email, tasks],
+  const taskState = useMemo(
+    () =>
+      getApprovalWorkspaceTaskState({
+        tasks,
+        templates,
+        selectedTaskId,
+        activeUserEmail: activeUser.email,
+      }),
+    [activeUser.email, selectedTaskId, tasks, templates],
   );
   const [comment, setComment] = useState("");
   const [targetEmail, setTargetEmail] = useState("");
@@ -223,25 +224,12 @@ function ApprovalWorkspaceBody({
     [selectedTemplateId, templates],
   );
 
-  const selectedTask = useMemo(
-    () =>
-      actionableTasks.find((task) => task.id === selectedTaskId) ||
-      actionableTasks[0] ||
-      trackingTasks.find((task) => task.id === selectedTaskId) ||
-      trackingTasks[0],
-    [actionableTasks, selectedTaskId, trackingTasks],
-  );
-  const selectedTaskTemplate = useMemo(
-    () => (selectedTask ? findTemplateForTask(selectedTask, templates) : undefined),
-    [selectedTask, templates],
-  );
-  const selectedTaskMissingDocuments = useMemo(
-    () =>
-      selectedTask && selectedTaskTemplate
-        ? getMissingRequiredCurrentNodeDocuments(selectedTask, selectedTaskTemplate)
-        : [],
-    [selectedTask, selectedTaskTemplate],
-  );
+  const {
+    actionableTasks,
+    selectedTask,
+    selectedTaskMissingDocuments,
+    trackingTasks,
+  } = taskState;
 
   const taskNotifications = useMemo(() => buildTaskNotifications(tasks), [tasks]);
   const shellState = useMemo(
