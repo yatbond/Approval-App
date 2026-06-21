@@ -904,3 +904,30 @@ Verification:
 - `npm test -- --runInBand`: passed, 166/166 after review fix.
 - `npm run build`: passed after review fix.
 - Final autoreview: initial P3 setter behavior finding was fixed; final re-review passed with no actionable Step 33 findings.
+
+## Step 34 - Workflow Template Save State Boundary
+
+Status: complete.
+
+Plan:
+- Extract workflow template save/no-op/history decision logic out of `WorkflowView.saveWorkflowTemplate`.
+- Preserve no-workflow guard in the component, JSON equality no-op behavior, history recording label/template, and update dispatch.
+- Keep React state setters and `onUpdateTemplate` in the component.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-template-save-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-template-save-state.ts` for save/no-op/history state derivation.
+- Rewired `saveWorkflowTemplate` in `src/app/approval-workspace.tsx` to call `getWorkflowTemplateSaveState`.
+- Avoided relying on React functional state setter execution for the no-op decision by previewing `didUpdate` before scheduling the history update.
+- Removed the now-unused `recordWorkflowHistoryEdit` import from the component.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-template-save-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-template-save-state.test.mjs`: passed, 2/2.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated save/history behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 168/168.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 34 findings.

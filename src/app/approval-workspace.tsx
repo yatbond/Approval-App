@@ -46,7 +46,6 @@ import {
 } from "@/lib/workflow-condition-context";
 import {
   getWorkflowHistory,
-  recordWorkflowHistoryEdit,
   redoWorkflowHistory,
   undoWorkflowHistory,
   type WorkflowHistoryById,
@@ -110,6 +109,7 @@ import {
 import { getWorkflowAddBoxDocumentState } from "@/lib/workflow-box-document-state";
 import { getWorkflowTemplateDocumentState } from "@/lib/workflow-template-document-state";
 import { getWorkflowTemplateLoadState } from "@/lib/workflow-template-load-state";
+import { getWorkflowTemplateSaveState } from "@/lib/workflow-template-save-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -797,13 +797,27 @@ function WorkflowView({
       return;
     }
 
-    if (JSON.stringify(workflow) === JSON.stringify(nextTemplate)) {
+    const previewState = getWorkflowTemplateSaveState({
+      currentTemplate: workflow,
+      nextTemplate,
+      label,
+      historyById: workflowHistoryById,
+      historyId: activeWorkflowHistoryId,
+    });
+    if (!previewState.didUpdate) {
       return;
     }
 
-    setWorkflowHistoryById((historyById) =>
-      recordWorkflowHistoryEdit(historyById, activeWorkflowHistoryId, workflow, label),
-    );
+    setWorkflowHistoryById((historyById) => {
+      const nextState = getWorkflowTemplateSaveState({
+        currentTemplate: workflow,
+        nextTemplate,
+        label,
+        historyById,
+        historyId: activeWorkflowHistoryId,
+      });
+      return nextState.historyById;
+    });
     onUpdateTemplate(nextTemplate);
   }
 
