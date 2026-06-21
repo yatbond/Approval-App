@@ -294,3 +294,30 @@ Verification:
 - `npm run build`: passed.
 - Live Upload preview after production build: passed, no browser console errors; upload heading, template select, document requirements, choose-file control, and extraction placeholder visible.
 - Final autoreview: passed with no actionable Step 10 findings. Noted residual gap: no UI-level upload interaction test for required-document cards, attached markers, missing-required warnings, and submit disabling.
+
+## Step 11 - Admin View Boundary
+
+Status: complete.
+
+Plan:
+- Extract Admin tab presentation and Admin-specific business-directory mutations out of `approval-workspace.tsx`.
+- Add a pure helper for selected-business fallback and draft defaults.
+- Preserve business, department, role assignment, notification, legacy department, and delegation rendering.
+- Verify with red/green helper tests, typecheck, lint, live Admin preview, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/admin-view-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/admin-view-state.ts` for selected business fallback, selected id, draft name, and department list.
+- Added `src/app/admin-view.tsx` for Admin tab presentation.
+- Rewired `src/app/approval-workspace.tsx` to import `AdminView` and removed the local Admin view implementation.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/admin-view-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/admin-view-state.test.mjs`: passed, 3/3.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live Admin preview before full build: passed, no browser console errors; businesses, departments, role management, notifications, and delegation sections visible.
+- `npm test -- --runInBand`: passed, 102/102.
+- `npm run build`: passed.
+- Live Admin preview after production build: passed, no browser console errors; businesses, departments, role management, notifications, and delegation sections visible.
+- Final autoreview: passed with no actionable Step 11 findings. Noted residual gaps: no UI-level Admin edit-flow test and no rendered Admin tab regression test.
