@@ -90,6 +90,7 @@ import {
 import { UploadView } from "@/app/upload-view";
 import { AdminView } from "@/app/admin-view";
 import { ConditionBoxDetails } from "@/app/condition-box-details";
+import { WorkflowTemplateLibrary } from "@/app/workflow-template-library";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -2388,56 +2389,13 @@ function WorkflowView({
         )}
 
         {workflowEditorTab === "library" && (
-        <div className="p-4">
-          <h3 className="mb-3 text-sm font-semibold text-neutral-300">
-            Template library
-          </h3>
-          <div className="grid gap-3 lg:grid-cols-2">
-            {workflowTemplates.map((template) => (
-              <div
-                key={template.id}
-                className={`rounded-md border p-3 text-left transition ${
-                  workflow?.id === template.id
-                    ? "border-emerald-400/40 bg-emerald-400/10"
-                    : "border-white/10 bg-[#121518] hover:border-white/20"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => setSelectedTemplateId(template.id)}
-                  className="block w-full text-left"
-                >
-                  <p className="break-words text-sm font-medium">{template.name}</p>
-                  <p className="mt-1 break-words text-xs text-neutral-400">
-                    {template.business} - {template.department}
-                  </p>
-                  <p className="mt-2 text-xs text-neutral-500">
-                    {template.documents.length} document(s),{" "}
-                    {template.fields.length} field(s), {template.steps.length} step(s)
-                  </p>
-                </button>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => loadTemplateIntoBuilder(template)}
-                    className="flex min-h-8 items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 py-1 text-xs text-sky-100 transition hover:bg-sky-400/20"
-                  >
-                    <RotateCcw size={13} />
-                    Load
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDeleteTemplate(template.id)}
-                    className="flex min-h-8 items-center justify-center gap-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-100 transition hover:bg-rose-500/20"
-                  >
-                    <X size={13} />
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+          <WorkflowTemplateLibrary
+            workflowTemplates={workflowTemplates}
+            selectedTemplateId={workflow?.id || ""}
+            onSelectTemplate={setSelectedTemplateId}
+            onLoadTemplate={loadTemplateIntoBuilder}
+            onDeleteTemplate={onDeleteTemplate}
+          />
         )}
       </section>
 

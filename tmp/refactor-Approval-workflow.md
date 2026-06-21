@@ -377,3 +377,30 @@ Verification:
 - `npm run build`: passed.
 - Live Workflow condition preview after production build: passed, no browser console errors; selecting a condition node showed the extracted Box Details condition controls.
 - Final autoreview: passed with no actionable Step 13 findings. Noted residual gaps: no UI-level condition drawer edit-flow tests for fallback routes, outcome checkboxes, numeric rules, approval-count rules, pick-on-canvas state, or target-node updates.
+
+## Step 14 - Workflow Template Library Boundary
+
+Status: complete.
+
+Plan:
+- Extract the Workflow tab Template Library pane out of `approval-workspace.tsx`.
+- Add a pure helper for template card counts, active selection, and business/department labels.
+- Preserve template selection, builder loading, delete actions, and selected-card highlighting.
+- Verify with red/green helper tests, typecheck, lint, live Template Library preview, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-template-library-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-template-library-state.ts` for library card state.
+- Added `src/app/workflow-template-library.tsx` for the Template Library pane.
+- Rewired `src/app/approval-workspace.tsx` to render `WorkflowTemplateLibrary`.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-template-library-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-template-library-state.test.mjs`: passed, 3/3.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live Template Library preview before full build: passed, no browser console errors; template cards, business/department labels, counts, Load, and Delete controls visible.
+- `npm test -- --runInBand`: passed, 111/111.
+- `npm run build`: passed.
+- Live Template Library preview after production build: passed, no browser console errors; template cards, business/department labels, counts, Load, and Delete controls visible.
+- Final autoreview: passed with no actionable Step 14 findings. Noted residual gaps: no rendered UI interaction tests for selecting a template card, Load, Delete, or empty-library state.
