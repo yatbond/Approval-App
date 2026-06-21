@@ -104,6 +104,41 @@ test("parses a workspace file with the default language hint", async () => {
   assert.deepEqual(result.fields, { amount: "1000" });
 });
 
+test("posts document-specific extraction fields when parsing a required document", async () => {
+  let capturedBody;
+  await parseWorkspaceFile({
+    file: makeFile(),
+    documentRequirement: {
+      ...documentRequirement,
+      fields: [
+        {
+          name: "invoice_total",
+          label: "Invoice total",
+          type: "currency",
+          required: true,
+          source: "ai",
+          instructions: "Extract the grand total.",
+        },
+      ],
+    },
+    fetcher: async (_url, init) => {
+      capturedBody = init.body;
+      return Response.json({ fields: {}, confidence: {} });
+    },
+  });
+
+  assert.deepEqual(JSON.parse(capturedBody.get("fieldsJson")), [
+    {
+      name: "invoice_total",
+      label: "Invoice total",
+      type: "currency",
+      required: true,
+      source: "ai",
+      instructions: "Extract the grand total.",
+    },
+  ]);
+});
+
 test("throws the parse API error when parsing fails", async () => {
   await assert.rejects(
     parseWorkspaceFile({

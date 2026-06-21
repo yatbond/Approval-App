@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import {
   chooseParserStrategy,
   extractImageFields,
+  extractPdfFields,
 } from "@/lib/parser";
 import type { WorkflowField } from "@/lib/types";
 
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
   const formData = await request.formData();
   const file = formData.get("file");
   const languageHint = String(formData.get("languageHint") || "mixed English and Chinese");
+  const fields = parseWorkflowFields(formData.get("fieldsJson")) || fallbackFields;
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "File is required." }, { status: 400 });
@@ -77,19 +79,44 @@ export async function POST(request: Request) {
     const parsed = await extractImageFields({
       imageBase64: buffer.toString("base64"),
       mimeType: file.type || "image/jpeg",
-      fields: fallbackFields,
+      fields,
       languageHint,
     });
 
     return NextResponse.json(parsed);
   }
 
-  return NextResponse.json({
-    strategy,
-    fields: {},
-    confidence: {},
-    notes: [
-      "PDF OCR is scaffolded but not connected yet. Recommended next step: add a managed OCR provider or Supabase Edge Function worker.",
-    ],
+  const parsed = await extractPdfFields({
+    pdfBase64: buffer.toString("base64"),
+    fileName: file.name || "document.pdf",
+    fields,
+    languageHint,
   });
+  return NextResponse.json(parsed);
+}
+
+function parseWorkflowFields(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<WorkflowField>[];
+    const fields = parsed.filter(isWorkflowField);
+    return fields.length ? fields : null;
+  } catch {
+    return null;
+  }
+}
+
+function isWorkflowField(value: Partial<WorkflowField>): value is WorkflowField {
+  return Boolean(
+    value &&
+      typeof value.name === "string" &&
+      typeof value.label === "string" &&
+      typeof value.instructions === "string" &&
+      typeof value.type === "string" &&
+      typeof value.source === "string" &&
+      typeof value.required === "boolean",
+  );
 }

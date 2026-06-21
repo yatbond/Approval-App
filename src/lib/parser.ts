@@ -91,6 +91,15 @@ export async function extractImageFields(params: {
   return extractImageFieldsWithOpenRouter(params);
 }
 
+export async function extractPdfFields(params: {
+  pdfBase64: string;
+  fileName: string;
+  fields: WorkflowField[];
+  languageHint: string;
+}): Promise<ParsedDocumentDraft> {
+  return extractPdfFieldsWithOpenRouter(params);
+}
+
 export async function extractImageFieldsWithOpenRouter(params: {
   imageBase64: string;
   mimeType: string;
@@ -109,16 +118,9 @@ export async function extractImageFieldsWithOpenRouter(params: {
   }
 
   const prompt = buildExtractionPrompt(params.fields, params.languageHint);
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer":
-        process.env.OPENROUTER_SITE_URL || "https://approval-app-three.vercel.app",
-      "X-OpenRouter-Title": process.env.OPENROUTER_APP_TITLE || "Approval App",
-    },
-    body: JSON.stringify({
+  const response = await fetchOpenRouterChatCompletion({
+    apiKey,
+    body: {
       model: process.env.OPENROUTER_MODEL || "~openai/gpt-latest",
       messages: [
         {
@@ -134,7 +136,7 @@ export async function extractImageFieldsWithOpenRouter(params: {
           ],
         },
       ],
-    }),
+    },
   });
 
   const payload = (await response.json()) as OpenRouterChatCompletion;
@@ -162,6 +164,104 @@ export async function extractImageFieldsWithOpenRouter(params: {
       ? [`Parsed with OpenRouter model ${process.env.OPENROUTER_MODEL || "~openai/gpt-latest"}.`]
       : ["OpenRouter output could not be parsed as field JSON."],
   };
+}
+
+export async function extractPdfFieldsWithOpenRouter(params: {
+  pdfBase64: string;
+  fileName: string;
+  fields: WorkflowField[];
+  languageHint: string;
+}): Promise<ParsedDocumentDraft> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+
+  if (!apiKey) {
+    return {
+      strategy: "pdf-ocr",
+      fields: {},
+      confidence: {},
+      notes: ["OPENROUTER_API_KEY is not configured yet."],
+    };
+  }
+
+  const prompt = buildExtractionPrompt(params.fields, params.languageHint);
+  const pdfEngine = process.env.OPENROUTER_PDF_ENGINE || "mistral-ocr";
+  const response = await fetchOpenRouterChatCompletion({
+    apiKey,
+    body: {
+      model: process.env.OPENROUTER_MODEL || "~openai/gpt-latest",
+      plugins: [
+        {
+          id: "file-parser",
+          pdf: { engine: pdfEngine },
+        },
+      ],
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            {
+              type: "file",
+              file: {
+                filename: params.fileName || "document.pdf",
+                file_data: `data:application/pdf;base64,${params.pdfBase64}`,
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  const payload = (await response.json()) as OpenRouterChatCompletion;
+
+  if (!response.ok) {
+    return {
+      strategy: "pdf-ocr",
+      fields: {},
+      confidence: {},
+      notes: [
+        payload.error?.message ||
+          `OpenRouter request failed with status ${response.status}.`,
+      ],
+    };
+  }
+
+  const content = payload.choices?.[0]?.message?.content || "{}";
+  const parsed = parseFieldJson(content);
+
+  return {
+    strategy: "pdf-ocr",
+    fields: parsed.success ? parsed.data : {},
+    confidence: {},
+    notes: parsed.success
+      ? [
+          `Parsed PDF with OpenRouter model ${
+            process.env.OPENROUTER_MODEL || "~openai/gpt-latest"
+          } using ${pdfEngine}.`,
+        ]
+      : ["OpenRouter PDF output could not be parsed as field JSON."],
+  };
+}
+
+function fetchOpenRouterChatCompletion({
+  apiKey,
+  body,
+}: {
+  apiKey: string;
+  body: Record<string, unknown>;
+}) {
+  return fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer":
+        process.env.OPENROUTER_SITE_URL || "https://approval-app-three.vercel.app",
+      "X-OpenRouter-Title": process.env.OPENROUTER_APP_TITLE || "Approval App",
+    },
+    body: JSON.stringify(body),
+  });
 }
 
 export async function extractImageFieldsWithOpenAI(params: {

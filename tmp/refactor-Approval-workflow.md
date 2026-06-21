@@ -1561,3 +1561,9 @@ Verification:
 - Switched the canvas to controlled nodes/edges so drag previews remain live while parent graph changes are synced without resetting pan/zoom.
 - Changed new node placement to use the selected box as the anchor, or the rightmost box when no box is selected, with collision nudging for occupied positions.
 - Verified with npm test, lint, TypeScript, production build, and live browser add/undo smoke test without viewport reset.
+
+## Step 59 - OpenRouter PDF OCR Parsing
+- Connected `pdf-ocr` parsing to OpenRouter instead of returning the previous scaffold message.
+- Added OpenRouter PDF file input payloads with the `file-parser` plugin and `mistral-ocr` default engine.
+- Passed workflow document extraction fields from the upload client to `/api/parse`, so configured document fields guide OCR extraction when present.
+- Verified with parser/file API tests, full test run, TypeScript, lint, production build, and a live `/api/parse` PDF smoke test returning `Invoice total: HKD 8400`.

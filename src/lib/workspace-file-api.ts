@@ -61,16 +61,21 @@ export async function uploadWorkspaceAttachmentFile({
 
 export async function parseWorkspaceFile({
   file,
+  documentRequirement,
   languageHint = defaultParseLanguageHint,
   fetcher = fetch,
 }: {
   file: File;
+  documentRequirement?: WorkflowDocumentRequirement;
   languageHint?: string;
   fetcher?: WorkspaceFetch;
 }): Promise<ParsedWorkspaceFilePayload> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("languageHint", languageHint);
+  if (documentRequirement?.fields.length) {
+    formData.append("fieldsJson", JSON.stringify(documentRequirement.fields));
+  }
 
   const response = await fetcher("/api/parse", {
     method: "POST",

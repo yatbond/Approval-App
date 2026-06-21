@@ -284,7 +284,7 @@ function ApprovalWorkspaceBody({
     );
 
     try {
-      const payload = await parseWorkspaceFile({ file });
+      const payload = await parseWorkspaceFile({ file, documentRequirement });
       const successState = getWorkspaceParseFileSuccessState(payload);
       setParseResult(successState.parseResult);
       setEditedFields(successState.editedFields);
