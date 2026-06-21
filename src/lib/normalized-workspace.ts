@@ -120,7 +120,7 @@ export function buildNormalizedWorkspaceRows(
       supportedLanguages: template.languages,
       templateSnapshot: template,
       createdBy: owner.userId,
-      isActive: true,
+      isActive: template.isArchived !== true,
     })),
     ...archivedTaskTemplateRows(snapshot, owner),
   ];
@@ -230,6 +230,7 @@ export function restoreWorkspaceStateFromNormalizedRows(
     businessDirectory,
     workflowTemplates,
     userRoleAssignments: [],
+    adminAuditEvents: [],
   };
 }
 

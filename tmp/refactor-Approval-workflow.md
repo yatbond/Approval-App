@@ -1510,3 +1510,43 @@ Verification:
 - `npm run build`: passed. Webpack emitted the known non-fatal cache `ENOENT` warning after the successful route summary.
 - Live browser preview: passed; `http://localhost:3000/?tab=workflow` loaded the Workflow page with Template Builder first and no browser console errors.
 - Autoreview: passed with no actionable Step 55 findings. Residual legacy-data note: template rows created by another user or with empty `created_by` can still be rejected by RLS, and the client fallback intentionally handles that case through the snapshot backup.
+
+## Step 56 - Template Lifecycle Permissions, Audit, and PRD Update
+
+Status: complete.
+
+Plan:
+- Live-test Template Library archive/delete with a temporary workflow.
+- Add legacy template ownership repair policies and creator-owned template insert/update permissions.
+- Add explicit Template Library status/permission labels for Draft, Published, Archived, Superuser access, Created by me, and Cannot edit.
+- Archive templates with actor metadata instead of dropping them from the local library when the actor is known.
+- Persist template admin audit events and show them in Admin.
+- Keep archived templates out of new request submission while preserving request template snapshots for history.
+- Update the PRD with the finalized lifecycle, RLS, audit, and data-model behavior.
+
+Root cause:
+- Template lifecycle behavior was partly implicit: published/draft state existed, but ownership, archived state, admin audit visibility, and RLS repair rules were not explicit in the UI or persistence model. A live smoke also showed that archiving an owned template could still surface an RLS fallback because creator-owned inactive rows were not readable under the active-only SELECT policy.
+
+Implementation notes:
+- Added template owner/updater/archive metadata and `AdminAuditEvent` types.
+- Added Template Library state for status labels, ownership labels, and action availability.
+- Threaded active-user metadata into WorkflowView and Template Library.
+- Added workspace-level `adminAuditEvents`, persisted through local/Supabase snapshots and rendered in the Admin tab.
+- Changed actor-aware template delete to archive locally and emit a `template_archived` audit event; the old remove behavior remains for callers that do not pass an actor.
+- Added migrations:
+  - `20260621151500_harden_template_lifecycle_permissions.sql`
+  - `20260621162000_allow_template_creator_inactive_reads.sql`
+- Applied both migrations to live Supabase project `wlbxrdmpwuupjyarjcxb`.
+- Updated `PRD/approval-workflow-platform-prd.md` with template lifecycle, permissions, audit, RLS repair, and data-model details.
+
+Verification:
+- Red step: focused tests failed before template card permission metadata, admin audit persistence, archive metadata, and migration files existed.
+- `npm test -- src/lib/workflow-template-library-state.test.mjs src/lib/workspace-template-record-state.test.mjs src/lib/workspace-persistence.test.mjs src/lib/supabase-template-ownership-policy.test.mjs`: passed after implementation.
+- Live Supabase policy checks confirmed creator insert/update, ownerless legacy claim, and creator/admin inactive-read policies.
+- Live browser smoke: created and archived a temporary template. The second run after the inactive-read policy showed Archived status, no RLS fallback message, and no browser console errors.
+- Live Admin smoke: Template audit panel showed create/archive events for the temporary templates.
+- `npm test`: passed, 242/242.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- `npm run build`: passed. Webpack emitted the known non-fatal cache `ENOENT` warning after the successful route summary.
+- Autoreview: passed with no actionable Step 56 findings. Residual product note: smoke-test archived templates remain in the current user workspace as intentional audit evidence.

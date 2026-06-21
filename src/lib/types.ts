@@ -188,6 +188,14 @@ export type WorkflowTemplate = {
   isDraft?: boolean;
   publishedAt?: string;
   sourceTemplateId?: string;
+  createdByEmail?: string;
+  createdByName?: string;
+  createdAt?: string;
+  updatedByEmail?: string;
+  updatedAt?: string;
+  isArchived?: boolean;
+  archivedAt?: string;
+  archivedByEmail?: string;
   documentTypes: string[];
   documents: WorkflowDocumentRequirement[];
   languages: string[];
@@ -248,6 +256,25 @@ export type ApprovalTask = {
   extractedFields: Record<string, string>;
   attachments?: ApprovalAttachment[];
   auditTrail: AuditEvent[];
+};
+
+export type AdminAuditEventAction =
+  | "template_created"
+  | "template_updated"
+  | "template_published"
+  | "template_duplicated"
+  | "template_archived";
+
+export type AdminAuditEvent = {
+  id: string;
+  action: AdminAuditEventAction;
+  actor: string;
+  actorEmail: string;
+  timestamp: string;
+  detail: string;
+  templateId: string;
+  templateName: string;
+  templateVersion: number;
 };
 
 export type NotificationItem = {

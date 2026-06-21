@@ -54,6 +54,16 @@ export function getWorkspaceRequestSubmissionState({
     };
   }
 
+  if (selectedTemplate.isArchived === true) {
+    return {
+      didSubmit: false,
+      tasks,
+      selectedTaskId: "",
+      shouldClearUploadedAttachments: false,
+      submissionMessage: "Archived workflow templates cannot create new requests.",
+    };
+  }
+
   const missingRequiredDocuments = getMissingRequiredSubmissionDocuments(
     selectedTemplate,
     uploadedAttachments,

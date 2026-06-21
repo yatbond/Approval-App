@@ -94,6 +94,7 @@ function ApprovalWorkspaceBody({
     [sessionUser],
   );
   const {
+    adminAuditEvents,
     businessDirectory,
     buildWorkspaceSnapshot,
     effectiveRoleAssignments,
@@ -102,6 +103,7 @@ function ApprovalWorkspaceBody({
     selectedTemplateId,
     setBusinessDirectory,
     setRoleAssignments,
+    setAdminAuditEvents,
     setSelectedTaskId,
     setSelectedTemplateId,
     setTasks,
@@ -323,22 +325,54 @@ function ApprovalWorkspaceBody({
   }
 
   function createTemplateRecord(template: WorkflowTemplate) {
-    const nextState = getCreatedTemplateRecordState({ templates, template });
+    const action = template.isDraft === false
+      ? "template_published"
+      : template.sourceTemplateId
+        ? "template_duplicated"
+        : "template_created";
+    const nextState = getCreatedTemplateRecordState({
+      templates,
+      template,
+      actor: activeUser,
+      action,
+    });
+    const nextAuditEvents = nextState.auditEvent
+      ? [nextState.auditEvent, ...adminAuditEvents]
+      : adminAuditEvents;
     setTemplates(nextState.templates);
+    setAdminAuditEvents(nextAuditEvents);
     setSelectedTemplateId(nextState.selectedTemplateId);
     void persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({
         workflowTemplates: nextState.templates,
+        adminAuditEvents: nextAuditEvents,
         selectedTemplateId: nextState.selectedTemplateId,
       }),
     );
   }
 
   function updateTemplateRecord(template: WorkflowTemplate) {
-    const nextState = getUpdatedTemplateRecordState({ templates, template });
+    const currentTemplate = templates.find((item) => item.id === template.id);
+    const action =
+      currentTemplate?.isDraft !== false && template.isDraft === false
+        ? "template_published"
+        : "template_updated";
+    const nextState = getUpdatedTemplateRecordState({
+      templates,
+      template,
+      actor: activeUser,
+      action,
+    });
+    const nextAuditEvents = nextState.auditEvent
+      ? [nextState.auditEvent, ...adminAuditEvents]
+      : adminAuditEvents;
     setTemplates(nextState.templates);
+    setAdminAuditEvents(nextAuditEvents);
     void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ workflowTemplates: nextState.templates }),
+      buildWorkspaceSnapshot({
+        workflowTemplates: nextState.templates,
+        adminAuditEvents: nextAuditEvents,
+      }),
     );
   }
 
@@ -359,12 +393,18 @@ function ApprovalWorkspaceBody({
       templates,
       selectedTemplateId,
       templateId,
+      actor: activeUser,
     });
+    const nextAuditEvents = nextState.auditEvent
+      ? [nextState.auditEvent, ...adminAuditEvents]
+      : adminAuditEvents;
     setTemplates(nextState.templates);
+    setAdminAuditEvents(nextAuditEvents);
     setSelectedTemplateId(nextState.selectedTemplateId);
     void persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({
         workflowTemplates: nextState.templates,
+        adminAuditEvents: nextAuditEvents,
         selectedTemplateId: nextState.selectedTemplateId,
       }),
     );
@@ -513,6 +553,7 @@ function ApprovalWorkspaceBody({
                 onCreateTemplate={createTemplateRecord}
                 onUpdateTemplate={updateTemplateRecord}
                 userDirectory={userDirectory}
+                activeUser={activeUser}
                 onRunWorkflowAction={runWorkflowAction}
               />
             )}
@@ -540,6 +581,7 @@ function ApprovalWorkspaceBody({
                 taskNotifications={taskNotifications}
                 roleAssignments={effectiveRoleAssignments}
                 setRoleAssignments={updateRoleAssignmentRecords}
+                adminAuditEvents={adminAuditEvents}
               />
             )}
     </WorkspaceShell>

@@ -127,6 +127,7 @@ export function WorkflowView({
   onCreateTemplate,
   onUpdateTemplate,
   userDirectory,
+  activeUser,
   onRunWorkflowAction,
 }: {
   businessDirectory: BusinessUnit[];
@@ -139,6 +140,7 @@ export function WorkflowView({
   onCreateTemplate: (template: WorkflowTemplate) => void;
   onUpdateTemplate: (template: WorkflowTemplate) => void;
   userDirectory: UserDirectoryEntry[];
+  activeUser: UserDirectoryEntry;
   onRunWorkflowAction: (taskId: string, action: ApprovalAction) => void;
 }) {
   const workflow =
@@ -1364,6 +1366,8 @@ export function WorkflowView({
             onLoadTemplate={loadTemplateIntoBuilder}
             onDuplicateTemplate={duplicateTemplateAsDraft}
             onDeleteTemplate={onDeleteTemplate}
+            activeUserEmail={activeUser.email}
+            activeUserRole={activeUser.role}
           />
         )}
       </section>

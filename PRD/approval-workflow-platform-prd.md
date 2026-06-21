@@ -72,13 +72,16 @@ Current implemented areas:
 - Local-first workspace persistence with browser storage and remote Supabase workspace synchronization.
 - Supabase schema and API routes for workspace snapshots, normalized data, auth, attachment upload, and parse/upload flows.
 - Seed business and department directory with admin add/edit/delete controls. Add/edit persists through the normalized workspace save path; delete uses a dedicated admin soft-deactivation API that sets `is_active=false`.
+- Template lifecycle metadata for Draft, Published, and Archived states, including creator/updater/archive metadata and visible Template Library permission labels.
+- Template admin audit events for create, publish, duplicate, update, and archive actions, shown in the Admin tab and persisted in the workspace snapshot.
+- Supabase RLS policies that allow authenticated template creators to insert/update their own template versions and claim ownerless legacy template rows during normalized save repair.
 - Production performance optimizations for server response time and deferred workspace loading.
 
 Current areas that remain incomplete or need hardening:
 
 - The Supabase v2 baseline and grant-hardening migrations have been verified against the live `approval-app` Supabase project.
 - Storage access policy currently centers on object ownership; participant-based shared attachment access needs stronger production policy design.
-- Workflow publishing should have a stricter validation gate before templates can be used for new submissions.
+- Workflow publishing has a validation gate for blocking graph errors; additional business-rule validation may still be added before pilot.
 - Condition coverage warnings exist, but the condition editor still needs more plain-language guidance and test coverage for complex overlapping rule sets.
 - End-to-end tests are still needed for full request lifecycles.
 - External delivery channels such as email or Teams are not yet implemented.
@@ -945,6 +948,26 @@ Publishing behavior:
 - Preserve source template ID.
 - New requests store a template snapshot so future template edits do not change historical request routing.
 
+Template lifecycle states:
+
+- Draft: editable by the creator or a superuser.
+- Published: immutable and available for new requests when not archived.
+- Archived: hidden from new request submission and treated as inactive in normalized Supabase template rows.
+
+Template Library permission behavior:
+
+- Superusers can open, duplicate, and archive non-archived templates.
+- Template creators can open and archive their own editable drafts.
+- Non-creators can duplicate non-archived templates to create their own editable draft.
+- Archived templates cannot be opened, duplicated, deleted again, or used for new requests.
+- Library cards show status and ownership labels such as Draft, Published, Archived, Created by me, Cannot edit, and Superuser access.
+
+Template lifecycle audit behavior:
+
+- Template create, update, publish, duplicate, and archive actions create admin audit events.
+- Each admin audit event stores actor name, actor email, timestamp, action, template ID, template name, version, and human-readable detail.
+- Admin audit events are persisted with the workspace snapshot and shown in the Admin tab.
+
 ## 19. Supabase Persistence
 
 ### 19.1 Database Objects
@@ -971,8 +994,21 @@ Workspace state includes:
 - Business directory.
 - Workflow templates.
 - User role assignments.
+- Template admin audit events.
 
 Workspace state is serialized to localStorage and saved to Supabase.
+
+### 19.3 Template RLS and Legacy Repair
+
+Workflow template versions use Supabase RLS:
+
+- Authenticated users can read active template versions.
+- Admin profile users can create and update template versions.
+- Template creators can insert template versions where `created_by = auth.uid()`.
+- Template creators can update template versions they own.
+- Ownerless legacy template rows can be claimed during update when `created_by is null` and the new row sets `created_by = auth.uid()`.
+
+The live migration `20260621151500_harden_template_lifecycle_permissions.sql` applies the creator insert/update and ownerless legacy-claim policies. The legacy ownerless check currently reports zero active ownerless template versions in the live project.
 
 Remote persistence includes:
 
@@ -1183,10 +1219,34 @@ Important fields:
 - version
 - isDraft
 - publishedAt
+- createdByEmail
+- createdByName
+- createdAt
+- updatedByEmail
+- updatedAt
+- isArchived
+- archivedAt
+- archivedByEmail
 - documents
 - fields
 - steps
 - graph
+
+### 25.1.1 AdminAuditEvent
+
+Represents an administrative template lifecycle event.
+
+Important fields:
+
+- id
+- action
+- actor
+- actorEmail
+- timestamp
+- detail
+- templateId
+- templateName
+- templateVersion
 
 ### 25.2 WorkflowGraph
 
@@ -1336,11 +1396,11 @@ Important fields:
 5. Add attachment preview/download UI with access checks.
 6. Add template import/export.
 7. Add drag handles and clearer connection affordances on the canvas.
-8. Add explicit workflow publish validation gate.
+8. Extend workflow publish validation with business-specific checks beyond graph validity.
 9. Add production monitoring for route latency, client load, and Supabase API timings.
 10. Add E2E tests for the full submit -> approve -> reject -> amend -> resubmit lifecycle.
 11. Add admin controls for assigning superuser status.
-12. Add real-user validation for durable admin soft-deactivation across business units, departments, and workflow templates.
+12. Add real-user validation for durable admin soft-deactivation across business units and departments.
 13. Add conflict handling for concurrent edits to the same template.
 14. Add searchable/filterable tracking history.
 15. Add audit export for compliance.
@@ -1352,7 +1412,7 @@ Priority 0 - must finish before real pilot:
 - Confirm RLS policies with real users: admin, originator, approver, participant, and non-participant.
 - Validate durable admin soft-deactivation with real Supabase admin and non-admin users, including negative RLS checks.
 - Add E2E tests for create template, submit request, approve, reject, return, amend/resubmit, cancel, reassign, delegate, and condition routing.
-- Add publish gate that blocks invalid templates.
+- Extend publish gate with business-specific pilot rules.
 - Make condition editor clearer with business-language summaries and fallback warnings.
 - Add participant-safe attachment download/preview.
 

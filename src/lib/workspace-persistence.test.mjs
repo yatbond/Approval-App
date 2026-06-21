@@ -77,6 +77,19 @@ test("serializes and parses workspace state", () => {
         department: "Finance",
       },
     ],
+    adminAuditEvents: [
+      {
+        id: "template-template-1-1782025200000-created",
+        action: "template_created",
+        actor: "Derrick Pang",
+        actorEmail: "dpang@chunwo.com",
+        timestamp: "2026-06-21T07:00:00.000Z",
+        detail: "Created template Template 1.",
+        templateId: "template-1",
+        templateName: "Template 1",
+        templateVersion: 1,
+      },
+    ],
   };
 
   assert.deepEqual(parseWorkspaceState(serializeWorkspaceState(state)), state);
@@ -97,4 +110,5 @@ test("parses older workspace state without saved approval tasks", () => {
   );
 
   assert.deepEqual(parsed?.approvalTasks, []);
+  assert.deepEqual(parsed?.adminAuditEvents, []);
 });

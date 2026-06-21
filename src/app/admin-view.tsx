@@ -14,6 +14,7 @@ import {
 import { getAdminBusinessSelectionState } from "@/lib/admin-view-state";
 import { notifications } from "@/lib/mock-data";
 import type {
+  AdminAuditEvent,
   BusinessUnit,
   UserRoleAssignment,
 } from "@/lib/types";
@@ -41,6 +42,7 @@ export function AdminView({
   taskNotifications,
   roleAssignments,
   setRoleAssignments,
+  adminAuditEvents,
 }: {
   businessDirectory: BusinessUnit[];
   adminRecordError?: string;
@@ -57,6 +59,7 @@ export function AdminView({
   setRoleAssignments: (
     updater: (items: UserRoleAssignment[]) => UserRoleAssignment[],
   ) => void;
+  adminAuditEvents: AdminAuditEvent[];
 }) {
   const initialSelection = getAdminBusinessSelectionState({
     businessDirectory,
@@ -441,6 +444,33 @@ export function AdminView({
                 <p className="mt-2 text-xs text-neutral-500">{item.time}</p>
               </div>
             ))}
+          </div>
+        </div>
+
+        <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+          <h2 className="font-semibold">Template audit</h2>
+          <p className="mt-1 text-sm text-neutral-400">
+            Recent template create, publish, duplicate, and archive actions.
+          </p>
+          <div className="mt-3 space-y-2">
+            {adminAuditEvents.slice(0, 8).map((event) => (
+              <div
+                key={event.id}
+                className="rounded-md border border-white/10 bg-[#121518] p-3"
+              >
+                <p className="break-words text-sm font-medium text-neutral-200">
+                  {event.detail}
+                </p>
+                <p className="mt-1 break-words text-xs text-neutral-500">
+                  {event.actorEmail} - {new Date(event.timestamp).toLocaleString()}
+                </p>
+              </div>
+            ))}
+            {!adminAuditEvents.length && (
+              <p className="rounded-md border border-white/10 bg-[#121518] p-3 text-sm text-neutral-500">
+                No template audit events yet.
+              </p>
+            )}
           </div>
         </div>
 

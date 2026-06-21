@@ -73,3 +73,59 @@ test("keeps current selection when deleting a different template", () => {
   );
   assert.equal(state.selectedTemplateId, "b");
 });
+
+test("stamps template ownership and audit event when creating a template", () => {
+  const state = getCreatedTemplateRecordState({
+    templates: [],
+    template: template("new-template", "New Template"),
+    actor: {
+      name: "Derrick Pang",
+      email: "dpang@chunwo.com",
+      role: "superuser",
+    },
+    now: new Date("2026-06-21T07:00:00.000Z"),
+  });
+
+  assert.equal(state.templates[0].createdByEmail, "dpang@chunwo.com");
+  assert.equal(state.templates[0].createdByName, "Derrick Pang");
+  assert.equal(state.templates[0].updatedAt, "2026-06-21T07:00:00.000Z");
+  assert.deepEqual(state.auditEvent, {
+    id: "template-new-template-1782025200000-created",
+    action: "template_created",
+    actor: "Derrick Pang",
+    actorEmail: "dpang@chunwo.com",
+    timestamp: "2026-06-21T07:00:00.000Z",
+    detail: "Created template New Template.",
+    templateId: "new-template",
+    templateName: "New Template",
+    templateVersion: 1,
+  });
+});
+
+test("archives a template with actor metadata instead of dropping it", () => {
+  const state = getDeletedTemplateRecordState({
+    templates: [template("a"), template("b")],
+    selectedTemplateId: "b",
+    templateId: "b",
+    actor: {
+      name: "Derrick Pang",
+      email: "dpang@chunwo.com",
+      role: "superuser",
+    },
+    now: new Date("2026-06-21T07:10:00.000Z"),
+  });
+
+  assert.deepEqual(
+    state.templates.map((item) => ({
+      id: item.id,
+      isArchived: item.isArchived,
+      archivedByEmail: item.archivedByEmail,
+    })),
+    [
+      { id: "a", isArchived: undefined, archivedByEmail: undefined },
+      { id: "b", isArchived: true, archivedByEmail: "dpang@chunwo.com" },
+    ],
+  );
+  assert.equal(state.selectedTemplateId, "a");
+  assert.equal(state.auditEvent.action, "template_archived");
+});

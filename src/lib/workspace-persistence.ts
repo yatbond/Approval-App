@@ -1,4 +1,5 @@
 import type {
+  AdminAuditEvent,
   ApprovalTask,
   BusinessUnit,
   UserRoleAssignment,
@@ -11,6 +12,7 @@ export type WorkspaceStateSnapshot = {
   businessDirectory: BusinessUnit[];
   workflowTemplates: WorkflowTemplate[];
   userRoleAssignments: UserRoleAssignment[];
+  adminAuditEvents: AdminAuditEvent[];
 };
 
 export function serializeWorkspaceState(snapshot: WorkspaceStateSnapshot) {
@@ -38,6 +40,9 @@ export function parseWorkspaceState(value: string): WorkspaceStateSnapshot | nul
       workflowTemplates: parsed.workflowTemplates,
       userRoleAssignments: Array.isArray(parsed.userRoleAssignments)
         ? parsed.userRoleAssignments
+        : [],
+      adminAuditEvents: Array.isArray(parsed.adminAuditEvents)
+        ? parsed.adminAuditEvents
         : [],
     };
   } catch {

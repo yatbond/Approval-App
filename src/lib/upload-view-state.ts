@@ -14,7 +14,7 @@ export function getUploadViewState({
   uploadedAttachments: ApprovalAttachment[];
 }) {
   const requestTemplates = workflowTemplates.filter(
-    (template) => template.isDraft !== true,
+    (template) => template.isDraft !== true && template.isArchived !== true,
   );
   const selectedTemplate =
     requestTemplates.find((template) => template.id === selectedTemplateId) ||

@@ -25,6 +25,7 @@ import {
   saveRemoteWorkspaceState,
 } from "@/lib/workspace-sync";
 import type {
+  AdminAuditEvent,
   ApprovalTask,
   BusinessUnit,
   UserRoleAssignment,
@@ -80,6 +81,9 @@ export function useApprovalWorkspaceState({
   const [roleAssignments, setRoleAssignments] = useState<UserRoleAssignment[]>(
     () => defaultWorkspaceState.userRoleAssignments,
   );
+  const [adminAuditEvents, setAdminAuditEvents] = useState<AdminAuditEvent[]>(
+    () => defaultWorkspaceState.adminAuditEvents,
+  );
   const [selectedTaskId, setSelectedTaskId] = useState(() =>
     getInitialSelectedTaskId({
       requestId,
@@ -110,6 +114,7 @@ export function useApprovalWorkspaceState({
         setBusinessDirectory(saved.businessDirectory);
         setTemplates(saved.workflowTemplates);
         setRoleAssignments(saved.userRoleAssignments || []);
+        setAdminAuditEvents(saved.adminAuditEvents || []);
         setSelectedTemplateId(saved.selectedTemplateId);
         setSelectedTaskId(
           getInitialSelectedTaskId({
@@ -160,6 +165,7 @@ export function useApprovalWorkspaceState({
           setBusinessDirectory(result.snapshot.businessDirectory);
           setTemplates(result.snapshot.workflowTemplates);
           setRoleAssignments(result.snapshot.userRoleAssignments || []);
+          setAdminAuditEvents(result.snapshot.adminAuditEvents || []);
           setSelectedTemplateId(result.snapshot.selectedTemplateId);
         }
       }
@@ -222,6 +228,7 @@ export function useApprovalWorkspaceState({
       businessDirectory,
       workflowTemplates: templates,
       userRoleAssignments: effectiveRoleAssignments,
+      adminAuditEvents,
       selectedTemplateId,
     };
     const serializedSnapshot = serializeWorkspaceState(snapshot);
@@ -243,7 +250,7 @@ export function useApprovalWorkspaceState({
       }
     }, remoteAutosaveDelayMs);
     return () => window.clearTimeout(timeoutId);
-  }, [businessDirectory, effectiveRoleAssignments, localWorkspaceReady, remoteWorkspaceReady, selectedTemplateId, tasks, templates]);
+  }, [adminAuditEvents, businessDirectory, effectiveRoleAssignments, localWorkspaceReady, remoteWorkspaceReady, selectedTemplateId, tasks, templates]);
 
   const currentWorkspaceSnapshot = useMemo(
     () => ({
@@ -251,9 +258,10 @@ export function useApprovalWorkspaceState({
       businessDirectory,
       workflowTemplates: templates,
       userRoleAssignments: effectiveRoleAssignments,
+      adminAuditEvents,
       selectedTemplateId,
     }),
-    [businessDirectory, effectiveRoleAssignments, selectedTemplateId, tasks, templates],
+    [adminAuditEvents, businessDirectory, effectiveRoleAssignments, selectedTemplateId, tasks, templates],
   );
 
   async function persistWorkspaceSnapshot(snapshot: WorkspaceStateSnapshot) {
@@ -274,12 +282,14 @@ export function useApprovalWorkspaceState({
       workflowTemplates: WorkflowTemplate[];
       userRoleAssignments: UserRoleAssignment[];
       selectedTemplateId: string;
+      adminAuditEvents: AdminAuditEvent[];
     }> = {},
   ) {
     return createWorkspaceSnapshotPatch(currentWorkspaceSnapshot, patch);
   }
 
   return {
+    adminAuditEvents,
     businessDirectory,
     buildWorkspaceSnapshot,
     effectiveRoleAssignments,
@@ -289,6 +299,7 @@ export function useApprovalWorkspaceState({
     selectedTemplateId,
     setBusinessDirectory,
     setRoleAssignments,
+    setAdminAuditEvents,
     setSelectedTaskId,
     setSelectedTemplateId,
     setTasks,

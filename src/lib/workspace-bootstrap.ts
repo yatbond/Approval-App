@@ -1,4 +1,5 @@
 import type {
+  AdminAuditEvent,
   ApprovalTask,
   BusinessUnit,
   UserRoleAssignment,
@@ -52,6 +53,7 @@ export function createDefaultWorkspaceSnapshot({
       buildUserDirectory(personalizedTasks, workflowTemplates, activeUser),
       businessDirectory,
     ),
+    adminAuditEvents: [],
     selectedTemplateId: workflowTemplates[0]?.id || "",
   };
 }
@@ -86,6 +88,7 @@ export function createWorkspaceSnapshotPatch(
     workflowTemplates: WorkflowTemplate[];
     userRoleAssignments: UserRoleAssignment[];
     selectedTemplateId: string;
+    adminAuditEvents: AdminAuditEvent[];
   }> = {},
 ): WorkspaceStateSnapshot {
   return {
@@ -94,5 +97,6 @@ export function createWorkspaceSnapshotPatch(
     workflowTemplates: patch.workflowTemplates ?? current.workflowTemplates,
     userRoleAssignments: patch.userRoleAssignments ?? current.userRoleAssignments,
     selectedTemplateId: patch.selectedTemplateId ?? current.selectedTemplateId,
+    adminAuditEvents: patch.adminAuditEvents ?? current.adminAuditEvents,
   };
 }
