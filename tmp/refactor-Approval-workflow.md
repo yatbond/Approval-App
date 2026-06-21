@@ -485,3 +485,31 @@ Verification:
 - `npm run build`: passed.
 - Live Workflow canvas toolbar preview after production build: passed, no browser console errors; canvas title, add-box buttons, and runtime panel remained visible.
 - Final autoreview: passed with no actionable Step 17 findings. Noted residual gaps: no rendered UI interaction tests for toolbar title/buttons, add-box callback payloads, connect cancel, outcome Done, or simultaneous prompt visibility.
+
+## Step 18 - Workflow Edge Details Boundary
+
+Status: complete.
+
+Plan:
+- Extract the selected workflow branch/edge details editor out of `approval-workspace.tsx`.
+- Add a pure helper for edge detail defaults: rule field, rule operator, rule value, rule builder visibility, for-information note, and blocking toggle state.
+- Preserve branch type, branch label, condition rule builder, blocking toggle, and for-information branch behavior.
+- Verify with red/green helper tests, typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-edge-details-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-edge-details-state.ts` for edge detail derived UI state.
+- Added `src/app/workflow-edge-details.tsx` for the selected branch editor.
+- Rewired `src/app/approval-workspace.tsx` to render `WorkflowEdgeDetails`.
+- Reduced `src/app/approval-workspace.tsx` from 2000 lines to 1899 lines.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-edge-details-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-edge-details-state.test.mjs`: passed, 3/3.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live browser smoke before full build: server reachable; fresh Chrome session redirected `http://localhost:3000/?tab=workflow` to `/login` with no console errors. Authenticated workflow edge-panel selection was blocked because no reusable test credentials or browser session cookie were available, and no live Supabase user was created for this refactor smoke test.
+- `npm test -- --runInBand`: passed, 125/125.
+- `npm run build`: passed.
+- Post-build route smoke: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate.
+- Final autoreview: passed with no actionable Step 18 findings. Noted residual gap: authenticated browser selection of an edge was not exercised because no test credentials or reusable session cookie were available in the clean automation browser.
