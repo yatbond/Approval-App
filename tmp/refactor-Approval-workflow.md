@@ -1297,7 +1297,7 @@ Verification:
 
 ## Step 49 - Durable Admin Soft-Deactivation
 
-Status: in progress.
+Status: complete.
 
 Plan:
 - Add an explicit admin deactivation mutation path for businesses, departments, and workflow templates.
@@ -1331,3 +1331,31 @@ Verification:
 - Live route smoke: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate.
 - `git diff --check`: passed with CRLF warnings only.
 - Autoreview found two Important issues: zero-row Supabase updates could look successful, and admin deletes could bypass remote deactivation while sync mode was `loading`. Both were fixed and covered by regression tests.
+- Final status: committed as `bc17f22 feat: add durable admin soft deactivation`.
+
+## Step 50 - Workflow Editor Tab Order
+
+Status: complete.
+
+Plan:
+- Put Template Builder before Canvas in the workflow editor tab order.
+- Open the workflow editor on Template Builder by default, because template metadata is the first setup step.
+- Keep Canvas and Template Library behavior unchanged.
+- Verify with a focused tab-state regression test, typegen/typecheck, lint, full tests, build, live route smoke, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-editor-tabs-state.ts` to centralize workflow editor tab order and the default tab.
+- Added `src/lib/workflow-editor-tabs-state.test.mjs` to pin Template Builder, Canvas, Template Library order and the Template Builder default.
+- Rewired `src/app/workflow-view.tsx` to use the shared tab-state helper instead of local inline tab metadata.
+
+Verification:
+- Red step: focused tab-state test failed before `workflow-editor-tabs-state.ts` existed.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-editor-tabs-state.test.mjs`: passed, 2/2.
+- `git diff --check`: passed with CRLF warnings only.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- `npm test -- --runInBand`: passed, 220/220.
+- `npm run build`: passed. Webpack emitted the known non-fatal cache `ENOENT` warning after the successful route summary.
+- Live route smoke: `http://localhost:3000/?tab=workflow&step17postbuild=1782010244765` returned `307` to `/login`, matching the unauthenticated auth gate.
+- Browser MCP visual preview was not completed because the browser tool could not attach to an active in-app tab or create a managed preview tab.
+- Autoreview: passed with no actionable findings.

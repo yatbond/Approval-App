@@ -79,6 +79,11 @@ import {
   getWorkflowPublishTemplateActionState,
 } from "@/lib/workflow-template-action-state";
 import {
+  defaultWorkflowEditorTab,
+  workflowEditorTabs,
+  type WorkflowEditorTab,
+} from "@/lib/workflow-editor-tabs-state";
+import {
   getWorkflowRedoActionState,
   getWorkflowUndoActionState,
 } from "@/lib/workflow-history-action-state";
@@ -99,8 +104,6 @@ import type {
   WorkflowTemplate,
 } from "@/lib/types";
 
-type WorkflowEditorTab = "canvas" | "builder" | "library";
-
 const WorkflowCanvas = dynamic(() => import("@/app/workflow-canvas"), {
   loading: () => (
     <div className="grid h-[68vh] min-h-[420px] place-items-center rounded-md border border-white/10 bg-[#0d1013] text-sm text-neutral-500 lg:h-[calc(100vh-250px)] lg:min-h-[640px]">
@@ -110,11 +113,6 @@ const WorkflowCanvas = dynamic(() => import("@/app/workflow-canvas"), {
   ssr: false,
 });
 
-const workflowEditorTabs: { id: WorkflowEditorTab; label: string }[] = [
-  { id: "canvas", label: "Canvas" },
-  { id: "builder", label: "Template Builder" },
-  { id: "library", label: "Template Library" },
-];
 export function WorkflowView({
   businessDirectory,
   tasks,
@@ -222,7 +220,7 @@ export function WorkflowView({
     [canvasViewResetNonce, runtimeTask, workflow?.id, workflowGraph],
   );
   const [workflowEditorTab, setWorkflowEditorTab] =
-    useState<WorkflowEditorTab>("canvas");
+    useState<WorkflowEditorTab>(defaultWorkflowEditorTab);
   const [boxDocumentType, setBoxDocumentType] = useState("Supporting document");
   const [boxDocumentFormat, setBoxDocumentFormat] =
     useState<DocumentFormat>("pdf");
