@@ -15,3 +15,10 @@ test("puts Template Builder before Canvas in the workflow editor tabs", () => {
 test("opens Template Builder first when entering workflow editing", () => {
   assert.equal(defaultWorkflowEditorTab, "builder");
 });
+
+test("keeps publishing as a canvas action instead of an editor tab", () => {
+  assert.equal(
+    workflowEditorTabs.some((tab) => tab.label === "Publish"),
+    false,
+  );
+});

@@ -83,6 +83,7 @@ import {
   workflowEditorTabs,
   type WorkflowEditorTab,
 } from "@/lib/workflow-editor-tabs-state";
+import { workflowPublishAction } from "@/lib/workflow-publish-action-state";
 import {
   getWorkflowRedoActionState,
   getWorkflowUndoActionState,
@@ -721,16 +722,6 @@ export function WorkflowView({
                 {tab.label}
               </button>
             ))}
-            {workflow && (
-              <button
-                type="button"
-                onClick={publishSelectedTemplate}
-                title="Create a published version from the current template."
-                className="min-h-9 rounded-md border border-sky-400/40 bg-sky-400/12 px-3 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20"
-              >
-                Publish version
-              </button>
-            )}
           </div>
           {adminRecordError && (
             <p className="mt-3 rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-100">
@@ -1258,6 +1249,16 @@ export function WorkflowView({
                 id="workflow-user-directory"
                 users={userDirectory}
               />
+            </div>
+            <div className="mt-4 flex justify-end border-t border-white/10 pt-4">
+              <button
+                type="button"
+                onClick={publishSelectedTemplate}
+                title={workflowPublishAction.title}
+                className="flex min-h-10 w-full items-center justify-center rounded-md border border-sky-400/40 bg-sky-400/12 px-4 py-2 text-sm font-medium text-sky-100 transition hover:bg-sky-400/20 sm:w-auto"
+              >
+                {workflowPublishAction.label}
+              </button>
             </div>
           </div>
         )}

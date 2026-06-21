@@ -1359,3 +1359,32 @@ Verification:
 - Live route smoke: `http://localhost:3000/?tab=workflow&step17postbuild=1782010244765` returned `307` to `/login`, matching the unauthenticated auth gate.
 - Browser MCP visual preview was not completed because the browser tool could not attach to an active in-app tab or create a managed preview tab.
 - Autoreview: passed with no actionable findings.
+
+## Step 51 - Canvas Publish Action Placement
+
+Status: complete.
+
+Plan:
+- Remove the publish action from the workflow editor tab row.
+- Place the publish action at the bottom of the Canvas panel so users finish editing before publishing.
+- Shorten the visible button label from `Publish version` to `Publish`.
+- Verify with red/green focused tests, typegen/typecheck, lint, full tests, build, live browser preview, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-publish-action-state.ts` to centralize the canvas publish action label, title, and placement intent.
+- Added `src/lib/workflow-publish-action-state.test.mjs` to pin the button label to `Publish` and the placement to `canvas-footer`.
+- Extended `src/lib/workflow-editor-tabs-state.test.mjs` so `Publish` cannot be reintroduced as an editor tab.
+- Rewired `src/app/workflow-view.tsx` so the tab row contains only Template Builder, Canvas, and Template Library, while the Publish button renders below the Canvas.
+
+Verification:
+- Red step: focused publish-action test failed before `workflow-publish-action-state.ts` existed.
+- Red step: focused publish-action test failed when the expected label changed from `Publish version` to `Publish`.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-publish-action-state.test.mjs`: passed, 1/1.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-editor-tabs-state.test.mjs`: passed, 3/3.
+- `git diff --check`: passed with CRLF warnings only.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- `npm test -- --runInBand`: passed, 222/222.
+- `npm run build`: passed. Webpack emitted the known non-fatal cache `ENOENT` warning after the successful route summary.
+- Live browser preview: passed; tab row showed Template Builder, Canvas, Template Library; Canvas footer showed `Publish`; no `Publish version` button remained; no console errors.
+- Autoreview: passed with no actionable findings.
