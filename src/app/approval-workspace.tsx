@@ -25,9 +25,8 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  approvalTasks,
   notifications,
 } from "@/lib/mock-data";
 import {
@@ -35,7 +34,6 @@ import {
   addDepartment,
   deleteBusiness,
   deleteDepartment,
-  seededBusinessDirectory,
   updateBusiness,
   updateDepartment,
 } from "@/lib/business-directory";
@@ -44,7 +42,6 @@ import {
   isActionableBy,
   isVisibleToParticipant,
 } from "@/lib/approval-state";
-import { applyEscalationChecks } from "@/lib/approval-escalation";
 import {
   createWorkflowTemplateFromDraft,
 } from "@/lib/template-builder";
@@ -95,24 +92,14 @@ import {
   type WorkflowHistoryById,
 } from "@/lib/workflow-history";
 import {
-  parseWorkspaceState,
-  serializeWorkspaceState,
-  type WorkspaceStateSnapshot,
-} from "@/lib/workspace-persistence";
-import {
-  loadRemoteWorkspaceState,
-  saveRemoteWorkspaceState,
-} from "@/lib/workspace-sync";
-import {
   buildTaskNotifications,
   publishWorkflowTemplateVersion,
   type TaskNotification,
 } from "@/lib/workflow-system";
 import {
-  buildDefaultRoleAssignments,
-  buildUserDirectory,
   type UserDirectoryEntry,
 } from "@/lib/user-directory";
+import { useApprovalWorkspaceState } from "@/app/use-approval-workspace-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -192,18 +179,6 @@ const ruleOperatorOptions: { value: WorkflowRuleOperator; label: string }[] = [
   { value: "<=", label: "is less than or equal to" },
 ];
 
-const workspaceStorageKey = "approval-workflow-workspace-v1";
-const remoteAutosaveDelayMs = 30_000;
-
-function readSavedWorkspaceState() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const saved = window.localStorage.getItem(workspaceStorageKey);
-  return saved ? parseWorkspaceState(saved) : null;
-}
-
 const actionConfig: Record<
   ApprovalAction,
   { label: string; icon: React.ElementType; tone: string }
@@ -249,22 +224,6 @@ const actionConfig: Record<
     tone: "border-neutral-500/40 bg-neutral-500/10 text-neutral-100 hover:bg-neutral-500/20",
   },
 };
-
-function personalizeTask(task: ApprovalTask, activeUserEmail: string): ApprovalTask {
-  const replaceSeedUser = (email: string) =>
-    email === "derrick@example.com" ? activeUserEmail : email;
-
-  return {
-    ...task,
-    currentOwner: replaceSeedUser(task.currentOwner),
-    participants: task.participants.map(replaceSeedUser),
-    auditTrail: task.auditTrail.map((event) => ({
-      ...event,
-      actorEmail: replaceSeedUser(event.actorEmail),
-      targetEmail: event.targetEmail ? replaceSeedUser(event.targetEmail) : undefined,
-    })),
-  };
-}
 
 function findTemplateForTask(
   task: ApprovalTask,
@@ -314,32 +273,28 @@ function ApprovalWorkspaceBody({
     }),
     [sessionUser],
   );
-  const [savedWorkspaceState, setSavedWorkspaceState] =
-    useState<WorkspaceStateSnapshot | null>(null);
-  const [localWorkspaceReady, setLocalWorkspaceReady] = useState(false);
-  const [tasks, setTasks] = useState<ApprovalTask[]>(() =>
-    approvalTasks.map((task) => personalizeTask(task, activeUser.email)),
-  );
-  const [businessDirectory, setBusinessDirectory] = useState<BusinessUnit[]>(
-    () => seededBusinessDirectory,
-  );
-  const [templates, setTemplates] = useState<WorkflowTemplate[]>(
-    () => workflowTemplates,
-  );
-  const [selectedTemplateId, setSelectedTemplateId] = useState(
-    () =>
-      workflowTemplates[0]?.id ||
-      "",
-  );
-  const [roleAssignments, setRoleAssignments] = useState<UserRoleAssignment[]>(
-    () =>
-      savedWorkspaceState?.userRoleAssignments.length
-        ? savedWorkspaceState.userRoleAssignments
-        : buildDefaultRoleAssignments(
-            buildUserDirectory(tasks, templates, activeUser),
-            businessDirectory,
-          ),
-  );
+  const {
+    businessDirectory,
+    buildWorkspaceSnapshot,
+    effectiveRoleAssignments,
+    persistWorkspaceSnapshot,
+    selectedTaskId,
+    selectedTemplateId,
+    setBusinessDirectory,
+    setRoleAssignments,
+    setSelectedTaskId,
+    setSelectedTemplateId,
+    setTasks,
+    setTemplates,
+    tasks,
+    templates,
+    userDirectory,
+    workspaceSyncMode,
+  } = useApprovalWorkspaceState({
+    activeUser,
+    requestId,
+    workflowTemplates,
+  });
   const actionableTasks = useMemo(
     () => tasks.filter((task) => isActionableBy(task, activeUser.email)),
     [activeUser.email, tasks],
@@ -347,9 +302,6 @@ function ApprovalWorkspaceBody({
   const trackingTasks = useMemo(
     () => tasks.filter((task) => isVisibleToParticipant(task, activeUser.email)),
     [activeUser.email, tasks],
-  );
-  const [selectedTaskId, setSelectedTaskId] = useState(
-    () => requestId || approvalTasks[0]?.id,
   );
   const [comment, setComment] = useState("");
   const [targetEmail, setTargetEmail] = useState("");
@@ -362,110 +314,6 @@ function ApprovalWorkspaceBody({
   const [actionError, setActionError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [uploadedAttachments, setUploadedAttachments] = useState<ApprovalAttachment[]>([]);
-  const [workspaceSyncMode, setWorkspaceSyncMode] = useState<"loading" | "supabase" | "local">(
-    "loading",
-  );
-  const [remoteWorkspaceReady, setRemoteWorkspaceReady] = useState(false);
-  const lastRemoteSnapshotRef = useRef<string | null>(null);
-  const localWorkspaceDirtyRef = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const loadTimerId = window.setTimeout(() => {
-      if (cancelled) {
-        return;
-      }
-
-      const saved = readSavedWorkspaceState();
-      if (saved) {
-        const serializedSnapshot = serializeWorkspaceState(saved);
-        lastRemoteSnapshotRef.current = serializedSnapshot;
-        setSavedWorkspaceState(saved);
-        setTasks(saved.approvalTasks);
-        setBusinessDirectory(saved.businessDirectory);
-        setTemplates(saved.workflowTemplates);
-        setRoleAssignments(saved.userRoleAssignments || []);
-        setSelectedTemplateId(saved.selectedTemplateId);
-        setSelectedTaskId(requestId || saved.approvalTasks[0]?.id || approvalTasks[0]?.id);
-        setWorkspaceSyncMode("local");
-        setRemoteWorkspaceReady(true);
-      }
-      setLocalWorkspaceReady(true);
-    }, 0);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(loadTimerId);
-    };
-  }, [requestId]);
-
-  useEffect(() => {
-    if (!localWorkspaceReady || savedWorkspaceState) {
-      return;
-    }
-
-    let cancelled = false;
-    let loadTimerId: number | undefined;
-    let idleCallbackId: number | undefined;
-    const windowWithIdle = window as Window & {
-      requestIdleCallback?: (
-        callback: () => void,
-        options?: { timeout: number },
-      ) => number;
-      cancelIdleCallback?: (handle: number) => void;
-    };
-
-    async function loadWorkspace() {
-      const result = await loadRemoteWorkspaceState();
-      if (cancelled) {
-        return;
-      }
-
-      if (result.mode === "supabase" && result.snapshot) {
-        const remoteSnapshot = serializeWorkspaceState(result.snapshot);
-        if (!localWorkspaceDirtyRef.current) {
-          lastRemoteSnapshotRef.current = remoteSnapshot;
-          setTasks(result.snapshot.approvalTasks);
-          setBusinessDirectory(result.snapshot.businessDirectory);
-          setTemplates(result.snapshot.workflowTemplates);
-          setRoleAssignments(result.snapshot.userRoleAssignments || []);
-          setSelectedTemplateId(result.snapshot.selectedTemplateId);
-        }
-      }
-      setWorkspaceSyncMode(result.mode);
-      setRemoteWorkspaceReady(true);
-    }
-
-    const startLoad = () => {
-      void loadWorkspace();
-    };
-
-    if (windowWithIdle.requestIdleCallback) {
-      idleCallbackId = windowWithIdle.requestIdleCallback(startLoad, { timeout: 2500 });
-    } else {
-      loadTimerId = window.setTimeout(startLoad, 1200);
-    }
-
-    return () => {
-      cancelled = true;
-      if (idleCallbackId !== undefined) {
-        windowWithIdle.cancelIdleCallback?.(idleCallbackId);
-      }
-      if (loadTimerId !== undefined) {
-        window.clearTimeout(loadTimerId);
-      }
-    };
-  }, [localWorkspaceReady, savedWorkspaceState]);
-
-  useEffect(() => {
-    const applyChecks = () => {
-      setTasks((items) => applyEscalationChecks(items, templates));
-    };
-    applyChecks();
-    const intervalId = window.setInterval(applyChecks, 60_000);
-    return () => window.clearInterval(intervalId);
-  }, [templates]);
-
   const selectedTemplate = useMemo(
     () =>
       templates.find((template) => template.id === selectedTemplateId) ||
@@ -481,53 +329,6 @@ function ApprovalWorkspaceBody({
       trackingTasks[0],
     [actionableTasks, selectedTaskId, trackingTasks],
   );
-  const userDirectory = useMemo(
-    () => buildUserDirectory(tasks, templates, activeUser),
-    [activeUser, tasks, templates],
-  );
-  const effectiveRoleAssignments = useMemo(() => {
-    const knownEmails = new Set(roleAssignments.map((assignment) => assignment.email));
-    const missingUsers = userDirectory.filter((user) => !knownEmails.has(user.email));
-    return missingUsers.length
-      ? [
-          ...roleAssignments,
-          ...buildDefaultRoleAssignments(missingUsers, businessDirectory),
-        ]
-      : roleAssignments;
-  }, [businessDirectory, roleAssignments, userDirectory]);
-
-  useEffect(() => {
-    if (!localWorkspaceReady) {
-      return;
-    }
-
-    const snapshot = {
-      approvalTasks: tasks,
-      businessDirectory,
-      workflowTemplates: templates,
-      userRoleAssignments: effectiveRoleAssignments,
-      selectedTemplateId,
-    };
-    const serializedSnapshot = serializeWorkspaceState(snapshot);
-    window.localStorage.setItem(workspaceStorageKey, serializedSnapshot);
-
-    if (!remoteWorkspaceReady) {
-      return;
-    }
-
-    if (lastRemoteSnapshotRef.current === serializedSnapshot) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(async () => {
-      const result = await saveRemoteWorkspaceState(snapshot);
-      setWorkspaceSyncMode(result.mode);
-      if (result.mode === "supabase") {
-        lastRemoteSnapshotRef.current = serializedSnapshot;
-      }
-    }, remoteAutosaveDelayMs);
-    return () => window.clearTimeout(timeoutId);
-  }, [businessDirectory, effectiveRoleAssignments, localWorkspaceReady, remoteWorkspaceReady, selectedTemplateId, tasks, templates]);
   const selectedTaskTemplate = useMemo(
     () => (selectedTask ? findTemplateForTask(selectedTask, templates) : undefined),
     [selectedTask, templates],
@@ -544,37 +345,6 @@ function ApprovalWorkspaceBody({
   const unreadCount =
     notifications.filter((item) => item.unread).length +
     taskNotifications.filter((item) => item.unread).length;
-
-  function buildWorkspaceSnapshot(
-    patch: Partial<{
-      approvalTasks: ApprovalTask[];
-      businessDirectory: BusinessUnit[];
-      workflowTemplates: WorkflowTemplate[];
-      userRoleAssignments: UserRoleAssignment[];
-      selectedTemplateId: string;
-    }> = {},
-  ) {
-    return {
-      approvalTasks: patch.approvalTasks ?? tasks,
-      businessDirectory: patch.businessDirectory ?? businessDirectory,
-      workflowTemplates: patch.workflowTemplates ?? templates,
-      userRoleAssignments: patch.userRoleAssignments ?? effectiveRoleAssignments,
-      selectedTemplateId: patch.selectedTemplateId ?? selectedTemplateId,
-    };
-  }
-
-  async function persistWorkspaceSnapshot(
-    snapshot: ReturnType<typeof buildWorkspaceSnapshot>,
-  ) {
-    localWorkspaceDirtyRef.current = true;
-    const serializedSnapshot = serializeWorkspaceState(snapshot);
-    window.localStorage.setItem(workspaceStorageKey, serializedSnapshot);
-    const result = await saveRemoteWorkspaceState(snapshot);
-    setWorkspaceSyncMode(result.mode);
-    if (result.mode === "supabase") {
-      lastRemoteSnapshotRef.current = serializedSnapshot;
-    }
-  }
 
   async function uploadAttachmentFile(
     file: File,

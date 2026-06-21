@@ -179,3 +179,29 @@ Verification:
 - `npm run build`: passed.
 - Live Workflow preview after production build: passed, no browser console errors; canvas, Template Builder, Condition, and Return/Reject controls visible.
 - Final autoreview: passed with no actionable Step 6 findings. Noted residual gap: no automated browser/hydration regression test for the boot path, covered by live preview for this step.
+
+## Step 7 - Workspace Boot And Sync Boundary
+
+Status: complete.
+
+Plan:
+- Extract deterministic workspace bootstrap helpers from the page component.
+- Move local-storage boot, remote workspace load, autosave, escalation ticking, selected ids, and persistence helpers behind a dedicated client hook.
+- Keep `approval-workspace.tsx` focused on UI orchestration and task/workflow actions.
+- Verify with targeted bootstrap tests, typecheck, lint, full tests, build, live browser preview, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workspace-bootstrap.ts` for seeded workspace snapshots, task personalization, initial selected task resolution, remote-load eligibility, and safe snapshot patching.
+- Added `src/lib/workspace-bootstrap.test.mjs` for deterministic boot and patch behavior.
+- Added `src/app/use-approval-workspace-state.ts` to own local/Supabase workspace synchronization and persistence helpers.
+- Rewired `src/app/approval-workspace.tsx` to consume the new hook instead of hosting boot/sync effects inline.
+
+Verification:
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workspace-bootstrap.test.mjs`: passed, 4/4.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live Workflow preview before full build: passed, no browser console errors; canvas, Template Builder, Condition, and saved-status UI visible.
+- `npm test -- --runInBand`: passed, 92/92.
+- `npm run build`: passed.
+- Live Workflow preview after production build: passed, no browser console errors; canvas, Template Builder, Condition, and saved-status UI visible.
+- Final autoreview: passed with no actionable Step 7 findings. Noted residual gap: no hook-level timing test around `useApprovalWorkspaceState` with mocked local storage and Supabase load/autosave timing.
