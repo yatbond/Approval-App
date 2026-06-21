@@ -47,6 +47,7 @@ test("summarizes template library cards with counts and active state", () => {
       canDelete: false,
       openActionLabel: "Open in Canvas",
       duplicateActionLabel: "Duplicate as New Template",
+      archiveActionLabel: "Delete",
     },
     {
       id: "leave",
@@ -61,6 +62,7 @@ test("summarizes template library cards with counts and active state", () => {
       canDelete: false,
       openActionLabel: "Open in Canvas",
       duplicateActionLabel: "Duplicate as New Template",
+      archiveActionLabel: "Delete",
     },
   ]);
 });
@@ -147,6 +149,59 @@ test("labels template status, ownership, and available actions", () => {
         canOpen: false,
         canDuplicate: false,
         canDelete: false,
+      },
+    ],
+  );
+});
+
+test("separates active templates from archived templates", () => {
+  const activeTemplate = {
+    ...templates[0],
+    id: "active-template",
+    createdByEmail: "dpang@chunwo.com",
+  };
+  const archivedTemplate = {
+    ...templates[1],
+    id: "archived-template",
+    isArchived: true,
+    archivedAt: "2026-06-21T06:00:00.000Z",
+    createdByEmail: "dpang@chunwo.com",
+  };
+
+  const libraryItems = getWorkflowTemplateLibraryItems({
+    workflowTemplates: [activeTemplate, archivedTemplate],
+    selectedTemplateId: "active-template",
+    activeUserEmail: "dpang@chunwo.com",
+    activeUserRole: "approver",
+    section: "library",
+  });
+  const archiveItems = getWorkflowTemplateLibraryItems({
+    workflowTemplates: [activeTemplate, archivedTemplate],
+    selectedTemplateId: "active-template",
+    activeUserEmail: "dpang@chunwo.com",
+    activeUserRole: "approver",
+    section: "archive",
+  });
+
+  assert.deepEqual(
+    libraryItems.map((item) => item.id),
+    ["active-template"],
+  );
+  assert.deepEqual(
+    archiveItems.map((item) => ({
+      id: item.id,
+      canOpen: item.canOpen,
+      canDuplicate: item.canDuplicate,
+      canDelete: item.canDelete,
+      archiveActionLabel: item.archiveActionLabel,
+    })),
+    [
+      {
+        id: "archived-template",
+        canOpen: false,
+        canDuplicate: false,
+        canDelete: false,
+        archiveActionLabel: "Archived",
       },
     ],
   );

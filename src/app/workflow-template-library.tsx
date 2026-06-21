@@ -1,7 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Copy, RotateCcw, X } from "lucide-react";
-import { getWorkflowTemplateLibraryItems } from "@/lib/workflow-template-library-state";
+import {
+  getWorkflowTemplateLibraryItems,
+  type WorkflowTemplateLibrarySection,
+} from "@/lib/workflow-template-library-state";
 import type { UserRole, WorkflowTemplate } from "@/lib/types";
 
 export function WorkflowTemplateLibrary({
@@ -23,18 +27,52 @@ export function WorkflowTemplateLibrary({
   activeUserEmail: string;
   activeUserRole: UserRole;
 }) {
+  const [section, setSection] =
+    useState<Exclude<WorkflowTemplateLibrarySection, "all">>("library");
   const templateItems = getWorkflowTemplateLibraryItems({
     workflowTemplates,
     selectedTemplateId,
     activeUserEmail,
     activeUserRole,
+    section,
   });
+  const libraryCount = workflowTemplates.filter(
+    (template) => template.isArchived !== true,
+  ).length;
+  const archiveCount = workflowTemplates.length - libraryCount;
+  const isArchive = section === "archive";
 
   return (
     <div className="p-4">
-      <h3 className="mb-3 text-sm font-semibold text-neutral-300">
-        Template library
-      </h3>
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h3 className="text-sm font-semibold text-neutral-300">
+          {isArchive ? "Template archive" : "Template library"}
+        </h3>
+        <div className="grid grid-cols-2 gap-2 rounded-md border border-white/10 bg-[#101214] p-1 text-xs sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setSection("library")}
+            className={`min-h-8 rounded px-3 transition ${
+              section === "library"
+                ? "bg-emerald-400/15 text-emerald-100"
+                : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
+            }`}
+          >
+            Template Library ({libraryCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setSection("archive")}
+            className={`min-h-8 rounded px-3 transition ${
+              section === "archive"
+                ? "bg-amber-400/15 text-amber-100"
+                : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
+            }`}
+          >
+            Template Archive ({archiveCount})
+          </button>
+        </div>
+      </div>
       <div className="grid gap-3 lg:grid-cols-2">
         {templateItems.map((item) => (
           <div
@@ -47,8 +85,18 @@ export function WorkflowTemplateLibrary({
           >
             <button
               type="button"
-              onClick={() => onSelectTemplate(item.id)}
-              className="block w-full text-left"
+              onClick={() => {
+                if (!isArchive) {
+                  onSelectTemplate(item.id);
+                }
+              }}
+              disabled={isArchive}
+              title={
+                isArchive
+                  ? "Archived workflows are read-only and cannot be selected for editing."
+                  : "Select this workflow template."
+              }
+              className="block w-full text-left disabled:cursor-default"
             >
               <p className="break-words text-sm font-medium">
                 {item.template.name}
@@ -105,11 +153,18 @@ export function WorkflowTemplateLibrary({
                 className="flex min-h-8 items-center justify-center gap-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <X size={13} />
-                Delete
+                {item.archiveActionLabel}
               </button>
             </div>
           </div>
         ))}
+        {!templateItems.length && (
+          <div className="rounded-md border border-white/10 bg-[#121518] p-4 text-sm text-neutral-400 lg:col-span-2">
+            {isArchive
+              ? "No archived workflow templates yet."
+              : "No active workflow templates yet."}
+          </div>
+        )}
       </div>
     </div>
   );

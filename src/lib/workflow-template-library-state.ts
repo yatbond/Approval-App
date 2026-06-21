@@ -1,21 +1,28 @@
 import type { UserRole, WorkflowTemplate } from "./types.ts";
 
+export type WorkflowTemplateLibrarySection = "all" | "library" | "archive";
+
 export function getWorkflowTemplateLibraryItems({
   workflowTemplates,
   selectedTemplateId,
   activeUserEmail = "",
   activeUserRole = "participant",
+  section = "all",
 }: {
   workflowTemplates: WorkflowTemplate[];
   selectedTemplateId: string;
   activeUserEmail?: string;
   activeUserRole?: UserRole;
+  section?: WorkflowTemplateLibrarySection;
 }) {
+  const visibleTemplates = workflowTemplates.filter((template) =>
+    isTemplateVisibleInSection(template, section),
+  );
   const selectedTemplate =
-    workflowTemplates.find((template) => template.id === selectedTemplateId) ||
-    workflowTemplates[0];
+    visibleTemplates.find((template) => template.id === selectedTemplateId) ||
+    visibleTemplates[0];
 
-  return workflowTemplates.map((template) => {
+  return visibleTemplates.map((template) => {
     const canManage = canManageTemplate(template, activeUserEmail, activeUserRole);
     const isArchived = template.isArchived === true;
 
@@ -32,8 +39,22 @@ export function getWorkflowTemplateLibraryItems({
       canDelete: !isArchived && canManage,
       openActionLabel: "Open in Canvas",
       duplicateActionLabel: "Duplicate as New Template",
+      archiveActionLabel: isArchived ? "Archived" : "Delete",
     };
   });
+}
+
+function isTemplateVisibleInSection(
+  template: WorkflowTemplate,
+  section: WorkflowTemplateLibrarySection,
+) {
+  if (section === "archive") {
+    return template.isArchived === true;
+  }
+  if (section === "library") {
+    return template.isArchived !== true;
+  }
+  return true;
 }
 
 function canManageTemplate(

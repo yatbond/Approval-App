@@ -1550,3 +1550,8 @@ Verification:
 - `npm run lint`: passed.
 - `npm run build`: passed. Webpack emitted the known non-fatal cache `ENOENT` warning after the successful route summary.
 - Autoreview: passed with no actionable Step 56 findings. Residual product note: smoke-test archived templates remain in the current user workspace as intentional audit evidence.
+
+## Step 57 - Template Library Archive Subtab
+- Added Template Library / Template Archive subtabs inside the Template Library page area where archived templates were previously mixed with active templates.
+- Active library now filters out archived workflow templates; archive shows only archived workflow templates as read-only cards.
+- Verified with npm test, lint, TypeScript, production build, and live browser preview at localhost:3000.?tab=workflow.
