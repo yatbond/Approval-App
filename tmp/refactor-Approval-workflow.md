@@ -856,7 +856,7 @@ Verification:
 
 ## Step 32 - Workflow Template Document State Boundary
 
-Status: in review.
+Status: complete.
 
 Plan:
 - Extract template document summary rebuilding out of `WorkflowView.updateTemplateDocuments`.
@@ -878,3 +878,29 @@ Verification:
 - `npm test -- --runInBand`: passed, 164/164.
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 32 findings.
+
+## Step 33 - Workflow Template Load State Boundary
+
+Status: complete.
+
+Plan:
+- Extract template-to-builder form loading state out of `WorkflowView`.
+- Preserve template name loading, department loading, matching-business lookup, and current-business fallback when the template business is not in the editable directory.
+- Keep React state setters in the component.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-template-load-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-template-load-state.ts` for builder load state derivation.
+- Rewired `loadTemplateIntoBuilder` in `src/app/approval-workspace.tsx` to call `getWorkflowTemplateLoadState`.
+- Initial autoreview noted unmatched businesses previously skipped `setBusinessId`; added `shouldSetBusinessId` so the component preserves that setter behavior.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-template-load-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-template-load-state.test.mjs`: passed, 2/2 after review fix.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated template-loading behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 166/166 after review fix.
+- `npm run build`: passed after review fix.
+- Final autoreview: initial P3 setter behavior finding was fixed; final re-review passed with no actionable Step 33 findings.

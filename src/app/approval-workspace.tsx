@@ -109,6 +109,7 @@ import {
 } from "@/lib/workflow-canvas-edit-state";
 import { getWorkflowAddBoxDocumentState } from "@/lib/workflow-box-document-state";
 import { getWorkflowTemplateDocumentState } from "@/lib/workflow-template-document-state";
+import { getWorkflowTemplateLoadState } from "@/lib/workflow-template-load-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -776,14 +777,16 @@ function WorkflowView({
   }
 
   function loadTemplateIntoBuilder(template: WorkflowTemplate) {
-    const nextBusiness = businessDirectory.find(
-      (business) => business.name === template.business,
-    );
-    setTemplateName(template.name);
-    if (nextBusiness) {
-      setBusinessId(nextBusiness.id);
+    const nextState = getWorkflowTemplateLoadState({
+      template,
+      businessDirectory,
+      currentBusinessId: businessId,
+    });
+    setTemplateName(nextState.templateName);
+    if (nextState.shouldSetBusinessId) {
+      setBusinessId(nextState.businessId);
     }
-    setDepartmentName(template.department);
+    setDepartmentName(nextState.departmentName);
   }
 
   function saveWorkflowTemplate(
