@@ -1115,3 +1115,28 @@ Verification:
 - `npm test -- --runInBand`: passed, 188/188.
 - `npm run build`: passed.
 - Autoreview: Critical staging issue and Minor missing-department test suggestion were addressed before final verification and commit.
+
+## Step 42 - Workflow Fallback Condition Id State Boundary
+
+Status: complete.
+
+Plan:
+- Move fallback condition case id default generation out of `WorkflowView` and into the condition case state helper.
+- Preserve explicit fallback id support for tests/callers and existing one-fallback-only behavior.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Extended `src/lib/workflow-condition-case-state.test.mjs`; verified the focused test failed before the helper generated an id.
+- Updated `getWorkflowAddFallbackConditionCaseState` in `src/lib/workflow-condition-case-state.ts` to make `fallbackCaseId` optional and generate `case-${Date.now()}-fallback` when omitted.
+- Rewired `addFallbackConditionCaseToSelectedBox` in `src/app/approval-workspace.tsx` so the component no longer calls `Date.now()`.
+- Applied autoreview's optional `??` polish so explicit caller-supplied ids are preserved.
+
+Verification:
+- Red step: `node --experimental-strip-types --test src/lib/workflow-condition-case-state.test.mjs` failed because no id was generated when `fallbackCaseId` was omitted.
+- `node --experimental-strip-types --test src/lib/workflow-condition-case-state.test.mjs`: passed, 8/8.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated fallback condition editing behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 189/189.
+- `npm run build`: passed.
+- Autoreview: passed with no Critical, Important, or Minor findings; optional `??` recommendation was applied and reverified before commit.

@@ -938,7 +938,6 @@ function WorkflowView({
     const nextState = getWorkflowAddFallbackConditionCaseState({
       graph: workflowGraph,
       selectedNodeId,
-      fallbackCaseId: `case-${Date.now()}-fallback`,
     });
     if (nextState.didUpdate) {
       saveWorkflowGraph(nextState.graph, nextState.label);

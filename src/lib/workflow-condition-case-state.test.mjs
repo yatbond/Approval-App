@@ -68,6 +68,19 @@ test("adds one fallback case and leaves existing fallback unchanged", () => {
   assert.equal(second.graph, added.graph);
 });
 
+test("adds a fallback case with a generated id when no id is provided", () => {
+  const result = getWorkflowAddFallbackConditionCaseState({
+    graph,
+    selectedNodeId: "condition-1",
+  });
+
+  assert.equal(result.didUpdate, true);
+  const conditionCase = result.graph.nodes.find((node) => node.id === "condition-1")
+    ?.conditionCases?.[0];
+  assert.match(conditionCase?.id || "", /^case-\d+-fallback$/);
+  assert.equal(conditionCase?.isFallback, true);
+});
+
 test("does not update when the selected box is missing or not a condition", () => {
   assert.equal(
     getWorkflowAddConditionCaseState({

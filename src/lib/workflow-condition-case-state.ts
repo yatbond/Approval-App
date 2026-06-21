@@ -59,7 +59,7 @@ export function getWorkflowAddFallbackConditionCaseState({
   selectedNodeId,
   fallbackCaseId,
 }: WorkflowConditionCaseStateInput & {
-  fallbackCaseId: string;
+  fallbackCaseId?: string;
 }): WorkflowConditionCaseState {
   const selectedNode =
     graph.nodes.find((node) => node.id === selectedNodeId) || null;
@@ -78,7 +78,7 @@ export function getWorkflowAddFallbackConditionCaseState({
       conditionCases: [
         ...existingCases,
         {
-          id: fallbackCaseId,
+          id: fallbackCaseId ?? `case-${Date.now()}-fallback`,
           name: "All other conditions",
           isFallback: true,
           join: "and",
