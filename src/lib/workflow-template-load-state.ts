@@ -21,5 +21,8 @@ export function getWorkflowTemplateLoadState({
     businessId: nextBusiness?.id || currentBusinessId,
     shouldSetBusinessId: Boolean(nextBusiness),
     departmentName: template.department,
+    selectedTemplateId: template.id,
+    workflowEditorTab: "canvas" as const,
+    shouldResetCanvasView: true,
   };
 }

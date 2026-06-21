@@ -31,6 +31,9 @@ test("loads template name, matching business id, and department into the builder
       businessId: "cw",
       shouldSetBusinessId: true,
       departmentName: "Tendering",
+      selectedTemplateId: "template-1",
+      workflowEditorTab: "canvas",
+      shouldResetCanvasView: true,
     },
   );
 });
@@ -50,6 +53,9 @@ test("keeps the current business id when the template business is not in the dir
       businessId: "aai",
       shouldSetBusinessId: false,
       departmentName: "Tendering",
+      selectedTemplateId: "template-1",
+      workflowEditorTab: "canvas",
+      shouldResetCanvasView: true,
     },
   );
 });

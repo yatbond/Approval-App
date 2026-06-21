@@ -1388,3 +1388,34 @@ Verification:
 - `npm run build`: passed. Webpack emitted the known non-fatal cache `ENOENT` warning after the successful route summary.
 - Live browser preview: passed; tab row showed Template Builder, Canvas, Template Library; Canvas footer showed `Publish`; no `Publish version` button remained; no console errors.
 - Autoreview: passed with no actionable findings.
+
+## Step 52 - Template Library Load and Canvas Copy Workflow
+
+Status: complete.
+
+Plan:
+- Fix Template Library `Load` so it selects the loaded template and opens the Canvas, not only the builder metadata.
+- Add a Canvas control that copies another template's workflow structure into the current template while preserving the current template identity.
+- Keep the current template's id, name, business, department, version, and draft/published state when copying from another template.
+- Verify with red/green focused tests, typegen/typecheck, lint, full tests, build, live browser preview, autoreview, and commit.
+
+Root cause:
+- `loadTemplateIntoBuilder` only applied template name, business, and department to the builder fields. It did not call `setSelectedTemplateId`, so the Canvas continued to render the previously selected workflow.
+
+Implementation notes:
+- Extended `getWorkflowTemplateLoadState` to return the loaded template id, Canvas target tab, and canvas-reset intent.
+- Added `src/lib/workflow-template-copy-state.ts` for copying graph, documents, fields, languages, document types, and legacy steps from a source template into the current template.
+- Added a Canvas `Copy workflow from template` selector and `Copy into canvas` action.
+- Rewired Template Library `Load` through the load state so it selects the loaded template, switches to Canvas, and resets transient canvas selection.
+
+Verification:
+- Red step: focused load-state tests failed before the helper returned selected template id, Canvas tab, and reset intent.
+- Red step: focused copy-state test failed before `workflow-template-copy-state.ts` existed.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-template-load-state.test.mjs src/lib/workflow-template-copy-state.test.mjs`: passed, 4/4.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: initially caught an unnecessary setState-in-effect for the copy source default; removed the effect and used derived fallback state.
+- `npm run lint`: passed.
+- `npm test -- --runInBand`: passed, 224/224.
+- `npm run build`: passed. Webpack emitted the known non-fatal cache `ENOENT` warning after the successful route summary.
+- Live browser preview: passed; Template Library `Load` switched the active workflow editor tab to Canvas, Canvas displayed `Copy workflow from template` and `Copy into canvas`, and no console errors were reported.
+- Autoreview: passed with no actionable findings.

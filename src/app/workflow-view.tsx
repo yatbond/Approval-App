@@ -73,6 +73,7 @@ import {
   getWorkflowUpdateDocumentRequirementState,
 } from "@/lib/workflow-template-document-state";
 import { getWorkflowTemplateLoadState } from "@/lib/workflow-template-load-state";
+import { getWorkflowTemplateCopyState } from "@/lib/workflow-template-copy-state";
 import { getWorkflowTemplateSaveState } from "@/lib/workflow-template-save-state";
 import {
   getWorkflowCreateTemplateActionState,
@@ -236,6 +237,16 @@ export function WorkflowView({
   const [departmentName, setDepartmentName] = useState(
     selectedBusiness?.departments[0] || "",
   );
+  const copySourceTemplates = useMemo(
+    () => workflowTemplates.filter((template) => template.id !== workflow?.id),
+    [workflowTemplates, workflow?.id],
+  );
+  const [copySourceTemplateId, setCopySourceTemplateId] = useState("");
+  const copySourceTemplate =
+    copySourceTemplates.find((template) => template.id === copySourceTemplateId) ||
+    copySourceTemplates[0] ||
+    null;
+  const copySourceTemplateSelectValue = copySourceTemplate?.id || "";
 
   function createTemplate() {
     const nextState = getWorkflowCreateTemplateActionState({
@@ -272,6 +283,31 @@ export function WorkflowView({
       setBusinessId(nextState.businessId);
     }
     setDepartmentName(nextState.departmentName);
+    setSelectedTemplateId(nextState.selectedTemplateId);
+    setWorkflowEditorTab(nextState.workflowEditorTab);
+    if (nextState.shouldResetCanvasView) {
+      resetCanvasView();
+    }
+  }
+
+  function copyTemplateIntoCanvas() {
+    if (!workflow || !copySourceTemplate) {
+      return;
+    }
+
+    const nextState = getWorkflowTemplateCopyState({
+      targetTemplate: workflow,
+      sourceTemplate: copySourceTemplate,
+    });
+    if (!nextState.didCopy) {
+      return;
+    }
+
+    saveWorkflowTemplate(nextState.template, nextState.label);
+    setWorkflowEditorTab(nextState.workflowEditorTab);
+    if (nextState.shouldResetCanvasView) {
+      resetCanvasView();
+    }
   }
 
   function saveWorkflowTemplate(
@@ -756,6 +792,36 @@ export function WorkflowView({
                 onResetView={resetCanvasView}
                 onRunWorkflowAction={onRunWorkflowAction}
               />
+              {copySourceTemplates.length > 0 && (
+                <div className="mb-3 flex flex-col gap-2 rounded-md border border-white/10 bg-[#121518] p-3 sm:flex-row sm:items-end">
+                  <label className="min-w-0 flex-1">
+                    <span className="mb-1 block text-xs text-neutral-400">
+                      Copy workflow from template
+                    </span>
+                    <select
+                      value={copySourceTemplateSelectValue}
+                      onChange={(event) => setCopySourceTemplateId(event.target.value)}
+                      className="h-10 w-full rounded-md border border-white/10 bg-[#0d1013] px-3 text-sm outline-none focus:border-emerald-400/60"
+                    >
+                      {copySourceTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={copyTemplateIntoCanvas}
+                    disabled={!copySourceTemplate}
+                    title="Copy the selected template workflow into the current canvas while keeping this template's name, business, and department."
+                    className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-4 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <ArrowRightLeft size={15} />
+                    Copy into canvas
+                  </button>
+                </div>
+              )}
               <WorkflowCanvas
                 graph={workflowGraph}
                 runtimeTask={runtimeTask}
