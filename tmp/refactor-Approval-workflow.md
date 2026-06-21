@@ -1244,3 +1244,28 @@ Verification:
 - `npm test -- --runInBand`: passed, 202/202.
 - `npm run build`: passed. Webpack emitted a non-fatal cache `ENOENT` warning after the successful route summary.
 - Autoreview: passed with no Critical, Important, or Minor findings.
+
+## Step 47 - Workspace Parse File State Boundary
+
+Status: complete.
+
+Plan:
+- Extract parse-file UI state transitions and stored attachment record creation out of `ApprovalWorkspaceBody`.
+- Preserve parse start reset behavior, upload attachment appending, parse success state, and existing parse/upload error handling.
+- Keep async upload and parse API orchestration in the component for now.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workspace-parse-file-state.test.mjs`; verified the focused test failed before the helper module existed.
+- Added `src/lib/workspace-parse-file-state.ts` with `getWorkspaceParseFileStartState`, `getWorkspaceParseFileStoredAttachmentState`, and `getWorkspaceParseFileSuccessState`.
+- Rewired `parseFile` in `src/app/approval-workspace.tsx` to apply returned helper state instead of directly resetting parse state, creating attachment records, and mapping parse payload fields.
+
+Verification:
+- Red step: `node --experimental-strip-types --test src/lib/workspace-parse-file-state.test.mjs` failed with missing module before implementation.
+- `node --experimental-strip-types --test src/lib/workspace-parse-file-state.test.mjs`: passed, 4/4.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated parse/upload behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 206/206.
+- `npm run build`: passed. Webpack emitted a non-fatal cache `ENOENT` warning after the successful route summary.
+- Autoreview: passed with no Critical, Important, or Minor findings.

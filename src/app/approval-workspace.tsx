@@ -24,7 +24,6 @@ import {
   shouldHandleCanvasUndoKey,
 } from "@/lib/workflow-keyboard";
 import {
-  createAttachmentRecord,
   documentFormatOptions,
 } from "@/lib/workflow-documents";
 import {
@@ -32,6 +31,11 @@ import {
   type ParsedWorkspaceFilePayload,
   uploadWorkspaceAttachmentFile,
 } from "@/lib/workspace-file-api";
+import {
+  getWorkspaceParseFileStartState,
+  getWorkspaceParseFileStoredAttachmentState,
+  getWorkspaceParseFileSuccessState,
+} from "@/lib/workspace-parse-file-state";
 import {
   getConditionContext,
   workflowNodeOptions,
@@ -347,12 +351,13 @@ function ApprovalWorkspaceBody({
     file: File,
     documentRequirement?: WorkflowDocumentRequirement,
   ) {
-    setFileName(file.name);
-    setParseError("");
-    setSubmissionMessage("");
-    setIsParsing(true);
-    setParseResult(null);
-    setEditedFields({});
+    const startState = getWorkspaceParseFileStartState(file);
+    setFileName(startState.fileName);
+    setParseError(startState.parseError);
+    setSubmissionMessage(startState.submissionMessage);
+    setIsParsing(startState.isParsing);
+    setParseResult(startState.parseResult);
+    setEditedFields(startState.editedFields);
     let storage: Awaited<ReturnType<typeof uploadWorkspaceAttachmentFile>> | null = null;
     try {
       storage = await uploadWorkspaceAttachmentFile({
@@ -367,24 +372,24 @@ function ApprovalWorkspaceBody({
       return;
     }
 
-    if (selectedTemplate) {
-      setUploadedAttachments((items) => [
-        ...items,
-        createAttachmentRecord({
-          file,
-          documentRequirement,
-          template: selectedTemplate,
-          uploadedBy: activeUser.email,
-          storagePath: storage?.storagePath,
-          publicUrl: storage?.publicUrl,
-        }),
-      ]);
-    }
+    setUploadedAttachments((items) =>
+      getWorkspaceParseFileStoredAttachmentState({
+        uploadedAttachments: items,
+        selectedTemplate,
+        file,
+        documentRequirement,
+        activeUser,
+        storagePath: storage?.storagePath,
+        publicUrl: storage?.publicUrl,
+      }).uploadedAttachments,
+    );
 
     try {
       const payload = await parseWorkspaceFile({ file });
-      setParseResult(payload);
-      setEditedFields(payload.fields || {});
+      const successState = getWorkspaceParseFileSuccessState(payload);
+      setParseResult(successState.parseResult);
+      setEditedFields(successState.editedFields);
+      setIsParsing(successState.isParsing);
     } catch (error) {
       setParseError(error instanceof Error ? error.message : "Unable to parse file.");
     } finally {
