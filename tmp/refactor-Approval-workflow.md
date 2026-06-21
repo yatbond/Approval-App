@@ -693,3 +693,28 @@ Verification:
 - `npm test -- --runInBand`: passed, 144/144.
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 25 findings.
+
+## Step 26 - Workflow Runner Action Actor Boundary
+
+Status: complete.
+
+Plan:
+- Extract workflow runner simulation actor resolution out of `ApprovalWorkspaceBody.runWorkflowAction`.
+- Preserve requester actor behavior for amend/cancel and current-owner/pending-owner/fallback behavior for normal workflow actions.
+- Keep `applyTaskAction` inputs unchanged other than delegating the actor object construction.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-runner-action-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-runner-action-state.ts` for workflow runner action actor selection.
+- Rewired `runWorkflowAction` in `src/app/approval-workspace.tsx` to call `getWorkflowRunnerActionActor`.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-runner-action-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-runner-action-state.test.mjs`: passed, 2/2.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated workflow runner behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 146/146.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 26 findings.

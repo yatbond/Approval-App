@@ -100,6 +100,7 @@ import { getWorkflowCanvasSelectionState } from "@/lib/workflow-canvas-selection
 import { getWorkflowCanvasInstanceKey } from "@/lib/workflow-canvas-instance-state";
 import { getApprovalWorkspaceTaskState } from "@/lib/approval-workspace-task-state";
 import { attachDocumentToTaskState } from "@/lib/task-document-attachment-state";
+import { getWorkflowRunnerActionActor } from "@/lib/workflow-runner-action-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -349,14 +350,11 @@ function ApprovalWorkspaceBody({
     }
 
     const template = findTemplateForTask(task, templates);
-    const actorEmail =
-      action === "amend_resubmit" || action === "cancel"
-        ? task.requesterEmail
-        : task.currentOwner || task.pendingOwners?.[0] || activeUser.email;
-    const actor = {
-      email: actorEmail,
-      name: actorEmail === task.requesterEmail ? task.requester : actorEmail,
-    };
+    const actor = getWorkflowRunnerActionActor({
+      task,
+      action,
+      fallbackEmail: activeUser.email,
+    });
     const nextTask = applyTaskAction(task, {
       action,
       actor,
