@@ -91,6 +91,8 @@ import { UploadView } from "@/app/upload-view";
 import { AdminView } from "@/app/admin-view";
 import { ConditionBoxDetails } from "@/app/condition-box-details";
 import { WorkflowTemplateLibrary } from "@/app/workflow-template-library";
+import { WorkflowTemplateBuilder } from "@/app/workflow-template-builder";
+import { getWorkflowTemplateBuilderBusinessState } from "@/lib/workflow-template-builder-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -900,8 +902,10 @@ function WorkflowView({
   const firstBusiness = businessDirectory[0];
   const [templateName, setTemplateName] = useState("General document approval");
   const [businessId, setBusinessId] = useState(firstBusiness?.id || "");
-  const selectedBusiness =
-    businessDirectory.find((business) => business.id === businessId) || firstBusiness;
+  const { selectedBusiness } = getWorkflowTemplateBuilderBusinessState({
+    businessDirectory,
+    businessId,
+  });
   const [departmentName, setDepartmentName] = useState(
     selectedBusiness?.departments[0] || "",
   );
@@ -2400,74 +2404,16 @@ function WorkflowView({
       </section>
 
       {workflowEditorTab === "builder" && (
-      <section className="rounded-md border border-white/10 bg-white/[0.03] p-4">
-        <h2 className="font-semibold">Template builder</h2>
-        <div className="mt-4 space-y-3">
-          <label className="block">
-            <span className="mb-1 block text-xs text-neutral-400">Template name</span>
-            <input
-              value={templateName}
-              onChange={(event) => setTemplateName(event.target.value)}
-              className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs text-neutral-400">Business</span>
-            <select
-              value={businessId}
-              onChange={(event) => {
-                const nextBusiness = businessDirectory.find(
-                  (business) => business.id === event.target.value,
-                );
-                setBusinessId(event.target.value);
-                setDepartmentName(nextBusiness?.departments[0] || "");
-              }}
-              className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
-            >
-              {businessDirectory.map((business) => (
-                <option key={business.id} value={business.id}>
-                  {business.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs text-neutral-400">Department</span>
-            {selectedBusiness?.departments.length ? (
-              <select
-                value={departmentName}
-                onChange={(event) => setDepartmentName(event.target.value)}
-                className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
-              >
-                {selectedBusiness.departments.map((department) => (
-                  <option key={department} value={department}>
-                    {department}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                value={departmentName}
-                onChange={(event) => setDepartmentName(event.target.value)}
-                placeholder="Add department name"
-                className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
-              />
-            )}
-          </label>
-          <div className="rounded-md border border-sky-400/30 bg-sky-400/10 p-3 text-sm text-sky-100">
-            Add approval, review, and for-information boxes on the Canvas tab.
-            Select a box to set people, due hours, escalation, and document uploads.
-          </div>
-          <button
-            type="button"
-            onClick={createTemplate}
-            className="flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 py-2 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
-          >
-            <Plus size={16} />
-            Create template
-          </button>
-        </div>
-      </section>
+        <WorkflowTemplateBuilder
+          templateName={templateName}
+          setTemplateName={setTemplateName}
+          businessDirectory={businessDirectory}
+          businessId={businessId}
+          setBusinessId={setBusinessId}
+          departmentName={departmentName}
+          setDepartmentName={setDepartmentName}
+          onCreateTemplate={createTemplate}
+        />
       )}
     </div>
   );

@@ -404,3 +404,30 @@ Verification:
 - `npm run build`: passed.
 - Live Template Library preview after production build: passed, no browser console errors; template cards, business/department labels, counts, Load, and Delete controls visible.
 - Final autoreview: passed with no actionable Step 14 findings. Noted residual gaps: no rendered UI interaction tests for selecting a template card, Load, Delete, or empty-library state.
+
+## Step 15 - Workflow Template Builder Boundary
+
+Status: complete.
+
+Plan:
+- Extract the Workflow tab Template Builder pane out of `approval-workspace.tsx`.
+- Add a pure helper for selected business fallback, department options, and business-change department defaults.
+- Preserve template name, business, department, create-template behavior, and department select/text input behavior.
+- Verify with red/green helper tests, typecheck, lint, live Template Builder preview, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-template-builder-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-template-builder-state.ts` for builder business and department state.
+- Added `src/app/workflow-template-builder.tsx` for the Template Builder pane.
+- Rewired `src/app/approval-workspace.tsx` to render `WorkflowTemplateBuilder`.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-template-builder-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-template-builder-state.test.mjs`: passed, 4/4.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live Template Builder preview before full build: passed, no browser console errors; template name, business, department, and Create template controls visible.
+- `npm test -- --runInBand`: passed, 115/115.
+- `npm run build`: passed.
+- Live Template Builder preview after production build: passed, no browser console errors; template name, business, department, and Create template controls visible.
+- Final autoreview: passed with no actionable Step 15 findings. Noted residual gaps: no rendered UI interaction tests for editing template name/business/department, department reset on business change, Create Template payload, or free-text department path.
