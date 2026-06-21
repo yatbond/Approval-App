@@ -321,3 +321,35 @@ Verification:
 - `npm run build`: passed.
 - Live Admin preview after production build: passed, no browser console errors; businesses, departments, role management, notifications, and delegation sections visible.
 - Final autoreview: passed with no actionable Step 11 findings. Noted residual gaps: no UI-level Admin edit-flow test and no rendered Admin tab regression test.
+
+## Step 12 - Condition Routing State Boundary
+
+Status: complete.
+
+Plan:
+- Extract condition-routing ordering, display names, nicknames, target filtering, and rule summary wording into a pure helper.
+- Keep the existing Box Details UI in place while removing local derived-state logic from `approval-workspace.tsx`.
+- Preserve condition case ordering, fallback labeling, approval-count wording, numeric rule wording, and available outcome targets.
+- Verify with red/green helper tests, typecheck, lint, live Workflow condition preview, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/condition-routing-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/condition-routing-state.ts` for condition case ordering, display/nickname handling, summary wording, and available target filtering.
+- Rewired `ConditionBoxDetails` in `src/app/approval-workspace.tsx` to use the extracted routing helper functions.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/condition-routing-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/condition-routing-state.test.mjs`: passed, 4/4.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live Workflow condition preview before full build: passed, no browser console errors; selecting a condition node showed Box details, Condition rules, upstream approvals, downstream outcome boxes, parsed numeric values, and Add condition controls.
+- `npm test -- --runInBand`: passed, 106/106.
+- `npm run build`: passed.
+- Live Workflow condition preview after production build: passed, no browser console errors; selecting a condition node showed Box details, Condition rules, upstream approvals, downstream outcome boxes, parsed numeric values, and Add condition controls.
+- Autoreview: passed with no actionable Step 12 findings. Review noted residual pure-helper gaps for exact approval count, OR join, fallback, and no-rule summaries.
+- Added those pure-helper cases after autoreview.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/condition-routing-state.test.mjs`: passed, 6/6 after added cases.
+- `npx tsc --noEmit`: passed after added cases.
+- `npm run lint`: passed after added cases.
+- `npm test -- --runInBand`: passed, 108/108 after added cases.
+- Final residual gap: no UI-level regression test confirming the rendered condition panel shows ordering, nicknames, summary text, and available outcome targets correctly.

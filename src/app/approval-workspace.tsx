@@ -65,6 +65,12 @@ import {
   workflowNodeOptions,
 } from "@/lib/workflow-condition-context";
 import {
+  describeConditionCase,
+  getConditionDisplayName,
+  getConditionNickname,
+  getConditionRoutingState,
+} from "@/lib/condition-routing-state";
+import {
   getWorkflowHistory,
   recordWorkflowHistoryEdit,
   redoWorkflowHistory,
@@ -794,77 +800,10 @@ function ConditionBoxDetails({
   ) => void;
   onStartOutcomePick: (caseId: string) => void;
 }) {
-  const availableTargets = graph.nodes.filter(
-    (node) => node.kind !== "start" && node.kind !== "condition",
-  );
-  const conditionCases = [
-    ...(conditionNode.conditionCases || []).filter(
-      (conditionCase) => !conditionCase.isFallback,
-    ),
-    ...(conditionNode.conditionCases || []).filter(
-      (conditionCase) => conditionCase.isFallback,
-    ),
-  ];
-  const explicitConditionCases = conditionCases.filter(
-    (conditionCase) => !conditionCase.isFallback,
-  );
-  const upstreamNodeLabelById = new Map(
-    context.upstreamNodes.map((node) => [node.id, node.label]),
-  );
-  const numericFieldLabelByName = new Map(
-    context.numericFields.map((field) => [field.name, field.label]),
-  );
-  const getConditionDisplayName = (conditionCase: (typeof conditionCases)[number]) =>
-    conditionCase.isFallback
-      ? "All other conditions"
-      : `Condition ${
-          explicitConditionCases.findIndex((item) => item.id === conditionCase.id) + 1
-        }`;
-  const getConditionNickname = (conditionCase: (typeof conditionCases)[number]) => {
-    if (conditionCase.isFallback) {
-      return "";
-    }
-
-    const nickname = conditionCase.name.trim();
-    return /^condition\s+\d+$/i.test(nickname) ? "" : nickname;
-  };
-  const describeConditionCase = (conditionCase: (typeof conditionCases)[number]) => {
-    if (conditionCase.isFallback) {
-      return "Routes every request that does not match a numbered condition.";
-    }
-
-    const parts: string[] = [];
-    const approvalRule = conditionCase.approvalRule;
-    if (approvalRule?.upstreamNodeIds.length) {
-      const reviewers = approvalRule.upstreamNodeIds
-        .map((nodeId) => upstreamNodeLabelById.get(nodeId) || nodeId)
-        .join(", ");
-      if (conditionCase.isApprovalCount) {
-        parts.push(
-          `${approvalRule.mode === "exactly" ? "Exactly" : "At least"} ${
-            approvalRule.minimumApproved
-          } of ${approvalRule.upstreamNodeIds.length} approve (${reviewers})`,
-        );
-      } else {
-        parts.push(`${reviewers} must approve`);
-      }
-    }
-
-    const numericRule = conditionCase.numericRule;
-    if (numericRule?.field) {
-      parts.push(
-        `${numericFieldLabelByName.get(numericRule.field) || numericRule.field} ${
-          numericRule.operator
-        } ${numericRule.value || "value"}`,
-      );
-    }
-
-    if (!parts.length) {
-      return "No rule configured yet.";
-    }
-
-    return parts.join(conditionCase.join === "or" ? " OR " : " AND ");
-  };
+  const { availableTargets, conditionCases } = getConditionRoutingState({
+    graph,
+    conditionNode,
+  });
 
   return (
     <div className="rounded-md border border-amber-400/30 bg-amber-400/10 p-3">
@@ -986,7 +925,7 @@ function ConditionBoxDetails({
                       title="Condition names are assigned automatically so the list stays easy to count."
                       className="flex h-8 w-full items-center rounded-md border border-white/10 bg-[#121518] px-2 text-xs font-semibold text-neutral-200"
                     >
-                      {getConditionDisplayName(conditionCase)}
+                      {getConditionDisplayName(conditionCases, conditionCase)}
                       {getConditionNickname(conditionCase)
                         ? ` - ${getConditionNickname(conditionCase)}`
                         : ""}
@@ -997,7 +936,9 @@ function ConditionBoxDetails({
                         title="Optional nickname. The condition number remains automatic."
                         onChange={(event) =>
                           onUpdateCase(conditionCase.id, {
-                            name: event.target.value || getConditionDisplayName(conditionCase),
+                            name:
+                              event.target.value ||
+                              getConditionDisplayName(conditionCases, conditionCase),
                           })
                         }
                         placeholder="Nickname (optional)"
@@ -1010,7 +951,7 @@ function ConditionBoxDetails({
                         : `Outcome: ${conditionCase.targetNodeIds.length} box(es)`}
                     </p>
                     <p className="mt-1 break-words text-[11px] text-neutral-400">
-                      {describeConditionCase(conditionCase)}
+                      {describeConditionCase({ conditionCase, context })}
                     </p>
                   </div>
                   <button
