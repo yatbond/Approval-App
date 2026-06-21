@@ -108,6 +108,7 @@ import {
   getWorkflowCreateNodeState,
 } from "@/lib/workflow-canvas-edit-state";
 import { getWorkflowAddBoxDocumentState } from "@/lib/workflow-box-document-state";
+import { getWorkflowTemplateDocumentState } from "@/lib/workflow-template-document-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -977,12 +978,11 @@ function WorkflowView({
     }
 
     const nextDocuments = updater(workflow.documents);
-    saveWorkflowTemplate({
-      ...workflow,
-      documentTypes: nextDocuments.map((document) => document.documentType),
+    const nextState = getWorkflowTemplateDocumentState({
+      template: workflow,
       documents: nextDocuments,
-      fields: nextDocuments.flatMap((document) => document.fields),
-    }, "Updated document requirements");
+    });
+    saveWorkflowTemplate(nextState.template, nextState.label);
   }
 
   function updateBoxDocumentRequirement(

@@ -828,7 +828,7 @@ Verification:
 
 ## Step 31 - Workflow Box Document State Boundary
 
-Status: in review.
+Status: complete.
 
 Plan:
 - Extract add-document-to-selected-box state out of `WorkflowView`.
@@ -853,3 +853,28 @@ Verification:
 - `npm test -- --runInBand`: passed, 162/162 after review fixes.
 - `npm run build`: passed.
 - Final autoreview: initial P2 behavior finding was fixed; final re-review had no code findings and only noted stale tracker counts, now corrected.
+
+## Step 32 - Workflow Template Document State Boundary
+
+Status: in review.
+
+Plan:
+- Extract template document summary rebuilding out of `WorkflowView.updateTemplateDocuments`.
+- Preserve documentTypes derivation, document list replacement, flattened template fields, and save label.
+- Keep persistence and updater execution in the component.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-template-document-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-template-document-state.ts` for rebuilding the template document summary fields.
+- Rewired `updateTemplateDocuments` in `src/app/approval-workspace.tsx` to call `getWorkflowTemplateDocumentState`.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-template-document-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-template-document-state.test.mjs`: passed, 2/2.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated document summary editing was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 164/164.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 32 findings.
