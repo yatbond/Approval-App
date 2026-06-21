@@ -102,3 +102,28 @@ Verification:
 - Live Workflow preview: passed, no browser console errors.
 - Live Admin preview: passed, no browser console errors.
 - Final autoreview: passed with no actionable Step 3 findings.
+
+## Step 4 - User Directory Boundary
+
+Status: complete.
+
+Plan:
+- Extract user-directory and default role-assignment construction from `approval-workspace.tsx`.
+- Add focused tests for role precedence, graph-derived roles, and default business/department assignment.
+- Keep Admin and workflow page props using the same `UserDirectoryEntry` contract from the new library.
+- Verify with typecheck, full tests, lint, build, live browser preview, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/user-directory.ts` for user directory collection and default role assignment.
+- Added `src/lib/user-directory.test.mjs` for focused coverage.
+- Rewired `approval-workspace.tsx` to import the extracted helpers and type.
+
+Verification:
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/user-directory.test.mjs`: passed, 4/4.
+- `npx tsc --noEmit`: passed.
+- `npm test -- --runInBand`: passed, 79/79.
+- `npm run lint`: passed.
+- `npm run build`: passed. Webpack emitted a non-fatal cache warning after successful build completion.
+- Live Workflow preview: passed, no browser console errors.
+- Live Admin preview: passed, no browser console errors.
+- Final autoreview: passed with no actionable Step 4 findings.
