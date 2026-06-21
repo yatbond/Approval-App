@@ -29,8 +29,6 @@ import {
   analyzeConditionCoverage,
   deleteWorkflowConditionCase,
   createWorkflowGraphFromTemplate,
-  deleteWorkflowBranch,
-  deleteWorkflowNode,
   simulateWorkflowTemplate,
   updateWorkflowConditionCase,
   updateWorkflowDocumentRequirement,
@@ -98,6 +96,7 @@ import {
 } from "@/lib/workspace-template-record-state";
 import { getWorkflowCanvasSelectionState } from "@/lib/workflow-canvas-selection-state";
 import { getWorkflowCanvasInstanceKey } from "@/lib/workflow-canvas-instance-state";
+import { getWorkflowCanvasDeleteState } from "@/lib/workflow-canvas-delete-state";
 import { getApprovalWorkspaceTaskState } from "@/lib/approval-workspace-task-state";
 import { attachDocumentToTaskState } from "@/lib/task-document-attachment-state";
 import { getWorkflowRunnerActionActor } from "@/lib/workflow-runner-action-state";
@@ -1083,25 +1082,20 @@ function WorkflowView({
   }
 
   function deleteSelectedCanvasItem() {
-    if (selectedGraphNode && selectedGraphNode.id !== "start") {
-      saveWorkflowGraph(
-        deleteWorkflowNode(workflowGraph, selectedGraphNode.id),
-        `Deleted ${selectedGraphNode.label}`,
-      );
-      setSelectedNodeId(null);
-      if (connectFromNodeId === selectedGraphNode.id) {
-        setConnectFromNodeId(null);
-      }
+    const deleteState = getWorkflowCanvasDeleteState({
+      graph: workflowGraph,
+      selectedNodeId,
+      selectedEdgeId,
+      connectFromNodeId,
+    });
+    if (!deleteState.didDelete) {
       return;
     }
 
-    if (selectedGraphEdge) {
-      saveWorkflowGraph(
-        deleteWorkflowBranch(workflowGraph, selectedGraphEdge.id),
-        `Deleted ${selectedGraphEdge.label} branch`,
-      );
-      setSelectedEdgeId(null);
-    }
+    saveWorkflowGraph(deleteState.graph, deleteState.label);
+    setSelectedNodeId(deleteState.selectedNodeId);
+    setSelectedEdgeId(deleteState.selectedEdgeId);
+    setConnectFromNodeId(deleteState.connectFromNodeId);
   }
 
   useEffect(() => {

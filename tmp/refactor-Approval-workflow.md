@@ -718,3 +718,28 @@ Verification:
 - `npm test -- --runInBand`: passed, 146/146.
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 26 findings.
+
+## Step 27 - Workflow Canvas Delete State Boundary
+
+Status: complete.
+
+Plan:
+- Extract selected canvas item deletion orchestration out of `WorkflowView`.
+- Preserve non-start node deletion, start-node protection, edge deletion fallback, and selection/connect-source cleanup.
+- Reuse the existing workflow graph deletion helpers from a pure state helper.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-canvas-delete-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-canvas-delete-state.ts` for selected canvas delete decisions.
+- Rewired `deleteSelectedCanvasItem` in `src/app/approval-workspace.tsx` to call `getWorkflowCanvasDeleteState`.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-canvas-delete-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-canvas-delete-state.test.mjs`: passed, 3/3.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated canvas delete behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 149/149.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 27 findings.
