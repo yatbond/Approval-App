@@ -29,7 +29,6 @@ import {
   updateWorkflowConditionCase,
   updateWorkflowDocumentRequirement,
   updateWorkflowGraphEdge,
-  updateWorkflowGraphNode,
 } from "@/lib/workflow-graph";
 import {
   shouldHandleCanvasDeleteKey,
@@ -112,6 +111,10 @@ import {
   getWorkflowRedoActionState,
   getWorkflowUndoActionState,
 } from "@/lib/workflow-history-action-state";
+import {
+  getWorkflowMoveNodeState,
+  getWorkflowUpdateSelectedNodeState,
+} from "@/lib/workflow-node-patch-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -934,24 +937,26 @@ function WorkflowView({
   }
 
   function moveWorkflowNode(nodeId: string, x: number, y: number) {
-    saveWorkflowGraph(
-      updateWorkflowGraphNode(workflowGraph, nodeId, {
-        x,
-        y,
-      }),
-      "Moved workflow box",
-    );
+    const nextState = getWorkflowMoveNodeState({
+      graph: workflowGraph,
+      nodeId,
+      x,
+      y,
+    });
+    saveWorkflowGraph(nextState.graph, nextState.label);
   }
 
   function updateSelectedNode(patch: Partial<WorkflowGraphNode>) {
-    if (!selectedGraphNode) {
+    const nextState = getWorkflowUpdateSelectedNodeState({
+      graph: workflowGraph,
+      selectedNode: selectedGraphNode,
+      patch,
+    });
+    if (!nextState.didUpdate) {
       return;
     }
 
-    saveWorkflowGraph(
-      updateWorkflowGraphNode(workflowGraph, selectedGraphNode.id, patch),
-      `Updated ${selectedGraphNode.label}`,
-    );
+    saveWorkflowGraph(nextState.graph, nextState.label);
   }
 
   function addDocumentToSelectedBox() {

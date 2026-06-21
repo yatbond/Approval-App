@@ -959,3 +959,29 @@ Verification:
 - `npm test -- --runInBand`: passed, 171/171.
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 35 findings.
+
+## Step 36 - Workflow Node Patch State Boundary
+
+Status: complete.
+
+Plan:
+- Extract workflow node move and selected-node patch state out of `WorkflowView`.
+- Preserve move label, selected-node update label, missing-selected-node no-op behavior, and graph node patching through the existing graph helper.
+- Keep persistence through `saveWorkflowGraph` in the component.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-node-patch-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-node-patch-state.ts` for move-node and selected-node patch state.
+- Rewired `moveWorkflowNode` and `updateSelectedNode` in `src/app/approval-workspace.tsx` to call the helper.
+- Removed the now-unused `updateWorkflowGraphNode` import from the component.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-node-patch-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-node-patch-state.test.mjs`: passed, 3/3.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated node move/edit behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 174/174.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 36 findings.
