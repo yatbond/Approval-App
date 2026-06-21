@@ -11,9 +11,6 @@ import {
   notifications,
 } from "@/lib/mock-data";
 import {
-  applyTaskAction,
-} from "@/lib/approval-state";
-import {
   getMissingRequiredCurrentNodeDocuments,
 } from "@/lib/request-builder";
 import {
@@ -42,9 +39,6 @@ import {
   buildTaskNotifications,
 } from "@/lib/workflow-system";
 import {
-  findTemplateForTask,
-} from "@/lib/task-display";
-import {
   type UserDirectoryEntry,
 } from "@/lib/user-directory";
 import { useApprovalWorkspaceState } from "@/app/use-approval-workspace-state";
@@ -72,7 +66,6 @@ import {
   type WorkspaceTab,
 } from "@/app/workspace-shell";
 import { getWorkspaceShellState } from "@/lib/workspace-shell-state";
-import { getTaskActionPreflightState } from "@/lib/task-action-state";
 import {
   getCreatedTemplateRecordState,
   getDeletedTemplateRecordState,
@@ -89,7 +82,10 @@ import { getWorkflowCanvasDeleteState } from "@/lib/workflow-canvas-delete-state
 import { getWorkflowCanvasResetState } from "@/lib/workflow-canvas-reset-state";
 import { getApprovalWorkspaceTaskState } from "@/lib/approval-workspace-task-state";
 import { attachDocumentToTaskState } from "@/lib/task-document-attachment-state";
-import { getWorkflowRunnerActionActor } from "@/lib/workflow-runner-action-state";
+import {
+  getWorkspaceRecordTaskActionState,
+  getWorkspaceRunnerTaskActionState,
+} from "@/lib/workspace-task-action-state";
 import {
   addWorkflowDocumentField,
   removeWorkflowDocumentField,
@@ -293,49 +289,32 @@ function ApprovalWorkspaceBody({
   }
 
   function recordAction(action: ApprovalAction) {
-    if (!selectedTask) {
-      return;
-    }
-
-    const selectedTemplateForTask = findTemplateForTask(selectedTask, templates);
-    const missingCurrentDocuments =
-      selectedTemplateForTask &&
-      (action === "approve" || action === "approve_with_comment")
-        ? getMissingRequiredCurrentNodeDocuments(
-            selectedTask,
-            selectedTemplateForTask,
-          )
-        : [];
-    const preflight = getTaskActionPreflightState({
+    const nextState = getWorkspaceRecordTaskActionState({
+      tasks,
+      selectedTask,
+      templates,
+      activeUser,
       action,
+      comment,
       targetEmail,
-      missingCurrentDocuments,
     });
-    if (!preflight.canProceed) {
-      if (preflight.errorMessage) {
-        setActionError(preflight.errorMessage);
+
+    if (!nextState.didApply) {
+      if (nextState.actionError) {
+        setActionError(nextState.actionError);
       }
       return;
     }
 
-    const nextTask = applyTaskAction(selectedTask, {
-      action,
-      actor: activeUser,
-      comment,
-      targetEmail,
-      template: selectedTemplateForTask,
-    });
-
-    const nextTasks = tasks.map((task) =>
-      task.id === selectedTask.id ? nextTask : task,
-    );
-    setTasks(nextTasks);
+    setTasks(nextState.tasks);
     void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
+      buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
     );
-    setComment("");
-    setTargetEmail("");
-    setActionError("");
+    if (nextState.shouldClearInputs) {
+      setComment("");
+      setTargetEmail("");
+    }
+    setActionError(nextState.actionError);
   }
 
   async function attachTaskDocument(
@@ -368,30 +347,24 @@ function ApprovalWorkspaceBody({
   }
 
   function runWorkflowAction(taskId: string, action: ApprovalAction) {
-    const task = tasks.find((item) => item.id === taskId);
-    if (!task) {
-      return;
-    }
-
-    const template = findTemplateForTask(task, templates);
-    const actor = getWorkflowRunnerActionActor({
-      task,
+    const nextState = getWorkspaceRunnerTaskActionState({
+      tasks,
+      templates,
+      taskId,
       action,
       fallbackEmail: activeUser.email,
     });
-    const nextTask = applyTaskAction(task, {
-      action,
-      actor,
-      comment: "Workflow runner simulation",
-      template,
-    });
+    if (!nextState.didApply) {
+      return;
+    }
 
-    const nextTasks = tasks.map((item) => (item.id === taskId ? nextTask : item));
-    setTasks(nextTasks);
+    setTasks(nextState.tasks);
     void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
+      buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
     );
-    setSelectedTaskId(taskId);
+    if (nextState.selectedTaskId) {
+      setSelectedTaskId(nextState.selectedTaskId);
+    }
   }
 
   async function parseFile(

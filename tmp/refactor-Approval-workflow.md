@@ -1192,3 +1192,29 @@ Verification:
 - `npm test -- --runInBand`: passed, 194/194.
 - `npm run build`: passed.
 - Autoreview: passed with no Critical, Important, or Minor findings; procedural staging note was addressed before commit.
+
+## Step 45 - Workspace Task Action State Boundary
+
+Status: complete.
+
+Plan:
+- Extract manual queue task action and workflow runner task action transitions out of `ApprovalWorkspaceBody`.
+- Preserve missing current-node document preflight, target-email blocking, action input clearing, selected task updates, and approval-task-only persistence payloads.
+- Keep React setters and `persistWorkspaceSnapshot` side effects in the component.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workspace-task-action-state.test.mjs`; verified the focused test failed before the helper module existed.
+- Added `src/lib/workspace-task-action-state.ts` with `getWorkspaceRecordTaskActionState` and `getWorkspaceRunnerTaskActionState`.
+- Rewired `recordAction` and `runWorkflowAction` in `src/app/approval-workspace.tsx` to call the helper, apply returned task state, and persist the returned task list.
+- Removed direct component imports of `applyTaskAction`, task-action preflight, task-template lookup, and workflow-runner actor selection from the affected action paths.
+
+Verification:
+- Red step: `node --experimental-strip-types --test src/lib/workspace-task-action-state.test.mjs` failed with missing module before implementation.
+- `node --experimental-strip-types --test src/lib/workspace-task-action-state.test.mjs`: passed, 3/3.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated task action behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 197/197.
+- `npm run build`: passed. Webpack emitted a non-fatal cache `ENOENT` warning after the successful route summary.
+- Autoreview: passed with no Critical, Important, or Minor findings.
