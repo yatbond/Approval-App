@@ -770,3 +770,30 @@ Verification:
 - `npm test -- --runInBand`: passed, 152/152.
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 28 findings.
+
+## Step 29 - Workflow Condition Case State Boundary
+
+Status: complete.
+
+Plan:
+- Extract add-condition and add-fallback condition case mutations out of `WorkflowView`.
+- Preserve condition-only guards, upstream approval defaults, fallback duplicate guard, fallback case shape, and save labels.
+- Keep condition context lookup and timestamp id generation at the component boundary.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-condition-case-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-condition-case-state.ts` for add-condition and add-fallback state helpers.
+- Rewired `addConditionCaseToSelectedBox` and `addFallbackConditionCaseToSelectedBox` in `src/app/approval-workspace.tsx` to call the helper.
+- Initial typecheck caught the moved guard no longer protecting `getConditionContext` from `null`; restored a selected-node guard before context lookup while leaving mutation logic delegated.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-condition-case-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-condition-case-state.test.mjs`: passed, 3/3.
+- First `npx next typegen && npx tsc --noEmit` failed because `getConditionContext` still requires a non-null selected node; adding the guard fixed the issue.
+- `npx next typegen && npx tsc --noEmit`: passed after the guard fix.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated condition-case editing was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 155/155.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 29 findings.

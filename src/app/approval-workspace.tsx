@@ -23,7 +23,6 @@ import {
 } from "@/lib/request-builder";
 import {
   addWorkflowBranch,
-  addWorkflowConditionCase,
   addWorkflowDocumentToNode,
   addWorkflowNode,
   analyzeConditionCoverage,
@@ -105,6 +104,10 @@ import {
   removeWorkflowDocumentField,
   updateWorkflowDocumentField,
 } from "@/lib/workflow-document-field-state";
+import {
+  getWorkflowAddConditionCaseState,
+  getWorkflowAddFallbackConditionCaseState,
+} from "@/lib/workflow-condition-case-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -908,48 +911,32 @@ function WorkflowView({
   }
 
   function addConditionCaseToSelectedBox() {
-    if (!selectedGraphNode || selectedGraphNode.kind !== "condition") {
+    if (!selectedGraphNode) {
       return;
     }
 
     const context = workflow
       ? getConditionContext(workflowGraph, workflow, selectedGraphNode)
       : null;
-    saveWorkflowGraph(
-      addWorkflowConditionCase(
-        workflowGraph,
-        selectedGraphNode.id,
-        context?.upstreamNodes.map((node) => node.id) || [],
-      ),
-      "Added condition",
-    );
+    const nextState = getWorkflowAddConditionCaseState({
+      graph: workflowGraph,
+      selectedNodeId,
+      upstreamNodeIds: context?.upstreamNodes.map((node) => node.id) || [],
+    });
+    if (nextState.didUpdate) {
+      saveWorkflowGraph(nextState.graph, nextState.label);
+    }
   }
 
   function addFallbackConditionCaseToSelectedBox() {
-    if (!selectedGraphNode || selectedGraphNode.kind !== "condition") {
-      return;
+    const nextState = getWorkflowAddFallbackConditionCaseState({
+      graph: workflowGraph,
+      selectedNodeId,
+      fallbackCaseId: `case-${Date.now()}-fallback`,
+    });
+    if (nextState.didUpdate) {
+      saveWorkflowGraph(nextState.graph, nextState.label);
     }
-
-    const existingCases = selectedGraphNode.conditionCases || [];
-    if (existingCases.some((conditionCase) => conditionCase.isFallback)) {
-      return;
-    }
-
-    saveWorkflowGraph(
-      updateWorkflowGraphNode(workflowGraph, selectedGraphNode.id, {
-        conditionCases: [
-          ...existingCases,
-          {
-            id: `case-${Date.now()}-fallback`,
-            name: "All other conditions",
-            isFallback: true,
-            join: "and",
-            targetNodeIds: [],
-          },
-        ],
-      }),
-      "Added all other outcome",
-    );
   }
 
   function moveWorkflowNode(nodeId: string, x: number, y: number) {
