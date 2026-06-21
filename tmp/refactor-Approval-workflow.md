@@ -1269,3 +1269,28 @@ Verification:
 - `npm test -- --runInBand`: passed, 206/206.
 - `npm run build`: passed. Webpack emitted a non-fatal cache `ENOENT` warning after the successful route summary.
 - Autoreview: passed with no Critical, Important, or Minor findings.
+
+## Step 48 - Workflow View Component Boundary
+
+Status: complete.
+
+Plan:
+- Move the workflow editor component out of `src/app/approval-workspace.tsx` into its own app component module.
+- Keep the workspace shell responsible for workspace tabs, request upload, queue, tracking, admin, and persistence wiring.
+- Keep the workflow editor responsible for canvas, template builder/library, runtime panel, condition details, and workflow-local state.
+- Verify with typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/app/workflow-view.tsx` and moved `WorkflowView`, `WorkflowCanvas`, workflow editor tabs, and workflow-editor-only imports into it.
+- Replaced the local `WorkflowView` definition in `src/app/approval-workspace.tsx` with an import from `@/app/workflow-view`.
+- Trimmed workflow-editor-only imports from `src/app/approval-workspace.tsx`.
+- Reduced `src/app/approval-workspace.tsx` from 1,753 lines to 478 lines; `src/app/workflow-view.tsx` is 1,285 lines after the split.
+- This was a mechanical component boundary move with no intended behavior change, so no new unit behavior test was added for the move itself.
+
+Verification:
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed after removing stale imports from the shell file.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated workflow editor rendering was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 206/206.
+- `npm run build`: passed. Webpack emitted a non-fatal cache `ENOENT` warning after the successful route summary.
+- Autoreview: passed with no Critical, Important, or Minor findings.
