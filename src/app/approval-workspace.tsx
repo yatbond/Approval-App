@@ -76,6 +76,13 @@ import {
   shouldHandleCanvasUndoKey,
 } from "@/lib/workflow-keyboard";
 import {
+  acceptForDocumentFormat,
+  createAttachmentRecord,
+  documentFormatOptions,
+  fieldSourceForDocumentFormat,
+  formatDocumentFormat,
+} from "@/lib/workflow-documents";
+import {
   getWorkflowHistory,
   recordWorkflowHistoryEdit,
   redoWorkflowHistory,
@@ -161,13 +168,6 @@ const workflowEditorTabs: { id: WorkflowEditorTab; label: string }[] = [
   { id: "canvas", label: "Canvas" },
   { id: "builder", label: "Template Builder" },
   { id: "library", label: "Template Library" },
-];
-
-const documentFormatOptions: { value: DocumentFormat; label: string }[] = [
-  { value: "text", label: "Text file" },
-  { value: "pdf", label: "PDF" },
-  { value: "image", label: "Image" },
-  { value: "excel_csv", label: "Excel/CSV" },
 ];
 
 const workflowNodeOptions: { kind: WorkflowNodeKind; label: string }[] = [
@@ -269,45 +269,6 @@ function personalizeTask(task: ApprovalTask, activeUserEmail: string): ApprovalT
   };
 }
 
-function formatDocumentFormat(format: DocumentFormat) {
-  return (
-    documentFormatOptions.find((option) => option.value === format)?.label ||
-    "Document"
-  );
-}
-
-function acceptForDocumentFormat(format: DocumentFormat) {
-  if (format === "text") {
-    return ".txt,.md,.rtf";
-  }
-
-  if (format === "pdf") {
-    return ".pdf";
-  }
-
-  if (format === "image") {
-    return ".png,.jpg,.jpeg,.webp";
-  }
-
-  return ".xlsx,.xls,.csv";
-}
-
-function fieldSourceForDocumentFormat(format: DocumentFormat): WorkflowField["source"] {
-  if (format === "excel_csv") {
-    return "excel";
-  }
-
-  if (format === "image") {
-    return "ai";
-  }
-
-  if (format === "text") {
-    return "manual";
-  }
-
-  return "ocr";
-}
-
 function findTemplateForTask(
   task: ApprovalTask,
   templates: WorkflowTemplate[],
@@ -320,40 +281,6 @@ function findTemplateForTask(
     (template) =>
       template.id === task.workflowTemplateId || template.name === task.workflow,
   );
-}
-
-function createAttachmentRecord({
-  file,
-  documentRequirement,
-  template,
-  uploadedBy,
-  storagePath,
-  publicUrl,
-}: {
-  file: File;
-  documentRequirement?: WorkflowDocumentRequirement;
-  template: WorkflowTemplate;
-  uploadedBy: string;
-  storagePath?: string;
-  publicUrl?: string;
-}): ApprovalAttachment {
-  const graph = createWorkflowGraphFromTemplate(template);
-  const workflowNode = documentRequirement
-    ? graph.nodes.find((node) => node.documentIds?.includes(documentRequirement.id))
-    : undefined;
-
-  return {
-    id: `attachment-${Date.now()}-${file.name}`,
-    fileName: file.name,
-    documentId: documentRequirement?.id,
-    documentType: documentRequirement?.documentType || "Ad hoc document",
-    format: documentRequirement?.format || "ad_hoc",
-    workflowNodeId: workflowNode?.id,
-    storagePath,
-    publicUrl,
-    uploadedBy,
-    uploadedAt: new Date().toISOString(),
-  };
 }
 
 function getConditionContext(

@@ -127,3 +127,29 @@ Verification:
 - Live Workflow preview: passed, no browser console errors.
 - Live Admin preview: passed, no browser console errors.
 - Final autoreview: passed with no actionable Step 4 findings.
+
+## Step 5 - Workflow Document Utilities
+
+Status: complete.
+
+Plan:
+- Extract document format labels, accepted upload extensions, parser field-source mapping, and attachment-record construction from `approval-workspace.tsx`.
+- Add focused tests for document format behavior and deterministic attachment creation.
+- Keep the page component using the same helpers through a small import boundary.
+- Verify with typecheck, full tests, lint, build, live browser preview, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-documents.ts` for document format and attachment helpers.
+- Added `src/lib/workflow-documents.test.mjs` for focused coverage.
+- Rewired `approval-workspace.tsx` to import the document helpers.
+
+Verification:
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-documents.test.mjs`: passed, 5/5.
+- `npx tsc --noEmit`: passed.
+- `npm test -- --runInBand`: passed, 84/84.
+- `npm run lint`: passed.
+- `npm run build`: passed. Webpack emitted a non-fatal cache warning after successful build completion.
+- Live Workflow preview: passed, no browser console errors.
+- Live Upload preview: passed, no browser console errors.
+- Live Admin preview: passed, no browser console errors.
+- Final autoreview: passed with no actionable Step 5 findings.
