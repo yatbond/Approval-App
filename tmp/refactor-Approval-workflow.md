@@ -1166,3 +1166,29 @@ Verification:
 - `npm test -- --runInBand`: passed, 191/191.
 - `npm run build`: passed.
 - Autoreview: Important test fixture issue was fixed and the full verification set was rerun before commit.
+
+## Step 44 - Workspace Request Submission State Boundary
+
+Status: complete.
+
+Plan:
+- Extract request submission decision and task creation state out of `ApprovalWorkspaceBody`.
+- Preserve no-op preconditions, missing required upload message, successful task creation, selected task id, upload clearing, success message, and approval-task-only persistence payload.
+- Keep React setters and `persistWorkspaceSnapshot` side effects in the component.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workspace-request-submission-state.test.mjs`; verified the focused test failed before the helper module existed.
+- Added `src/lib/workspace-request-submission-state.ts` with `getWorkspaceRequestSubmissionState`.
+- Rewired `submitParsedRequest` in `src/app/approval-workspace.tsx` to call the helper, apply returned state, and persist the returned task list.
+- Removed direct component imports of `createApprovalTaskFromTemplate` and `getMissingRequiredSubmissionDocuments`.
+
+Verification:
+- Red step: `node --experimental-strip-types --test src/lib/workspace-request-submission-state.test.mjs` failed with missing module before implementation.
+- `node --experimental-strip-types --test src/lib/workspace-request-submission-state.test.mjs`: passed, 3/3.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated request submission behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 194/194.
+- `npm run build`: passed.
+- Autoreview: passed with no Critical, Important, or Minor findings; procedural staging note was addressed before commit.

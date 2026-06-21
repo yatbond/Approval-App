@@ -14,9 +14,7 @@ import {
   applyTaskAction,
 } from "@/lib/approval-state";
 import {
-  createApprovalTaskFromTemplate,
   getMissingRequiredCurrentNodeDocuments,
-  getMissingRequiredSubmissionDocuments,
 } from "@/lib/request-builder";
 import {
   analyzeConditionCoverage,
@@ -84,6 +82,7 @@ import {
   getUpdatedBusinessDirectoryRecordState,
   getUpdatedRoleAssignmentRecordState,
 } from "@/lib/workspace-admin-record-state";
+import { getWorkspaceRequestSubmissionState } from "@/lib/workspace-request-submission-state";
 import { getWorkflowCanvasSelectionState } from "@/lib/workflow-canvas-selection-state";
 import { getWorkflowCanvasInstanceKey } from "@/lib/workflow-canvas-instance-state";
 import { getWorkflowCanvasDeleteState } from "@/lib/workflow-canvas-delete-state";
@@ -455,41 +454,31 @@ function ApprovalWorkspaceBody({
   }
 
   function submitParsedRequest() {
-    if (!selectedTemplate || !parseResult) {
-      return;
-    }
-
-    const missingRequiredDocuments = getMissingRequiredSubmissionDocuments(
+    const nextState = getWorkspaceRequestSubmissionState({
       selectedTemplate,
+      parseResult,
+      activeUser,
+      fileName,
+      editedFields,
       uploadedAttachments,
-    );
-    if (missingRequiredDocuments.length) {
-      setSubmissionMessage(
-        `Missing required upload(s): ${missingRequiredDocuments
-          .map((document) => document.documentType)
-          .join(", ")}.`,
-      );
+      tasks,
+    });
+    if (!nextState.didSubmit) {
+      if (nextState.submissionMessage) {
+        setSubmissionMessage(nextState.submissionMessage);
+      }
       return;
     }
 
-    const task = createApprovalTaskFromTemplate({
-      requester: activeUser,
-      template: selectedTemplate,
-      sourceFileName: fileName,
-      extractedFields: editedFields,
-      attachments: uploadedAttachments,
-    });
-
-    const nextTasks = [task, ...tasks];
-    setTasks(nextTasks);
-    setSelectedTaskId(task.id);
-    setUploadedAttachments([]);
+    setTasks(nextState.tasks);
+    setSelectedTaskId(nextState.selectedTaskId);
+    if (nextState.shouldClearUploadedAttachments) {
+      setUploadedAttachments([]);
+    }
     void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
+      buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
     );
-    setSubmissionMessage(
-      `${task.id} submitted and routed to ${task.currentOwner}. It is now visible in Tracking.`,
-    );
+    setSubmissionMessage(nextState.submissionMessage);
   }
 
   function createTemplateRecord(template: WorkflowTemplate) {
