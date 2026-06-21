@@ -3,6 +3,9 @@ import test from "node:test";
 import {
   getWorkflowAddConditionCaseState,
   getWorkflowAddFallbackConditionCaseState,
+  getWorkflowAddOutcomeTargetState,
+  getWorkflowDeleteConditionCaseState,
+  getWorkflowUpdateConditionCaseState,
 } from "./workflow-condition-case-state.ts";
 
 const graph = {
@@ -81,5 +84,173 @@ test("does not update when the selected box is missing or not a condition", () =
       fallbackCaseId: "fallback-1",
     }).didUpdate,
     false,
+  );
+});
+
+test("updates a selected condition case", () => {
+  const graphWithCase = {
+    ...graph,
+    nodes: graph.nodes.map((node) =>
+      node.id === "condition-1"
+        ? {
+            ...node,
+            conditionCases: [
+              {
+                id: "case-1",
+                name: "Condition 1",
+                join: "and",
+                targetNodeIds: [],
+              },
+            ],
+          }
+        : node,
+    ),
+  };
+
+  const result = getWorkflowUpdateConditionCaseState({
+    graph: graphWithCase,
+    selectedNodeId: "condition-1",
+    caseId: "case-1",
+    patch: { join: "or", name: "High value" },
+  });
+
+  assert.equal(result.didUpdate, true);
+  assert.equal(result.label, "Updated condition");
+  const conditionCase = result.graph.nodes.find((node) => node.id === "condition-1")
+    ?.conditionCases?.[0];
+  assert.equal(conditionCase?.join, "or");
+  assert.equal(conditionCase?.name, "High value");
+});
+
+test("deletes a selected condition case and clears the active outcome case when needed", () => {
+  const graphWithCases = {
+    ...graph,
+    nodes: graph.nodes.map((node) =>
+      node.id === "condition-1"
+        ? {
+            ...node,
+            conditionCases: [
+              {
+                id: "case-1",
+                name: "Condition 1",
+                join: "and",
+                targetNodeIds: [],
+              },
+              {
+                id: "case-2",
+                name: "Condition 2",
+                join: "and",
+                targetNodeIds: [],
+              },
+            ],
+          }
+        : node,
+    ),
+  };
+
+  const result = getWorkflowDeleteConditionCaseState({
+    graph: graphWithCases,
+    selectedNodeId: "condition-1",
+    caseId: "case-1",
+    activeOutcomeCaseId: "case-1",
+  });
+
+  assert.equal(result.didUpdate, true);
+  assert.equal(result.label, "Deleted condition");
+  assert.equal(result.activeOutcomeCaseId, null);
+  assert.deepEqual(
+    result.graph.nodes.find((node) => node.id === "condition-1")?.conditionCases,
+    [
+      {
+        id: "case-2",
+        name: "Condition 2",
+        join: "and",
+        targetNodeIds: [],
+      },
+    ],
+  );
+});
+
+test("deleting an inactive condition case preserves the active outcome case", () => {
+  const graphWithCases = {
+    ...graph,
+    nodes: graph.nodes.map((node) =>
+      node.id === "condition-1"
+        ? {
+            ...node,
+            conditionCases: [
+              {
+                id: "case-1",
+                name: "Condition 1",
+                join: "and",
+                targetNodeIds: [],
+              },
+              {
+                id: "case-2",
+                name: "Condition 2",
+                join: "and",
+                targetNodeIds: [],
+              },
+            ],
+          }
+        : node,
+    ),
+  };
+
+  const result = getWorkflowDeleteConditionCaseState({
+    graph: graphWithCases,
+    selectedNodeId: "condition-1",
+    caseId: "case-1",
+    activeOutcomeCaseId: "case-2",
+  });
+
+  assert.equal(result.didUpdate, true);
+  assert.equal(result.activeOutcomeCaseId, "case-2");
+});
+
+test("adds a clicked outcome target to the active condition case once", () => {
+  const graphWithTarget = {
+    nodes: [
+      ...graph.nodes,
+      { id: "approval-1", label: "Approval", kind: "approval", x: 600, y: 0, blocking: true },
+    ].map((node) =>
+      node.id === "condition-1"
+        ? {
+            ...node,
+            conditionCases: [
+              {
+                id: "case-1",
+                name: "Condition 1",
+                join: "and",
+                targetNodeIds: ["approval-1"],
+              },
+            ],
+          }
+        : node,
+    ),
+    edges: [],
+  };
+
+  const invalid = getWorkflowAddOutcomeTargetState({
+    graph: graphWithTarget,
+    selectedNodeId: "condition-1",
+    activeOutcomeCaseId: "case-1",
+    targetNodeId: "start",
+  });
+  assert.equal(invalid.didUpdate, false);
+
+  const result = getWorkflowAddOutcomeTargetState({
+    graph: graphWithTarget,
+    selectedNodeId: "condition-1",
+    activeOutcomeCaseId: "case-1",
+    targetNodeId: "approval-1",
+  });
+
+  assert.equal(result.didUpdate, true);
+  assert.equal(result.label, "Updated condition");
+  assert.deepEqual(
+    result.graph.nodes.find((node) => node.id === "condition-1")?.conditionCases?.[0]
+      .targetNodeIds,
+    ["approval-1"],
   );
 });

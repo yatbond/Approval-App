@@ -985,3 +985,30 @@ Verification:
 - `npm test -- --runInBand`: passed, 174/174.
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 36 findings.
+
+## Step 37 - Workflow Condition Case Mutation State Boundary
+
+Status: complete.
+
+Plan:
+- Extract selected condition case update, delete, and clicked outcome-target assignment logic out of `WorkflowView`.
+- Preserve existing no-op guards, save labels, start/self target rejection, de-duped target assignment, and active outcome picker clearing when its case is deleted.
+- Keep persistence through `saveWorkflowGraph` and local picker state in the component.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Extended `src/lib/workflow-condition-case-state.test.mjs`; verified the focused test failed before the helper exports existed.
+- Extended `src/lib/workflow-condition-case-state.ts` with `getWorkflowUpdateConditionCaseState`, `getWorkflowDeleteConditionCaseState`, and `getWorkflowAddOutcomeTargetState`.
+- Rewired `src/app/approval-workspace.tsx` to call the helper functions instead of building condition graph mutations inline.
+- Addressed autoreview's coverage recommendation by adding a test that deleting an inactive condition case preserves the active outcome picker id.
+- Removed direct condition case graph mutation imports from the component.
+
+Verification:
+- Red step: `node --experimental-strip-types --test src/lib/workflow-condition-case-state.test.mjs` failed with missing helper export before implementation.
+- `node --experimental-strip-types --test src/lib/workflow-condition-case-state.test.mjs`: passed, 7/7.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated condition editing behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 178/178.
+- `npm run build`: passed.
+- Autoreview: passed with no Critical, Important, or Minor findings; one coverage recommendation was addressed before commit.

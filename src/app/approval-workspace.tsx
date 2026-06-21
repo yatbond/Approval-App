@@ -23,10 +23,8 @@ import {
 } from "@/lib/request-builder";
 import {
   analyzeConditionCoverage,
-  deleteWorkflowConditionCase,
   createWorkflowGraphFromTemplate,
   simulateWorkflowTemplate,
-  updateWorkflowConditionCase,
   updateWorkflowDocumentRequirement,
   updateWorkflowGraphEdge,
 } from "@/lib/workflow-graph";
@@ -96,8 +94,11 @@ import {
   updateWorkflowDocumentField,
 } from "@/lib/workflow-document-field-state";
 import {
+  getWorkflowAddOutcomeTargetState,
   getWorkflowAddConditionCaseState,
   getWorkflowAddFallbackConditionCaseState,
+  getWorkflowDeleteConditionCaseState,
+  getWorkflowUpdateConditionCaseState,
 } from "@/lib/workflow-condition-case-state";
 import {
   getWorkflowConnectNodesState,
@@ -1145,60 +1146,48 @@ function WorkflowView({
 
   function updateSelectedConditionCase(
     caseId: string,
-    patch: Parameters<typeof updateWorkflowConditionCase>[3],
+    patch: Parameters<typeof getWorkflowUpdateConditionCaseState>[0]["patch"],
   ) {
-    if (!selectedGraphNode || selectedGraphNode.kind !== "condition") {
+    const result = getWorkflowUpdateConditionCaseState({
+      graph: workflowGraph,
+      selectedNodeId: selectedGraphNode?.id || null,
+      caseId,
+      patch,
+    });
+    if (!result.didUpdate) {
       return;
     }
 
-    saveWorkflowGraph(
-      updateWorkflowConditionCase(
-        workflowGraph,
-        selectedGraphNode.id,
-        caseId,
-        patch,
-      ),
-      "Updated condition",
-    );
+    saveWorkflowGraph(result.graph, result.label);
   }
 
   function deleteSelectedConditionCase(caseId: string) {
-    if (!selectedGraphNode || selectedGraphNode.kind !== "condition") {
+    const result = getWorkflowDeleteConditionCaseState({
+      graph: workflowGraph,
+      selectedNodeId: selectedGraphNode?.id || null,
+      caseId,
+      activeOutcomeCaseId: conditionOutcomeCaseId,
+    });
+    if (!result.didUpdate) {
       return;
     }
 
-    saveWorkflowGraph(
-      deleteWorkflowConditionCase(workflowGraph, selectedGraphNode.id, caseId),
-      "Deleted condition",
-    );
-    if (conditionOutcomeCaseId === caseId) {
-      setConditionOutcomeCaseId(null);
-    }
+    saveWorkflowGraph(result.graph, result.label);
+    setConditionOutcomeCaseId(result.activeOutcomeCaseId);
   }
 
   function addClickedOutcomeToConditionCase(targetNodeId: string) {
-    if (
-      !selectedGraphNode ||
-      selectedGraphNode.kind !== "condition" ||
-      !conditionOutcomeCaseId ||
-      targetNodeId === selectedGraphNode.id ||
-      targetNodeId === "start"
-    ) {
-      return false;
-    }
-
-    const conditionCase = selectedGraphNode.conditionCases?.find(
-      (item) => item.id === conditionOutcomeCaseId,
-    );
-    if (!conditionCase) {
-      return false;
-    }
-
-    updateSelectedConditionCase(conditionOutcomeCaseId, {
-      targetNodeIds: Array.from(
-        new Set([...conditionCase.targetNodeIds, targetNodeId]),
-      ),
+    const result = getWorkflowAddOutcomeTargetState({
+      graph: workflowGraph,
+      selectedNodeId: selectedGraphNode?.id || null,
+      activeOutcomeCaseId: conditionOutcomeCaseId,
+      targetNodeId,
     });
+    if (!result.didUpdate) {
+      return false;
+    }
+
+    saveWorkflowGraph(result.graph, result.label);
     return true;
   }
 
