@@ -1012,3 +1012,29 @@ Verification:
 - `npm test -- --runInBand`: passed, 178/178.
 - `npm run build`: passed.
 - Autoreview: passed with no Critical, Important, or Minor findings; one coverage recommendation was addressed before commit.
+
+## Step 38 - Workflow Edge Update State Boundary
+
+Status: complete.
+
+Plan:
+- Extract selected edge patching and selected edge rule update logic out of `WorkflowView`.
+- Preserve no-selected-edge no-op behavior, branch update labels, for-information branch normalization, and rule field defaulting/preservation.
+- Keep persistence through `saveWorkflowGraph` in the component.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-edge-update-state.test.mjs`; verified the focused test failed before the helper module existed.
+- Added `src/lib/workflow-edge-update-state.ts` with `getWorkflowUpdateSelectedEdgeState` and `getWorkflowUpdateSelectedEdgeRuleState`.
+- Rewired `src/app/approval-workspace.tsx` so selected edge edits call the helper instead of mutating graph edges inline.
+- Removed the direct `updateWorkflowGraphEdge` import from the component.
+
+Verification:
+- Red step: `node --experimental-strip-types --test src/lib/workflow-edge-update-state.test.mjs` failed with missing module before implementation.
+- `node --experimental-strip-types --test src/lib/workflow-edge-update-state.test.mjs`: passed, 4/4.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated edge editing behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 182/182.
+- `npm run build`: passed.
+- Autoreview: no Critical or Important findings; Minor finding noted that the new helper/test files were untracked before staging, which was addressed before commit.

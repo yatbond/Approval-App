@@ -26,7 +26,6 @@ import {
   createWorkflowGraphFromTemplate,
   simulateWorkflowTemplate,
   updateWorkflowDocumentRequirement,
-  updateWorkflowGraphEdge,
 } from "@/lib/workflow-graph";
 import {
   shouldHandleCanvasDeleteKey,
@@ -71,6 +70,10 @@ import { WorkflowRuntimePanel } from "@/app/workflow-runtime-panel";
 import { getSelectedRuntimeTask } from "@/lib/workflow-runtime-panel-state";
 import { WorkflowCanvasToolbar } from "@/app/workflow-canvas-toolbar";
 import { WorkflowEdgeDetails } from "@/app/workflow-edge-details";
+import {
+  getWorkflowUpdateSelectedEdgeRuleState,
+  getWorkflowUpdateSelectedEdgeState,
+} from "@/lib/workflow-edge-update-state";
 import {
   WorkspaceShell,
   type WorkspaceTab,
@@ -1112,36 +1115,34 @@ function WorkflowView({
   });
 
   function updateSelectedEdge(patch: Partial<WorkflowGraphEdge>) {
-    if (!selectedGraphEdge) {
+    const result = getWorkflowUpdateSelectedEdgeState({
+      graph: workflowGraph,
+      selectedEdge: selectedGraphEdge,
+      patch,
+    });
+    if (!result.didUpdate) {
       return;
     }
 
-    const nextPatch =
-      patch.branchType === "for_information"
-        ? { ...patch, blocking: false, label: patch.label || "For information" }
-        : patch;
-    saveWorkflowGraph(
-      updateWorkflowGraphEdge(workflowGraph, selectedGraphEdge.id, nextPatch),
-      `Updated ${selectedGraphEdge.label} branch`,
-    );
+    saveWorkflowGraph(result.graph, result.label);
   }
 
   function updateSelectedEdgeRule(
     key: "field" | "operator" | "value",
     value: string,
   ) {
-    if (!selectedGraphEdge) {
+    const result = getWorkflowUpdateSelectedEdgeRuleState({
+      graph: workflowGraph,
+      selectedEdge: selectedGraphEdge,
+      workflowFields: workflow?.fields || [],
+      key,
+      value,
+    });
+    if (!result.didUpdate) {
       return;
     }
 
-    updateSelectedEdge({
-      rule: {
-        field: selectedGraphEdge.rule?.field || workflow?.fields[0]?.name || "",
-        operator: selectedGraphEdge.rule?.operator || "=",
-        value: selectedGraphEdge.rule?.value || "",
-        [key]: value,
-      },
-    });
+    saveWorkflowGraph(result.graph, result.label);
   }
 
   function updateSelectedConditionCase(
