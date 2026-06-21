@@ -13,6 +13,7 @@ import {
 import { useEffect, useState } from "react";
 import type { MouseEvent } from "react";
 import {
+  buildPreviewImageStyle,
   cropPreviewPageToFile,
   normalizedRectToPercentStyle,
   normalizeSelectionRect,
@@ -88,6 +89,9 @@ export function UploadView({
   const [highlightRect, setHighlightRect] = useState<NormalizedRect | null>(null);
   const [highlightFieldLabel, setHighlightFieldLabel] = useState("");
   const [highlightError, setHighlightError] = useState("");
+  const [previewContrast, setPreviewContrast] = useState(210);
+  const [previewBrightness, setPreviewBrightness] = useState(88);
+  const [previewZoom, setPreviewZoom] = useState(145);
   const {
     requestTemplates,
     selectedTemplate,
@@ -106,6 +110,20 @@ export function UploadView({
   const highlightStyle = highlightRect
     ? normalizedRectToPercentStyle(highlightRect)
     : null;
+  const previewImageStyle = buildPreviewImageStyle({
+    contrast: previewContrast,
+    brightness: previewBrightness,
+    zoom: previewZoom,
+  });
+  const previewStageStyle = {
+    width: previewImageStyle.width,
+    maxWidth: previewImageStyle.maxWidth,
+  };
+  const readablePreviewImageStyle = {
+    filter: previewImageStyle.filter,
+    maxWidth: "none",
+    width: "100%",
+  };
 
   useEffect(() => {
     if (selectedTemplate && selectedTemplate.id !== selectedTemplateId) {
@@ -410,39 +428,93 @@ export function UploadView({
                 )}
               </div>
 
-              <div
-                className="relative mt-3 rounded-md border border-white/10 bg-black/30"
-                onMouseDown={(event) => {
-                  const point = pointFromPreviewEvent(event);
-                  setSelectionStart({ x: point.x, y: point.y });
-                }}
-                onMouseUp={(event) => {
-                  if (!selectionStart) {
-                    return;
-                  }
-
-                  const point = pointFromPreviewEvent(event);
-                  const rect = normalizeSelectionRect(selectionStart, point, point.bounds);
-                  if (rect.width >= 0.01 && rect.height >= 0.01) {
-                    setHighlightRect(rect);
-                  }
-                  setSelectionStart(null);
-                }}
-                onMouseLeave={() => setSelectionStart(null)}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={selectedPreviewPage.dataUrl}
-                  alt={`Document preview page ${selectedPreviewPage.pageNumber}`}
-                  draggable={false}
-                  className="block w-full select-none"
-                />
-                {highlightStyle && (
-                  <div
-                    className="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-300/20"
-                    style={highlightStyle}
+              <div className="mt-3 grid gap-3 rounded-md border border-white/10 bg-[#101214] p-3 md:grid-cols-3">
+                <label className="block">
+                  <span className="mb-1 flex items-center justify-between text-xs text-neutral-400">
+                    <span>Zoom</span>
+                    <span>{previewZoom}%</span>
+                  </span>
+                  <input
+                    type="range"
+                    min="75"
+                    max="220"
+                    step="5"
+                    value={previewZoom}
+                    onChange={(event) => setPreviewZoom(Number(event.target.value))}
+                    className="w-full accent-emerald-400"
                   />
-                )}
+                </label>
+                <label className="block">
+                  <span className="mb-1 flex items-center justify-between text-xs text-neutral-400">
+                    <span>Contrast</span>
+                    <span>{previewContrast}%</span>
+                  </span>
+                  <input
+                    type="range"
+                    min="100"
+                    max="260"
+                    step="5"
+                    value={previewContrast}
+                    onChange={(event) => setPreviewContrast(Number(event.target.value))}
+                    className="w-full accent-emerald-400"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 flex items-center justify-between text-xs text-neutral-400">
+                    <span>Brightness</span>
+                    <span>{previewBrightness}%</span>
+                  </span>
+                  <input
+                    type="range"
+                    min="70"
+                    max="120"
+                    step="2"
+                    value={previewBrightness}
+                    onChange={(event) => setPreviewBrightness(Number(event.target.value))}
+                    className="w-full accent-emerald-400"
+                  />
+                </label>
+              </div>
+
+              <div
+                className="mt-3 max-h-[70vh] overflow-auto rounded-md border border-white/10 bg-neutral-950 p-3"
+              >
+                <div
+                  className="relative inline-block"
+                  style={previewStageStyle}
+                  onMouseDown={(event) => {
+                    const point = pointFromPreviewEvent(event);
+                    setSelectionStart({ x: point.x, y: point.y });
+                  }}
+                  onMouseUp={(event) => {
+                    if (!selectionStart) {
+                      return;
+                    }
+
+                    const point = pointFromPreviewEvent(event);
+                    const rect = normalizeSelectionRect(selectionStart, point, point.bounds);
+                    if (rect.width >= 0.01 && rect.height >= 0.01) {
+                      setHighlightRect(rect);
+                    }
+                    setSelectionStart(null);
+                  }}
+                  onMouseLeave={() => setSelectionStart(null)}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={selectedPreviewPage.dataUrl}
+                    alt={`Document preview page ${selectedPreviewPage.pageNumber}`}
+                    draggable={false}
+                    className="block select-none"
+                    style={readablePreviewImageStyle}
+                  />
+                  {highlightStyle && (
+                    <div
+                      className="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-300/20"
+                      style={highlightStyle}
+                    />
+                  )}
+                </div>
               </div>
 
               <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">

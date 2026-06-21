@@ -20,6 +20,12 @@ export type NormalizedRect = {
   height: number;
 };
 
+export type PreviewImageControls = {
+  contrast: number;
+  brightness: number;
+  zoom: number;
+};
+
 export function buildPreviewPagesFromPdfImages(
   pageImages: PdfPageImageInput[],
 ): DocumentPreviewPage[] {
@@ -72,6 +78,22 @@ export function normalizedRectToPercentStyle(rect: NormalizedRect) {
     top: `${round2(rect.y * 100)}%`,
     width: `${round2(rect.width * 100)}%`,
     height: `${round2(rect.height * 100)}%`,
+  };
+}
+
+export function buildPreviewImageStyle({
+  contrast,
+  brightness,
+  zoom,
+}: PreviewImageControls) {
+  const safeContrast = clampRange(contrast, 100, 260);
+  const safeBrightness = clampRange(brightness, 70, 120);
+  const safeZoom = clampRange(zoom, 75, 220);
+
+  return {
+    filter: `grayscale(100%) contrast(${safeContrast}%) brightness(${safeBrightness}%)`,
+    maxWidth: "none",
+    width: `${safeZoom}%`,
   };
 }
 
@@ -150,6 +172,10 @@ function loadImage(dataUrl: string) {
 
 function clamp(value: number) {
   return Math.min(1, Math.max(0, value));
+}
+
+function clampRange(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, Math.round(value)));
 }
 
 function round4(value: number) {

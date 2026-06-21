@@ -1585,3 +1585,9 @@ Verification:
 - Added manual highlight extraction: users can drag a rectangle over the preview, name the field, crop the region locally, and send only that crop back through Qwen extraction.
 - Added shared preview geometry helpers and upload-state helpers for suggested and highlighted fields.
 - Verification: red tests failed for missing parser suggestion, upload-state, and preview helpers; focused tests passed after implementation; `npm test` passed 260/260; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning; live upload-page smoke showed the base field editor and no browser console errors.
+
+## Step 62 - Document Preview Readability Controls
+- Added a tested preview image style helper for grayscale, contrast, brightness, and zoom with clamped bounds.
+- Added default high-contrast preview controls to the document preview so faint scans are easier to inspect before highlighting fields.
+- Changed the preview into a scrollable zoom stage, keeping highlight rectangles aligned with the displayed page.
+- Verification: `npm test -- src/lib/document-preview.test.mjs` passed; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning; live upload-page smoke at `http://localhost:3000/?tab=upload` loaded without browser console errors.

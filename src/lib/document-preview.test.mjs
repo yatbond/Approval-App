@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildPreviewImageStyle,
   buildPreviewPagesFromPdfImages,
   createPreviewPageFromDataUrl,
   normalizedRectToPercentStyle,
@@ -66,6 +67,36 @@ test("formats normalized selection as percentage CSS", () => {
       top: "10%",
       width: "50%",
       height: "20%",
+    },
+  );
+});
+
+test("builds a readable preview image style with zoom and contrast controls", () => {
+  assert.deepEqual(
+    buildPreviewImageStyle({
+      contrast: 210,
+      brightness: 88,
+      zoom: 145,
+    }),
+    {
+      filter: "grayscale(100%) contrast(210%) brightness(88%)",
+      maxWidth: "none",
+      width: "145%",
+    },
+  );
+});
+
+test("clamps preview image controls to readable bounds", () => {
+  assert.deepEqual(
+    buildPreviewImageStyle({
+      contrast: 999,
+      brightness: 10,
+      zoom: 500,
+    }),
+    {
+      filter: "grayscale(100%) contrast(260%) brightness(70%)",
+      maxWidth: "none",
+      width: "220%",
     },
   );
 });
