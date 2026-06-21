@@ -14,10 +14,12 @@ import { useEffect, useState } from "react";
 import type { MouseEvent } from "react";
 import {
   buildPreviewImageStyle,
+  createEnhancedPreviewDataUrl,
   cropPreviewPageToFile,
   normalizedRectToPercentStyle,
   normalizeSelectionRect,
   type DocumentPreviewPage,
+  type PreviewEnhancementMode,
   type NormalizedRect,
   type Point,
 } from "@/lib/document-preview";
@@ -92,6 +94,13 @@ export function UploadView({
   const [previewContrast, setPreviewContrast] = useState(210);
   const [previewBrightness, setPreviewBrightness] = useState(88);
   const [previewZoom, setPreviewZoom] = useState(145);
+  const [previewEnhancementMode, setPreviewEnhancementMode] =
+    useState<PreviewEnhancementMode>("black-text");
+  const [enhancedPreview, setEnhancedPreview] = useState({
+    key: "",
+    dataUrl: "",
+    error: "",
+  });
   const {
     requestTemplates,
     selectedTemplate,
@@ -124,12 +133,59 @@ export function UploadView({
     maxWidth: "none",
     width: "100%",
   };
+  const previewEnhancementKey = selectedPreviewPage
+    ? `${selectedPreviewPage.id}:${previewEnhancementMode}`
+    : "";
+  const hasCurrentEnhancedPreview =
+    enhancedPreview.key === previewEnhancementKey && Boolean(enhancedPreview.dataUrl);
+  const currentPreviewEnhancementError =
+    enhancedPreview.key === previewEnhancementKey ? enhancedPreview.error : "";
+  const displayedPreviewDataUrl =
+    previewEnhancementMode === "original"
+      ? selectedPreviewPage?.dataUrl
+      : hasCurrentEnhancedPreview
+        ? enhancedPreview.dataUrl
+        : selectedPreviewPage?.dataUrl;
 
   useEffect(() => {
     if (selectedTemplate && selectedTemplate.id !== selectedTemplateId) {
       setSelectedTemplateId(selectedTemplate.id);
     }
   }, [selectedTemplate, selectedTemplateId, setSelectedTemplateId]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!selectedPreviewPage || previewEnhancementMode === "original") {
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    createEnhancedPreviewDataUrl(selectedPreviewPage, previewEnhancementMode)
+      .then((dataUrl) => {
+        if (!isCancelled) {
+          setEnhancedPreview({
+            key: `${selectedPreviewPage.id}:${previewEnhancementMode}`,
+            dataUrl,
+            error: "",
+          });
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setEnhancedPreview({
+            key: `${selectedPreviewPage.id}:${previewEnhancementMode}`,
+            dataUrl: "",
+            error: "Could not enhance this preview. Showing the original scan.",
+          });
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedPreviewPage, previewEnhancementMode]);
 
   function pointFromPreviewEvent(event: MouseEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -428,7 +484,23 @@ export function UploadView({
                 )}
               </div>
 
-              <div className="mt-3 grid gap-3 rounded-md border border-white/10 bg-[#101214] p-3 md:grid-cols-3">
+              <div className="mt-3 grid gap-3 rounded-md border border-white/10 bg-[#101214] p-3 md:grid-cols-4">
+                <label className="block">
+                  <span className="mb-1 block text-xs text-neutral-400">
+                    Preview mode
+                  </span>
+                  <select
+                    value={previewEnhancementMode}
+                    onChange={(event) =>
+                      setPreviewEnhancementMode(event.target.value as PreviewEnhancementMode)
+                    }
+                    className="h-9 w-full rounded-md border border-white/10 bg-[#0d1012] px-3 text-xs text-neutral-100 outline-none focus:border-emerald-400/60"
+                  >
+                    <option value="black-text">Black text</option>
+                    <option value="enhanced">Enhanced grey</option>
+                    <option value="original">Original</option>
+                  </select>
+                </label>
                 <label className="block">
                   <span className="mb-1 flex items-center justify-between text-xs text-neutral-400">
                     <span>Zoom</span>
@@ -475,6 +547,18 @@ export function UploadView({
                   />
                 </label>
               </div>
+              {previewEnhancementMode !== "original" &&
+                !hasCurrentEnhancedPreview &&
+                !currentPreviewEnhancementError && (
+                  <p className="mt-2 text-xs text-neutral-500">
+                    Enhancing preview for faint scan text...
+                  </p>
+                )}
+              {currentPreviewEnhancementError && (
+                <p className="mt-2 text-xs text-amber-200">
+                  {currentPreviewEnhancementError}
+                </p>
+              )}
 
               <div
                 className="mt-3 max-h-[70vh] overflow-auto rounded-md border border-white/10 bg-neutral-950 p-3"
@@ -502,7 +586,7 @@ export function UploadView({
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={selectedPreviewPage.dataUrl}
+                    src={displayedPreviewDataUrl}
                     alt={`Document preview page ${selectedPreviewPage.pageNumber}`}
                     draggable={false}
                     className="block select-none"

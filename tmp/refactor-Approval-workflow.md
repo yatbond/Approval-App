@@ -1591,3 +1591,10 @@ Verification:
 - Added default high-contrast preview controls to the document preview so faint scans are easier to inspect before highlighting fields.
 - Changed the preview into a scrollable zoom stage, keeping highlight rectangles aligned with the displayed page.
 - Verification: `npm test -- src/lib/document-preview.test.mjs` passed; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning; live upload-page smoke at `http://localhost:3000/?tab=upload` loaded without browser console errors.
+
+## Step 63 - Black Text Preview Enhancement
+- Replaced CSS-only readability with a canvas-generated preview enhancement for faint scans where text luminance is nearly the same as the paper background.
+- Added a default `Black text` preview mode that turns faint darker-than-background pixels into black while keeping the page background white.
+- Added an `Enhanced grey` mode for softer display and kept `Original` mode available for comparison.
+- Kept field-highlight extraction pointed at the original uploaded document, so preview enhancement does not alter the file sent to OCR.
+- Verification: red test failed for missing `enhancePreviewPixels`; after implementation `npm test -- src/lib/document-preview.test.mjs` passed; `npx tsc --noEmit` passed; `npm run lint` passed; `npm test` passed 264/264; `npm run build` passed with the known non-fatal webpack cache warning.

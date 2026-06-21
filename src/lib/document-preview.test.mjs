@@ -4,6 +4,7 @@ import {
   buildPreviewImageStyle,
   buildPreviewPagesFromPdfImages,
   createPreviewPageFromDataUrl,
+  enhancePreviewPixels,
   normalizedRectToPercentStyle,
   normalizeSelectionRect,
 } from "./document-preview.ts";
@@ -98,5 +99,47 @@ test("clamps preview image controls to readable bounds", () => {
       maxWidth: "none",
       width: "220%",
     },
+  );
+});
+
+test("enhances faint near-background text into black text", () => {
+  const pixels = Uint8ClampedArray.from([
+    250, 250, 250, 255, // paper background
+    245, 245, 245, 255, // faint text that normal contrast cannot reveal
+    220, 220, 220, 255, // visible rule line
+  ]);
+
+  assert.deepEqual(
+    Array.from(
+      enhancePreviewPixels({
+        data: pixels,
+        mode: "black-text",
+      }),
+    ),
+    [
+      255, 255, 255, 255,
+      0, 0, 0, 255,
+      0, 0, 0, 255,
+    ],
+  );
+});
+
+test("enhanced preview darkens faint text without forcing every mark to black", () => {
+  const pixels = Uint8ClampedArray.from([
+    250, 250, 250, 255,
+    245, 245, 245, 255,
+  ]);
+
+  assert.deepEqual(
+    Array.from(
+      enhancePreviewPixels({
+        data: pixels,
+        mode: "enhanced",
+      }),
+    ),
+    [
+      255, 255, 255, 255,
+      145, 145, 145, 255,
+    ],
   );
 });

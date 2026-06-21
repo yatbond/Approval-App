@@ -26,6 +26,13 @@ export type PreviewImageControls = {
   zoom: number;
 };
 
+export type PreviewEnhancementMode = "original" | "enhanced" | "black-text";
+
+export type PreviewPixelEnhancementInput = {
+  data: Uint8ClampedArray;
+  mode: Exclude<PreviewEnhancementMode, "original">;
+};
+
 export function buildPreviewPagesFromPdfImages(
   pageImages: PdfPageImageInput[],
 ): DocumentPreviewPage[] {
@@ -95,6 +102,72 @@ export function buildPreviewImageStyle({
     maxWidth: "none",
     width: `${safeZoom}%`,
   };
+}
+
+export function enhancePreviewPixels({
+  data,
+  mode,
+}: PreviewPixelEnhancementInput) {
+  const output = new Uint8ClampedArray(data);
+  const luminanceValues: number[] = [];
+
+  for (let index = 0; index < data.length; index += 4) {
+    if (data[index + 3] > 0) {
+      luminanceValues.push(getLuminance(data[index], data[index + 1], data[index + 2]));
+    }
+  }
+
+  if (luminanceValues.length === 0) {
+    return output;
+  }
+
+  luminanceValues.sort((left, right) => left - right);
+  const background = percentile(luminanceValues, 0.9);
+  const faintTextCutoff = Math.max(0, background - 3);
+
+  for (let index = 0; index < output.length; index += 4) {
+    const alpha = output[index + 3];
+    if (alpha === 0) {
+      continue;
+    }
+
+    const luminance = getLuminance(output[index], output[index + 1], output[index + 2]);
+    const enhancedValue =
+      luminance >= faintTextCutoff
+        ? 255
+        : mode === "black-text"
+          ? 0
+          : clampByte(255 - (background - luminance) * 22);
+
+    output[index] = enhancedValue;
+    output[index + 1] = enhancedValue;
+    output[index + 2] = enhancedValue;
+    output[index + 3] = alpha;
+  }
+
+  return output;
+}
+
+export async function createEnhancedPreviewDataUrl(
+  page: DocumentPreviewPage,
+  mode: Exclude<PreviewEnhancementMode, "original">,
+) {
+  const image = await loadImage(page.dataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Unable to prepare enhanced document preview.");
+  }
+
+  context.drawImage(image, 0, 0);
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  imageData.data.set(enhancePreviewPixels({ data: imageData.data, mode }));
+  context.putImageData(imageData, 0, 0);
+
+  return canvas.toDataURL("image/png");
 }
 
 export async function readImageFileAsPreviewPage(
@@ -176,6 +249,22 @@ function clamp(value: number) {
 
 function clampRange(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function clampByte(value: number) {
+  return Math.min(255, Math.max(0, Math.round(value)));
+}
+
+function getLuminance(red: number, green: number, blue: number) {
+  return Math.round(red * 0.299 + green * 0.587 + blue * 0.114);
+}
+
+function percentile(sortedValues: number[], ratio: number) {
+  const index = Math.min(
+    sortedValues.length - 1,
+    Math.max(0, Math.ceil((sortedValues.length - 1) * ratio)),
+  );
+  return sortedValues[index];
 }
 
 function round4(value: number) {
