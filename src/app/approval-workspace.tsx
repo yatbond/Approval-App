@@ -99,6 +99,7 @@ import {
   getUpdatedTemplateRecordState,
 } from "@/lib/workspace-template-record-state";
 import { getWorkflowCanvasSelectionState } from "@/lib/workflow-canvas-selection-state";
+import { getWorkflowCanvasInstanceKey } from "@/lib/workflow-canvas-instance-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -754,29 +755,12 @@ function WorkflowView({
   const [canvasViewResetNonce, setCanvasViewResetNonce] = useState(0);
   const canvasInstanceKey = useMemo(
     () =>
-      `${workflow?.id || "empty"}:${JSON.stringify({
-        reset: canvasViewResetNonce,
-        nodes: workflowGraph.nodes.map((node) => ({
-          id: node.id,
-          kind: node.kind,
-          label: node.label,
-          assigneeEmail: node.assigneeEmail,
-          documentIds: node.documentIds,
-        })),
-        edges: workflowGraph.edges.map((edge) => ({
-          id: edge.id,
-          sourceId: edge.sourceId,
-          targetId: edge.targetId,
-          label: edge.label,
-          branchType: edge.branchType,
-        })),
-        runtime: {
-          taskId: runtimeTask?.id,
-          currentNodeId: runtimeTask?.currentNodeId,
-          completedNodeIds: runtimeTask?.completedNodeIds,
-          notifiedNodeIds: runtimeTask?.notifiedNodeIds,
-        },
-      })}`,
+      getWorkflowCanvasInstanceKey({
+        workflowId: workflow?.id || "",
+        resetNonce: canvasViewResetNonce,
+        graph: workflowGraph,
+        runtimeTask,
+      }),
     [canvasViewResetNonce, runtimeTask, workflow?.id, workflowGraph],
   );
   const [workflowEditorTab, setWorkflowEditorTab] =

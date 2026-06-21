@@ -616,3 +616,29 @@ Verification:
 - `npm test -- --runInBand`: passed, 137/137.
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 22 findings. Reviewer noted its fork hit an unrelated generated `.next/types/validator.ts` missing `./routes.js` typecheck artifact, while this turn's fresh `npx tsc --noEmit` and `npm run build` both passed.
+
+## Step 23 - Workflow Canvas Instance Key Boundary
+
+Status: complete.
+
+Plan:
+- Extract the React Flow canvas instance key serialization out of `WorkflowView`.
+- Add a pure helper for workflow id, reset nonce, graph node/edge identity, and runtime task identity.
+- Preserve the same remount key inputs while isolating the serialization logic.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-canvas-instance-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-canvas-instance-state.ts` for canvas instance key derivation.
+- Rewired `WorkflowView` in `src/app/approval-workspace.tsx` to call `getWorkflowCanvasInstanceKey`.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-canvas-instance-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-canvas-instance-state.test.mjs`: passed, 2/2.
+- Initial `npx tsc --noEmit` failed on generated `.next/types/validator.ts` importing missing `./routes.js`; root cause was incomplete generated Next route types after prior builds, not Step 23 source files. Local Next 16 CLI docs recommend `next typegen && tsc --noEmit` for route type generation before type-checking.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated canvas remount behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 139/139.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 23 findings. Noted residual gap: authenticated canvas remount behavior was not exercised in browser automation.
