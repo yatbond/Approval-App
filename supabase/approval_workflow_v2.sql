@@ -138,6 +138,7 @@ alter table public.approval_requests enable row level security;
 alter table public.approval_request_events enable row level security;
 alter table public.approval_request_attachments enable row level security;
 alter table public.workspace_snapshots enable row level security;
+alter table public.profiles enable row level security;
 
 create policy "authenticated read active user directory"
 on public.profiles for select
@@ -427,10 +428,21 @@ with check (
   and owner_id = (select auth.uid()::text)
 );
 
-grant select on public.business_units to authenticated;
-grant select on public.business_departments to authenticated;
+revoke all privileges on table
+  public.business_units,
+  public.business_departments,
+  public.profiles,
+  public.workflow_template_versions,
+  public.approval_requests,
+  public.approval_request_events,
+  public.approval_request_attachments,
+  public.workspace_snapshots
+from anon, authenticated;
+
+grant select, insert, update on public.business_units to authenticated;
+grant select, insert, update on public.business_departments to authenticated;
 grant select on public.profiles to authenticated;
-grant select on public.workflow_template_versions to authenticated;
+grant select, insert, update on public.workflow_template_versions to authenticated;
 grant select, insert, update on public.approval_requests to authenticated;
 grant select, insert, update on public.approval_request_events to authenticated;
 grant select, insert, update on public.approval_request_attachments to authenticated;

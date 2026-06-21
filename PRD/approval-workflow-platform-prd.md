@@ -1,6 +1,6 @@
 # Approval Workflow Platform PRD
 
-Last updated: 2026-06-20
+Last updated: 2026-06-21
 Document owner: Product / Workflow Platform
 Status: Living PRD for the current prototype and next production build
 Repository: Approval Workflow Next.js application
@@ -71,17 +71,76 @@ Current implemented areas:
 - Audit trail creation for submitted, assigned, approved, rejected, reassigned, delegated, escalated, resubmitted, and cancelled events.
 - Local-first workspace persistence with browser storage and remote Supabase workspace synchronization.
 - Supabase schema and API routes for workspace snapshots, normalized data, auth, attachment upload, and parse/upload flows.
-- Seed business and department directory with admin add/edit/delete controls.
+- Seed business and department directory with admin add/edit/delete controls. Add/edit persists through the normalized workspace save path; durable Supabase delete/deactivation still needs a dedicated admin mutation path.
 - Production performance optimizations for server response time and deferred workspace loading.
 
 Current areas that remain incomplete or need hardening:
 
-- The Supabase SQL migration must be confirmed against the live Supabase project before treating the cloud database as authoritative.
+- The Supabase v2 baseline and grant-hardening migrations have been verified against the live `approval-app` Supabase project.
 - Storage access policy currently centers on object ownership; participant-based shared attachment access needs stronger production policy design.
 - Workflow publishing should have a stricter validation gate before templates can be used for new submissions.
 - Condition coverage warnings exist, but the condition editor still needs more plain-language guidance and test coverage for complex overlapping rule sets.
 - End-to-end tests are still needed for full request lifecycles.
 - External delivery channels such as email or Teams are not yet implemented.
+
+## 4.2 Current Architecture Snapshot
+
+The current codebase has been refactored into clearer UI, state, workflow, persistence, and API boundaries. The main workspace shell is now responsible for application-level tabs, local/remote workspace state wiring, request upload orchestration, queue/tracking/admin rendering, and persistence calls. The workflow editor is isolated in its own component module.
+
+Current front-end component boundaries:
+
+- `src/app/approval-workspace.tsx`: authenticated workspace shell, active tab routing, queue/tracking/upload/admin orchestration, request submission, task action orchestration, parse/upload orchestration, and workspace persistence wiring.
+- `src/app/workflow-view.tsx`: workflow canvas, template builder/library tabs, runtime task preview, condition details, box document configuration, workflow undo/redo, and workflow-local UI state.
+- `src/app/workspace-shell.tsx`: app frame, collapsible navigation, tab state, notifications, and sync status presentation.
+- `src/app/task-views.tsx`: queue, tracking, user directory datalist, and task-facing presentation.
+- `src/app/upload-view.tsx`: request upload, document selection, parse result review, and submission UI.
+- `src/app/admin-view.tsx`: business, department, user directory, role assignment, and admin notification UI.
+
+Current pure state and domain boundaries:
+
+- `src/lib/approval-state.ts`: approval action domain transitions and audit event creation.
+- `src/lib/request-builder.ts`: approval task creation from templates and document requirement validation.
+- `src/lib/workflow-graph.ts`: graph creation, routing, validation, condition routing, FYI branches, return/reject handling, and simulation.
+- `src/lib/workspace-persistence.ts`: serialized workspace snapshot shape and parsing.
+- `src/lib/database-normalizer.ts` and related database helpers: normalized Supabase row conversion and restore behavior.
+- `src/lib/workspace-template-record-state.ts`: create/update/delete template record state.
+- `src/lib/workspace-admin-record-state.ts`: business directory and role assignment record state.
+- `src/lib/workspace-request-submission-state.ts`: submit-request decision state and successful task creation state.
+- `src/lib/workspace-task-action-state.ts`: manual queue action state and workflow-runner action state.
+- `src/lib/workspace-file-api.ts`: upload and parse API client boundary plus parsed file payload type.
+- `src/lib/workspace-parse-file-state.ts`: parse-file UI reset, stored attachment creation, and parse success mapping.
+
+Latest refactor completion state as of 2026-06-21:
+
+- `approval-workspace.tsx` was reduced from 1,753 lines to 478 lines by moving the workflow editor to `workflow-view.tsx`.
+- The workflow editor is still large at about 1,285 lines and should be split further when the next feature work touches canvas details, condition details, or document configuration.
+- Refactor progress is tracked in `tmp/refactor-Approval-workflow.md` and mirrored to `C:\tmp\refactor-Approval-workflow.md`.
+- The latest refactor commits are:
+  - `a548cef refactor: split workflow view component`
+  - `858df1c refactor: extract workspace parse file state`
+  - `fd3550f refactor: extract workspace file api client`
+  - `1578969 refactor: extract workspace task action state`
+  - `1fd5f48 refactor: extract workspace request submission state`
+  - `4b105d1 refactor: extract workspace admin record state`
+
+Live Supabase verification as of 2026-06-21:
+
+- Project `wlbxrdmpwuupjyarjcxb` / `approval-app` is active and healthy.
+- Migration history includes `20260620002111 approval_workflow_v2_baseline_and_workspace_snapshots`, `20260621075424 harden_data_api_table_grants`, `20260621080230 ensure_profiles_rls_enabled_for_grants`, and `20260621080644 tighten_data_api_grants_to_current_app_usage`.
+- Expected public tables exist: `business_units`, `business_departments`, `profiles`, `workflow_template_versions`, `approval_requests`, `approval_request_events`, `approval_request_attachments`, and `workspace_snapshots`.
+- RLS is enabled on the expected public tables.
+- Storage bucket `approval-documents` exists and is private.
+- `anon` has no grants on the approval workflow public tables.
+- `authenticated` grants are limited to current durable app operations and are backed by RLS policies: SELECT/INSERT/UPDATE for editable app tables, SELECT for `profiles`, and no DELETE grants.
+
+Current verification baseline:
+
+- `npx next typegen && npx tsc --noEmit`: passing.
+- `npm run lint`: passing.
+- `npm test -- --runInBand`: passing, 207/207 tests, including a submit -> approve -> reject -> amend/resubmit -> complete lifecycle regression test.
+- `npm run build`: passing.
+- Live unauthenticated route smoke for `http://localhost:3000/?tab=workflow`: returns `307` to `/login`, which is expected when no authenticated Supabase session is available.
+- Build currently emits a non-fatal webpack cache `ENOENT` warning after successful route generation; this should be monitored but is not blocking the build.
 
 ## 5. Personas
 
@@ -958,7 +1017,7 @@ Requirements:
 Supabase RLS must enforce:
 
 - Authenticated users can read active businesses/departments/templates.
-- Admins can create/update/delete business units, departments, and templates.
+- Admins can create/update business units, departments, and templates through the current normalized workspace save path. Durable delete/deactivation should use a dedicated admin mutation path before DELETE grants are added.
 - Request participants can read relevant approval requests.
 - Originators and current owners can update requests where allowed.
 - Participants can read events and attachments for requests they are allowed to see.
@@ -1059,6 +1118,27 @@ Current optimizations include:
 ### 22.4 Open Performance Concern
 
 In-app browser navigation measurements remain above 50 ms because they include browser automation overhead, client JavaScript, and hydration. Current production browser navigation medians are about 117-134 ms. This should be tracked separately from production HTTP response time.
+
+### 22.5 Current Quality Gate
+
+The current required quality gate for significant architecture or workflow changes is:
+
+- Focused red/green tests for new state or domain helpers where behavior changes.
+- `npx next typegen && npx tsc --noEmit`.
+- `npm run lint`.
+- Live route smoke against `http://localhost:3000/?tab=workflow`; unauthenticated `307 /login` is expected without a browser Supabase session.
+- `npm test -- --runInBand`.
+- `npm run build`.
+- Autoreview before commit.
+
+Latest known passing baseline as of 2026-06-21:
+
+- Type generation and TypeScript passed.
+- Lint passed.
+- Live route smoke returned `307 /login`.
+- Full unit suite passed at 207/207.
+- Production build passed.
+- Autoreview found no Critical, Important, or Minor findings for the final workflow-view split.
 
 ## 23. Mobile and Responsive Requirements
 
@@ -1247,18 +1327,18 @@ Important fields:
 
 ## 27. Known Gaps and Follow-Up Work
 
-1. Apply the Supabase SQL migration to a live Supabase database if not already applied.
-2. Replace inferred user directory with a proper user/profile management workflow.
-3. Add real email/Teams notification delivery.
-4. Strengthen storage policies so participants, not only object owners, can access relevant files.
-5. Add richer PDF, text, Excel, and CSV extraction implementations.
-6. Add attachment preview/download UI with access checks.
-7. Add template import/export.
-8. Add drag handles and clearer connection affordances on the canvas.
-9. Add explicit workflow publish validation gate.
-10. Add production monitoring for route latency, client load, and Supabase API timings.
-11. Add E2E tests for the full submit -> approve -> reject -> amend -> resubmit lifecycle.
-12. Add admin controls for assigning superuser status.
+1. Replace inferred user directory with a proper user/profile management workflow.
+2. Add real email/Teams notification delivery.
+3. Strengthen storage policies so participants, not only object owners, can access relevant files.
+4. Add richer PDF, text, Excel, and CSV extraction implementations.
+5. Add attachment preview/download UI with access checks.
+6. Add template import/export.
+7. Add drag handles and clearer connection affordances on the canvas.
+8. Add explicit workflow publish validation gate.
+9. Add production monitoring for route latency, client load, and Supabase API timings.
+10. Add E2E tests for the full submit -> approve -> reject -> amend -> resubmit lifecycle.
+11. Add admin controls for assigning superuser status.
+12. Add durable admin delete/deactivation for business units, departments, and workflow templates using a scoped admin mutation or RPC path with matching RLS and Data API grants.
 13. Add conflict handling for concurrent edits to the same template.
 14. Add searchable/filterable tracking history.
 15. Add audit export for compliance.
@@ -1267,8 +1347,8 @@ Important fields:
 
 Priority 0 - must finish before real pilot:
 
-- Apply and verify live Supabase migration.
 - Confirm RLS policies with real users: admin, originator, approver, participant, and non-participant.
+- Add durable admin delete/deactivation for businesses, departments, and templates without reintroducing broad generic DELETE grants.
 - Add E2E tests for create template, submit request, approve, reject, return, amend/resubmit, cancel, reassign, delegate, and condition routing.
 - Add publish gate that blocks invalid templates.
 - Make condition editor clearer with business-language summaries and fallback warnings.
@@ -1336,10 +1416,10 @@ Includes:
 - Normalized persistence code.
 - Workspace snapshot fallback.
 - Attachment upload route and storage bucket configuration.
+- Live v2 baseline, grant-hardening, and profile RLS migrations verified on the `approval-app` Supabase project.
 
 Remaining:
 
-- Confirm live database migration.
 - Complete access model for shared participant attachment reads.
 - Add operational migration process.
 
