@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getWorkflowTemplateDocumentState } from "./workflow-template-document-state.ts";
+import {
+  getWorkflowTemplateDocumentState,
+  getWorkflowUpdateDocumentRequirementState,
+} from "./workflow-template-document-state.ts";
 
 const template = {
   id: "template-1",
@@ -77,4 +80,21 @@ test("preserves other template properties", () => {
   assert.deepEqual(result.template.languages, template.languages);
   assert.deepEqual(result.template.documentTypes, []);
   assert.deepEqual(result.template.fields, []);
+});
+
+test("updates one document requirement and returns the document update label", () => {
+  const result = getWorkflowUpdateDocumentRequirementState({
+    template,
+    documentId: "invoice",
+    patch: {
+      documentType: "Supplier invoice",
+      format: "image",
+      required: false,
+    },
+  });
+
+  assert.equal(result.label, "Updated document requirement");
+  assert.equal(result.template.documents[0].documentType, "Supplier invoice");
+  assert.equal(result.template.documents[0].format, "image");
+  assert.equal(result.template.documents[0].required, false);
 });

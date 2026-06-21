@@ -25,7 +25,6 @@ import {
   analyzeConditionCoverage,
   createWorkflowGraphFromTemplate,
   simulateWorkflowTemplate,
-  updateWorkflowDocumentRequirement,
 } from "@/lib/workflow-graph";
 import {
   shouldHandleCanvasDeleteKey,
@@ -109,7 +108,10 @@ import {
   getWorkflowCreateNodeState,
 } from "@/lib/workflow-canvas-edit-state";
 import { getWorkflowAddBoxDocumentState } from "@/lib/workflow-box-document-state";
-import { getWorkflowTemplateDocumentState } from "@/lib/workflow-template-document-state";
+import {
+  getWorkflowTemplateDocumentState,
+  getWorkflowUpdateDocumentRequirementState,
+} from "@/lib/workflow-template-document-state";
 import { getWorkflowTemplateLoadState } from "@/lib/workflow-template-load-state";
 import { getWorkflowTemplateSaveState } from "@/lib/workflow-template-save-state";
 import {
@@ -1009,16 +1011,18 @@ function WorkflowView({
 
   function updateBoxDocumentRequirement(
     documentId: string,
-    patch: Parameters<typeof updateWorkflowDocumentRequirement>[2],
+    patch: Parameters<typeof getWorkflowUpdateDocumentRequirementState>[0]["patch"],
   ) {
     if (!workflow) {
       return;
     }
 
-    saveWorkflowTemplate(
-      updateWorkflowDocumentRequirement(workflow, documentId, patch),
-      "Updated document requirement",
-    );
+    const nextState = getWorkflowUpdateDocumentRequirementState({
+      template: workflow,
+      documentId,
+      patch,
+    });
+    saveWorkflowTemplate(nextState.template, nextState.label);
   }
 
   function updateBoxDocumentField(

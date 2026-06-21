@@ -1063,3 +1063,29 @@ Verification:
 - `npm test -- --runInBand`: passed, 183/183.
 - `npm run build`: passed.
 - Autoreview: passed with no Critical, Important, or Minor findings; reviewer noted the new helper/test should be staged before commit, which was addressed.
+
+## Step 40 - Workflow Document Requirement Update State Boundary
+
+Status: complete.
+
+Plan:
+- Extract single document requirement patching out of `WorkflowView`.
+- Preserve the existing document update behavior and save label.
+- Keep generic document-list rebuild behavior in the same template document state helper.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Extended `src/lib/workflow-template-document-state.test.mjs`; verified the focused test failed before the helper export existed.
+- Added `getWorkflowUpdateDocumentRequirementState` to `src/lib/workflow-template-document-state.ts`, delegating to the existing document requirement updater.
+- Rewired `updateBoxDocumentRequirement` in `src/app/approval-workspace.tsx` to call the helper and removed the direct `updateWorkflowDocumentRequirement` component import.
+- Cleaned up the helper patch type after autoreview so it does not add an unnecessary `DocumentFormat` overlay.
+
+Verification:
+- Red step: `node --experimental-strip-types --test src/lib/workflow-template-document-state.test.mjs` failed with missing helper export before implementation.
+- `node --experimental-strip-types --test src/lib/workflow-template-document-state.test.mjs`: passed, 3/3.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated document requirement editing behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 184/184.
+- `npm run build`: passed.
+- Autoreview: ready to merge with no Critical or Important findings; minor type-drift suggestion reviewed, and the redundant local type overlay was removed before final verification.
