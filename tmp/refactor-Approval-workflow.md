@@ -1140,3 +1140,29 @@ Verification:
 - `npm test -- --runInBand`: passed, 189/189.
 - `npm run build`: passed.
 - Autoreview: passed with no Critical, Important, or Minor findings; optional `??` recommendation was applied and reverified before commit.
+
+## Step 43 - Workspace Admin Record State Boundary
+
+Status: complete.
+
+Plan:
+- Extract role assignment and business directory record update transitions out of `ApprovalWorkspaceBody`.
+- Preserve existing snapshot persistence payloads and keep persistence side effects in the component.
+- Match the existing pure helper pattern used by `workspace-template-record-state`.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workspace-admin-record-state.test.mjs`; verified the focused test failed before the helper module existed.
+- Added `src/lib/workspace-admin-record-state.ts` with `getUpdatedRoleAssignmentRecordState` and `getUpdatedBusinessDirectoryRecordState`.
+- Rewired `updateRoleAssignmentRecords` and `updateBusinessDirectoryRecords` in `src/app/approval-workspace.tsx` to call the helper before setting state and building the snapshot.
+- Addressed autoreview's Important finding by changing the role assignment test fixture from stale `userEmail`/`userName` keys to the real persisted `email`/`name` shape.
+
+Verification:
+- Red step: `node --experimental-strip-types --test src/lib/workspace-admin-record-state.test.mjs` failed with missing module before implementation.
+- `node --experimental-strip-types --test src/lib/workspace-admin-record-state.test.mjs`: passed, 2/2.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated admin record editing behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 191/191.
+- `npm run build`: passed.
+- Autoreview: Important test fixture issue was fixed and the full verification set was rerun before commit.

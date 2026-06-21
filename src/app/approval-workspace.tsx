@@ -80,6 +80,10 @@ import {
   getDeletedTemplateRecordState,
   getUpdatedTemplateRecordState,
 } from "@/lib/workspace-template-record-state";
+import {
+  getUpdatedBusinessDirectoryRecordState,
+  getUpdatedRoleAssignmentRecordState,
+} from "@/lib/workspace-admin-record-state";
 import { getWorkflowCanvasSelectionState } from "@/lib/workflow-canvas-selection-state";
 import { getWorkflowCanvasInstanceKey } from "@/lib/workflow-canvas-instance-state";
 import { getWorkflowCanvasDeleteState } from "@/lib/workflow-canvas-delete-state";
@@ -527,20 +531,26 @@ function ApprovalWorkspaceBody({
   function updateRoleAssignmentRecords(
     updater: (items: UserRoleAssignment[]) => UserRoleAssignment[],
   ) {
-    const nextAssignments = updater(effectiveRoleAssignments);
-    setRoleAssignments(nextAssignments);
+    const nextState = getUpdatedRoleAssignmentRecordState({
+      roleAssignments: effectiveRoleAssignments,
+      updater,
+    });
+    setRoleAssignments(nextState.roleAssignments);
     void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ userRoleAssignments: nextAssignments }),
+      buildWorkspaceSnapshot({ userRoleAssignments: nextState.roleAssignments }),
     );
   }
 
   function updateBusinessDirectoryRecords(
     updater: (items: BusinessUnit[]) => BusinessUnit[],
   ) {
-    const nextBusinessDirectory = updater(businessDirectory);
-    setBusinessDirectory(nextBusinessDirectory);
+    const nextState = getUpdatedBusinessDirectoryRecordState({
+      businessDirectory,
+      updater,
+    });
+    setBusinessDirectory(nextState.businessDirectory);
     void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ businessDirectory: nextBusinessDirectory }),
+      buildWorkspaceSnapshot({ businessDirectory: nextState.businessDirectory }),
     );
   }
 
