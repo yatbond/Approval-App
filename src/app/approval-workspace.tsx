@@ -93,6 +93,7 @@ import { WorkflowTemplateBuilder } from "@/app/workflow-template-builder";
 import { getWorkflowTemplateBuilderBusinessState } from "@/lib/workflow-template-builder-state";
 import { WorkflowRuntimePanel } from "@/app/workflow-runtime-panel";
 import { getSelectedRuntimeTask } from "@/lib/workflow-runtime-panel-state";
+import { WorkflowCanvasToolbar } from "@/app/workflow-canvas-toolbar";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -1483,61 +1484,14 @@ function WorkflowView({
         {workflow && workflowEditorTab === "canvas" && (
           <div className="p-4">
             <div className="relative min-w-0">
-              <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-neutral-300">
-                    Workflow canvas
-                  </h3>
-                  <p className="text-xs text-neutral-500">
-                    Add boxes, connect paths, and select any box or line to edit it.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {workflowNodeOptions.map((option) => (
-                    <button
-                      key={option.kind}
-                      type="button"
-                      onClick={() => createCanvasNode(option.kind)}
-                      className="flex min-h-8 items-center justify-center gap-1 rounded-md border border-white/10 bg-[#121518] px-2 py-1 text-xs text-neutral-200 transition hover:border-emerald-400/50"
-                    >
-                      <Plus size={13} />
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {connectFromNode && (
-                <div className="mb-3 flex flex-col gap-2 rounded-md border border-sky-400/40 bg-sky-400/10 p-3 text-sm text-sky-100 sm:flex-row sm:items-center sm:justify-between">
-                  <span>
-                    Connecting from <strong>{connectFromNode.label}</strong>. Click another
-                    box to create the branch.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setConnectFromNodeId(null)}
-                    className="self-start rounded-md border border-sky-300/40 px-3 py-1 text-xs transition hover:bg-sky-300/10 sm:self-auto"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-
-              {conditionOutcomeCaseId && selectedGraphNode?.kind === "condition" && (
-                <div className="mb-3 flex flex-col gap-2 rounded-md border border-sky-400/40 bg-sky-400/10 p-3 text-sm text-sky-100 sm:flex-row sm:items-center sm:justify-between">
-                  <span>
-                    Assigning outcomes for <strong>{selectedGraphNode.label}</strong>. Click
-                    downstream boxes to add them to the selected condition case.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setConditionOutcomeCaseId(null)}
-                    className="self-start rounded-md border border-sky-300/40 px-3 py-1 text-xs transition hover:bg-sky-300/10 sm:self-auto"
-                  >
-                    Done
-                  </button>
-                </div>
-              )}
+              <WorkflowCanvasToolbar
+                connectFromNode={connectFromNode}
+                selectedNode={selectedGraphNode}
+                conditionOutcomeCaseId={conditionOutcomeCaseId}
+                onCreateNode={createCanvasNode}
+                onCancelConnect={() => setConnectFromNodeId(null)}
+                onDoneOutcomePick={() => setConditionOutcomeCaseId(null)}
+              />
 
               <WorkflowRuntimePanel
                 workflowTasks={workflowTasks}

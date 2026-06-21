@@ -458,3 +458,30 @@ Verification:
 - `npm run build`: passed.
 - Live Workflow canvas runtime preview after production build: passed, no browser console errors; runtime status, undo/redo/reset, validation, route simulation, and workflow runner sections visible.
 - Final autoreview: passed with no actionable Step 16 findings. Noted residual gaps: no rendered UI interaction tests for runtime task selection, runner button callbacks, validation issue truncation/warning summary, or disabled approve state with missing current-node documents.
+
+## Step 17 - Workflow Canvas Toolbar Boundary
+
+Status: complete.
+
+Plan:
+- Extract the Workflow canvas title, add-box buttons, connect-from prompt, and condition outcome prompt out of `approval-workspace.tsx`.
+- Add a pure helper for connect/outcome prompt text.
+- Preserve add-box button behavior, connect cancel behavior, outcome-pick done behavior, and prompt visibility.
+- Verify with red/green helper tests, typecheck, lint, live Workflow canvas preview, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-canvas-toolbar-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-canvas-toolbar-state.ts` for connect/outcome prompt text.
+- Added `src/app/workflow-canvas-toolbar.tsx` for the canvas toolbar and prompt UI.
+- Rewired `src/app/approval-workspace.tsx` to render `WorkflowCanvasToolbar`.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-canvas-toolbar-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-canvas-toolbar-state.test.mjs`: passed, 3/3.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live Workflow canvas toolbar preview before full build: passed, no browser console errors; canvas title, add-box buttons, and runtime panel remained visible.
+- `npm test -- --runInBand`: passed, 122/122.
+- `npm run build`: passed.
+- Live Workflow canvas toolbar preview after production build: passed, no browser console errors; canvas title, add-box buttons, and runtime panel remained visible.
+- Final autoreview: passed with no actionable Step 17 findings. Noted residual gaps: no rendered UI interaction tests for toolbar title/buttons, add-box callback payloads, connect cancel, outcome Done, or simultaneous prompt visibility.
