@@ -513,3 +513,30 @@ Verification:
 - `npm run build`: passed.
 - Post-build route smoke: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate.
 - Final autoreview: passed with no actionable Step 18 findings. Noted residual gap: authenticated browser selection of an edge was not exercised because no test credentials or reusable session cookie were available in the clean automation browser.
+
+## Step 19 - Workspace Shell Boundary
+
+Status: complete.
+
+Plan:
+- Extract the sidebar, top header, navigation tabs, notification badge, signed-in user display, sync status label, logout link, and New request link out of `approval-workspace.tsx`.
+- Add a pure helper for shell unread count and sync status label.
+- Preserve tab URLs, active-tab highlighting, sidebar collapse behavior, notification counts, and workspace sync copy.
+- Verify with red/green helper tests, typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workspace-shell-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workspace-shell-state.ts` for shell unread-count and sync-label state.
+- Added `src/app/workspace-shell.tsx` for app chrome/navigation.
+- Rewired `src/app/approval-workspace.tsx` to render the active view as `WorkspaceShell` children.
+- Reduced `src/app/approval-workspace.tsx` from 1899 lines to 1802 lines.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workspace-shell-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workspace-shell-state.test.mjs`: passed, 2/2.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated shell interaction was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 127/127.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 19 findings. Noted residual gap: no rendered UI interaction test for tab navigation or sidebar collapse.
