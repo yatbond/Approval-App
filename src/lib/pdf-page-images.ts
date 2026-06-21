@@ -1,13 +1,44 @@
 import type { PdfPageImageInput } from "./parser.ts";
 
-const defaultPageLimit = 3;
-const defaultRenderScale = 1.5;
+const defaultOcrPageLimit = 3;
+const defaultOcrRenderScale = 2;
+const defaultPreviewPageLimit = 25;
+const defaultPreviewRenderScale = 3;
+
+export type PdfPageRenderOptions = {
+  pageLimit: number;
+  renderScale: number;
+};
+
+export function getPdfJsDocumentAssetOptions() {
+  return {
+    cMapPacked: true,
+    cMapUrl: "/pdfjs/cmaps/",
+    standardFontDataUrl: "/pdfjs/standard_fonts/",
+    useWorkerFetch: true,
+    wasmUrl: "/pdfjs/wasm/",
+  };
+}
+
+export function getPdfOcrRenderOptions(): PdfPageRenderOptions {
+  return {
+    pageLimit: defaultOcrPageLimit,
+    renderScale: defaultOcrRenderScale,
+  };
+}
+
+export function getPdfPreviewRenderOptions(): PdfPageRenderOptions {
+  return {
+    pageLimit: defaultPreviewPageLimit,
+    renderScale: defaultPreviewRenderScale,
+  };
+}
 
 export async function renderPdfFileToPageImages(
   file: File,
   {
-    pageLimit = defaultPageLimit,
-    renderScale = defaultRenderScale,
+    pageLimit = defaultOcrPageLimit,
+    renderScale = defaultOcrRenderScale,
   }: {
     pageLimit?: number;
     renderScale?: number;
@@ -25,6 +56,7 @@ export async function renderPdfFileToPageImages(
 
   const pdf = await pdfjs.getDocument({
     data: await file.arrayBuffer(),
+    ...getPdfJsDocumentAssetOptions(),
   }).promise;
   const pageCount = Math.min(pdf.numPages, Math.max(1, pageLimit));
   const images: PdfPageImageInput[] = [];
@@ -41,6 +73,8 @@ export async function renderPdfFileToPageImages(
 
     canvas.width = Math.ceil(viewport.width);
     canvas.height = Math.ceil(viewport.height);
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvas, canvasContext: context, viewport }).promise;
 
     const imageDataUrl = canvas.toDataURL("image/png");
@@ -54,9 +88,13 @@ export async function renderPdfFileToPageImages(
   return images.filter((image) => image.imageBase64);
 }
 
+export function isPdfFile(file: File) {
+  return file.type.includes("pdf") || file.name.toLowerCase().endsWith(".pdf");
+}
+
 export function shouldRenderPdfForVision(file: File) {
   return (
-    file.type.includes("pdf") &&
+    isPdfFile(file) &&
     (process.env.NEXT_PUBLIC_PDF_OCR_MODE || "qwen-page-images") ===
       "qwen-page-images"
   );

@@ -15,6 +15,9 @@ import {
   type DocumentPreviewPage,
 } from "@/lib/document-preview";
 import {
+  getPdfOcrRenderOptions,
+  getPdfPreviewRenderOptions,
+  isPdfFile,
   renderPdfFileToPageImages,
   shouldRenderPdfForVision,
 } from "@/lib/pdf-page-images";
@@ -297,11 +300,14 @@ function ApprovalWorkspaceBody({
     );
 
     try {
-      const pageImages = shouldRenderPdfForVision(file)
-        ? await renderPdfFileToPageImages(file)
+      const pdfPreviewImages = isPdfFile(file)
+        ? await renderPdfFileToPageImages(file, getPdfPreviewRenderOptions())
         : [];
-      if (pageImages.length) {
-        setDocumentPreviewPages(buildPreviewPagesFromPdfImages(pageImages));
+      const pageImages = shouldRenderPdfForVision(file)
+        ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
+        : [];
+      if (pdfPreviewImages.length) {
+        setDocumentPreviewPages(buildPreviewPagesFromPdfImages(pdfPreviewImages));
       } else if (file.type.startsWith("image/")) {
         setDocumentPreviewPages([await readImageFileAsPreviewPage(file)]);
       }

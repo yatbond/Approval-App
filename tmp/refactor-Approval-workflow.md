@@ -1598,3 +1598,11 @@ Verification:
 - Added an `Enhanced grey` mode for softer display and kept `Original` mode available for comparison.
 - Kept field-highlight extraction pointed at the original uploaded document, so preview enhancement does not alter the file sent to OCR.
 - Verification: red test failed for missing `enhancePreviewPixels`; after implementation `npm test -- src/lib/document-preview.test.mjs` passed; `npx tsc --noEmit` passed; `npm run lint` passed; `npm test` passed 264/264; `npm run build` passed with the known non-fatal webpack cache warning.
+
+## Step 64 - Scanner PDF Decoder Assets
+- Root cause: the Gleneagles scanner PDF uses JBIG2 image XObjects. PDF.js rendered the page shell but dropped the scanner image content because no browser-accessible `wasmUrl` was configured, producing `JBig2 failed to initialize` warnings and an unreadable preview.
+- Added browser-accessible PDF.js runtime assets under `public/pdfjs/` for WASM decoders, CMaps, and standard fonts.
+- Configured `renderPdfFileToPageImages` to pass `wasmUrl`, `cMapUrl`, `standardFontDataUrl`, and `useWorkerFetch` into `pdfjs.getDocument`.
+- Split PDF rendering defaults so human preview renders up to 25 pages at 3x scale, while OCR remains bounded to 3 pages at 2x scale.
+- Filled preview canvases with a white background before rendering to avoid transparent/black compositing artifacts.
+- Verification: Poppler rendered `C:\Users\Derrick Pang\Desktop\S-003_IP-08 (Final Account) Signed 20250211 - Gleneagles.pdf` clearly, proving the source file was readable; a temporary browser probe initially reproduced PDF.js `JBig2 failed to initialize` warnings; after adding decoder assets the same probe rendered all 6 pages with no decoder warnings and a readable first-page screenshot, then the generated probe artifacts were removed; `npm test -- src/lib/pdf-page-images.test.mjs src/lib/document-preview.test.mjs` passed; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning after successful route generation.
