@@ -14,9 +14,6 @@ import {
   applyTaskAction,
 } from "@/lib/approval-state";
 import {
-  createWorkflowTemplateFromDraft,
-} from "@/lib/template-builder";
-import {
   createApprovalTaskFromTemplate,
   getMissingRequiredCurrentNodeDocuments,
   getMissingRequiredSubmissionDocuments,
@@ -45,7 +42,6 @@ import {
 } from "@/lib/workflow-history";
 import {
   buildTaskNotifications,
-  publishWorkflowTemplateVersion,
 } from "@/lib/workflow-system";
 import {
   findTemplateForTask,
@@ -114,6 +110,10 @@ import {
 } from "@/lib/workflow-template-document-state";
 import { getWorkflowTemplateLoadState } from "@/lib/workflow-template-load-state";
 import { getWorkflowTemplateSaveState } from "@/lib/workflow-template-save-state";
+import {
+  getWorkflowCreateTemplateActionState,
+  getWorkflowPublishTemplateActionState,
+} from "@/lib/workflow-template-action-state";
 import {
   getWorkflowRedoActionState,
   getWorkflowUndoActionState,
@@ -762,30 +762,27 @@ function WorkflowView({
   );
 
   function createTemplate() {
-    const cleanName = templateName.trim();
-    const cleanDepartment = departmentName.trim();
-    if (!cleanName || !selectedBusiness || !cleanDepartment) {
+    const nextState = getWorkflowCreateTemplateActionState({
+      templateName,
+      selectedBusinessName: selectedBusiness?.name || null,
+      departmentName,
+    });
+    if (!nextState.didCreate || !nextState.template) {
       return;
     }
 
-    onCreateTemplate(
-      createWorkflowTemplateFromDraft({
-        name: cleanName,
-        business: selectedBusiness.name,
-        department: cleanDepartment,
-        documents: [],
-        steps: [],
-      }),
-    );
+    onCreateTemplate(nextState.template);
   }
 
   function publishSelectedTemplate() {
-    if (!workflow) {
+    const nextState = getWorkflowPublishTemplateActionState({
+      template: workflow,
+    });
+    if (!nextState.didCreate || !nextState.template) {
       return;
     }
 
-    const publishedTemplate = publishWorkflowTemplateVersion(workflow);
-    onCreateTemplate(publishedTemplate);
+    onCreateTemplate(nextState.template);
   }
 
   function loadTemplateIntoBuilder(template: WorkflowTemplate) {

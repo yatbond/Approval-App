@@ -1089,3 +1089,29 @@ Verification:
 - `npm test -- --runInBand`: passed, 184/184.
 - `npm run build`: passed.
 - Autoreview: ready to merge with no Critical or Important findings; minor type-drift suggestion reviewed, and the redundant local type overlay was removed before final verification.
+
+## Step 41 - Workflow Template Action State Boundary
+
+Status: complete.
+
+Plan:
+- Extract create-template and publish-template action decisions out of `WorkflowView`.
+- Preserve trimming and no-op guards for template name, selected business, and department, plus existing publish-version behavior.
+- Keep `onCreateTemplate` side effects in the component.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-template-action-state.test.mjs`; verified the focused test failed before the helper module existed.
+- Added `src/lib/workflow-template-action-state.ts` with `getWorkflowCreateTemplateActionState` and `getWorkflowPublishTemplateActionState`.
+- Rewired `createTemplate` and `publishSelectedTemplate` in `src/app/approval-workspace.tsx` to call the helper and removed direct component imports of `createWorkflowTemplateFromDraft` and `publishWorkflowTemplateVersion`.
+- Addressed autoreview's missing coverage note by adding a blank-department no-op assertion.
+
+Verification:
+- Red step: `node --experimental-strip-types --test src/lib/workflow-template-action-state.test.mjs` failed with missing module before implementation.
+- `node --experimental-strip-types --test src/lib/workflow-template-action-state.test.mjs`: passed, 4/4.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated template create/publish behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 188/188.
+- `npm run build`: passed.
+- Autoreview: Critical staging issue and Minor missing-department test suggestion were addressed before final verification and commit.
