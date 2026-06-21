@@ -15,7 +15,7 @@ export function WorkflowTemplateLibrary({
   selectedTemplateId: string;
   onSelectTemplate: (templateId: string) => void;
   onLoadTemplate: (template: WorkflowTemplate) => void;
-  onDeleteTemplate: (templateId: string) => void;
+  onDeleteTemplate: (templateId: string) => void | Promise<void>;
 }) {
   const templateItems = getWorkflowTemplateLibraryItems({
     workflowTemplates,
@@ -63,7 +63,7 @@ export function WorkflowTemplateLibrary({
               </button>
               <button
                 type="button"
-                onClick={() => onDeleteTemplate(item.id)}
+                onClick={() => void onDeleteTemplate(item.id)}
                 className="flex min-h-8 items-center justify-center gap-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-100 transition hover:bg-rose-500/20"
               >
                 <X size={13} />

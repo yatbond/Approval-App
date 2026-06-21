@@ -36,6 +36,7 @@ import {
   getUpdatedTemplateRecordState,
 } from "@/lib/workspace-template-record-state";
 import {
+  getAdminRecordDeleteSyncState,
   getUpdatedBusinessDirectoryRecordState,
   getUpdatedRoleAssignmentRecordState,
 } from "@/lib/workspace-admin-record-state";
@@ -46,6 +47,7 @@ import {
   getWorkspaceRecordTaskActionState,
   getWorkspaceRunnerTaskActionState,
 } from "@/lib/workspace-task-action-state";
+import { deactivateRemoteWorkspaceAdminRecord } from "@/lib/workspace-sync";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -131,6 +133,7 @@ function ApprovalWorkspaceBody({
   const [parseError, setParseError] = useState("");
   const [submissionMessage, setSubmissionMessage] = useState("");
   const [actionError, setActionError] = useState("");
+  const [adminRecordError, setAdminRecordError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [uploadedAttachments, setUploadedAttachments] = useState<ApprovalAttachment[]>([]);
   const selectedTemplate = useMemo(
@@ -338,7 +341,19 @@ function ApprovalWorkspaceBody({
     );
   }
 
-  function deleteTemplateRecord(templateId: string) {
+  async function deleteTemplateRecord(templateId: string) {
+    const template = templates.find((item) => item.id === templateId);
+    const didDeactivate = template
+      ? await deactivateAdminRecord({
+          type: "template",
+          templateKey: template.id,
+          versionNumber: template.version || latestTaskVersionForTemplate(template.id),
+        })
+      : true;
+    if (!didDeactivate) {
+      return;
+    }
+
     const nextState = getDeletedTemplateRecordState({
       templates,
       selectedTemplateId,
@@ -352,6 +367,40 @@ function ApprovalWorkspaceBody({
         selectedTemplateId: nextState.selectedTemplateId,
       }),
     );
+  }
+
+  async function deactivateAdminRecord(
+    record: Parameters<typeof deactivateRemoteWorkspaceAdminRecord>[0],
+  ) {
+    const syncState = getAdminRecordDeleteSyncState({ workspaceSyncMode });
+    if (!syncState.canContinue) {
+      setAdminRecordError(syncState.error);
+      return false;
+    }
+
+    if (!syncState.shouldDeactivateRemote) {
+      setAdminRecordError("");
+      return true;
+    }
+
+    const result = await deactivateRemoteWorkspaceAdminRecord(record);
+    if (result.mode !== "supabase") {
+      setAdminRecordError(result.reason || "Unable to persist admin delete.");
+      return false;
+    }
+
+    setAdminRecordError("");
+    return true;
+  }
+
+  function latestTaskVersionForTemplate(templateId: string) {
+    return tasks.reduce((version, task) => {
+      if (task.workflowTemplateId !== templateId) {
+        return version;
+      }
+
+      return Math.max(version, task.workflowTemplateVersion || 1);
+    }, 1);
   }
 
   function updateRoleAssignmentRecords(
@@ -455,6 +504,7 @@ function ApprovalWorkspaceBody({
                 selectedTemplateId={selectedTemplate?.id || ""}
                 setSelectedTemplateId={selectTemplateRecord}
                 onDeleteTemplate={deleteTemplateRecord}
+                adminRecordError={adminRecordError}
                 onCreateTemplate={createTemplateRecord}
                 onUpdateTemplate={updateTemplateRecord}
                 userDirectory={userDirectory}
@@ -465,7 +515,21 @@ function ApprovalWorkspaceBody({
             {activeTab === "admin" && (
               <AdminView
                 businessDirectory={businessDirectory}
+                adminRecordError={adminRecordError}
                 setBusinessDirectory={updateBusinessDirectoryRecords}
+                onDeactivateBusinessRecord={(business) =>
+                  deactivateAdminRecord({
+                    type: "business",
+                    businessId: business.id,
+                  })
+                }
+                onDeactivateDepartmentRecord={(business, departmentName) =>
+                  deactivateAdminRecord({
+                    type: "department",
+                    businessId: business.id,
+                    departmentName,
+                  })
+                }
                 legacyDepartments={departments}
                 userDirectory={userDirectory}
                 taskNotifications={taskNotifications}

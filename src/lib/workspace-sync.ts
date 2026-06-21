@@ -1,4 +1,5 @@
 import type { WorkspaceStateSnapshot } from "@/lib/workspace-persistence";
+import type { WorkspaceAdminDeactivation } from "@/lib/normalized-workspace-store";
 
 export type WorkspaceSyncResult =
   | { mode: "supabase"; snapshot?: WorkspaceStateSnapshot }
@@ -38,6 +39,29 @@ export async function saveRemoteWorkspaceState(
     return {
       mode: "local",
       reason: error instanceof Error ? error.message : "Remote save failed",
+    };
+  }
+}
+
+export async function deactivateRemoteWorkspaceAdminRecord(
+  record: WorkspaceAdminDeactivation,
+): Promise<WorkspaceSyncResult> {
+  try {
+    const response = await fetch("/api/workspace", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "deactivate_admin_record", record }),
+    });
+    if (!response.ok) {
+      return { mode: "local", reason: `PATCH failed: ${response.status}` };
+    }
+
+    return (await response.json()) as WorkspaceSyncResult;
+  } catch (error) {
+    return {
+      mode: "local",
+      reason:
+        error instanceof Error ? error.message : "Remote admin update failed",
     };
   }
 }

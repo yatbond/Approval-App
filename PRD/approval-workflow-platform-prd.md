@@ -71,7 +71,7 @@ Current implemented areas:
 - Audit trail creation for submitted, assigned, approved, rejected, reassigned, delegated, escalated, resubmitted, and cancelled events.
 - Local-first workspace persistence with browser storage and remote Supabase workspace synchronization.
 - Supabase schema and API routes for workspace snapshots, normalized data, auth, attachment upload, and parse/upload flows.
-- Seed business and department directory with admin add/edit/delete controls. Add/edit persists through the normalized workspace save path; durable Supabase delete/deactivation still needs a dedicated admin mutation path.
+- Seed business and department directory with admin add/edit/delete controls. Add/edit persists through the normalized workspace save path; delete uses a dedicated admin soft-deactivation API that sets `is_active=false`.
 - Production performance optimizations for server response time and deferred workspace loading.
 
 Current areas that remain incomplete or need hardening:
@@ -126,18 +126,19 @@ Latest refactor completion state as of 2026-06-21:
 Live Supabase verification as of 2026-06-21:
 
 - Project `wlbxrdmpwuupjyarjcxb` / `approval-app` is active and healthy.
-- Migration history includes `20260620002111 approval_workflow_v2_baseline_and_workspace_snapshots`, `20260621075424 harden_data_api_table_grants`, `20260621080230 ensure_profiles_rls_enabled_for_grants`, and `20260621080644 tighten_data_api_grants_to_current_app_usage`.
+- Migration history includes `20260620002111 approval_workflow_v2_baseline_and_workspace_snapshots`, `20260621075424 harden_data_api_table_grants`, `20260621080230 ensure_profiles_rls_enabled_for_grants`, `20260621080644 tighten_data_api_grants_to_current_app_usage`, and `20260621083108 drop_unused_delete_policies`.
 - Expected public tables exist: `business_units`, `business_departments`, `profiles`, `workflow_template_versions`, `approval_requests`, `approval_request_events`, `approval_request_attachments`, and `workspace_snapshots`.
 - RLS is enabled on the expected public tables.
 - Storage bucket `approval-documents` exists and is private.
 - `anon` has no grants on the approval workflow public tables.
 - `authenticated` grants are limited to current durable app operations and are backed by RLS policies: SELECT/INSERT/UPDATE for editable app tables, SELECT for `profiles`, and no DELETE grants.
+- Business, department, and workflow-template delete actions are implemented as scoped admin soft deactivation through `PATCH /api/workspace`; live DELETE policies and DELETE grants for those tables have been removed. The mutation path uses exact update counts and rejects zero-row updates so RLS-denied or stale targets do not disappear locally while remaining active remotely. Admin deletes are blocked while workspace sync mode is still `loading`.
 
 Current verification baseline:
 
 - `npx next typegen && npx tsc --noEmit`: passing.
 - `npm run lint`: passing.
-- `npm test -- --runInBand`: passing, 207/207 tests, including a submit -> approve -> reject -> amend/resubmit -> complete lifecycle regression test.
+- `npm test -- --runInBand`: passing, 218/218 tests, including submit -> approve -> reject -> amend/resubmit -> complete lifecycle coverage, admin soft-deactivation coverage, zero-row deactivation rejection coverage, and loading-state delete blocking.
 - `npm run build`: passing.
 - Live unauthenticated route smoke for `http://localhost:3000/?tab=workflow`: returns `307` to `/login`, which is expected when no authenticated Supabase session is available.
 - Build currently emits a non-fatal webpack cache `ENOENT` warning after successful route generation; this should be monitored but is not blocking the build.
@@ -1017,7 +1018,8 @@ Requirements:
 Supabase RLS must enforce:
 
 - Authenticated users can read active businesses/departments/templates.
-- Admins can create/update business units, departments, and templates through the current normalized workspace save path. Durable delete/deactivation should use a dedicated admin mutation path before DELETE grants are added.
+- Admins can create/update business units, departments, and templates through the current normalized workspace save path.
+- Admins can soft-deactivate business units, departments, and workflow template versions through the dedicated workspace admin mutation path; DELETE grants are intentionally absent.
 - Request participants can read relevant approval requests.
 - Originators and current owners can update requests where allowed.
 - Participants can read events and attachments for requests they are allowed to see.
@@ -1136,9 +1138,9 @@ Latest known passing baseline as of 2026-06-21:
 - Type generation and TypeScript passed.
 - Lint passed.
 - Live route smoke returned `307 /login`.
-- Full unit suite passed at 207/207.
+- Full unit suite passed at 218/218.
 - Production build passed.
-- Autoreview found no Critical, Important, or Minor findings for the final workflow-view split.
+- Latest autoreview status should be updated after the current soft-deactivation review completes.
 
 ## 23. Mobile and Responsive Requirements
 
@@ -1338,7 +1340,7 @@ Important fields:
 9. Add production monitoring for route latency, client load, and Supabase API timings.
 10. Add E2E tests for the full submit -> approve -> reject -> amend -> resubmit lifecycle.
 11. Add admin controls for assigning superuser status.
-12. Add durable admin delete/deactivation for business units, departments, and workflow templates using a scoped admin mutation or RPC path with matching RLS and Data API grants.
+12. Add real-user validation for durable admin soft-deactivation across business units, departments, and workflow templates.
 13. Add conflict handling for concurrent edits to the same template.
 14. Add searchable/filterable tracking history.
 15. Add audit export for compliance.
@@ -1348,7 +1350,7 @@ Important fields:
 Priority 0 - must finish before real pilot:
 
 - Confirm RLS policies with real users: admin, originator, approver, participant, and non-participant.
-- Add durable admin delete/deactivation for businesses, departments, and templates without reintroducing broad generic DELETE grants.
+- Validate durable admin soft-deactivation with real Supabase admin and non-admin users, including negative RLS checks.
 - Add E2E tests for create template, submit request, approve, reject, return, amend/resubmit, cancel, reassign, delegate, and condition routing.
 - Add publish gate that blocks invalid templates.
 - Make condition editor clearer with business-language summaries and fallback warnings.

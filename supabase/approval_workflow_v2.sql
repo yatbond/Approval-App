@@ -161,11 +161,6 @@ to authenticated
 using (exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.is_admin))
 with check (exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.is_admin));
 
-create policy "admins delete business units"
-on public.business_units for delete
-to authenticated
-using (exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.is_admin));
-
 create policy "authenticated read active business departments"
 on public.business_departments for select
 to authenticated
@@ -182,11 +177,6 @@ to authenticated
 using (exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.is_admin))
 with check (exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.is_admin));
 
-create policy "admins delete business departments"
-on public.business_departments for delete
-to authenticated
-using (exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.is_admin));
-
 create policy "authenticated read active workflow templates"
 on public.workflow_template_versions for select
 to authenticated
@@ -202,11 +192,6 @@ on public.workflow_template_versions for update
 to authenticated
 using (exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.is_admin))
 with check (exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.is_admin));
-
-create policy "admins delete workflow template versions"
-on public.workflow_template_versions for delete
-to authenticated
-using (exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.is_admin));
 
 create policy "participants read approval requests"
 on public.approval_requests for select

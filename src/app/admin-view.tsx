@@ -32,7 +32,10 @@ const userRoleOptions: UserDirectoryEntry["role"][] = [
 ];
 export function AdminView({
   businessDirectory,
+  adminRecordError,
   setBusinessDirectory,
+  onDeactivateBusinessRecord,
+  onDeactivateDepartmentRecord,
   legacyDepartments,
   userDirectory,
   taskNotifications,
@@ -40,7 +43,13 @@ export function AdminView({
   setRoleAssignments,
 }: {
   businessDirectory: BusinessUnit[];
+  adminRecordError?: string;
   setBusinessDirectory: (updater: (items: BusinessUnit[]) => BusinessUnit[]) => void;
+  onDeactivateBusinessRecord?: (business: BusinessUnit) => Promise<boolean>;
+  onDeactivateDepartmentRecord?: (
+    business: BusinessUnit,
+    departmentName: string,
+  ) => Promise<boolean>;
   legacyDepartments: string[];
   userDirectory: UserDirectoryEntry[];
   taskNotifications: TaskNotification[];
@@ -93,8 +102,14 @@ export function AdminView({
     );
   }
 
-  function removeBusiness() {
+  async function removeBusiness() {
     if (!selectedBusiness) {
+      return;
+    }
+
+    const didDeactivate =
+      (await onDeactivateBusinessRecord?.(selectedBusiness)) ?? true;
+    if (!didDeactivate) {
       return;
     }
 
@@ -116,6 +131,23 @@ export function AdminView({
     setNewDepartmentName("");
   }
 
+  async function removeDepartment(departmentName: string, index: number) {
+    if (!selectedBusiness) {
+      return;
+    }
+
+    const didDeactivate =
+      (await onDeactivateDepartmentRecord?.(selectedBusiness, departmentName)) ??
+      true;
+    if (!didDeactivate) {
+      return;
+    }
+
+    setBusinessDirectory((items) =>
+      deleteDepartment(items, selectedBusiness.id, index),
+    );
+  }
+
   return (
     <div className="grid gap-4 xl:grid-cols-[420px_1fr_360px]">
       <section className="rounded-md border border-white/10 bg-white/[0.03]">
@@ -126,6 +158,11 @@ export function AdminView({
           </p>
         </div>
         <div className="space-y-2 p-4">
+          {adminRecordError && (
+            <p className="rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-100">
+              {adminRecordError}
+            </p>
+          )}
           {businessDirectory.map((business) => (
             <button
               key={business.id}
@@ -189,7 +226,7 @@ export function AdminView({
               </button>
               <button
                 type="button"
-                onClick={removeBusiness}
+                onClick={() => void removeBusiness()}
                 className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100 transition hover:bg-rose-500/20"
               >
                 <X size={16} />
@@ -219,11 +256,7 @@ export function AdminView({
                   />
                   <button
                     type="button"
-                    onClick={() =>
-                      setBusinessDirectory((items) =>
-                        deleteDepartment(items, selectedBusiness.id, index),
-                      )
-                    }
+                    onClick={() => void removeDepartment(department, index)}
                     className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100 transition hover:bg-rose-500/20"
                   >
                     <X size={16} />

@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
+  deactivateWorkspaceAdminRecord,
   loadNormalizedWorkspaceState,
   saveNormalizedWorkspaceState,
+  type WorkspaceAdminDeactivation,
 } from "@/lib/normalized-workspace-store";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
 import { parseWorkspaceState, serializeWorkspaceState } from "@/lib/workspace-persistence";
@@ -197,6 +199,53 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(payload);
 }
 
+export async function PATCH(request: NextRequest) {
+  const response = NextResponse.next();
+  const supabase = createSupabaseRouteClient(request, response);
+  const user = await getWorkspaceRouteUser(supabase);
+
+  if (!user) {
+    return NextResponse.json(
+      { mode: "local", reason: "Not signed in" },
+      { status: 401 },
+    );
+  }
+
+  const body = (await request.json()) as {
+    action?: string;
+    record?: unknown;
+  };
+  if (body.action !== "deactivate_admin_record") {
+    return NextResponse.json(
+      { mode: "local", reason: "Unsupported workspace action" },
+      { status: 400 },
+    );
+  }
+
+  const record = parseAdminDeactivation(body.record);
+  if (!record) {
+    return NextResponse.json(
+      { mode: "local", reason: "Invalid admin deactivation record" },
+      { status: 400 },
+    );
+  }
+
+  try {
+    await deactivateWorkspaceAdminRecord(supabase, record);
+    workspacePayloadCache.delete(user.email);
+    return NextResponse.json({ mode: "supabase" });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        mode: "local",
+        reason:
+          error instanceof Error ? error.message : "Admin deactivation failed",
+      },
+      { status: 503 },
+    );
+  }
+}
+
 async function saveWorkspaceSnapshot(
   supabase: ReturnType<typeof createSupabaseRouteClient>,
   user: WorkspaceRouteUser,
@@ -211,4 +260,41 @@ async function saveWorkspaceSnapshot(
     },
     { onConflict: "owner_email" },
   );
+}
+
+function parseAdminDeactivation(value: unknown): WorkspaceAdminDeactivation | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (record.type === "business" && typeof record.businessId === "string") {
+    return { type: "business", businessId: record.businessId };
+  }
+
+  if (
+    record.type === "department" &&
+    typeof record.businessId === "string" &&
+    typeof record.departmentName === "string"
+  ) {
+    return {
+      type: "department",
+      businessId: record.businessId,
+      departmentName: record.departmentName,
+    };
+  }
+
+  if (
+    record.type === "template" &&
+    typeof record.templateKey === "string" &&
+    typeof record.versionNumber === "number"
+  ) {
+    return {
+      type: "template",
+      templateKey: record.templateKey,
+      versionNumber: record.versionNumber,
+    };
+  }
+
+  return null;
 }

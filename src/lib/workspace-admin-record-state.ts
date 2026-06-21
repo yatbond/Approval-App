@@ -3,6 +3,29 @@ import type {
   UserRoleAssignment,
 } from "./types.ts";
 
+export type WorkspaceAdminRecordSyncMode = "loading" | "supabase" | "local";
+
+export function getAdminRecordDeleteSyncState({
+  workspaceSyncMode,
+}: {
+  workspaceSyncMode: WorkspaceAdminRecordSyncMode;
+}) {
+  if (workspaceSyncMode === "loading") {
+    return {
+      canContinue: false,
+      shouldDeactivateRemote: false,
+      error:
+        "Workspace is still syncing. Try again in a moment before deleting admin records.",
+    };
+  }
+
+  return {
+    canContinue: true,
+    shouldDeactivateRemote: workspaceSyncMode === "supabase",
+    error: "",
+  };
+}
+
 export function getUpdatedRoleAssignmentRecordState({
   roleAssignments,
   updater,

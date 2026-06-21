@@ -1294,3 +1294,40 @@ Verification:
 - `npm test -- --runInBand`: passed, 206/206.
 - `npm run build`: passed. Webpack emitted a non-fatal cache `ENOENT` warning after the successful route summary.
 - Autoreview: passed with no Critical, Important, or Minor findings.
+
+## Step 49 - Durable Admin Soft-Deactivation
+
+Status: in progress.
+
+Plan:
+- Add an explicit admin deactivation mutation path for businesses, departments, and workflow templates.
+- Preserve the existing safeguard that general workspace saves do not infer deletes from missing rows.
+- Keep Supabase access least-privilege by using `UPDATE is_active=false`, not table DELETE grants.
+- Remove stale DELETE policies from the local baseline and live Supabase project.
+- Verify with red/green focused tests, live Supabase policy/grant checks, typegen/typecheck, lint, full tests, build, live route smoke, autoreview, and commit.
+
+Implementation notes:
+- Added `deactivateWorkspaceAdminRecord` to the normalized workspace store for business, department, and template soft-deactivation.
+- Added `deactivateRemoteWorkspaceAdminRecord` and `PATCH /api/workspace` support for authenticated admin deactivation commands.
+- Wired Admin business/department delete and Template Library delete to the dedicated deactivation path.
+- Count-checked primary deactivation updates so stale, missing, or RLS-denied targets fail instead of being deleted locally only.
+- Blocked admin deletes while workspace sync mode is still `loading` so deletes do not bypass remote deactivation during startup.
+- Restored workflow template version numbers from normalized rows so template deactivation targets the correct version.
+- Added `supabase/migrations/20260621083108_drop_unused_delete_policies.sql` and removed stale DELETE policies from the baseline schema.
+- Applied `drop_unused_delete_policies` to live Supabase project `wlbxrdmpwuupjyarjcxb`.
+
+Verification:
+- Red step: focused normalized store tests failed before `deactivateWorkspaceAdminRecord` existed.
+- Red step: focused workspace sync tests failed before `deactivateRemoteWorkspaceAdminRecord` existed.
+- Red step: restored-template-version test failed before normalized template mapper carried `version_number`.
+- Red step: zero-row business, department, and template deactivation tests failed before update-count checks were added.
+- Red step: loading-mode admin delete guard tests failed before the sync-mode guard helper was added.
+- Live Supabase policy check: no DELETE policies remain for `business_units`, `business_departments`, or `workflow_template_versions`.
+- Live Supabase grant check: no DELETE grants remain for `anon` or `authenticated` on those tables.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- `npm test -- --runInBand`: passed, 218/218.
+- `npm run build`: passed.
+- Live route smoke: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate.
+- `git diff --check`: passed with CRLF warnings only.
+- Autoreview found two Important issues: zero-row Supabase updates could look successful, and admin deletes could bypass remote deactivation while sync mode was `loading`. Both were fixed and covered by regression tests.

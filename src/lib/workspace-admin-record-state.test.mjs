@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  getAdminRecordDeleteSyncState,
   getUpdatedBusinessDirectoryRecordState,
   getUpdatedRoleAssignmentRecordState,
 } from "./workspace-admin-record-state.ts";
@@ -56,4 +57,31 @@ test("updates business directory records with the supplied updater", () => {
 
   assert.deepEqual(state.businessDirectory[0].departments, ["Finance", "Legal"]);
   assert.deepEqual(businessDirectory[0].departments, ["Finance"]);
+});
+
+test("blocks admin deletes while workspace sync mode is still loading", () => {
+  const state = getAdminRecordDeleteSyncState({ workspaceSyncMode: "loading" });
+
+  assert.equal(state.canContinue, false);
+  assert.equal(state.shouldDeactivateRemote, false);
+  assert.match(state.error, /still syncing/i);
+});
+
+test("requires remote deactivation only in supabase sync mode", () => {
+  assert.deepEqual(
+    getAdminRecordDeleteSyncState({ workspaceSyncMode: "supabase" }),
+    {
+      canContinue: true,
+      shouldDeactivateRemote: true,
+      error: "",
+    },
+  );
+  assert.deepEqual(
+    getAdminRecordDeleteSyncState({ workspaceSyncMode: "local" }),
+    {
+      canContinue: true,
+      shouldDeactivateRemote: false,
+      error: "",
+    },
+  );
 });

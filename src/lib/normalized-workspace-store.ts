@@ -22,9 +22,15 @@ type SupabaseQueryResult = {
 
 type SupabaseMutationResult = {
   error: SupabaseError | null;
+  count?: number | null;
 };
 
 type SupabaseLike = Pick<SupabaseClient, "from">;
+
+export type WorkspaceAdminDeactivation =
+  | { type: "business"; businessId: string }
+  | { type: "department"; businessId: string; departmentName: string }
+  | { type: "template"; templateKey: string; versionNumber: number };
 
 function isPresent<T>(value: T | null | undefined): value is T {
   return value !== null && value !== undefined;
@@ -157,6 +163,51 @@ export async function saveNormalizedWorkspaceState(
     rows.approvalRequestAttachments,
     requests,
     user,
+  );
+}
+
+export async function deactivateWorkspaceAdminRecord(
+  supabase: SupabaseLike,
+  command: WorkspaceAdminDeactivation,
+) {
+  const deactivatedAt = new Date().toISOString();
+
+  if (command.type === "business") {
+    await throwIfNoUpdatedRows(
+      supabase
+        .from("business_units")
+        .update({ is_active: false, updated_at: deactivatedAt }, { count: "exact" })
+        .eq("id", command.businessId),
+      "No active business matched this delete request.",
+    );
+    await throwIfError(
+      supabase
+        .from("business_departments")
+        .update({ is_active: false, updated_at: deactivatedAt }, { count: "exact" })
+        .eq("business_unit_id", command.businessId),
+    );
+    return;
+  }
+
+  if (command.type === "department") {
+    await throwIfNoUpdatedRows(
+      supabase
+        .from("business_departments")
+        .update({ is_active: false, updated_at: deactivatedAt }, { count: "exact" })
+        .eq("business_unit_id", command.businessId)
+        .eq("name", command.departmentName),
+      "No active department matched this delete request.",
+    );
+    return;
+  }
+
+  await throwIfNoUpdatedRows(
+    supabase
+      .from("workflow_template_versions")
+      .update({ is_active: false, updated_at: deactivatedAt }, { count: "exact" })
+      .eq("template_key", command.templateKey)
+      .eq("version_number", command.versionNumber),
+    "No active template version matched this delete request.",
   );
 }
 
@@ -569,7 +620,10 @@ function mapTemplateRow(row: TemplateDbRow): NormalizedWorkflowTemplateVersionRo
       snapshot.documents ||
       (row.document_requirements as NormalizedWorkflowTemplateVersionRow["documentRequirements"]),
     supportedLanguages: row.supported_languages,
-    templateSnapshot: snapshot,
+    templateSnapshot: {
+      ...snapshot,
+      version: row.version_number,
+    },
     createdBy: "",
   };
 }
@@ -620,5 +674,19 @@ async function throwIfError(query: PromiseLike<SupabaseMutationResult>) {
   const { error } = await query;
   if (error) {
     throw new Error(error.message);
+  }
+}
+
+async function throwIfNoUpdatedRows(
+  query: PromiseLike<SupabaseMutationResult>,
+  emptyMessage: string,
+) {
+  const { error, count } = await query;
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!count) {
+    throw new Error(emptyMessage);
   }
 }

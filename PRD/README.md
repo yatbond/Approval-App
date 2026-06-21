@@ -10,4 +10,4 @@ Canonical PRD:
 
 Use the canonical PRD as the source of truth for the current prototype, target production behavior, acceptance criteria, known gaps, and next build priorities.
 
-The canonical PRD now includes the current refactored architecture snapshot and the latest verification baseline.
+The canonical PRD now includes the current refactored architecture snapshot, live Supabase soft-deactivation status, and the latest verification baseline.

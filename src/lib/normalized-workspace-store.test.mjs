@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { saveNormalizedWorkspaceState } from "./normalized-workspace-store.ts";
+import {
+  deactivateWorkspaceAdminRecord,
+  loadNormalizedWorkspaceState,
+  saveNormalizedWorkspaceState,
+} from "./normalized-workspace-store.ts";
 
 const user = {
   id: "user-1",
@@ -184,6 +188,180 @@ test("uses the same archived template key for historical requests and template F
   assert.equal(requestUpsert.payload[0].workflow_template_version_id, "template-1");
 });
 
+test("soft-deactivates a business and its departments through an explicit admin action", async () => {
+  const supabase = new FakeSupabase({
+    business_units: [
+      { id: "business-aai-db", name: "Asia Allied Infrastructure", is_active: true },
+    ],
+    business_departments: [
+      {
+        id: "dept-finance-db",
+        business_unit_id: "business-aai-db",
+        name: "Finance",
+        is_active: true,
+      },
+    ],
+  });
+
+  await deactivateWorkspaceAdminRecord(supabase, {
+    type: "business",
+    businessId: "business-aai-db",
+  });
+
+  assert.equal(supabase.rows.business_units[0].is_active, false);
+  assert.equal(supabase.rows.business_departments[0].is_active, false);
+  assert.deepEqual(
+    supabase.operations.map((operation) => operation.type),
+    ["update", "update"],
+  );
+});
+
+test("soft-deactivates a department through an explicit admin action", async () => {
+  const supabase = new FakeSupabase({
+    business_departments: [
+      {
+        id: "dept-finance-db",
+        business_unit_id: "business-aai-db",
+        name: "Finance",
+        is_active: true,
+      },
+    ],
+  });
+
+  await deactivateWorkspaceAdminRecord(supabase, {
+    type: "department",
+    businessId: "business-aai-db",
+    departmentName: "Finance",
+  });
+
+  assert.equal(supabase.rows.business_departments[0].is_active, false);
+  assert.equal(supabase.operations[0].table, "business_departments");
+  assert.deepEqual(supabase.operations[0].filters, [
+    { type: "eq", column: "business_unit_id", value: "business-aai-db" },
+    { type: "eq", column: "name", value: "Finance" },
+  ]);
+});
+
+test("soft-deactivates a workflow template version through an explicit admin action", async () => {
+  const supabase = new FakeSupabase({
+    workflow_template_versions: [
+      {
+        id: "template-finance-db",
+        template_key: "template-finance",
+        version_number: 3,
+        is_active: true,
+      },
+    ],
+  });
+
+  await deactivateWorkspaceAdminRecord(supabase, {
+    type: "template",
+    templateKey: "template-finance",
+    versionNumber: 3,
+  });
+
+  assert.equal(supabase.rows.workflow_template_versions[0].is_active, false);
+  assert.equal(supabase.operations[0].table, "workflow_template_versions");
+  assert.deepEqual(supabase.operations[0].filters, [
+    { type: "eq", column: "template_key", value: "template-finance" },
+    { type: "eq", column: "version_number", value: 3 },
+  ]);
+});
+
+test("rejects business deactivation when no business row is updated", async () => {
+  const supabase = new FakeSupabase({
+    business_departments: [
+      {
+        id: "dept-finance-db",
+        business_unit_id: "business-aai-db",
+        name: "Finance",
+        is_active: true,
+      },
+    ],
+  });
+
+  await assert.rejects(
+    () =>
+      deactivateWorkspaceAdminRecord(supabase, {
+        type: "business",
+        businessId: "missing-business",
+      }),
+    /No active business matched/i,
+  );
+
+  assert.equal(supabase.rows.business_departments[0].is_active, true);
+});
+
+test("rejects department deactivation when no department row is updated", async () => {
+  const supabase = new FakeSupabase({
+    business_departments: [
+      {
+        id: "dept-finance-db",
+        business_unit_id: "business-aai-db",
+        name: "Finance",
+        is_active: true,
+      },
+    ],
+  });
+
+  await assert.rejects(
+    () =>
+      deactivateWorkspaceAdminRecord(supabase, {
+        type: "department",
+        businessId: "business-aai-db",
+        departmentName: "Legal",
+      }),
+    /No active department matched/i,
+  );
+});
+
+test("rejects template deactivation when no template version row is updated", async () => {
+  const supabase = new FakeSupabase({
+    workflow_template_versions: [
+      {
+        id: "template-finance-db",
+        template_key: "template-finance",
+        version_number: 3,
+        is_active: true,
+      },
+    ],
+  });
+
+  await assert.rejects(
+    () =>
+      deactivateWorkspaceAdminRecord(supabase, {
+        type: "template",
+        templateKey: "template-finance",
+        versionNumber: 4,
+      }),
+    /No active template version matched/i,
+  );
+});
+
+test("restores template version numbers from normalized template rows", async () => {
+  const supabase = new FakeSupabase({
+    workflow_template_versions: [
+      {
+        id: "template-finance-db",
+        template_key: "template-finance",
+        version_number: 3,
+        name: "Finance invoice approval",
+        graph: template.graph,
+        document_requirements: [],
+        supported_languages: ["English"],
+        template_snapshot: template,
+        business_units: { name: "Asia Allied Infrastructure" },
+        business_departments: { name: "Finance" },
+        is_active: true,
+      },
+    ],
+  });
+
+  const snapshot = await loadNormalizedWorkspaceState(supabase, "template-finance");
+
+  assert.equal(snapshot.workflowTemplates[0].version, 3);
+});
+
 class FakeSupabase {
   constructor(seed = {}) {
     this.rows = {
@@ -222,9 +400,12 @@ class FakeSupabase {
 
   update(table, payload, filters) {
     this.operations.push({ type: "update", table, payload, filters });
+    let count = 0;
     for (const row of this.select(table, filters)) {
       Object.assign(row, payload);
+      count += 1;
     }
+    return count;
   }
 
   upsertRow(table, row) {
@@ -352,9 +533,10 @@ class FakeQuery {
     return this;
   }
 
-  update(payload) {
+  update(payload, options) {
     this.action = "update";
     this.payload = payload;
+    this.options = options;
     return this;
   }
 
@@ -375,8 +557,8 @@ class FakeQuery {
     }
 
     if (this.action === "update") {
-      this.supabase.update(this.table, this.payload, this.filters);
-      return { data: null, error: null };
+      const count = this.supabase.update(this.table, this.payload, this.filters);
+      return { data: null, error: null, count };
     }
 
     return {

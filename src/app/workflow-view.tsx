@@ -122,6 +122,7 @@ export function WorkflowView({
   selectedTemplateId,
   setSelectedTemplateId,
   onDeleteTemplate,
+  adminRecordError,
   onCreateTemplate,
   onUpdateTemplate,
   userDirectory,
@@ -132,7 +133,8 @@ export function WorkflowView({
   workflowTemplates: WorkflowTemplate[];
   selectedTemplateId: string;
   setSelectedTemplateId: (id: string) => void;
-  onDeleteTemplate: (id: string) => void;
+  onDeleteTemplate: (id: string) => void | Promise<void>;
+  adminRecordError?: string;
   onCreateTemplate: (template: WorkflowTemplate) => void;
   onUpdateTemplate: (template: WorkflowTemplate) => void;
   userDirectory: UserDirectoryEntry[];
@@ -732,6 +734,11 @@ export function WorkflowView({
               </button>
             )}
           </div>
+          {adminRecordError && (
+            <p className="mt-3 rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-100">
+              {adminRecordError}
+            </p>
+          )}
         </div>
         {workflow && workflowEditorTab === "canvas" && (
           <div className="p-4">
