@@ -825,3 +825,31 @@ Verification:
 - `npm test -- --runInBand`: passed, 159/159.
 - `npm run build`: exited 0 and generated the app successfully; webpack emitted a non-blocking cache warning for `.next/cache/webpack/server-production/1.pack`.
 - Final autoreview: passed with no actionable Step 30 findings.
+
+## Step 31 - Workflow Box Document State Boundary
+
+Status: in review.
+
+Plan:
+- Extract add-document-to-selected-box state out of `WorkflowView`.
+- Preserve document type trimming, default extraction field shape, document-format-to-source mapping, selected node linking, save label, and form reset defaults.
+- Keep template persistence in `saveWorkflowTemplate` and leave the UI handler responsible only for applying helper output.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-box-document-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-box-document-state.ts` for add-box-document state and reset defaults.
+- Rewired `addDocumentToSelectedBox` in `src/app/approval-workspace.tsx` to call `getWorkflowAddBoxDocumentState`.
+- Removed now-unused `addWorkflowDocumentToNode` and `fieldSourceForDocumentFormat` imports from the component.
+- Initial focused test expected no `documentId` on the generated field; corrected the test to reflect existing `addWorkflowDocumentToNode` enrichment.
+- Initial autoreview found the component guard had been weakened from `selectedGraphNode` to `selectedNodeId`; restored the `selectedGraphNode` guard, then removed an overcorrection that would have rejected existing empty-label nodes.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-box-document-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-box-document-state.test.mjs`: passed, 3/3 after review fixes.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated box document add behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 162/162 after review fixes.
+- `npm run build`: passed.
+- Final autoreview: initial P2 behavior finding was fixed; final re-review had no code findings and only noted stale tracker counts, now corrected.

@@ -22,7 +22,6 @@ import {
   getMissingRequiredSubmissionDocuments,
 } from "@/lib/request-builder";
 import {
-  addWorkflowDocumentToNode,
   analyzeConditionCoverage,
   deleteWorkflowConditionCase,
   createWorkflowGraphFromTemplate,
@@ -40,7 +39,6 @@ import {
 import {
   createAttachmentRecord,
   documentFormatOptions,
-  fieldSourceForDocumentFormat,
 } from "@/lib/workflow-documents";
 import {
   getConditionContext,
@@ -109,6 +107,7 @@ import {
   getWorkflowConnectNodesState,
   getWorkflowCreateNodeState,
 } from "@/lib/workflow-canvas-edit-state";
+import { getWorkflowAddBoxDocumentState } from "@/lib/workflow-box-document-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -948,29 +947,26 @@ function WorkflowView({
   }
 
   function addDocumentToSelectedBox() {
-    if (!workflow || !selectedGraphNode || !boxDocumentType.trim()) {
+    if (!workflow || !selectedGraphNode) {
       return;
     }
 
-    const updatedTemplate = addWorkflowDocumentToNode(workflow, selectedGraphNode.id, {
-      documentType: boxDocumentType.trim(),
+    const nextState = getWorkflowAddBoxDocumentState({
+      template: workflow,
+      selectedNodeId,
+      selectedNodeLabel: selectedGraphNode.label,
+      documentType: boxDocumentType,
       format: boxDocumentFormat,
       required: boxDocumentRequired,
-      fields: [
-        {
-          name: `${boxDocumentType.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_")}_field`,
-          label: "New field",
-          type: "text",
-          required: false,
-          source: fieldSourceForDocumentFormat(boxDocumentFormat),
-          instructions: "Describe what should be extracted from this document.",
-        },
-      ],
     });
-    saveWorkflowTemplate(updatedTemplate, `Added document to ${selectedGraphNode.label}`);
-    setBoxDocumentType("Supporting document");
-    setBoxDocumentFormat("pdf");
-    setBoxDocumentRequired(true);
+    if (!nextState.didUpdate || !nextState.resetForm) {
+      return;
+    }
+
+    saveWorkflowTemplate(nextState.template, nextState.label);
+    setBoxDocumentType(nextState.resetForm.documentType);
+    setBoxDocumentFormat(nextState.resetForm.format);
+    setBoxDocumentRequired(nextState.resetForm.required);
   }
 
   function updateTemplateDocuments(
