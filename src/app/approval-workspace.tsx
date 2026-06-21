@@ -98,6 +98,7 @@ import {
   getDeletedTemplateRecordState,
   getUpdatedTemplateRecordState,
 } from "@/lib/workspace-template-record-state";
+import { getWorkflowCanvasSelectionState } from "@/lib/workflow-canvas-selection-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -728,17 +729,28 @@ function WorkflowView({
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [connectFromNodeId, setConnectFromNodeId] = useState<string | null>(null);
   const [conditionOutcomeCaseId, setConditionOutcomeCaseId] = useState<string | null>(null);
-  const activeOutcomeTargetIds = useMemo(() => {
-    if (!conditionOutcomeCaseId || !selectedNodeId) {
-      return new Set<string>();
-    }
-
-    const selectedNode = workflowGraph.nodes.find((node) => node.id === selectedNodeId);
-    const conditionCase = selectedNode?.conditionCases?.find(
-      (item) => item.id === conditionOutcomeCaseId,
-    );
-    return new Set(conditionCase?.targetNodeIds || []);
-  }, [conditionOutcomeCaseId, selectedNodeId, workflowGraph]);
+  const {
+    activeOutcomeTargetIds,
+    connectFromNode,
+    selectedGraphEdge,
+    selectedGraphNode,
+  } = useMemo(
+    () =>
+      getWorkflowCanvasSelectionState({
+        graph: workflowGraph,
+        selectedNodeId,
+        selectedEdgeId,
+        connectFromNodeId,
+        conditionOutcomeCaseId,
+      }),
+    [
+      conditionOutcomeCaseId,
+      connectFromNodeId,
+      selectedEdgeId,
+      selectedNodeId,
+      workflowGraph,
+    ],
+  );
   const [canvasViewResetNonce, setCanvasViewResetNonce] = useState(0);
   const canvasInstanceKey = useMemo(
     () =>
@@ -773,12 +785,6 @@ function WorkflowView({
   const [boxDocumentFormat, setBoxDocumentFormat] =
     useState<DocumentFormat>("pdf");
   const [boxDocumentRequired, setBoxDocumentRequired] = useState(true);
-  const selectedGraphNode =
-    workflowGraph.nodes.find((node) => node.id === selectedNodeId) || null;
-  const selectedGraphEdge =
-    workflowGraph.edges.find((edge) => edge.id === selectedEdgeId) || null;
-  const connectFromNode =
-    workflowGraph.nodes.find((node) => node.id === connectFromNodeId) || null;
   const firstBusiness = businessDirectory[0];
   const [templateName, setTemplateName] = useState("General document approval");
   const [businessId, setBusinessId] = useState(firstBusiness?.id || "");

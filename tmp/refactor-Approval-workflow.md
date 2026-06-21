@@ -591,3 +591,28 @@ Verification:
 - `npm test -- --runInBand`: passed, 134/134.
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 21 findings.
+
+## Step 22 - Workflow Canvas Selection Boundary
+
+Status: complete.
+
+Plan:
+- Extract selected node, selected edge, connect-from node, and active condition outcome target derivation out of `WorkflowView`.
+- Add a pure helper for canvas selection state.
+- Preserve selected item lookup, missing-id null behavior, and condition outcome target highlighting.
+- Verify with red/green helper tests, typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-canvas-selection-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-canvas-selection-state.ts` for selected graph item and active outcome target state.
+- Rewired `WorkflowView` in `src/app/approval-workspace.tsx` to use `getWorkflowCanvasSelectionState`.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-canvas-selection-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-canvas-selection-state.test.mjs`: passed, 3/3.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated canvas selection interaction was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 137/137.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 22 findings. Reviewer noted its fork hit an unrelated generated `.next/types/validator.ts` missing `./routes.js` typecheck artifact, while this turn's fresh `npx tsc --noEmit` and `npm run build` both passed.
