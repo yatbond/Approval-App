@@ -1567,3 +1567,12 @@ Verification:
 - Added OpenRouter PDF file input payloads with the `file-parser` plugin and `mistral-ocr` default engine.
 - Passed workflow document extraction fields from the upload client to `/api/parse`, so configured document fields guide OCR extraction when present.
 - Verified with parser/file API tests, full test run, TypeScript, lint, production build, and a live `/api/parse` PDF smoke test returning `Invoice total: HKD 8400`.
+
+## Step 60 - Qwen Visual OCR Upload Path
+- Added a Qwen visual OCR path for PDFs rendered into page images, using OpenRouter `image_url` inputs instead of the PDF file-parser plugin.
+- Added browser-side PDF page rendering with `pdfjs-dist`, bounded to the first few pages by default.
+- Added ad hoc upload fields so users can specify what to extract before uploading a PDF, image, Excel, or CSV.
+- Updated parser output handling to support field value, confidence, and evidence, while preserving older plain JSON field responses.
+- Added confidence and evidence display to the upload extraction draft so users can review low/medium confidence values.
+- Added config knobs: `OPENROUTER_VISION_OCR_MODEL=qwen/qwen3-vl-8b-instruct` and `NEXT_PUBLIC_PDF_OCR_MODE=qwen-page-images`.
+- Verification: red tests failed for missing parser/upload contracts, then passed after implementation; `npm test` passed 253/253; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning; live browser smoke at `http://localhost:3000/?tab=upload` showed the field editor, Add field interaction, and no console errors.

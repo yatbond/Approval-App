@@ -5,19 +5,27 @@ import {
   FileText,
   Image as ImageIcon,
   Loader2,
+  Plus,
   Send,
+  X,
   Upload,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   acceptForDocumentFormat,
   formatDocumentFormat,
 } from "@/lib/workflow-documents";
-import { getUploadViewState } from "@/lib/upload-view-state";
+import {
+  buildAdHocExtractionFields,
+  createAdHocFieldDraft,
+  getUploadViewState,
+  type AdHocFieldDraft,
+} from "@/lib/upload-view-state";
 import type { ParsedWorkspaceFilePayload } from "@/lib/workspace-file-api";
 import type {
   ApprovalAttachment,
   WorkflowDocumentRequirement,
+  WorkflowField,
   WorkflowTemplate,
 } from "@/lib/types";
 
@@ -45,6 +53,7 @@ export function UploadView({
   parseFile: (
     file: File,
     documentRequirement?: WorkflowDocumentRequirement,
+    adHocFields?: WorkflowField[],
   ) => void;
   uploadedAttachments: ApprovalAttachment[];
   workflowTemplates: WorkflowTemplate[];
@@ -53,6 +62,9 @@ export function UploadView({
   submissionMessage: string;
   onSubmitRequest: () => void;
 }) {
+  const [adHocFieldDrafts, setAdHocFieldDrafts] = useState<AdHocFieldDraft[]>([
+    createAdHocFieldDraft(1),
+  ]);
   const {
     requestTemplates,
     selectedTemplate,
@@ -64,6 +76,7 @@ export function UploadView({
     selectedTemplateId,
     uploadedAttachments,
   });
+  const adHocFields = buildAdHocExtractionFields(adHocFieldDrafts);
 
   useEffect(() => {
     if (selectedTemplate && selectedTemplate.id !== selectedTemplateId) {
@@ -176,7 +189,83 @@ export function UploadView({
           </div>
         )}
 
-        <label className="mt-5 flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-white/20 bg-[#121518] p-6 text-center transition hover:border-emerald-400/60 hover:bg-emerald-400/5">
+        <div className="mt-5 rounded-md border border-white/10 bg-[#121518] p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-neutral-200">
+                Fields to extract
+              </p>
+              <p className="mt-1 text-xs text-neutral-500">
+                Used for ad hoc uploads and Qwen visual OCR.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setAdHocFieldDrafts((drafts) => [
+                  ...drafts,
+                  createAdHocFieldDraft(drafts.length + 1),
+                ])
+              }
+              className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-medium text-emerald-100 transition hover:bg-emerald-500/20"
+            >
+              <Plus size={14} />
+              Add field
+            </button>
+          </div>
+
+          <div className="mt-3 space-y-3">
+            {adHocFieldDrafts.map((draft, index) => (
+              <div key={draft.id} className="grid gap-2 sm:grid-cols-[1fr_1.4fr_auto]">
+                <input
+                  value={draft.label}
+                  placeholder="Field name, e.g. invoice total"
+                  onChange={(event) =>
+                    setAdHocFieldDrafts((drafts) =>
+                      drafts.map((item) =>
+                        item.id === draft.id
+                          ? { ...item, label: event.target.value }
+                          : item,
+                      ),
+                    )
+                  }
+                  className="h-10 min-w-0 rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition focus:border-emerald-400/60"
+                />
+                <input
+                  value={draft.instructions}
+                  placeholder="Optional instruction"
+                  onChange={(event) =>
+                    setAdHocFieldDrafts((drafts) =>
+                      drafts.map((item) =>
+                        item.id === draft.id
+                          ? { ...item, instructions: event.target.value }
+                          : item,
+                      ),
+                    )
+                  }
+                  className="h-10 min-w-0 rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition focus:border-emerald-400/60"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAdHocFieldDrafts((drafts) =>
+                      drafts.length === 1
+                        ? [createAdHocFieldDraft(1)]
+                        : drafts.filter((item) => item.id !== draft.id),
+                    )
+                  }
+                  className="flex h-10 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-xs text-rose-100 transition hover:bg-rose-500/20"
+                  aria-label={`Remove extraction field ${index + 1}`}
+                >
+                  <X size={14} />
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <label className="mt-4 flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-white/20 bg-[#121518] p-6 text-center transition hover:border-emerald-400/60 hover:bg-emerald-400/5">
           {isParsing ? (
             <Loader2 className="mb-3 animate-spin text-emerald-200" size={28} />
           ) : (
@@ -193,7 +282,7 @@ export function UploadView({
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) {
-                parseFile(file);
+                parseFile(file, undefined, adHocFields);
               }
             }}
           />
@@ -254,7 +343,22 @@ export function UploadView({
               <div className="grid gap-3 md:grid-cols-2">
                 {Object.entries(editedFields).map(([label, value]) => (
                   <label key={label} className="block">
-                    <span className="mb-1 block text-xs text-neutral-400">{label}</span>
+                    <span className="mb-1 flex items-center justify-between gap-2 text-xs text-neutral-400">
+                      <span>{label}</span>
+                      {parseResult.confidence?.[label] && (
+                        <span
+                          className={`rounded-md border px-2 py-0.5 ${
+                            parseResult.confidence[label] === "high"
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+                              : parseResult.confidence[label] === "medium"
+                                ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
+                                : "border-rose-500/30 bg-rose-500/10 text-rose-100"
+                          }`}
+                        >
+                          {parseResult.confidence[label]} confidence
+                        </span>
+                      )}
+                    </span>
                     <input
                       value={value}
                       onChange={(event) =>
@@ -265,6 +369,11 @@ export function UploadView({
                       }
                       className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none transition focus:border-emerald-400/60"
                     />
+                    {parseResult.evidence?.[label] && (
+                      <p className="mt-1 rounded-md border border-white/10 bg-[#101214] px-2 py-1 text-xs text-neutral-500">
+                        Evidence: {parseResult.evidence[label]}
+                      </p>
+                    )}
                   </label>
                 ))}
               </div>

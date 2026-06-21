@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getUploadViewState } from "./upload-view-state.ts";
+import {
+  buildAdHocExtractionFields,
+  createAdHocFieldDraft,
+} from "./upload-view-state.ts";
 
 const invoiceDocument = {
   id: "invoice-doc",
@@ -124,4 +128,39 @@ test("returns empty upload state when no templates exist", () => {
   assert.deepEqual(state.uploadDocuments, []);
   assert.deepEqual(Array.from(state.uploadedDocumentIds), []);
   assert.deepEqual(state.missingRequiredDocuments, []);
+});
+
+test("builds ad hoc extraction fields from user-entered labels", () => {
+  const fields = buildAdHocExtractionFields([
+    { id: "draft-1", label: "Invoice amount", instructions: "" },
+    { id: "draft-2", label: " Doctor name ", instructions: "Find the attending doctor." },
+    { id: "draft-3", label: " ", instructions: "Ignore blank label." },
+  ]);
+
+  assert.deepEqual(fields, [
+    {
+      name: "ad_hoc_invoice_amount",
+      label: "Invoice amount",
+      type: "text",
+      required: false,
+      source: "ai",
+      instructions: "Extract Invoice amount.",
+    },
+    {
+      name: "ad_hoc_doctor_name",
+      label: "Doctor name",
+      type: "text",
+      required: false,
+      source: "ai",
+      instructions: "Find the attending doctor.",
+    },
+  ]);
+});
+
+test("creates a blank ad hoc field draft with a stable id", () => {
+  const draft = createAdHocFieldDraft(3);
+
+  assert.equal(draft.id, "ad-hoc-field-3");
+  assert.equal(draft.label, "");
+  assert.equal(draft.instructions, "");
 });

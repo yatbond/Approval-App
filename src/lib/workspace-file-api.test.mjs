@@ -139,6 +139,44 @@ test("posts document-specific extraction fields when parsing a required document
   ]);
 });
 
+test("posts ad hoc extraction fields and rendered PDF page images", async () => {
+  let capturedBody;
+  await parseWorkspaceFile({
+    file: makeFile(),
+    adHocFields: [
+      {
+        name: "patient_name",
+        label: "Patient name",
+        type: "text",
+        required: false,
+        source: "ai",
+        instructions: "Extract the patient name.",
+      },
+    ],
+    pageImages: [
+      { pageNumber: 1, mimeType: "image/png", imageBase64: "page-one" },
+    ],
+    fetcher: async (_url, init) => {
+      capturedBody = init.body;
+      return Response.json({ fields: {}, confidence: {} });
+    },
+  });
+
+  assert.deepEqual(JSON.parse(capturedBody.get("fieldsJson")), [
+    {
+      name: "patient_name",
+      label: "Patient name",
+      type: "text",
+      required: false,
+      source: "ai",
+      instructions: "Extract the patient name.",
+    },
+  ]);
+  assert.deepEqual(JSON.parse(capturedBody.get("pageImagesJson")), [
+    { pageNumber: 1, mimeType: "image/png", imageBase64: "page-one" },
+  ]);
+});
+
 test("throws the parse API error when parsing fails", async () => {
   await assert.rejects(
     parseWorkspaceFile({

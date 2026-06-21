@@ -1,14 +1,20 @@
 import OpenAI from "openai";
-import { z } from "zod";
 import type { ParserStrategy, WorkflowField } from "@/lib/types";
 
-const extractedFieldSchema = z.record(z.string(), z.string());
+const confidenceLevels = ["high", "medium", "low"] as const;
 
 export type ParsedDocumentDraft = {
   strategy: ParserStrategy;
   fields: Record<string, string>;
   confidence: Record<string, "high" | "medium" | "low">;
+  evidence: Record<string, string>;
   notes: string[];
+};
+
+export type PdfPageImageInput = {
+  pageNumber: number;
+  mimeType: string;
+  imageBase64: string;
 };
 
 type OpenRouterChatCompletion = {
@@ -47,8 +53,12 @@ export function buildExtractionPrompt(fields: WorkflowField[], languageHint: str
 
   return [
     "Extract approval workflow data from the uploaded business document.",
-    "Return a valid JSON object whose keys are field labels and whose values are concise strings.",
+    "Return JSON only in this shape:",
+    '{"fields":{"Field label":{"value":"concise extracted value","confidence":"high|medium|low","evidence":"short exact text or visual cue used"}}}',
     "If a value is uncertain, use an empty string rather than inventing an answer.",
+    "Use high confidence only when the value is clearly visible and evidence is provided.",
+    "Use medium confidence when the value is likely but needs human review.",
+    "Use low confidence when the value is blank, partially visible, inferred, or ambiguous.",
     `Document languages may include: ${languageHint}.`,
     "Requested fields:",
     requestedFields,
@@ -66,16 +76,83 @@ export function normalizeUserCorrections(
   );
 }
 
-function parseFieldJson(text: string) {
+function parseExtractionJson(text: string): {
+  fields: Record<string, string>;
+  confidence: Record<string, "high" | "medium" | "low">;
+  evidence: Record<string, string>;
+  success: boolean;
+} {
   const trimmed = text.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   const jsonText = fenced?.[1] || trimmed;
 
+  let parsed: unknown;
   try {
-    return extractedFieldSchema.safeParse(JSON.parse(jsonText));
+    parsed = JSON.parse(jsonText);
   } catch {
-    return extractedFieldSchema.safeParse({});
+    return { fields: {}, confidence: {}, evidence: {}, success: false };
   }
+
+  if (!isPlainRecord(parsed)) {
+    return { fields: {}, confidence: {}, evidence: {}, success: false };
+  }
+
+  const source = isPlainRecord(parsed.fields) ? parsed.fields : parsed;
+  const fields: Record<string, string> = {};
+  const confidence: Record<string, "high" | "medium" | "low"> = {};
+  const evidenceByField: Record<string, string> = {};
+
+  for (const [label, value] of Object.entries(source)) {
+    if (typeof value === "string") {
+      fields[label] = value;
+      continue;
+    }
+
+    if (!isPlainRecord(value)) {
+      continue;
+    }
+
+    const fieldValue =
+      typeof value.value === "string" ? value.value : String(value.value || "");
+    const evidence = typeof value.evidence === "string" ? value.evidence.trim() : "";
+    fields[label] = fieldValue;
+    confidence[label] = normalizeConfidence(value.confidence, fieldValue, evidence);
+    if (evidence) {
+      evidenceByField[label] = evidence;
+    }
+  }
+
+  return {
+    fields,
+    confidence,
+    evidence: evidenceByField,
+    success: Object.keys(fields).length > 0,
+  };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function normalizeConfidence(
+  value: unknown,
+  fieldValue: string,
+  evidence: string,
+): "high" | "medium" | "low" {
+  if (!fieldValue.trim()) {
+    return "low";
+  }
+
+  const normalized =
+    typeof value === "string" && confidenceLevels.includes(value as never)
+      ? (value as "high" | "medium" | "low")
+      : "medium";
+
+  if (normalized === "high" && !evidence) {
+    return "medium";
+  }
+
+  return normalized;
 }
 
 export async function extractImageFields(params: {
@@ -113,6 +190,7 @@ export async function extractImageFieldsWithOpenRouter(params: {
       strategy: "image-ai",
       fields: {},
       confidence: {},
+      evidence: {},
       notes: ["OPENROUTER_API_KEY is not configured yet."],
     };
   }
@@ -146,6 +224,7 @@ export async function extractImageFieldsWithOpenRouter(params: {
       strategy: "image-ai",
       fields: {},
       confidence: {},
+      evidence: {},
       notes: [
         payload.error?.message ||
           `OpenRouter request failed with status ${response.status}.`,
@@ -154,12 +233,13 @@ export async function extractImageFieldsWithOpenRouter(params: {
   }
 
   const content = payload.choices?.[0]?.message?.content || "{}";
-  const parsed = parseFieldJson(content);
+  const parsed = parseExtractionJson(content);
 
   return {
     strategy: "image-ai",
-    fields: parsed.success ? parsed.data : {},
-    confidence: {},
+    fields: parsed.success ? parsed.fields : {},
+    confidence: parsed.success ? parsed.confidence : {},
+    evidence: parsed.success ? parsed.evidence : {},
     notes: parsed.success
       ? [`Parsed with OpenRouter model ${process.env.OPENROUTER_MODEL || "~openai/gpt-latest"}.`]
       : ["OpenRouter output could not be parsed as field JSON."],
@@ -179,6 +259,7 @@ export async function extractPdfFieldsWithOpenRouter(params: {
       strategy: "pdf-ocr",
       fields: {},
       confidence: {},
+      evidence: {},
       notes: ["OPENROUTER_API_KEY is not configured yet."],
     };
   }
@@ -220,6 +301,7 @@ export async function extractPdfFieldsWithOpenRouter(params: {
       strategy: "pdf-ocr",
       fields: {},
       confidence: {},
+      evidence: {},
       notes: [
         payload.error?.message ||
           `OpenRouter request failed with status ${response.status}.`,
@@ -228,12 +310,13 @@ export async function extractPdfFieldsWithOpenRouter(params: {
   }
 
   const content = payload.choices?.[0]?.message?.content || "{}";
-  const parsed = parseFieldJson(content);
+  const parsed = parseExtractionJson(content);
 
   return {
     strategy: "pdf-ocr",
-    fields: parsed.success ? parsed.data : {},
-    confidence: {},
+    fields: parsed.success ? parsed.fields : {},
+    confidence: parsed.success ? parsed.confidence : {},
+    evidence: parsed.success ? parsed.evidence : {},
     notes: parsed.success
       ? [
           `Parsed PDF with OpenRouter model ${
@@ -241,6 +324,91 @@ export async function extractPdfFieldsWithOpenRouter(params: {
           } using ${pdfEngine}.`,
         ]
       : ["OpenRouter PDF output could not be parsed as field JSON."],
+  };
+}
+
+export async function extractPdfFieldsWithQwenPageImages(params: {
+  pageImages: PdfPageImageInput[];
+  fields: WorkflowField[];
+  languageHint: string;
+}): Promise<ParsedDocumentDraft> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+
+  if (!apiKey) {
+    return {
+      strategy: "pdf-ocr",
+      fields: {},
+      confidence: {},
+      evidence: {},
+      notes: ["OPENROUTER_API_KEY is not configured yet."],
+    };
+  }
+
+  if (!params.pageImages.length) {
+    return {
+      strategy: "pdf-ocr",
+      fields: {},
+      confidence: {},
+      evidence: {},
+      notes: ["No rendered PDF page images were supplied for Qwen visual OCR."],
+    };
+  }
+
+  const model =
+    process.env.OPENROUTER_VISION_OCR_MODEL || "qwen/qwen3-vl-8b-instruct";
+  const prompt = [
+    buildExtractionPrompt(params.fields, params.languageHint),
+    `The PDF was rendered into ${params.pageImages.length} page image(s).`,
+    "Read the page images directly and extract only the requested fields.",
+  ].join("\n\n");
+
+  const response = await fetchOpenRouterChatCompletion({
+    apiKey,
+    body: {
+      model,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            ...params.pageImages.map((page) => ({
+              type: "image_url",
+              image_url: {
+                url: `data:${page.mimeType};base64,${page.imageBase64}`,
+              },
+            })),
+          ],
+        },
+      ],
+    },
+  });
+
+  const payload = (await response.json()) as OpenRouterChatCompletion;
+
+  if (!response.ok) {
+    return {
+      strategy: "pdf-ocr",
+      fields: {},
+      confidence: {},
+      evidence: {},
+      notes: [
+        payload.error?.message ||
+          `OpenRouter request failed with status ${response.status}.`,
+      ],
+    };
+  }
+
+  const content = payload.choices?.[0]?.message?.content || "{}";
+  const parsed = parseExtractionJson(content);
+
+  return {
+    strategy: "pdf-ocr",
+    fields: parsed.success ? parsed.fields : {},
+    confidence: parsed.success ? parsed.confidence : {},
+    evidence: parsed.success ? parsed.evidence : {},
+    notes: parsed.success
+      ? [`Parsed rendered PDF pages with OpenRouter model ${model}.`]
+      : ["OpenRouter Qwen page-image output could not be parsed as field JSON."],
   };
 }
 
@@ -277,6 +445,7 @@ export async function extractImageFieldsWithOpenAI(params: {
       strategy: "image-ai",
       fields: {},
       confidence: {},
+      evidence: {},
       notes: ["OPENAI_API_KEY is not configured yet."],
     };
   }
@@ -301,12 +470,13 @@ export async function extractImageFieldsWithOpenAI(params: {
     ],
   });
 
-  const parsed = parseFieldJson(response.output_text || "{}");
+  const parsed = parseExtractionJson(response.output_text || "{}");
 
   return {
     strategy: "image-ai",
-    fields: parsed.success ? parsed.data : {},
-    confidence: {},
+    fields: parsed.success ? parsed.fields : {},
+    confidence: parsed.success ? parsed.confidence : {},
+    evidence: parsed.success ? parsed.evidence : {},
     notes: parsed.success
       ? [`Parsed with OpenAI model ${process.env.OPENAI_MODEL || "gpt-5.4-mini"}.`]
       : ["AI output could not be parsed as field JSON."],

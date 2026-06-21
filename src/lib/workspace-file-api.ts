@@ -1,4 +1,5 @@
-import type { WorkflowDocumentRequirement } from "./types.ts";
+import type { PdfPageImageInput } from "./parser.ts";
+import type { WorkflowDocumentRequirement, WorkflowField } from "./types.ts";
 
 export const defaultParseLanguageHint =
   "mixed English, Traditional Chinese, Simplified Chinese";
@@ -17,6 +18,7 @@ export type ParsedWorkspaceFilePayload = {
   strategy: string;
   fields: Record<string, string>;
   confidence: Record<string, string>;
+  evidence?: Record<string, string>;
   notes: string[];
   tables?: { sheetName: string; rows: Record<string, unknown>[] }[];
   [key: string]: unknown;
@@ -62,19 +64,30 @@ export async function uploadWorkspaceAttachmentFile({
 export async function parseWorkspaceFile({
   file,
   documentRequirement,
+  adHocFields = [],
+  pageImages = [],
   languageHint = defaultParseLanguageHint,
   fetcher = fetch,
 }: {
   file: File;
   documentRequirement?: WorkflowDocumentRequirement;
+  adHocFields?: WorkflowField[];
+  pageImages?: PdfPageImageInput[];
   languageHint?: string;
   fetcher?: WorkspaceFetch;
 }): Promise<ParsedWorkspaceFilePayload> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("languageHint", languageHint);
-  if (documentRequirement?.fields.length) {
-    formData.append("fieldsJson", JSON.stringify(documentRequirement.fields));
+  const fields = [
+    ...(documentRequirement?.fields || []),
+    ...adHocFields,
+  ];
+  if (fields.length) {
+    formData.append("fieldsJson", JSON.stringify(fields));
+  }
+  if (pageImages.length) {
+    formData.append("pageImagesJson", JSON.stringify(pageImages));
   }
 
   const response = await fetcher("/api/parse", {

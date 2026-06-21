@@ -10,6 +10,10 @@ import {
   uploadWorkspaceAttachmentFile,
 } from "@/lib/workspace-file-api";
 import {
+  renderPdfFileToPageImages,
+  shouldRenderPdfForVision,
+} from "@/lib/pdf-page-images";
+import {
   getWorkspaceParseFileStartState,
   getWorkspaceParseFileStoredAttachmentState,
   getWorkspaceParseFileSuccessState,
@@ -55,6 +59,7 @@ import type {
   BusinessUnit,
   WorkflowTemplate,
   WorkflowDocumentRequirement,
+  WorkflowField,
   UserRoleAssignment,
 } from "@/lib/types";
 
@@ -249,6 +254,7 @@ function ApprovalWorkspaceBody({
   async function parseFile(
     file: File,
     documentRequirement?: WorkflowDocumentRequirement,
+    adHocFields: WorkflowField[] = [],
   ) {
     const startState = getWorkspaceParseFileStartState(file);
     setFileName(startState.fileName);
@@ -284,7 +290,15 @@ function ApprovalWorkspaceBody({
     );
 
     try {
-      const payload = await parseWorkspaceFile({ file, documentRequirement });
+      const pageImages = shouldRenderPdfForVision(file)
+        ? await renderPdfFileToPageImages(file)
+        : [];
+      const payload = await parseWorkspaceFile({
+        file,
+        documentRequirement,
+        adHocFields,
+        pageImages,
+      });
       const successState = getWorkspaceParseFileSuccessState(payload);
       setParseResult(successState.parseResult);
       setEditedFields(successState.editedFields);

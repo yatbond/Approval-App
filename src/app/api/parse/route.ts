@@ -4,7 +4,9 @@ import {
   chooseParserStrategy,
   extractImageFields,
   extractPdfFields,
+  extractPdfFieldsWithQwenPageImages,
 } from "@/lib/parser";
+import type { PdfPageImageInput } from "@/lib/parser";
 import type { WorkflowField } from "@/lib/types";
 
 const fallbackFields: WorkflowField[] = [
@@ -39,6 +41,7 @@ export async function POST(request: Request) {
   const file = formData.get("file");
   const languageHint = String(formData.get("languageHint") || "mixed English and Chinese");
   const fields = parseWorkflowFields(formData.get("fieldsJson")) || fallbackFields;
+  const pageImages = parsePageImages(formData.get("pageImagesJson"));
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "File is required." }, { status: 400 });
@@ -86,12 +89,18 @@ export async function POST(request: Request) {
     return NextResponse.json(parsed);
   }
 
-  const parsed = await extractPdfFields({
+  const parsed = pageImages.length
+    ? await extractPdfFieldsWithQwenPageImages({
+        pageImages,
+        fields,
+        languageHint,
+      })
+    : await extractPdfFields({
     pdfBase64: buffer.toString("base64"),
     fileName: file.name || "document.pdf",
     fields,
     languageHint,
-  });
+      });
   return NextResponse.json(parsed);
 }
 
@@ -107,6 +116,30 @@ function parseWorkflowFields(value: FormDataEntryValue | null) {
   } catch {
     return null;
   }
+}
+
+function parsePageImages(value: FormDataEntryValue | null): PdfPageImageInput[] {
+  if (typeof value !== "string" || !value.trim()) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<PdfPageImageInput>[];
+    return parsed.filter(isPageImage);
+  } catch {
+    return [];
+  }
+}
+
+function isPageImage(value: Partial<PdfPageImageInput>): value is PdfPageImageInput {
+  return Boolean(
+    value &&
+      typeof value.pageNumber === "number" &&
+      typeof value.mimeType === "string" &&
+      value.mimeType.startsWith("image/") &&
+      typeof value.imageBase64 === "string" &&
+      value.imageBase64.length > 0,
+  );
 }
 
 function isWorkflowField(value: Partial<WorkflowField>): value is WorkflowField {
