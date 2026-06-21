@@ -267,3 +267,30 @@ Verification:
 - `npm run build`: passed after fix.
 - Final live Queue and Tracking previews after production build: passed, no browser console errors.
 - Final autoreview: P2 status badge behavior drift was fixed; no remaining actionable Step 9 findings.
+
+## Step 10 - Upload View Boundary
+
+Status: complete.
+
+Plan:
+- Extract upload-tab derived state into a pure helper.
+- Move Upload request/document/extraction UI out of `approval-workspace.tsx`.
+- Preserve template fallback, upload document requirements, uploaded-document markers, and missing-required warnings.
+- Verify with red/green helper tests, typecheck, lint, live Upload preview, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/upload-view-state.ts` for selected template, upload document requirements, uploaded document ids, and missing required documents.
+- Added `src/lib/upload-view-state.test.mjs`; verified it failed before the helper existed, then passed after implementation.
+- Added `src/app/upload-view.tsx` for the Upload tab presentation.
+- Rewired `src/app/approval-workspace.tsx` to import `UploadView` and removed the local Upload view implementation.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/upload-view-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/upload-view-state.test.mjs`: passed, 3/3.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live Upload preview before full build: passed, no browser console errors; upload heading, template select, document requirements, choose-file control, and extraction placeholder visible.
+- `npm test -- --runInBand`: passed, 99/99.
+- `npm run build`: passed.
+- Live Upload preview after production build: passed, no browser console errors; upload heading, template select, document requirements, choose-file control, and extraction placeholder visible.
+- Final autoreview: passed with no actionable Step 10 findings. Noted residual gap: no UI-level upload interaction test for required-document cards, attached markers, missing-required warnings, and submit disabling.
