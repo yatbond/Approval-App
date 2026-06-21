@@ -93,6 +93,11 @@ import {
 } from "@/app/workspace-shell";
 import { getWorkspaceShellState } from "@/lib/workspace-shell-state";
 import { getTaskActionPreflightState } from "@/lib/task-action-state";
+import {
+  getCreatedTemplateRecordState,
+  getDeletedTemplateRecordState,
+  getUpdatedTemplateRecordState,
+} from "@/lib/workspace-template-record-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -501,39 +506,37 @@ function ApprovalWorkspaceBody({
   }
 
   function createTemplateRecord(template: WorkflowTemplate) {
-    const nextTemplates = [template, ...templates];
-    setTemplates(nextTemplates);
-    setSelectedTemplateId(template.id);
+    const nextState = getCreatedTemplateRecordState({ templates, template });
+    setTemplates(nextState.templates);
+    setSelectedTemplateId(nextState.selectedTemplateId);
     void persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({
-        workflowTemplates: nextTemplates,
-        selectedTemplateId: template.id,
+        workflowTemplates: nextState.templates,
+        selectedTemplateId: nextState.selectedTemplateId,
       }),
     );
   }
 
   function updateTemplateRecord(template: WorkflowTemplate) {
-    const nextTemplates = templates.map((item) =>
-      item.id === template.id ? template : item,
-    );
-    setTemplates(nextTemplates);
+    const nextState = getUpdatedTemplateRecordState({ templates, template });
+    setTemplates(nextState.templates);
     void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ workflowTemplates: nextTemplates }),
+      buildWorkspaceSnapshot({ workflowTemplates: nextState.templates }),
     );
   }
 
   function deleteTemplateRecord(templateId: string) {
-    const nextTemplates = templates.filter((template) => template.id !== templateId);
-    const nextSelectedTemplateId =
-      selectedTemplateId === templateId
-        ? nextTemplates[0]?.id || ""
-        : selectedTemplateId;
-    setTemplates(nextTemplates);
-    setSelectedTemplateId(nextSelectedTemplateId);
+    const nextState = getDeletedTemplateRecordState({
+      templates,
+      selectedTemplateId,
+      templateId,
+    });
+    setTemplates(nextState.templates);
+    setSelectedTemplateId(nextState.selectedTemplateId);
     void persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({
-        workflowTemplates: nextTemplates,
-        selectedTemplateId: nextSelectedTemplateId,
+        workflowTemplates: nextState.templates,
+        selectedTemplateId: nextState.selectedTemplateId,
       }),
     );
   }

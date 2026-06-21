@@ -566,3 +566,28 @@ Verification:
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 20 findings. Added separate plain `approve` missing-document assertion after reviewer noted it as coverage depth.
 - Final focused recheck after coverage addition: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/task-action-state.test.mjs` passed, 3/3.
+
+## Step 21 - Workspace Template Record Boundary
+
+Status: complete.
+
+Plan:
+- Extract template record create/update/delete list mutation and selected-template fallback state out of `ApprovalWorkspaceBody`.
+- Add a pure helper for created template prepending/selection, updated template replacement, and selected-template fallback after deletion.
+- Preserve persistence payloads, selected-template updates, and list ordering.
+- Verify with red/green helper tests, typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workspace-template-record-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workspace-template-record-state.ts` for template record mutation state.
+- Rewired `createTemplateRecord`, `updateTemplateRecord`, and `deleteTemplateRecord` in `src/app/approval-workspace.tsx` to use the helper.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workspace-template-record-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workspace-template-record-state.test.mjs`: passed, 4/4.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated template create/update/delete interaction was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 134/134.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 21 findings.
