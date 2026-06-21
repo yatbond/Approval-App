@@ -88,6 +88,7 @@ import {
 import { getWorkflowCanvasSelectionState } from "@/lib/workflow-canvas-selection-state";
 import { getWorkflowCanvasInstanceKey } from "@/lib/workflow-canvas-instance-state";
 import { getWorkflowCanvasDeleteState } from "@/lib/workflow-canvas-delete-state";
+import { getWorkflowCanvasResetState } from "@/lib/workflow-canvas-reset-state";
 import { getApprovalWorkspaceTaskState } from "@/lib/approval-workspace-task-state";
 import { attachDocumentToTaskState } from "@/lib/task-document-attachment-state";
 import { getWorkflowRunnerActionActor } from "@/lib/workflow-runner-action-state";
@@ -868,11 +869,16 @@ function WorkflowView({
   }
 
   function resetCanvasView() {
-    setSelectedNodeId(null);
-    setSelectedEdgeId(null);
-    setConnectFromNodeId(null);
-    setConditionOutcomeCaseId(null);
-    setCanvasViewResetNonce((nonce) => nonce + 1);
+    const nextState = getWorkflowCanvasResetState({ canvasViewResetNonce });
+    setSelectedNodeId(nextState.selectedNodeId);
+    setSelectedEdgeId(nextState.selectedEdgeId);
+    setConnectFromNodeId(nextState.connectFromNodeId);
+    setConditionOutcomeCaseId(nextState.conditionOutcomeCaseId);
+    setCanvasViewResetNonce(
+      (nonce) =>
+        getWorkflowCanvasResetState({ canvasViewResetNonce: nonce })
+          .canvasViewResetNonce,
+    );
   }
 
   function undoWorkflowChange() {

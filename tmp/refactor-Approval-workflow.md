@@ -1038,3 +1038,28 @@ Verification:
 - `npm test -- --runInBand`: passed, 182/182.
 - `npm run build`: passed.
 - Autoreview: no Critical or Important findings; Minor finding noted that the new helper/test files were untracked before staging, which was addressed before commit.
+
+## Step 39 - Workflow Canvas Reset State Boundary
+
+Status: complete.
+
+Plan:
+- Extract canvas reset state derivation out of `WorkflowView`.
+- Preserve clearing selected node, selected edge, connect source, condition outcome picker, and incrementing the canvas reset nonce.
+- Keep the React functional nonce update so repeated resets queued before render still use the latest pending nonce.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-canvas-reset-state.test.mjs`; verified the focused test failed before the helper module existed.
+- Added `src/lib/workflow-canvas-reset-state.ts` with `getWorkflowCanvasResetState`.
+- Rewired `resetCanvasView` in `src/app/approval-workspace.tsx` to apply the helper-derived cleared state while using the helper inside the functional nonce setter.
+
+Verification:
+- Red step: `node --experimental-strip-types --test src/lib/workflow-canvas-reset-state.test.mjs` failed with missing module before implementation.
+- `node --experimental-strip-types --test src/lib/workflow-canvas-reset-state.test.mjs`: passed, 1/1.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated canvas reset behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 183/183.
+- `npm run build`: passed.
+- Autoreview: passed with no Critical, Important, or Minor findings; reviewer noted the new helper/test should be staged before commit, which was addressed.
