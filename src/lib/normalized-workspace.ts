@@ -33,6 +33,7 @@ export type NormalizedWorkflowTemplateVersionRow = {
   supportedLanguages: string[];
   templateSnapshot: WorkflowTemplate;
   createdBy: string;
+  isActive?: boolean;
 };
 
 export type NormalizedApprovalRequestRow = {
@@ -105,6 +106,23 @@ export function buildNormalizedWorkspaceRows(
   snapshot: WorkspaceStateSnapshot,
   owner: NormalizedOwner,
 ): NormalizedWorkspaceRows {
+  const workflowTemplateVersions = [
+    ...snapshot.workflowTemplates.map((template) => ({
+      templateKey: template.id,
+      versionNumber: latestTaskVersionForTemplate(snapshot.approvalTasks, template.id),
+      name: template.name,
+      businessName: template.business,
+      departmentName: template.department,
+      graph: template.graph,
+      documentRequirements: template.documents,
+      supportedLanguages: template.languages,
+      templateSnapshot: template,
+      createdBy: owner.userId,
+      isActive: true,
+    })),
+    ...archivedTaskTemplateRows(snapshot, owner),
+  ];
+
   return {
     businessUnits: snapshot.businessDirectory.map((business) => ({
       clientId: business.id,
@@ -116,24 +134,13 @@ export function buildNormalizedWorkspaceRows(
         name: department,
       })),
     ),
-    workflowTemplateVersions: snapshot.workflowTemplates.map((template) => ({
-      templateKey: template.id,
-      versionNumber: latestTaskVersionForTemplate(snapshot.approvalTasks, template.id),
-      name: template.name,
-      businessName: template.business,
-      departmentName: template.department,
-      graph: template.graph,
-      documentRequirements: template.documents,
-      supportedLanguages: template.languages,
-      templateSnapshot: template,
-      createdBy: owner.userId,
-    })),
+    workflowTemplateVersions,
     approvalRequests: snapshot.approvalTasks.map((task) => {
       const template = findTaskTemplate(task, snapshot.workflowTemplates);
 
       return {
         requestNo: task.id,
-        workflowTemplateKey: template?.id || "",
+        workflowTemplateKey: taskWorkflowTemplateKey(task, template),
         workflowTemplateVersion: task.workflowTemplateVersion || 1,
         requesterName: task.requester,
         requesterEmail: task.requesterEmail,
@@ -238,8 +245,60 @@ function findTaskTemplate(task: ApprovalTask, templates: WorkflowTemplate[]) {
   return (
     templates.find((template) => template.id === task.workflowTemplateId) ||
     templates.find((template) => template.id === task.workflowTemplateSnapshot?.id) ||
-    templates.find((template) => template.name === task.workflow)
+    templates.find((template) => template.name === task.workflow) ||
+    task.workflowTemplateSnapshot
   );
+}
+
+function taskWorkflowTemplateKey(task: ApprovalTask, template?: WorkflowTemplate) {
+  return task.workflowTemplateId || template?.id || task.workflowTemplateSnapshot?.id || "";
+}
+
+function archivedTaskTemplateRows(
+  snapshot: WorkspaceStateSnapshot,
+  owner: NormalizedOwner,
+): NormalizedWorkflowTemplateVersionRow[] {
+  const activeTemplateVersions = new Set(
+    snapshot.workflowTemplates.map(
+      (template) =>
+        `${template.id}:${latestTaskVersionForTemplate(snapshot.approvalTasks, template.id)}`,
+    ),
+  );
+  const archivedTemplateVersions = new Set<string>();
+  const rows: NormalizedWorkflowTemplateVersionRow[] = [];
+
+  for (const task of snapshot.approvalTasks) {
+    if (!task.workflowTemplateSnapshot) {
+      continue;
+    }
+
+    const templateKey = taskWorkflowTemplateKey(task, task.workflowTemplateSnapshot);
+    const versionNumber = task.workflowTemplateVersion || 1;
+    const versionKey = `${templateKey}:${versionNumber}`;
+    if (activeTemplateVersions.has(versionKey) || archivedTemplateVersions.has(versionKey)) {
+      continue;
+    }
+
+    archivedTemplateVersions.add(versionKey);
+    rows.push({
+      templateKey,
+      versionNumber,
+      name: task.workflowTemplateSnapshot.name,
+      businessName: task.workflowTemplateSnapshot.business,
+      departmentName: task.workflowTemplateSnapshot.department,
+      graph: task.workflowTemplateSnapshot.graph,
+      documentRequirements: task.workflowTemplateSnapshot.documents,
+      supportedLanguages: task.workflowTemplateSnapshot.languages,
+      templateSnapshot: {
+        ...task.workflowTemplateSnapshot,
+        id: templateKey,
+      },
+      createdBy: owner.userId,
+      isActive: false,
+    });
+  }
+
+  return rows;
 }
 
 function restoreBusinessDirectory(

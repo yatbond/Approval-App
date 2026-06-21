@@ -7,8 +7,8 @@ import {
   type NormalizedBusinessDepartmentRow,
   type NormalizedBusinessUnitRow,
   type NormalizedWorkflowTemplateVersionRow,
-} from "@/lib/normalized-workspace";
-import type { WorkspaceStateSnapshot } from "@/lib/workspace-persistence";
+} from "./normalized-workspace.ts";
+import type { WorkspaceStateSnapshot } from "./workspace-persistence.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type SupabaseError = {
@@ -119,22 +119,26 @@ export async function saveNormalizedWorkspaceState(
   snapshot: WorkspaceStateSnapshot,
   user: AuthenticatedUser,
 ) {
+  const savedAt = new Date().toISOString();
   const rows = buildNormalizedWorkspaceRows(snapshot, {
     userId: user.id,
     email: user.email,
   });
-  const businesses = await upsertBusinessUnits(supabase, rows.businessUnits);
+  validateRequestTemplateReferences(rows.approvalRequests, rows.workflowTemplateVersions);
+  const businesses = await upsertBusinessUnits(supabase, rows.businessUnits, savedAt);
   const departments = await upsertBusinessDepartments(
     supabase,
     rows.businessDepartments,
     rows.businessUnits,
     businesses,
+    savedAt,
   );
   const templates = await upsertTemplates(
     supabase,
     rows.workflowTemplateVersions,
     businesses,
     departments,
+    savedAt,
   );
   const requests = await upsertApprovalRequests(
     supabase,
@@ -153,6 +157,27 @@ export async function saveNormalizedWorkspaceState(
     rows.approvalRequestAttachments,
     requests,
     user,
+  );
+}
+
+function validateRequestTemplateReferences(
+  requests: NormalizedApprovalRequestRow[],
+  templates: NormalizedWorkflowTemplateVersionRow[],
+) {
+  const templateKeys = new Set(
+    templates.map((template) => `${template.templateKey}:${template.versionNumber}`),
+  );
+  const missingTemplateRequest = requests.find(
+    (request) =>
+      !templateKeys.has(`${request.workflowTemplateKey}:${request.workflowTemplateVersion}`),
+  );
+
+  if (!missingTemplateRequest) {
+    return;
+  }
+
+  throw new Error(
+    `Approval request ${missingTemplateRequest.requestNo} references missing workflow template ${missingTemplateRequest.workflowTemplateKey || "(none)"} version ${missingTemplateRequest.workflowTemplateVersion}.`,
   );
 }
 
@@ -263,6 +288,7 @@ export async function loadNormalizedWorkspaceState(
 async function upsertBusinessUnits(
   supabase: SupabaseLike,
   rows: NormalizedBusinessUnitRow[],
+  savedAt: string,
 ) {
   if (!rows.length) {
     return [];
@@ -275,7 +301,7 @@ async function upsertBusinessUnits(
         rows.map((row) => ({
           name: row.name,
           is_active: true,
-          updated_at: new Date().toISOString(),
+          updated_at: savedAt,
         })),
         { onConflict: "name" },
       )
@@ -288,6 +314,7 @@ async function upsertBusinessDepartments(
   rows: NormalizedBusinessDepartmentRow[],
   businessRows: NormalizedBusinessUnitRow[],
   businesses: BusinessDbRow[],
+  savedAt: string,
 ) {
   if (!rows.length) {
     return [];
@@ -308,7 +335,7 @@ async function upsertBusinessDepartments(
             business_unit_id: businessId,
             name: row.name,
             is_active: true,
-            updated_at: new Date().toISOString(),
+            updated_at: savedAt,
           }
         : null;
     })
@@ -331,6 +358,7 @@ async function upsertTemplates(
   rows: NormalizedWorkflowTemplateVersionRow[],
   businesses: BusinessDbRow[],
   departments: DepartmentDbRow[],
+  savedAt: string,
 ) {
   if (!rows.length) {
     return [];
@@ -362,9 +390,9 @@ async function upsertTemplates(
       document_requirements: row.documentRequirements,
       supported_languages: row.supportedLanguages,
       template_snapshot: row.templateSnapshot,
-      is_active: true,
+      is_active: row.isActive !== false,
       created_by: row.createdBy,
-      updated_at: new Date().toISOString(),
+      updated_at: savedAt,
     };
   });
 
@@ -397,10 +425,6 @@ async function upsertApprovalRequests(
       const templateId = templateIdByKeyVersion.get(
         `${row.workflowTemplateKey}:${row.workflowTemplateVersion}`,
       );
-      if (!templateId) {
-        return null;
-      }
-
       return {
         request_no: row.requestNo,
         workflow_template_version_id: templateId,

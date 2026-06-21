@@ -45,3 +45,35 @@ Verification:
 - Live Workflow preview: passed, no browser console errors.
 - Live Admin preview: passed, no browser console errors.
 - Final autoreview: passed with no actionable Step 1 findings.
+
+## Step 2 - Normalized Persistence Reconciliation
+
+Status: complete.
+
+Plan:
+- Add store-level tests for normalized saves that remove or rename businesses/departments.
+- Add a guard so approval requests cannot be silently skipped when their workflow template is missing from normalized tables.
+- Avoid unsafe global inactive sweeps in the generic normalized workspace save; directory/template deletion reconciliation needs a future scoped admin/RPC path.
+- Verify with targeted tests first, then full typecheck/lint/test/build, live browser preview, autoreview, and commit.
+
+Implementation notes:
+- Added store-level tests for inactive business/department reconciliation and unresolved request templates.
+- Normalized template rows now distinguish active template-library versions from inactive archived versions used by historical requests.
+- Generic normalized workspace saves do not deactivate absent businesses, departments, or templates because the current snapshot may be partial or stale.
+- Requests are preflight-validated before any normalized write and now throw on missing template FK when no live or archived template row can be resolved.
+- Archived template rows use the same template key as the request FK so historical request persistence is stable even when the snapshot id differs.
+
+Autoreview findings addressed:
+- P1: Missing-template failures previously happened after data-changing reconciliation. Fixed by preflight-validating request template references before any database mutation.
+- P1/P2: Directory reconciliation previously deactivated rows globally during workspace saves. Fixed by removing generic inactive sweeps and testing that normal saves do not deactivate absent rows.
+- P2: Archived template FK keys could diverge from approval request keys. Fixed with a shared task template key helper and regression coverage.
+
+Verification:
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/normalized-workspace-store.test.mjs`: passed, 4/4.
+- `npx tsc --noEmit`: passed.
+- `npm test -- --runInBand`: passed, 71/71.
+- `npm run lint`: passed.
+- `npm run build`: passed.
+- Live Workflow preview: passed, no browser console errors.
+- Live Admin preview: passed, no browser console errors.
+- Final autoreview: passed with no actionable Step 2 findings.
