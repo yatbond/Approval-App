@@ -20,13 +20,18 @@ type WorkflowCanvasEditState = {
 export function getWorkflowCreateNodeState({
   graph,
   kind,
+  selectedNodeId,
 }: {
   graph: WorkflowGraph;
   kind: WorkflowNodeKind;
+  selectedNodeId?: string | null;
 }): WorkflowCanvasEditState {
   const ownerBackedKind =
     kind === "approval" || kind === "review" || kind === "for_information";
+  const position = getNewNodePosition(graph, selectedNodeId);
   const nextGraph = addWorkflowNode(graph, kind, {
+    x: position.x,
+    y: position.y,
     blocking: kind !== "for_information" && kind !== "end",
     assigneeName: ownerBackedKind ? "New owner" : undefined,
     assigneeEmail: ownerBackedKind ? "owner@example.com" : undefined,
@@ -40,6 +45,52 @@ export function getWorkflowCreateNodeState({
     selectedNodeId: created?.id || null,
     selectedEdgeId: null,
   };
+}
+
+function getNewNodePosition(graph: WorkflowGraph, selectedNodeId?: string | null) {
+  const selectedNode = selectedNodeId
+    ? graph.nodes.find((node) => node.id === selectedNodeId)
+    : null;
+  const rightmostNode = graph.nodes.reduce<(typeof graph.nodes)[number] | null>(
+    (rightmost, node) => (!rightmost || node.x > rightmost.x ? node : rightmost),
+    null,
+  );
+  const anchorNode = selectedNode || rightmostNode;
+  const preferredPosition = anchorNode
+    ? {
+        x: anchorNode.x + 260,
+        y: selectedNode ? anchorNode.y + 40 : anchorNode.y,
+      }
+    : { x: 240, y: 120 };
+
+  return findOpenNodePosition(graph, preferredPosition);
+}
+
+function findOpenNodePosition(
+  graph: WorkflowGraph,
+  preferredPosition: { x: number; y: number },
+) {
+  let position = preferredPosition;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (!isNodePositionOccupied(graph, position)) {
+      return position;
+    }
+    position = {
+      x: preferredPosition.x + (attempt + 1) * 60,
+      y: preferredPosition.y + (attempt + 1) * 80,
+    };
+  }
+
+  return position;
+}
+
+function isNodePositionOccupied(
+  graph: WorkflowGraph,
+  position: { x: number; y: number },
+) {
+  return graph.nodes.some(
+    (node) => Math.abs(node.x - position.x) < 220 && Math.abs(node.y - position.y) < 120,
+  );
 }
 
 export function getWorkflowConnectNodesState({

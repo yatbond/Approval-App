@@ -1555,3 +1555,9 @@ Verification:
 - Added Template Library / Template Archive subtabs inside the Template Library page area where archived templates were previously mixed with active templates.
 - Active library now filters out archived workflow templates; archive shows only archived workflow templates as read-only cards.
 - Verified with npm test, lint, TypeScript, production build, and live browser preview at localhost:3000.?tab=workflow.
+
+## Step 58 - Canvas Stability and Node Placement
+- Stopped normal canvas edits from remounting the React Flow canvas by making the canvas key depend only on workflow identity and explicit reset.
+- Switched the canvas to controlled nodes/edges so drag previews remain live while parent graph changes are synced without resetting pan/zoom.
+- Changed new node placement to use the selected box as the anchor, or the rightmost box when no box is selected, with collision nudging for occupied positions.
+- Verified with npm test, lint, TypeScript, production build, and live browser add/undo smoke test without viewport reset.

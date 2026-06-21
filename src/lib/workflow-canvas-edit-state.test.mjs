@@ -26,6 +26,52 @@ test("creates an owner-backed canvas box and selects it", () => {
   assert.equal(created?.assigneeEmail, "owner@example.com");
 });
 
+test("places a new box to the right of the selected box", () => {
+  const result = getWorkflowCreateNodeState({
+    graph,
+    kind: "approval",
+    selectedNodeId: "review-1",
+  });
+  const created = result.graph.nodes.at(-1);
+
+  assert.equal(created?.x, 500);
+  assert.equal(created?.y, 40);
+});
+
+test("places a new box after the rightmost box when no box is selected", () => {
+  const result = getWorkflowCreateNodeState({ graph, kind: "condition" });
+  const created = result.graph.nodes.at(-1);
+
+  assert.equal(created?.x, 500);
+  assert.equal(created?.y, 0);
+});
+
+test("nudges new boxes away from occupied positions", () => {
+  const crowdedGraph = {
+    ...graph,
+    nodes: [
+      ...graph.nodes,
+      {
+        id: "approval-occupied",
+        label: "Approval",
+        kind: "approval",
+        x: 500,
+        y: 40,
+        blocking: true,
+      },
+    ],
+  };
+  const result = getWorkflowCreateNodeState({
+    graph: crowdedGraph,
+    kind: "approval",
+    selectedNodeId: "review-1",
+  });
+  const created = result.graph.nodes.at(-1);
+
+  assert.equal(created?.x, 620);
+  assert.equal(created?.y, 200);
+});
+
 test("creates nonblocking for-information and end boxes with the expected defaults", () => {
   const fyi = getWorkflowCreateNodeState({ graph, kind: "for_information" });
   const end = getWorkflowCreateNodeState({ graph, kind: "end" });

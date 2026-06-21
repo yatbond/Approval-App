@@ -25,7 +25,7 @@ const graph = {
   ],
 };
 
-test("builds a stable canvas key from workflow graph and runtime identity", () => {
+test("builds a stable canvas key from workflow identity and explicit reset only", () => {
   const key = getWorkflowCanvasInstanceKey({
     workflowId: "workflow-1",
     resetNonce: 2,
@@ -38,24 +38,7 @@ test("builds a stable canvas key from workflow graph and runtime identity", () =
     },
   });
 
-  assert.match(key, /^workflow-1:/);
-  const payload = JSON.parse(key.slice(key.indexOf(":") + 1));
-  assert.equal(payload.reset, 2);
-  assert.deepEqual(payload.nodes, [
-    {
-      id: "review-1",
-      kind: "review",
-      label: "Review",
-      assigneeEmail: "reviewer@example.com",
-      documentIds: ["doc-1"],
-    },
-  ]);
-  assert.deepEqual(payload.runtime, {
-    taskId: "task-1",
-    currentNodeId: "review-1",
-    completedNodeIds: ["start"],
-    notifiedNodeIds: ["fyi-1"],
-  });
+  assert.equal(key, "workflow-1:reset-2");
 });
 
 test("uses empty workflow and runtime identity when there is no workflow or runtime task", () => {
@@ -66,8 +49,39 @@ test("uses empty workflow and runtime identity when there is no workflow or runt
     runtimeTask: null,
   });
 
-  assert.equal(
-    key,
-    'empty:{"reset":0,"nodes":[],"edges":[],"runtime":{}}',
-  );
+  assert.equal(key, "empty:reset-0");
+});
+
+test("does not change the canvas key when graph content or runtime state changes", () => {
+  const baseKey = getWorkflowCanvasInstanceKey({
+    workflowId: "workflow-1",
+    resetNonce: 0,
+    graph,
+    runtimeTask: null,
+  });
+  const changedKey = getWorkflowCanvasInstanceKey({
+    workflowId: "workflow-1",
+    resetNonce: 0,
+    graph: {
+      nodes: [
+        ...graph.nodes,
+        {
+          id: "approval-1",
+          kind: "approval",
+          label: "Approval",
+          x: 400,
+          y: 20,
+        },
+      ],
+      edges: graph.edges,
+    },
+    runtimeTask: {
+      id: "task-2",
+      currentNodeId: "approval-1",
+      completedNodeIds: ["review-1"],
+      notifiedNodeIds: [],
+    },
+  });
+
+  assert.equal(changedKey, baseKey);
 });

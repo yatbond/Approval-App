@@ -381,6 +381,7 @@ export function WorkflowView({
     const nextState = getWorkflowCreateNodeState({
       graph: workflowGraph,
       kind,
+      selectedNodeId,
     });
     saveWorkflowGraph(nextState.graph, nextState.label);
     setSelectedNodeId(nextState.selectedNodeId || null);

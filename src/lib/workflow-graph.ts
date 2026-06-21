@@ -17,7 +17,7 @@ type LegacyWorkflowGraph = Omit<WorkflowGraph, "nodes"> & {
 };
 
 type AddNodeOverrides = Partial<
-  Omit<WorkflowGraphNode, "id" | "kind" | "x" | "y">
+  Omit<WorkflowGraphNode, "id" | "kind">
 >;
 
 type AddBranchInput = {

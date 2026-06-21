@@ -10,8 +10,11 @@ import {
   type Edge as FlowEdge,
   type Node as FlowNode,
   type OnNodeDrag,
+  useEdgesState,
+  useNodesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { useEffect, useMemo } from "react";
 import type {
   ApprovalTask,
   WorkflowBranchType,
@@ -69,9 +72,28 @@ export default function WorkflowCanvas({
   onClearSelection,
   onOutcomeTargetClick,
 }: WorkflowCanvasProps) {
-  const highlightedNodes = new Set(highlightedNodeIds);
-  const flowNodes = toFlowNodes(graph, runtimeTask, highlightedNodes);
-  const flowEdges = toFlowEdges(graph, selectedEdgeId);
+  const highlightedNodes = useMemo(
+    () => new Set(highlightedNodeIds),
+    [highlightedNodeIds],
+  );
+  const flowNodes = useMemo(
+    () => toFlowNodes(graph, runtimeTask, highlightedNodes),
+    [graph, highlightedNodes, runtimeTask],
+  );
+  const flowEdges = useMemo(
+    () => toFlowEdges(graph, selectedEdgeId),
+    [graph, selectedEdgeId],
+  );
+  const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
+
+  useEffect(() => {
+    setNodes(flowNodes);
+  }, [flowNodes, setNodes]);
+
+  useEffect(() => {
+    setEdges(flowEdges);
+  }, [flowEdges, setEdges]);
 
   const commitCanvasNode: OnNodeDrag = (_, node) => {
     onMoveNode(node.id, node.position.x, node.position.y);
@@ -89,9 +111,11 @@ export default function WorkflowCanvas({
     <div className="h-[68vh] min-h-[420px] min-w-0 overflow-hidden rounded-md border border-white/10 bg-[#0d1013] lg:h-[calc(100vh-250px)] lg:min-h-[640px]">
       <ReactFlow
         key={canvasInstanceKey}
-        defaultNodes={flowNodes}
-        defaultEdges={flowEdges}
+        nodes={nodes}
+        edges={edges}
         className="h-full w-full"
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         onConnect={connectCanvasNodes}
         onNodeDragStop={commitCanvasNode}
         autoPanOnNodeDrag={false}
@@ -99,8 +123,6 @@ export default function WorkflowCanvas({
         panOnScroll={false}
         zoomOnScroll
         defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-        fitView
-        fitViewOptions={{ padding: 0.18, duration: 0 }}
         onNodeClick={(_, node) => {
           if (onOutcomeTargetClick(node.id)) {
             return;
