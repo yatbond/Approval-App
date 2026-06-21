@@ -205,3 +205,28 @@ Verification:
 - `npm run build`: passed.
 - Live Workflow preview after production build: passed, no browser console errors; canvas, Template Builder, Condition, and saved-status UI visible.
 - Final autoreview: passed with no actionable Step 7 findings. Noted residual gap: no hook-level timing test around `useApprovalWorkspaceState` with mocked local storage and Supabase load/autosave timing.
+
+## Step 8 - Task Display Helper Boundary
+
+Status: complete.
+
+Plan:
+- Extract task path-state and access-role display helpers from the page component.
+- Add focused tests for path state priority, state labels, and visible participant role labels.
+- Keep queue/tracking/workflow UI rendering unchanged while importing the pure helpers.
+- Verify with targeted tests, typecheck, lint, full tests, build, live browser preview, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/task-display.ts` for workflow path node state, state labels, and task access role labels.
+- Added `src/lib/task-display.test.mjs` for focused coverage.
+- Rewired `src/app/approval-workspace.tsx` to import the task display helpers.
+
+Verification:
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/task-display.test.mjs src/lib/workspace-bootstrap.test.mjs`: passed, 7/7.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live Workflow preview before full build: passed, no browser console errors; canvas, condition UI, and path-state labels visible.
+- `npm test -- --runInBand`: passed, 95/95.
+- `npm run build`: passed.
+- Live Workflow preview after production build: passed, no browser console errors; canvas, condition UI, and path-state labels visible.
+- Final autoreview: passed with no actionable Step 8 findings. Noted residual gap: no UI-level regression test for tracking path badges and the "Your role" label.
