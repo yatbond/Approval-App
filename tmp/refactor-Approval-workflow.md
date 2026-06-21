@@ -153,3 +153,29 @@ Verification:
 - Live Upload preview: passed, no browser console errors.
 - Live Admin preview: passed, no browser console errors.
 - Final autoreview: passed with no actionable Step 5 findings.
+
+## Step 6 - Workflow Condition Context Boundary
+
+Status: complete.
+
+Plan:
+- Extract condition upstream/downstream context and workflow node labels from `approval-workspace.tsx`.
+- Add focused tests for upstream approver discovery, downstream outcome mapping, numeric field filtering/deduplication, and node-kind labels.
+- Keep the condition editor and canvas controls using the same helper API through imports.
+- Verify with typecheck, full tests, lint, build, live browser preview, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-condition-context.ts` for condition context and workflow node labels.
+- Added `src/lib/workflow-condition-context.test.mjs` for focused coverage.
+- Rewired `approval-workspace.tsx` to import the condition context helpers.
+- Reworked workspace boot so the first render is deterministic and local saved state loads after mount instead of reading `localStorage` during initial state setup.
+- Removed the root `src/app/loading.tsx` route-level streaming fallback because the local preview received the completed workspace HTML hidden behind the fallback but did not swap it in. Component-level loading remains for the workflow canvas.
+
+Verification:
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-condition-context.test.mjs`: passed, 4/4.
+- `npx tsc --noEmit`: passed.
+- `npm test -- --runInBand`: passed, 88/88.
+- `npm run lint`: passed.
+- `npm run build`: passed.
+- Live Workflow preview after production build: passed, no browser console errors; canvas, Template Builder, Condition, and Return/Reject controls visible.
+- Final autoreview: passed with no actionable Step 6 findings. Noted residual gap: no automated browser/hydration regression test for the boot path, covered by live preview for this step.

@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   approvalTasks,
   notifications,
@@ -83,6 +83,11 @@ import {
   formatDocumentFormat,
 } from "@/lib/workflow-documents";
 import {
+  formatNodeKind,
+  getConditionContext,
+  workflowNodeOptions,
+} from "@/lib/workflow-condition-context";
+import {
   getWorkflowHistory,
   recordWorkflowHistoryEdit,
   redoWorkflowHistory,
@@ -92,6 +97,7 @@ import {
 import {
   parseWorkspaceState,
   serializeWorkspaceState,
+  type WorkspaceStateSnapshot,
 } from "@/lib/workspace-persistence";
 import {
   loadRemoteWorkspaceState,
@@ -168,15 +174,6 @@ const workflowEditorTabs: { id: WorkflowEditorTab; label: string }[] = [
   { id: "canvas", label: "Canvas" },
   { id: "builder", label: "Template Builder" },
   { id: "library", label: "Template Library" },
-];
-
-const workflowNodeOptions: { kind: WorkflowNodeKind; label: string }[] = [
-  { kind: "approval", label: "Approval" },
-  { kind: "review", label: "Review" },
-  { kind: "for_information", label: "For Information" },
-  { kind: "condition", label: "Condition" },
-  { kind: "return_reject", label: "Return/Reject" },
-  { kind: "end", label: "End" },
 ];
 
 const branchTypeOptions: { value: WorkflowBranchType; label: string }[] = [
@@ -283,87 +280,6 @@ function findTemplateForTask(
   );
 }
 
-function getConditionContext(
-  graph: WorkflowGraph,
-  template: WorkflowTemplate,
-  conditionNode: WorkflowGraphNode,
-) {
-  const incomingEdges = graph.edges.filter((edge) => edge.targetId === conditionNode.id);
-  const outgoingEdges = graph.edges.filter((edge) => edge.sourceId === conditionNode.id);
-  const upstreamNodes = incomingEdges
-    .map((edge) => graph.nodes.find((node) => node.id === edge.sourceId))
-    .filter((node): node is WorkflowGraphNode => Boolean(node))
-    .filter((node) => node.kind === "approval" || node.kind === "review");
-  const downstreamNodes = outgoingEdges
-    .map((edge) => ({
-      edge,
-      node: graph.nodes.find((node) => node.id === edge.targetId),
-    }))
-    .filter(
-      (item): item is { edge: WorkflowGraphEdge; node: WorkflowGraphNode } =>
-        Boolean(item.node),
-    );
-  const upstreamDocumentIds = new Set<string>();
-  upstreamNodes.forEach((node) =>
-    (node.documentIds || []).forEach((documentId) => upstreamDocumentIds.add(documentId)),
-  );
-  const numericFields = template.documents
-    .filter(
-      (document) =>
-        !upstreamDocumentIds.size || upstreamDocumentIds.has(document.id),
-    )
-    .flatMap((document) => document.fields)
-    .concat(template.fields)
-    .filter((field) => field.type === "number" || field.type === "currency")
-    .filter(
-      (field, index, fields) =>
-        fields.findIndex((candidate) => candidate.name === field.name) === index,
-    );
-
-  return {
-    incomingEdges,
-    outgoingEdges,
-    upstreamNodes,
-    downstreamNodes,
-    numericFields,
-  };
-}
-
-function formatNodeKind(kind: WorkflowNodeKind) {
-  return workflowNodeOptions.find((option) => option.kind === kind)?.label || "Start";
-}
-
-function subscribeToHydrationStore() {
-  return () => {};
-}
-
-function useHasHydrated() {
-  return useSyncExternalStore(
-    subscribeToHydrationStore,
-    () => true,
-    () => false,
-  );
-}
-
-function WorkspaceHydrationShell({
-  sessionUser,
-}: {
-  sessionUser: string;
-}) {
-  return (
-    <div className="min-h-screen bg-[#0f1113] text-neutral-100">
-      <div className="flex min-h-screen items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-md border border-white/10 bg-white/[0.03] p-5">
-          <p className="text-sm font-semibold">Approval App</p>
-          <p className="mt-2 text-sm text-neutral-400">
-            Loading workspace for {sessionUser}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export type ApprovalWorkspaceProps = {
   initialTab: Tab;
   sessionUser: string;
@@ -373,12 +289,6 @@ export type ApprovalWorkspaceProps = {
 };
 
 export default function ApprovalWorkspace(props: ApprovalWorkspaceProps) {
-  const hasHydrated = useHasHydrated();
-
-  if (!hasHydrated) {
-    return <WorkspaceHydrationShell sessionUser={props.sessionUser} />;
-  }
-
   return <ApprovalWorkspaceBody {...props} />;
 }
 
@@ -404,22 +314,20 @@ function ApprovalWorkspaceBody({
     }),
     [sessionUser],
   );
-  const [savedWorkspaceState] = useState(() => readSavedWorkspaceState());
+  const [savedWorkspaceState, setSavedWorkspaceState] =
+    useState<WorkspaceStateSnapshot | null>(null);
+  const [localWorkspaceReady, setLocalWorkspaceReady] = useState(false);
   const [tasks, setTasks] = useState<ApprovalTask[]>(() =>
-    savedWorkspaceState?.approvalTasks.length
-      ? savedWorkspaceState.approvalTasks
-      : approvalTasks.map((task) => personalizeTask(task, activeUser.email)),
+    approvalTasks.map((task) => personalizeTask(task, activeUser.email)),
   );
   const [businessDirectory, setBusinessDirectory] = useState<BusinessUnit[]>(
-    () => savedWorkspaceState?.businessDirectory || seededBusinessDirectory,
+    () => seededBusinessDirectory,
   );
   const [templates, setTemplates] = useState<WorkflowTemplate[]>(
-    () => savedWorkspaceState?.workflowTemplates || workflowTemplates,
+    () => workflowTemplates,
   );
   const [selectedTemplateId, setSelectedTemplateId] = useState(
     () =>
-      savedWorkspaceState?.selectedTemplateId ||
-      savedWorkspaceState?.workflowTemplates[0]?.id ||
       workflowTemplates[0]?.id ||
       "",
   );
@@ -441,7 +349,7 @@ function ApprovalWorkspaceBody({
     [activeUser.email, tasks],
   );
   const [selectedTaskId, setSelectedTaskId] = useState(
-    () => requestId || savedWorkspaceState?.approvalTasks[0]?.id || approvalTasks[0]?.id,
+    () => requestId || approvalTasks[0]?.id,
   );
   const [comment, setComment] = useState("");
   const [targetEmail, setTargetEmail] = useState("");
@@ -455,16 +363,44 @@ function ApprovalWorkspaceBody({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [uploadedAttachments, setUploadedAttachments] = useState<ApprovalAttachment[]>([]);
   const [workspaceSyncMode, setWorkspaceSyncMode] = useState<"loading" | "supabase" | "local">(
-    savedWorkspaceState ? "local" : "loading",
+    "loading",
   );
-  const [remoteWorkspaceReady, setRemoteWorkspaceReady] = useState(Boolean(savedWorkspaceState));
-  const lastRemoteSnapshotRef = useRef<string | null>(
-    savedWorkspaceState ? serializeWorkspaceState(savedWorkspaceState) : null,
-  );
+  const [remoteWorkspaceReady, setRemoteWorkspaceReady] = useState(false);
+  const lastRemoteSnapshotRef = useRef<string | null>(null);
   const localWorkspaceDirtyRef = useRef(false);
 
   useEffect(() => {
-    if (savedWorkspaceState) {
+    let cancelled = false;
+    const loadTimerId = window.setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
+
+      const saved = readSavedWorkspaceState();
+      if (saved) {
+        const serializedSnapshot = serializeWorkspaceState(saved);
+        lastRemoteSnapshotRef.current = serializedSnapshot;
+        setSavedWorkspaceState(saved);
+        setTasks(saved.approvalTasks);
+        setBusinessDirectory(saved.businessDirectory);
+        setTemplates(saved.workflowTemplates);
+        setRoleAssignments(saved.userRoleAssignments || []);
+        setSelectedTemplateId(saved.selectedTemplateId);
+        setSelectedTaskId(requestId || saved.approvalTasks[0]?.id || approvalTasks[0]?.id);
+        setWorkspaceSyncMode("local");
+        setRemoteWorkspaceReady(true);
+      }
+      setLocalWorkspaceReady(true);
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(loadTimerId);
+    };
+  }, [requestId]);
+
+  useEffect(() => {
+    if (!localWorkspaceReady || savedWorkspaceState) {
       return;
     }
 
@@ -519,7 +455,7 @@ function ApprovalWorkspaceBody({
         window.clearTimeout(loadTimerId);
       }
     };
-  }, [savedWorkspaceState]);
+  }, [localWorkspaceReady, savedWorkspaceState]);
 
   useEffect(() => {
     const applyChecks = () => {
@@ -561,6 +497,10 @@ function ApprovalWorkspaceBody({
   }, [businessDirectory, roleAssignments, userDirectory]);
 
   useEffect(() => {
+    if (!localWorkspaceReady) {
+      return;
+    }
+
     const snapshot = {
       approvalTasks: tasks,
       businessDirectory,
@@ -587,7 +527,7 @@ function ApprovalWorkspaceBody({
       }
     }, remoteAutosaveDelayMs);
     return () => window.clearTimeout(timeoutId);
-  }, [businessDirectory, effectiveRoleAssignments, remoteWorkspaceReady, selectedTemplateId, tasks, templates]);
+  }, [businessDirectory, effectiveRoleAssignments, localWorkspaceReady, remoteWorkspaceReady, selectedTemplateId, tasks, templates]);
   const selectedTaskTemplate = useMemo(
     () => (selectedTask ? findTemplateForTask(selectedTask, templates) : undefined),
     [selectedTask, templates],
