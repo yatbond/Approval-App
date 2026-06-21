@@ -109,7 +109,9 @@ export function buildNormalizedWorkspaceRows(
   const workflowTemplateVersions = [
     ...snapshot.workflowTemplates.map((template) => ({
       templateKey: template.id,
-      versionNumber: latestTaskVersionForTemplate(snapshot.approvalTasks, template.id),
+      versionNumber:
+        template.version ||
+        latestTaskVersionForTemplate(snapshot.approvalTasks, template.id),
       name: template.name,
       businessName: template.business,
       departmentName: template.department,

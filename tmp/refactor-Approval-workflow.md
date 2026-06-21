@@ -1419,3 +1419,37 @@ Verification:
 - `npm run build`: passed. Webpack emitted the known non-fatal cache `ENOENT` warning after the successful route summary.
 - Live browser preview: passed; Template Library `Load` switched the active workflow editor tab to Canvas, Canvas displayed `Copy workflow from template` and `Copy into canvas`, and no console errors were reported.
 - Autoreview: passed with no actionable findings.
+
+## Step 53 - Template Lifecycle and Request Publishing Rules
+
+Status: complete.
+
+Plan:
+- Rename Template Library `Load` to `Open in Canvas` and add `Duplicate as New Template`.
+- Make published versions immutable; users duplicate them to create editable drafts.
+- Add clearer save/publish messages and block publishing when validation has error-level issues.
+- Filter new-request upload templates so explicit drafts cannot be used for submissions, while preserving legacy templates without draft metadata.
+- Verify normalized Supabase workspace rows preserve template version/draft/published metadata consistently.
+- Verify with red/green helper tests, typecheck, lint, full tests, build, live browser preview, review, and commit.
+
+Root cause:
+- The template lifecycle did not distinguish library opening, duplicating, editing drafts, publishing immutable versions, and creating requests from stable templates. New request submission also trusted the parent selected template id, so a draft could still be submitted even if the Upload dropdown was intended to show only request-ready templates.
+
+Implementation notes:
+- Added duplicate-as-draft state to `src/lib/workflow-template-action-state.ts`, including cloned graph/documents and a new draft id.
+- Added publish validation gating through `validateWorkflowTemplate`; publish is blocked for missing first approver and other error-level issues.
+- Added a save guard in `src/lib/workflow-template-save-state.ts` so published templates cannot be mutated directly.
+- Reworked Template Library buttons to show `Open in Canvas`, `Duplicate as New Template`, and `Delete`.
+- Reworked Upload state so explicit drafts are excluded, legacy unflagged templates remain available, and the Upload component synchronizes the displayed published/legacy template id back to workspace state.
+- Added request-submission protection so explicit draft templates cannot create approval requests.
+- Updated normalized workspace rows to use `template.version` before falling back to task history, keeping row version and template snapshot version aligned.
+
+Verification:
+- Red step: lifecycle tests failed before duplicate-as-draft, publish validation, save lock, request filtering, and version persistence were implemented.
+- `npm test`: passed, 232/232.
+- `npm run lint`: passed.
+- `npx tsc --noEmit`: passed.
+- `npm run build`: passed. Webpack emitted the known non-fatal cache `ENOENT` warning after the successful route summary.
+- `git diff --check`: passed with CRLF warnings only.
+- Live browser preview: passed; Template Library showed `Open in Canvas` and `Duplicate as New Template`, `Open in Canvas` switched to Canvas, Upload showed an available request template instead of `No published templates`, and no browser console errors were reported.
+- Review: no actionable findings after checking the lifecycle diff. One persistence mismatch risk was found and fixed by preferring the template snapshot version over task history when normalizing template rows.

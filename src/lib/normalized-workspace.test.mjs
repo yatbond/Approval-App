@@ -20,6 +20,10 @@ const snapshot = {
       name: "Finance invoice approval",
       business: "Asia Allied Infrastructure",
       department: "Finance",
+      version: 4,
+      isDraft: false,
+      publishedAt: "2026-06-21T05:00:00.000Z",
+      sourceTemplateId: "template-finance-draft",
       documentTypes: ["Invoice PDF"],
       documents: [
         {
@@ -137,7 +141,12 @@ test("builds normalized rows from workspace state", () => {
     },
   ]);
   assert.equal(rows.workflowTemplateVersions[0].templateKey, "template-finance");
-  assert.equal(rows.workflowTemplateVersions[0].versionNumber, 3);
+  assert.equal(rows.workflowTemplateVersions[0].versionNumber, 4);
+  assert.equal(rows.workflowTemplateVersions[0].templateSnapshot.isDraft, false);
+  assert.equal(
+    rows.workflowTemplateVersions[0].templateSnapshot.sourceTemplateId,
+    "template-finance-draft",
+  );
   assert.equal(rows.approvalRequests[0].requestNo, "APR-1");
   assert.equal(rows.approvalRequestEvents[0].approvalRequestNo, "APR-1");
   assert.equal(rows.approvalRequestAttachments[0].approvalRequestNo, "APR-1");
@@ -163,4 +172,31 @@ test("restores workspace state from normalized rows before snapshot fallback", (
   assert.deepEqual(restored.workflowTemplates, snapshot.workflowTemplates);
   assert.deepEqual(restored.approvalTasks, snapshot.approvalTasks);
   assert.equal(restored.selectedTemplateId, "template-finance");
+});
+
+test("uses the template version before task history when normalizing templates", () => {
+  const rows = buildNormalizedWorkspaceRows(
+    {
+      ...snapshot,
+      workflowTemplates: [
+        {
+          ...snapshot.workflowTemplates[0],
+          version: 2,
+        },
+      ],
+      approvalTasks: [
+        {
+          ...snapshot.approvalTasks[0],
+          workflowTemplateVersion: 7,
+        },
+      ],
+    },
+    {
+      userId: "user-1",
+      email: "dpang@chunwo.com",
+    },
+  );
+
+  assert.equal(rows.workflowTemplateVersions[0].versionNumber, 2);
+  assert.equal(rows.workflowTemplateVersions[0].templateSnapshot.version, 2);
 });

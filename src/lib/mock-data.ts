@@ -17,6 +17,8 @@ export const workflowTemplates: WorkflowTemplate[] = [
     name: "Finance invoice approval",
     business: "Asia Allied Infrastructure",
     department: "Finance",
+    version: 1,
+    isDraft: false,
     documentTypes: ["Invoice PDF", "Invoice photo", "Excel schedule"],
     documents: [
       {

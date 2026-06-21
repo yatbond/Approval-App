@@ -1,6 +1,6 @@
 "use client";
 
-import { RotateCcw, X } from "lucide-react";
+import { Copy, RotateCcw, X } from "lucide-react";
 import { getWorkflowTemplateLibraryItems } from "@/lib/workflow-template-library-state";
 import type { WorkflowTemplate } from "@/lib/types";
 
@@ -9,12 +9,14 @@ export function WorkflowTemplateLibrary({
   selectedTemplateId,
   onSelectTemplate,
   onLoadTemplate,
+  onDuplicateTemplate,
   onDeleteTemplate,
 }: {
   workflowTemplates: WorkflowTemplate[];
   selectedTemplateId: string;
   onSelectTemplate: (templateId: string) => void;
   onLoadTemplate: (template: WorkflowTemplate) => void;
+  onDuplicateTemplate: (template: WorkflowTemplate) => void;
   onDeleteTemplate: (templateId: string) => void | Promise<void>;
 }) {
   const templateItems = getWorkflowTemplateLibraryItems({
@@ -52,14 +54,22 @@ export function WorkflowTemplateLibrary({
                 {item.countsLabel}
               </p>
             </button>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
               <button
                 type="button"
                 onClick={() => onLoadTemplate(item.template)}
                 className="flex min-h-8 items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 py-1 text-xs text-sky-100 transition hover:bg-sky-400/20"
               >
                 <RotateCcw size={13} />
-                Load
+                {item.openActionLabel}
+              </button>
+              <button
+                type="button"
+                onClick={() => onDuplicateTemplate(item.template)}
+                className="flex min-h-8 items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 py-1 text-xs text-emerald-100 transition hover:bg-emerald-400/20"
+              >
+                <Copy size={13} />
+                {item.duplicateActionLabel}
               </button>
               <button
                 type="button"

@@ -9,6 +9,9 @@ const template = {
   name: "Invoice approval",
   business: "Asia Allied Infrastructure",
   department: "Finance",
+  version: 2,
+  isDraft: false,
+  publishedAt: "2026-06-21T05:00:00.000Z",
   documentTypes: ["Invoice"],
   documents: [
     {
@@ -122,4 +125,46 @@ test("does not submit without a selected template or parse result", () => {
     }).didSubmit,
     false,
   );
+});
+
+test("does not submit a request from a draft template", () => {
+  const state = getWorkspaceRequestSubmissionState({
+    selectedTemplate: { ...template, isDraft: true, publishedAt: undefined },
+    parseResult,
+    activeUser: actor,
+    fileName: "invoice.pdf",
+    editedFields: parseResult.fields,
+    uploadedAttachments: [],
+    tasks: [],
+  });
+
+  assert.equal(state.didSubmit, false);
+  assert.match(state.submissionMessage, /Publish/i);
+  assert.equal(state.tasks.length, 0);
+});
+
+test("allows legacy templates without draft metadata to submit requests", () => {
+  const attachment = {
+    id: "attachment-1",
+    fileName: "invoice.pdf",
+    documentId: "invoice-doc",
+    documentType: "Invoice",
+    format: "pdf",
+    uploadedBy: "derrick@example.com",
+    uploadedAt: "2026-06-21T02:00:00.000Z",
+  };
+
+  const state = getWorkspaceRequestSubmissionState({
+    selectedTemplate: { ...template, isDraft: undefined, publishedAt: undefined },
+    parseResult,
+    activeUser: actor,
+    fileName: "invoice.pdf",
+    editedFields: parseResult.fields,
+    uploadedAttachments: [attachment],
+    tasks: [],
+    taskId: "APR-LEGACY",
+  });
+
+  assert.equal(state.didSubmit, true);
+  assert.equal(state.selectedTaskId, "APR-LEGACY");
 });

@@ -17,5 +17,7 @@ export function getWorkflowTemplateLibraryItems({
     isSelected: template.id === selectedTemplate?.id,
     businessDepartmentLabel: `${template.business} - ${template.department}`,
     countsLabel: `${template.documents.length} document(s), ${template.fields.length} field(s), ${template.steps.length} step(s)`,
+    openActionLabel: "Open in Canvas",
+    duplicateActionLabel: "Duplicate as New Template",
   }));
 }

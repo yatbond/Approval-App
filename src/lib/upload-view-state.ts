@@ -13,9 +13,12 @@ export function getUploadViewState({
   selectedTemplateId: string;
   uploadedAttachments: ApprovalAttachment[];
 }) {
+  const requestTemplates = workflowTemplates.filter(
+    (template) => template.isDraft !== true,
+  );
   const selectedTemplate =
-    workflowTemplates.find((template) => template.id === selectedTemplateId) ||
-    workflowTemplates[0];
+    requestTemplates.find((template) => template.id === selectedTemplateId) ||
+    requestTemplates[0];
   const uploadDocuments = selectedTemplate
     ? getSubmissionDocumentRequirements(selectedTemplate)
     : [];
@@ -29,6 +32,7 @@ export function getUploadViewState({
     : [];
 
   return {
+    requestTemplates,
     selectedTemplate,
     uploadDocuments,
     uploadedDocumentIds,

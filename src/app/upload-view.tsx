@@ -8,6 +8,7 @@ import {
   Send,
   Upload,
 } from "lucide-react";
+import { useEffect } from "react";
 import {
   acceptForDocumentFormat,
   formatDocumentFormat,
@@ -53,6 +54,7 @@ export function UploadView({
   onSubmitRequest: () => void;
 }) {
   const {
+    requestTemplates,
     selectedTemplate,
     uploadDocuments,
     uploadedDocumentIds,
@@ -62,6 +64,12 @@ export function UploadView({
     selectedTemplateId,
     uploadedAttachments,
   });
+
+  useEffect(() => {
+    if (selectedTemplate && selectedTemplate.id !== selectedTemplateId) {
+      setSelectedTemplateId(selectedTemplate.id);
+    }
+  }, [selectedTemplate, selectedTemplateId, setSelectedTemplateId]);
 
   return (
     <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
@@ -78,7 +86,10 @@ export function UploadView({
             onChange={(event) => setSelectedTemplateId(event.target.value)}
             className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
           >
-            {workflowTemplates.map((template) => (
+            {requestTemplates.length === 0 && (
+              <option value="">No published templates</option>
+            )}
+            {requestTemplates.map((template) => (
               <option key={template.id} value={template.id}>
                 {template.name}
               </option>

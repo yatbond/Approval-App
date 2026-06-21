@@ -44,6 +44,16 @@ export function getWorkspaceRequestSubmissionState({
     };
   }
 
+  if (selectedTemplate.isDraft === true) {
+    return {
+      didSubmit: false,
+      tasks,
+      selectedTaskId: "",
+      shouldClearUploadedAttachments: false,
+      submissionMessage: "Publish this workflow template before creating requests from it.",
+    };
+  }
+
   const missingRequiredDocuments = getMissingRequiredSubmissionDocuments(
     selectedTemplate,
     uploadedAttachments,

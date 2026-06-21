@@ -40,6 +40,8 @@ test("summarizes template library cards with counts and active state", () => {
       isSelected: true,
       businessDepartmentLabel: "Asia Allied Infrastructure - Finance",
       countsLabel: "2 document(s), 1 field(s), 3 step(s)",
+      openActionLabel: "Open in Canvas",
+      duplicateActionLabel: "Duplicate as New Template",
     },
     {
       id: "leave",
@@ -47,6 +49,8 @@ test("summarizes template library cards with counts and active state", () => {
       isSelected: false,
       businessDepartmentLabel: "Chun Wo Construction - Human Resources",
       countsLabel: "0 document(s), 0 field(s), 0 step(s)",
+      openActionLabel: "Open in Canvas",
+      duplicateActionLabel: "Duplicate as New Template",
     },
   ]);
 });

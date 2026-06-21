@@ -23,6 +23,9 @@ const templateA = {
   name: "Template A",
   business: "Business",
   department: "Finance",
+  version: 2,
+  isDraft: false,
+  publishedAt: "2026-06-21T05:00:00.000Z",
   documentTypes: [],
   documents: [invoiceDocument, supportDocument],
   fields: [],
@@ -35,6 +38,8 @@ const templateB = {
   name: "Template B",
   business: "Business",
   department: "HR",
+  version: 1,
+  isDraft: true,
   documentTypes: [],
   documents: [],
   fields: [],
@@ -58,12 +63,40 @@ test("selects the requested template and derives upload document state", () => {
   });
 
   assert.equal(state.selectedTemplate, templateA);
+  assert.deepEqual(state.requestTemplates, [templateA]);
   assert.deepEqual(
     state.uploadDocuments.map((document) => document.id),
     ["invoice-doc", "support-doc"],
   );
   assert.deepEqual(Array.from(state.uploadedDocumentIds), ["invoice-doc"]);
   assert.deepEqual(state.missingRequiredDocuments, []);
+});
+
+test("excludes draft templates from new request upload options", () => {
+  const state = getUploadViewState({
+    workflowTemplates: [templateB, templateA],
+    selectedTemplateId: "template-b",
+    uploadedAttachments: [],
+  });
+
+  assert.deepEqual(state.requestTemplates, [templateA]);
+  assert.equal(state.selectedTemplate, templateA);
+});
+
+test("keeps legacy templates without draft metadata available for requests", () => {
+  const legacyTemplate = {
+    ...templateB,
+    id: "legacy-template",
+    isDraft: undefined,
+  };
+  const state = getUploadViewState({
+    workflowTemplates: [templateB, legacyTemplate],
+    selectedTemplateId: "legacy-template",
+    uploadedAttachments: [],
+  });
+
+  assert.deepEqual(state.requestTemplates, [legacyTemplate]);
+  assert.equal(state.selectedTemplate, legacyTemplate);
 });
 
 test("falls back to the first template when selection is missing", () => {

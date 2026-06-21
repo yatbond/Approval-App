@@ -26,6 +26,16 @@ export function getWorkflowTemplateSaveState({
     };
   }
 
+  if (currentTemplate.isDraft === false) {
+    return {
+      didUpdate: false,
+      historyById,
+      template: currentTemplate,
+      label,
+      message: "Published versions are locked. Duplicate this template to edit a new draft.",
+    };
+  }
+
   return {
     didUpdate: true,
     historyById: recordWorkflowHistoryEdit(

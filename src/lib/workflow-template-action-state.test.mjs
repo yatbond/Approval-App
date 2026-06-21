@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   getWorkflowCreateTemplateActionState,
+  getWorkflowDuplicateTemplateActionState,
   getWorkflowPublishTemplateActionState,
 } from "./workflow-template-action-state.ts";
 
@@ -15,6 +16,37 @@ const template = {
   languages: ["English"],
   fields: [],
   steps: [],
+  graph: {
+    nodes: [
+      { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+      {
+        id: "review-1",
+        kind: "review",
+        label: "Review 1",
+        x: 240,
+        y: 0,
+        assigneeName: "Reviewer",
+        assigneeEmail: "reviewer@example.com",
+      },
+      { id: "end", kind: "end", label: "End", x: 480, y: 0 },
+    ],
+    edges: [
+      {
+        id: "start-review",
+        sourceId: "start",
+        targetId: "review-1",
+        label: "Review",
+        branchType: "main",
+      },
+      {
+        id: "review-end",
+        sourceId: "review-1",
+        targetId: "end",
+        label: "Approved",
+        branchType: "approved",
+      },
+    ],
+  },
   version: 1,
   isDraft: true,
 };
@@ -82,4 +114,44 @@ test("does not publish without a selected workflow template", () => {
 
   assert.equal(result.didCreate, false);
   assert.equal(result.template, null);
+});
+
+test("does not publish when the workflow has validation errors", () => {
+  const result = getWorkflowPublishTemplateActionState({
+    template: {
+      ...template,
+      graph: {
+        nodes: [{ id: "start", kind: "start", label: "Start", x: 0, y: 0 }],
+        edges: [],
+      },
+    },
+    now: new Date("2026-06-21T05:00:00.000Z"),
+  });
+
+  assert.equal(result.didCreate, false);
+  assert.equal(result.template, null);
+  assert.match(result.message, /No first approver/i);
+});
+
+test("duplicates a template as a new editable draft", () => {
+  const result = getWorkflowDuplicateTemplateActionState({
+    template: {
+      ...template,
+      isDraft: false,
+      publishedAt: "2026-06-21T04:00:00.000Z",
+    },
+    now: new Date("2026-06-21T06:00:00.000Z"),
+  });
+
+  assert.equal(result.didCreate, true);
+  assert.equal(result.template?.id, "template-1-copy-1782021600000");
+  assert.equal(result.template?.name, "Invoice approval copy");
+  assert.equal(result.template?.version, 1);
+  assert.equal(result.template?.isDraft, true);
+  assert.equal(result.template?.publishedAt, undefined);
+  assert.equal(result.template?.sourceTemplateId, "template-1");
+  assert.notEqual(result.template?.graph, template.graph);
+  assert.deepEqual(result.template?.graph, template.graph);
+  assert.equal(result.selectedTemplateId, "template-1-copy-1782021600000");
+  assert.equal(result.workflowEditorTab, "canvas");
 });

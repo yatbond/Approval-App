@@ -63,3 +63,24 @@ test("records history and returns the next template for real edits", () => {
   assert.equal(history.undoStack[0].label, "Renamed workflow");
   assert.equal(history.lastEdit, "Renamed workflow");
 });
+
+test("blocks direct edits to a published template", () => {
+  const current = {
+    ...template("workflow-1", "Current"),
+    isDraft: false,
+    publishedAt: "2026-06-21T05:00:00.000Z",
+  };
+  const next = { ...current, name: "Changed published template" };
+
+  const result = getWorkflowTemplateSaveState({
+    currentTemplate: current,
+    nextTemplate: next,
+    label: "Renamed workflow",
+    historyById: {},
+    historyId: current.id,
+  });
+
+  assert.equal(result.didUpdate, false);
+  assert.equal(result.template, current);
+  assert.match(result.message, /duplicate/i);
+});

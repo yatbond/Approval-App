@@ -77,6 +77,7 @@ import { getWorkflowTemplateCopyState } from "@/lib/workflow-template-copy-state
 import { getWorkflowTemplateSaveState } from "@/lib/workflow-template-save-state";
 import {
   getWorkflowCreateTemplateActionState,
+  getWorkflowDuplicateTemplateActionState,
   getWorkflowPublishTemplateActionState,
 } from "@/lib/workflow-template-action-state";
 import {
@@ -242,6 +243,7 @@ export function WorkflowView({
     [workflowTemplates, workflow?.id],
   );
   const [copySourceTemplateId, setCopySourceTemplateId] = useState("");
+  const [workflowActionMessage, setWorkflowActionMessage] = useState("");
   const copySourceTemplate =
     copySourceTemplates.find((template) => template.id === copySourceTemplateId) ||
     copySourceTemplates[0] ||
@@ -266,10 +268,26 @@ export function WorkflowView({
       template: workflow,
     });
     if (!nextState.didCreate || !nextState.template) {
+      setWorkflowActionMessage(nextState.message || "");
       return;
     }
 
     onCreateTemplate(nextState.template);
+    setWorkflowActionMessage(`Published ${nextState.template.name}.`);
+  }
+
+  function duplicateTemplateAsDraft(template: WorkflowTemplate) {
+    const nextState = getWorkflowDuplicateTemplateActionState({ template });
+    if (!nextState.didCreate || !nextState.template) {
+      setWorkflowActionMessage(nextState.message || "");
+      return;
+    }
+
+    onCreateTemplate(nextState.template);
+    setSelectedTemplateId(nextState.selectedTemplateId || nextState.template.id);
+    setWorkflowEditorTab(nextState.workflowEditorTab || "canvas");
+    resetCanvasView();
+    setWorkflowActionMessage(`Created editable draft ${nextState.template.name}.`);
   }
 
   function loadTemplateIntoBuilder(template: WorkflowTemplate) {
@@ -326,6 +344,9 @@ export function WorkflowView({
       historyId: activeWorkflowHistoryId,
     });
     if (!previewState.didUpdate) {
+      if (previewState.message) {
+        setWorkflowActionMessage(previewState.message);
+      }
       return;
     }
 
@@ -340,6 +361,7 @@ export function WorkflowView({
       return nextState.historyById;
     });
     onUpdateTemplate(nextTemplate);
+    setWorkflowActionMessage(label);
   }
 
   function saveWorkflowGraph(nextGraph: WorkflowGraph, label = "Updated workflow") {
@@ -762,6 +784,11 @@ export function WorkflowView({
           {adminRecordError && (
             <p className="mt-3 rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-100">
               {adminRecordError}
+            </p>
+          )}
+          {workflowActionMessage && (
+            <p className="mt-3 rounded-md border border-sky-400/30 bg-sky-400/10 p-3 text-sm text-sky-100">
+              {workflowActionMessage}
             </p>
           )}
         </div>
@@ -1335,6 +1362,7 @@ export function WorkflowView({
             selectedTemplateId={workflow?.id || ""}
             onSelectTemplate={setSelectedTemplateId}
             onLoadTemplate={loadTemplateIntoBuilder}
+            onDuplicateTemplate={duplicateTemplateAsDraft}
             onDeleteTemplate={onDeleteTemplate}
           />
         )}
