@@ -931,3 +931,31 @@ Verification:
 - `npm test -- --runInBand`: passed, 168/168.
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 34 findings.
+
+## Step 35 - Workflow History Action State Boundary
+
+Status: complete.
+
+Plan:
+- Extract undo/redo workflow action decisions out of `WorkflowView`.
+- Preserve no-workflow and empty-stack no-op behavior, history transitions, returned template application, and canvas reset signal.
+- Keep React state setters, `onUpdateTemplate`, and reset implementation in the component.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-history-action-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-history-action-state.ts` for undo/redo action state.
+- Rewired `undoWorkflowChange` and `redoWorkflowChange` in `src/app/approval-workspace.tsx` to call the helper.
+- Initial typecheck caught call-site property names using `workflowHistoryById`; corrected them to the helper's `historyById` parameter.
+- Removed direct `undoWorkflowHistory` and `redoWorkflowHistory` imports from the component.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-history-action-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-history-action-state.test.mjs`: passed, 3/3.
+- First `npx next typegen && npx tsc --noEmit` failed on the call-site property name mismatch; it passed after the fix.
+- `npx next typegen && npx tsc --noEmit`: passed after the call-site fix.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated undo/redo behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 171/171.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 35 findings.

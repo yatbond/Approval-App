@@ -46,8 +46,6 @@ import {
 } from "@/lib/workflow-condition-context";
 import {
   getWorkflowHistory,
-  redoWorkflowHistory,
-  undoWorkflowHistory,
   type WorkflowHistoryById,
 } from "@/lib/workflow-history";
 import {
@@ -110,6 +108,10 @@ import { getWorkflowAddBoxDocumentState } from "@/lib/workflow-box-document-stat
 import { getWorkflowTemplateDocumentState } from "@/lib/workflow-template-document-state";
 import { getWorkflowTemplateLoadState } from "@/lib/workflow-template-load-state";
 import { getWorkflowTemplateSaveState } from "@/lib/workflow-template-save-state";
+import {
+  getWorkflowRedoActionState,
+  getWorkflowUndoActionState,
+} from "@/lib/workflow-history-action-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -867,51 +869,39 @@ function WorkflowView({
   }
 
   function undoWorkflowChange() {
-    if (!workflow) {
-      return;
-    }
-
-    const previousEntry = workflowUndoStack.at(-1);
-    if (!previousEntry) {
-      return;
-    }
-
-    const result = undoWorkflowHistory(
-      workflowHistoryById,
-      activeWorkflowHistoryId,
+    const nextState = getWorkflowUndoActionState({
       workflow,
-    );
-    if (!result.template) {
+      historyById: workflowHistoryById,
+      historyId: activeWorkflowHistoryId,
+      undoStack: workflowUndoStack,
+    });
+    if (!nextState.didUpdate || !nextState.template) {
       return;
     }
 
-    setWorkflowHistoryById(result.historyById);
-    onUpdateTemplate(result.template);
-    resetCanvasView();
+    setWorkflowHistoryById(nextState.historyById);
+    onUpdateTemplate(nextState.template);
+    if (nextState.shouldResetCanvas) {
+      resetCanvasView();
+    }
   }
 
   function redoWorkflowChange() {
-    if (!workflow) {
-      return;
-    }
-
-    const nextEntry = workflowRedoStack.at(-1);
-    if (!nextEntry) {
-      return;
-    }
-
-    const result = redoWorkflowHistory(
-      workflowHistoryById,
-      activeWorkflowHistoryId,
+    const nextState = getWorkflowRedoActionState({
       workflow,
-    );
-    if (!result.template) {
+      historyById: workflowHistoryById,
+      historyId: activeWorkflowHistoryId,
+      redoStack: workflowRedoStack,
+    });
+    if (!nextState.didUpdate || !nextState.template) {
       return;
     }
 
-    setWorkflowHistoryById(result.historyById);
-    onUpdateTemplate(result.template);
-    resetCanvasView();
+    setWorkflowHistoryById(nextState.historyById);
+    onUpdateTemplate(nextState.template);
+    if (nextState.shouldResetCanvas) {
+      resetCanvasView();
+    }
   }
 
   function addConditionCaseToSelectedBox() {
