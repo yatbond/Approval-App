@@ -540,3 +540,29 @@ Verification:
 - `npm test -- --runInBand`: passed, 127/127.
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 19 findings. Noted residual gap: no rendered UI interaction test for tab navigation or sidebar collapse.
+
+## Step 20 - Task Action Preflight Boundary
+
+Status: complete.
+
+Plan:
+- Extract the task action preflight decisions out of `ApprovalWorkspaceBody.recordAction`.
+- Add a pure helper for reassign/delegate target-email blocking and approval missing-document error messaging.
+- Preserve silent blocking for reassign/delegate without a target email and visible error messaging for missing required approval documents.
+- Verify with red/green helper tests, typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/task-action-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/task-action-state.ts` for task action preflight state.
+- Rewired `recordAction` in `src/app/approval-workspace.tsx` to use `getTaskActionPreflightState`.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/task-action-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/task-action-state.test.mjs`: passed, 3/3.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=queue` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated queue action interaction was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 130/130.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 20 findings. Added separate plain `approve` missing-document assertion after reviewer noted it as coverage depth.
+- Final focused recheck after coverage addition: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/task-action-state.test.mjs` passed, 3/3.

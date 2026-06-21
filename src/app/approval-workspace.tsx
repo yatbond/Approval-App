@@ -92,6 +92,7 @@ import {
   type WorkspaceTab,
 } from "@/app/workspace-shell";
 import { getWorkspaceShellState } from "@/lib/workspace-shell-state";
+import { getTaskActionPreflightState } from "@/lib/task-action-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -275,10 +276,6 @@ function ApprovalWorkspaceBody({
       return;
     }
 
-    if ((action === "reassign" || action === "delegate") && !targetEmail.trim()) {
-      return;
-    }
-
     const selectedTemplateForTask = findTemplateForTask(selectedTask, templates);
     const missingCurrentDocuments =
       selectedTemplateForTask &&
@@ -288,12 +285,15 @@ function ApprovalWorkspaceBody({
             selectedTemplateForTask,
           )
         : [];
-    if (missingCurrentDocuments.length) {
-      setActionError(
-        `Upload required document(s) before approving: ${missingCurrentDocuments
-          .map((document) => document.documentType)
-          .join(", ")}.`,
-      );
+    const preflight = getTaskActionPreflightState({
+      action,
+      targetEmail,
+      missingCurrentDocuments,
+    });
+    if (!preflight.canProceed) {
+      if (preflight.errorMessage) {
+        setActionError(preflight.errorMessage);
+      }
       return;
     }
 
