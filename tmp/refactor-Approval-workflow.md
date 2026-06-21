@@ -431,3 +431,30 @@ Verification:
 - `npm run build`: passed.
 - Live Template Builder preview after production build: passed, no browser console errors; template name, business, department, and Create template controls visible.
 - Final autoreview: passed with no actionable Step 15 findings. Noted residual gaps: no rendered UI interaction tests for editing template name/business/department, department reset on business change, Create Template payload, or free-text department path.
+
+## Step 16 - Workflow Runtime Panel Boundary
+
+Status: complete.
+
+Plan:
+- Extract the Workflow canvas runtime status, validation, route simulation, and runner controls out of `approval-workspace.tsx`.
+- Add a pure helper for runtime task fallback, runtime status text, and runner action disabled/title state.
+- Preserve runtime task selection, undo/redo/reset controls, validation issue display, route simulation summary, runner action buttons, and missing-document approval blocking.
+- Verify with red/green helper tests, typecheck, lint, live Workflow canvas preview, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-runtime-panel-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-runtime-panel-state.ts` for runtime task fallback, status label, and runner action state.
+- Added `src/app/workflow-runtime-panel.tsx` for the runtime/validation/runner UI.
+- Rewired `src/app/approval-workspace.tsx` to render `WorkflowRuntimePanel`.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-runtime-panel-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-runtime-panel-state.test.mjs`: passed, 4/4.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live Workflow canvas runtime preview before full build: passed, no browser console errors; runtime status, undo/redo/reset, validation, route simulation, and workflow runner sections visible.
+- `npm test -- --runInBand`: passed, 119/119.
+- `npm run build`: passed.
+- Live Workflow canvas runtime preview after production build: passed, no browser console errors; runtime status, undo/redo/reset, validation, route simulation, and workflow runner sections visible.
+- Final autoreview: passed with no actionable Step 16 findings. Noted residual gaps: no rendered UI interaction tests for runtime task selection, runner button callbacks, validation issue truncation/warning summary, or disabled approve state with missing current-node documents.
