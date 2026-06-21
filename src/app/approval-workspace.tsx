@@ -22,9 +22,7 @@ import {
   getMissingRequiredSubmissionDocuments,
 } from "@/lib/request-builder";
 import {
-  addWorkflowBranch,
   addWorkflowDocumentToNode,
-  addWorkflowNode,
   analyzeConditionCoverage,
   deleteWorkflowConditionCase,
   createWorkflowGraphFromTemplate,
@@ -45,7 +43,6 @@ import {
   fieldSourceForDocumentFormat,
 } from "@/lib/workflow-documents";
 import {
-  formatNodeKind,
   getConditionContext,
   workflowNodeOptions,
 } from "@/lib/workflow-condition-context";
@@ -108,6 +105,10 @@ import {
   getWorkflowAddConditionCaseState,
   getWorkflowAddFallbackConditionCaseState,
 } from "@/lib/workflow-condition-case-state";
+import {
+  getWorkflowConnectNodesState,
+  getWorkflowCreateNodeState,
+} from "@/lib/workflow-canvas-edit-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -815,43 +816,29 @@ function WorkflowView({
   }
 
   function createCanvasNode(kind: WorkflowNodeKind) {
-    const nextGraph = addWorkflowNode(workflowGraph, kind, {
-      blocking: kind !== "for_information" && kind !== "end",
-      assigneeName:
-        kind === "approval" || kind === "review" || kind === "for_information"
-          ? "New owner"
-          : undefined,
-      assigneeEmail:
-        kind === "approval" || kind === "review" || kind === "for_information"
-          ? "owner@example.com"
-          : undefined,
+    const nextState = getWorkflowCreateNodeState({
+      graph: workflowGraph,
+      kind,
     });
-    const created = nextGraph.nodes.at(-1);
-    saveWorkflowGraph(nextGraph, `Added ${formatNodeKind(kind)} box`);
-    if (created) {
-      setSelectedNodeId(created.id);
-      setSelectedEdgeId(null);
-    }
+    saveWorkflowGraph(nextState.graph, nextState.label);
+    setSelectedNodeId(nextState.selectedNodeId || null);
+    setSelectedEdgeId(nextState.selectedEdgeId || null);
   }
 
   function connectWorkflowNodes(sourceId: string, targetId: string) {
-    if (sourceId === targetId) {
+    const nextState = getWorkflowConnectNodesState({
+      graph: workflowGraph,
+      sourceId,
+      targetId,
+    });
+    if (!nextState.didUpdate) {
       return;
     }
 
-    const nextGraph = addWorkflowBranch(workflowGraph, {
-      sourceId,
-      targetId,
-      branchType: "main",
-      label: "Next",
-      blocking: true,
-    });
-    const createdEdge = nextGraph.edges.at(-1);
-
-    saveWorkflowGraph(nextGraph, "Connected workflow boxes");
-    setConnectFromNodeId(null);
-    setSelectedNodeId(null);
-    setSelectedEdgeId(createdEdge?.id || null);
+    saveWorkflowGraph(nextState.graph, nextState.label);
+    setConnectFromNodeId(nextState.connectFromNodeId || null);
+    setSelectedNodeId(nextState.selectedNodeId || null);
+    setSelectedEdgeId(nextState.selectedEdgeId || null);
   }
 
   function resetCanvasView() {

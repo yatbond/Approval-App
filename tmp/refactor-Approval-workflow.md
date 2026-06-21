@@ -797,3 +797,31 @@ Verification:
 - `npm test -- --runInBand`: passed, 155/155.
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 29 findings.
+
+## Step 30 - Workflow Canvas Edit State Boundary
+
+Status: complete.
+
+Plan:
+- Extract canvas node creation and node connection graph/selection transitions out of `WorkflowView`.
+- Preserve owner-backed node defaults, blocking defaults, create-node selection, self-connect no-op, connection edge defaults, and post-connect selection cleanup.
+- Reuse existing graph mutation helpers and node kind labels from a pure state helper.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-canvas-edit-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-canvas-edit-state.ts` for create-node and connect-node state helpers.
+- Rewired `createCanvasNode` and `connectWorkflowNodes` in `src/app/approval-workspace.tsx` to call the helper.
+- Removed now-unused `addWorkflowBranch` and `formatNodeKind` imports from the component.
+- Initial focused test expected the new edge without `rule: undefined`; corrected the test to match existing `addWorkflowBranch` edge shape.
+- Initial lint verification command had a malformed shell quote and exited immediately; reran the correct lint command successfully.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-canvas-edit-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-canvas-edit-state.test.mjs`: passed, 4/4.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed after rerunning with the corrected command.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated canvas create/connect behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 159/159.
+- `npm run build`: exited 0 and generated the app successfully; webpack emitted a non-blocking cache warning for `.next/cache/webpack/server-production/1.pack`.
+- Final autoreview: passed with no actionable Step 30 findings.
