@@ -100,6 +100,11 @@ import { getWorkflowCanvasDeleteState } from "@/lib/workflow-canvas-delete-state
 import { getApprovalWorkspaceTaskState } from "@/lib/approval-workspace-task-state";
 import { attachDocumentToTaskState } from "@/lib/task-document-attachment-state";
 import { getWorkflowRunnerActionActor } from "@/lib/workflow-runner-action-state";
+import {
+  addWorkflowDocumentField,
+  removeWorkflowDocumentField,
+  updateWorkflowDocumentField,
+} from "@/lib/workflow-document-field-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -1030,54 +1035,19 @@ function WorkflowView({
     patch: Partial<Pick<WorkflowField, "label" | "instructions" | "required">>,
   ) {
     updateTemplateDocuments((documents) =>
-      documents.map((document) =>
-        document.id === documentId
-          ? {
-              ...document,
-              fields: document.fields.map((field, index) =>
-                index === fieldIndex ? { ...field, ...patch } : field,
-              ),
-            }
-          : document,
-      ),
+      updateWorkflowDocumentField(documents, documentId, fieldIndex, patch),
     );
   }
 
   function addBoxDocumentField(documentId: string) {
     updateTemplateDocuments((documents) =>
-      documents.map((document) =>
-        document.id === documentId
-          ? {
-              ...document,
-              fields: [
-                ...document.fields,
-                {
-                  name: `${document.id}-field-${document.fields.length + 1}`,
-                  label: "New field",
-                  type: "text",
-                  required: false,
-                  source: fieldSourceForDocumentFormat(document.format),
-                  instructions:
-                    "Describe what should be extracted from this document.",
-                  documentId: document.id,
-                },
-              ],
-            }
-          : document,
-      ),
+      addWorkflowDocumentField(documents, documentId),
     );
   }
 
   function removeBoxDocumentField(documentId: string, fieldIndex: number) {
     updateTemplateDocuments((documents) =>
-      documents.map((document) =>
-        document.id === documentId
-          ? {
-              ...document,
-              fields: document.fields.filter((_, index) => index !== fieldIndex),
-            }
-          : document,
-      ),
+      removeWorkflowDocumentField(documents, documentId, fieldIndex),
     );
   }
 

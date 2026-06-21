@@ -743,3 +743,30 @@ Verification:
 - `npm test -- --runInBand`: passed, 149/149.
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 27 findings.
+
+## Step 28 - Workflow Document Field State Boundary
+
+Status: complete.
+
+Plan:
+- Extract workflow document extraction-field add/update/remove mutations out of `WorkflowView`.
+- Preserve field patching, default added field shape, document-format-to-source mapping, and field removal behavior.
+- Keep template-level persistence and document summary rebuilding in `updateTemplateDocuments`.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-document-field-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/workflow-document-field-state.ts` for document field mutation helpers.
+- Rewired `updateBoxDocumentField`, `addBoxDocumentField`, and `removeBoxDocumentField` in `src/app/approval-workspace.tsx` to call the helper.
+- Initial typecheck found a widened `type: string` inference for the default field; fixed by adding explicit `WorkflowDocumentRequirement[]` helper return types.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-document-field-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-document-field-state.test.mjs`: passed, 3/3.
+- First `npx next typegen && npx tsc --noEmit` failed because the new helper inferred the added field `type` property as `string`; explicit return types fixed the issue.
+- `npx next typegen && npx tsc --noEmit`: passed after the return-type fix.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated box document field editing was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 152/152.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 28 findings.
