@@ -99,6 +99,7 @@ import {
 import { getWorkflowCanvasSelectionState } from "@/lib/workflow-canvas-selection-state";
 import { getWorkflowCanvasInstanceKey } from "@/lib/workflow-canvas-instance-state";
 import { getApprovalWorkspaceTaskState } from "@/lib/approval-workspace-task-state";
+import { attachDocumentToTaskState } from "@/lib/task-document-attachment-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -319,42 +320,15 @@ function ApprovalWorkspaceBody({
   ) {
     try {
       const storage = await uploadAttachmentFile(file, documentRequirement);
-      const nextTasks = tasks.map((task) => {
-        if (task.id !== taskId) {
-          return task;
-        }
-
-        const template = findTemplateForTask(task, templates);
-        if (!template) {
-          return task;
-        }
-
-        const attachment = createAttachmentRecord({
-          file,
-          documentRequirement,
-          template,
-          uploadedBy: activeUser.email,
-          storagePath: storage.storagePath,
-          publicUrl: storage.publicUrl,
-        });
-
-        return {
-          ...task,
-          attachments: [...(task.attachments || []), attachment],
-          participants: Array.from(new Set([...task.participants, activeUser.email])),
-          lastAction: `Document uploaded by ${activeUser.name}`,
-          auditTrail: [
-            ...task.auditTrail,
-            {
-              id: `${task.id}-event-${task.auditTrail.length + 1}`,
-              action: "amended" as const,
-              actor: activeUser.name,
-              actorEmail: activeUser.email,
-              timestamp: new Date().toISOString(),
-              detail: `Uploaded ${documentRequirement.documentType}: ${file.name}.`,
-            },
-          ],
-        };
+      const nextTasks = attachDocumentToTaskState({
+        tasks,
+        templates,
+        taskId,
+        file,
+        documentRequirement,
+        activeUser,
+        storagePath: storage.storagePath,
+        publicUrl: storage.publicUrl,
       });
       setTasks(nextTasks);
       void persistWorkspaceSnapshot(

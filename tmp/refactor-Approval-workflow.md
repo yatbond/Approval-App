@@ -668,3 +668,28 @@ Verification:
 - `npm run build`: passed.
 - Final autoreview: passed with no actionable Step 24 findings. Added selected tracking-only fallback assertion after reviewer noted it as coverage depth.
 - Final focused recheck after coverage addition: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/approval-workspace-task-state.test.mjs` passed, 3/3.
+
+## Step 25 - Task Document Attachment Boundary
+
+Status: complete.
+
+Plan:
+- Extract the uploaded-document-to-task state transition out of `ApprovalWorkspaceBody.attachTaskDocument`.
+- Add a pure helper for creating the attachment record, appending it to the task, adding the uploader as a participant, updating the last action, and appending the audit event.
+- Preserve unresolved-template no-op behavior, storage/public URL propagation, workflow node attachment linking, and upload error handling in the component.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/task-document-attachment-state.test.mjs`; verified it failed before the helper existed.
+- Added `src/lib/task-document-attachment-state.ts` for task document attachment state updates.
+- Rewired `attachTaskDocument` in `src/app/approval-workspace.tsx` to use `attachDocumentToTaskState`.
+
+Verification:
+- Red step: `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/task-document-attachment-state.test.mjs` failed with missing module before implementation.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/task-document-attachment-state.test.mjs`: passed, 2/2 after correcting the no-template fixture to avoid matching by workflow name fallback.
+- `npx next typegen && npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=queue` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated document attachment interaction was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 144/144.
+- `npm run build`: passed.
+- Final autoreview: passed with no actionable Step 25 findings.
