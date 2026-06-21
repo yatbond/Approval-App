@@ -230,3 +230,40 @@ Verification:
 - `npm run build`: passed.
 - Live Workflow preview after production build: passed, no browser console errors; canvas, condition UI, and path-state labels visible.
 - Final autoreview: passed with no actionable Step 8 findings. Noted residual gap: no UI-level regression test for tracking path badges and the "Your role" label.
+
+## Step 9 - Queue And Tracking View Boundary
+
+Status: complete.
+
+Plan:
+- Move queue, tracking, workflow-path summary, audit list, status badge, and user datalist rendering out of `approval-workspace.tsx`.
+- Keep action handlers and workspace state in the main component.
+- Share task template lookup through `src/lib/task-display.ts`.
+- Verify with targeted helper tests, typecheck, lint, live Queue and Tracking previews, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/app/task-views.tsx` for Queue and Tracking presentation components.
+- Moved action button configuration and status badge rendering into the task views module.
+- Extended `src/lib/task-display.ts` with `findTemplateForTask` so page logic and Tracking view share the same template lookup.
+- Removed duplicated queue/tracking/path/audit rendering from `approval-workspace.tsx`.
+- Autoreview found the first extracted `StatusBadge` collapsed distinct status colors/icons. Restored the exact pre-extraction badge branches for overdue, escalated, returned, reassigned, delegated, cancelled, approved, and pending.
+
+Verification:
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/task-display.test.mjs`: passed, 4/4.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live Queue preview before full build: passed, no browser console errors; queue, decision actions, and audit trail visible.
+- Live Tracking preview before full build: passed, no browser console errors; tracked requests, role label, workflow path, and document section visible.
+- `npm test -- --runInBand`: passed, 96/96.
+- `npm run build`: passed.
+- Live Queue preview after production build: passed, no browser console errors; queue, decision actions, and audit trail visible.
+- Live Tracking preview after production build: passed, no browser console errors; tracked requests, role label, workflow path, and document section visible.
+- Autoreview: P2 status badge behavior drift found and fixed.
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/task-display.test.mjs`: passed, 4/4 after fix.
+- `npx tsc --noEmit`: passed after fix.
+- `npm run lint`: passed after fix.
+- Live Queue and Tracking previews after fix: passed, no browser console errors; pending badges and moved views visible.
+- `npm test -- --runInBand`: passed, 96/96 after fix.
+- `npm run build`: passed after fix.
+- Final live Queue and Tracking previews after production build: passed, no browser console errors.
+- Final autoreview: P2 status badge behavior drift was fixed; no remaining actionable Step 9 findings.

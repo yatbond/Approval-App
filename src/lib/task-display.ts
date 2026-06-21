@@ -1,4 +1,4 @@
-import type { ApprovalTask, WorkflowGraphNode } from "./types.ts";
+import type { ApprovalTask, WorkflowGraphNode, WorkflowTemplate } from "./types.ts";
 
 export type PathNodeState =
   | "approved"
@@ -62,4 +62,18 @@ export function formatTaskAccessRole(task: ApprovalTask, activeUserEmail: string
   }
 
   return "participant";
+}
+
+export function findTemplateForTask(
+  task: ApprovalTask,
+  templates: WorkflowTemplate[],
+) {
+  if (task.workflowTemplateSnapshot) {
+    return task.workflowTemplateSnapshot;
+  }
+
+  return templates.find(
+    (template) =>
+      template.id === task.workflowTemplateId || template.name === task.workflow,
+  );
 }

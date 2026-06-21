@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   formatPathNodeState,
   formatTaskAccessRole,
+  findTemplateForTask,
   getPathNodeState,
 } from "./task-display.ts";
 
@@ -92,4 +93,26 @@ test("formats task access role for visible participants", () => {
   assert.equal(formatTaskAccessRole(baseTask, "approver@example.com"), "current actor");
   assert.equal(formatTaskAccessRole(baseTask, "earlier@example.com"), "previous actor");
   assert.equal(formatTaskAccessRole(baseTask, "participant@example.com"), "participant");
+});
+
+test("finds a task template snapshot before falling back to template ids or names", () => {
+  const snapshot = { id: "snapshot", name: "Snapshot template", steps: [], fields: [], documents: [] };
+  assert.equal(
+    findTemplateForTask({ ...baseTask, workflowTemplateSnapshot: snapshot }, []),
+    snapshot,
+  );
+  assert.equal(
+    findTemplateForTask(
+      { ...baseTask, workflowTemplateId: "template-id", workflow: "Other" },
+      [{ id: "template-id", name: "By id", steps: [], fields: [], documents: [] }],
+    )?.name,
+    "By id",
+  );
+  assert.equal(
+    findTemplateForTask(
+      { ...baseTask, workflowTemplateId: "missing", workflow: "By name" },
+      [{ id: "template-name", name: "By name", steps: [], fields: [], documents: [] }],
+    )?.id,
+    "template-name",
+  );
 });
