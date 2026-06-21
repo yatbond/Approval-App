@@ -353,3 +353,27 @@ Verification:
 - `npm run lint`: passed after added cases.
 - `npm test -- --runInBand`: passed, 108/108 after added cases.
 - Final residual gap: no UI-level regression test confirming the rendered condition panel shows ordering, nicknames, summary text, and available outcome targets correctly.
+
+## Step 13 - Condition Box Details Component Boundary
+
+Status: complete.
+
+Plan:
+- Move the condition Box Details drawer UI out of `approval-workspace.tsx`.
+- Keep workflow/canvas state and handlers in `WorkflowView`, passing them into the extracted component.
+- Preserve condition rule editing, fallback routes, outcome selection, numeric rules, approval count rules, and available target selection.
+- Verify with typecheck, lint, live Workflow condition preview, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/app/condition-box-details.tsx` for the condition drawer UI.
+- Rewired `src/app/approval-workspace.tsx` to import `ConditionBoxDetails`.
+- Kept the pure condition routing helpers from Step 12 shared by the extracted component.
+
+Verification:
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- Live Workflow condition preview before full build: passed, no browser console errors; selecting a condition node showed the extracted Box Details condition controls.
+- `npm test -- --runInBand`: passed, 108/108.
+- `npm run build`: passed.
+- Live Workflow condition preview after production build: passed, no browser console errors; selecting a condition node showed the extracted Box Details condition controls.
+- Final autoreview: passed with no actionable Step 13 findings. Noted residual gaps: no UI-level condition drawer edit-flow tests for fallback routes, outcome checkboxes, numeric rules, approval-count rules, pick-on-canvas state, or target-node updates.
