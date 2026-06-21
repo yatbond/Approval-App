@@ -1,5 +1,9 @@
 import OpenAI from "openai";
-import type { ParserStrategy, WorkflowField } from "@/lib/types";
+import type {
+  ExtractedFieldSuggestion,
+  ParserStrategy,
+  WorkflowField,
+} from "@/lib/types";
 
 const confidenceLevels = ["high", "medium", "low"] as const;
 
@@ -8,6 +12,7 @@ export type ParsedDocumentDraft = {
   fields: Record<string, string>;
   confidence: Record<string, "high" | "medium" | "low">;
   evidence: Record<string, string>;
+  suggestedFields: ExtractedFieldSuggestion[];
   notes: string[];
 };
 
@@ -54,11 +59,13 @@ export function buildExtractionPrompt(fields: WorkflowField[], languageHint: str
   return [
     "Extract approval workflow data from the uploaded business document.",
     "Return JSON only in this shape:",
-    '{"fields":{"Field label":{"value":"concise extracted value","confidence":"high|medium|low","evidence":"short exact text or visual cue used"}}}',
+    '{"fields":{"Field label":{"value":"concise extracted value","confidence":"high|medium|low","evidence":"short exact text or visual cue used"}},"suggestedFields":[{"label":"extra useful field","value":"concise value","confidence":"high|medium|low","evidence":"short exact text or visual cue used","instructions":"how to extract this field next time"}]}',
     "If a value is uncertain, use an empty string rather than inventing an answer.",
     "Use high confidence only when the value is clearly visible and evidence is provided.",
     "Use medium confidence when the value is likely but needs human review.",
     "Use low confidence when the value is blank, partially visible, inferred, or ambiguous.",
+    "Put only requested fields under fields. Put optional extra candidates under suggestedFields.",
+    "Limit suggestedFields to useful business fields visible in the document and avoid duplicates of requested fields.",
     `Document languages may include: ${languageHint}.`,
     "Requested fields:",
     requestedFields,
@@ -80,6 +87,7 @@ function parseExtractionJson(text: string): {
   fields: Record<string, string>;
   confidence: Record<string, "high" | "medium" | "low">;
   evidence: Record<string, string>;
+  suggestedFields: ExtractedFieldSuggestion[];
   success: boolean;
 } {
   const trimmed = text.trim();
@@ -90,11 +98,23 @@ function parseExtractionJson(text: string): {
   try {
     parsed = JSON.parse(jsonText);
   } catch {
-    return { fields: {}, confidence: {}, evidence: {}, success: false };
+    return {
+      fields: {},
+      confidence: {},
+      evidence: {},
+      suggestedFields: [],
+      success: false,
+    };
   }
 
   if (!isPlainRecord(parsed)) {
-    return { fields: {}, confidence: {}, evidence: {}, success: false };
+    return {
+      fields: {},
+      confidence: {},
+      evidence: {},
+      suggestedFields: [],
+      success: false,
+    };
   }
 
   const source = isPlainRecord(parsed.fields) ? parsed.fields : parsed;
@@ -126,8 +146,44 @@ function parseExtractionJson(text: string): {
     fields,
     confidence,
     evidence: evidenceByField,
+    suggestedFields: parseSuggestedFields(parsed.suggestedFields),
     success: Object.keys(fields).length > 0,
   };
+}
+
+function parseSuggestedFields(value: unknown): ExtractedFieldSuggestion[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(isPlainRecord)
+    .map((item, index) => {
+      const label = typeof item.label === "string" ? item.label.trim() : "";
+      const fieldValue =
+        typeof item.value === "string" ? item.value.trim() : String(item.value || "");
+      const evidence =
+        typeof item.evidence === "string" ? item.evidence.trim() : "";
+      const confidence = normalizeConfidence(
+        item.confidence,
+        fieldValue,
+        evidence,
+      );
+      const instructions =
+        typeof item.instructions === "string" && item.instructions.trim()
+          ? item.instructions.trim()
+          : `Extract ${label}.`;
+
+      return {
+        name: `suggested_${slugify(label) || `field_${index + 1}`}`,
+        label,
+        value: fieldValue,
+        confidence,
+        evidence,
+        instructions,
+      };
+    })
+    .filter((item) => item.label && item.value);
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -153,6 +209,14 @@ function normalizeConfidence(
   }
 
   return normalized;
+}
+
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 export async function extractImageFields(params: {
@@ -191,6 +255,7 @@ export async function extractImageFieldsWithOpenRouter(params: {
       fields: {},
       confidence: {},
       evidence: {},
+      suggestedFields: [],
       notes: ["OPENROUTER_API_KEY is not configured yet."],
     };
   }
@@ -225,6 +290,7 @@ export async function extractImageFieldsWithOpenRouter(params: {
       fields: {},
       confidence: {},
       evidence: {},
+      suggestedFields: [],
       notes: [
         payload.error?.message ||
           `OpenRouter request failed with status ${response.status}.`,
@@ -240,6 +306,7 @@ export async function extractImageFieldsWithOpenRouter(params: {
     fields: parsed.success ? parsed.fields : {},
     confidence: parsed.success ? parsed.confidence : {},
     evidence: parsed.success ? parsed.evidence : {},
+    suggestedFields: parsed.success ? parsed.suggestedFields : [],
     notes: parsed.success
       ? [`Parsed with OpenRouter model ${process.env.OPENROUTER_MODEL || "~openai/gpt-latest"}.`]
       : ["OpenRouter output could not be parsed as field JSON."],
@@ -260,6 +327,7 @@ export async function extractPdfFieldsWithOpenRouter(params: {
       fields: {},
       confidence: {},
       evidence: {},
+      suggestedFields: [],
       notes: ["OPENROUTER_API_KEY is not configured yet."],
     };
   }
@@ -302,6 +370,7 @@ export async function extractPdfFieldsWithOpenRouter(params: {
       fields: {},
       confidence: {},
       evidence: {},
+      suggestedFields: [],
       notes: [
         payload.error?.message ||
           `OpenRouter request failed with status ${response.status}.`,
@@ -317,6 +386,7 @@ export async function extractPdfFieldsWithOpenRouter(params: {
     fields: parsed.success ? parsed.fields : {},
     confidence: parsed.success ? parsed.confidence : {},
     evidence: parsed.success ? parsed.evidence : {},
+    suggestedFields: parsed.success ? parsed.suggestedFields : [],
     notes: parsed.success
       ? [
           `Parsed PDF with OpenRouter model ${
@@ -340,6 +410,7 @@ export async function extractPdfFieldsWithQwenPageImages(params: {
       fields: {},
       confidence: {},
       evidence: {},
+      suggestedFields: [],
       notes: ["OPENROUTER_API_KEY is not configured yet."],
     };
   }
@@ -350,6 +421,7 @@ export async function extractPdfFieldsWithQwenPageImages(params: {
       fields: {},
       confidence: {},
       evidence: {},
+      suggestedFields: [],
       notes: ["No rendered PDF page images were supplied for Qwen visual OCR."],
     };
   }
@@ -391,6 +463,7 @@ export async function extractPdfFieldsWithQwenPageImages(params: {
       fields: {},
       confidence: {},
       evidence: {},
+      suggestedFields: [],
       notes: [
         payload.error?.message ||
           `OpenRouter request failed with status ${response.status}.`,
@@ -406,6 +479,7 @@ export async function extractPdfFieldsWithQwenPageImages(params: {
     fields: parsed.success ? parsed.fields : {},
     confidence: parsed.success ? parsed.confidence : {},
     evidence: parsed.success ? parsed.evidence : {},
+    suggestedFields: parsed.success ? parsed.suggestedFields : [],
     notes: parsed.success
       ? [`Parsed rendered PDF pages with OpenRouter model ${model}.`]
       : ["OpenRouter Qwen page-image output could not be parsed as field JSON."],
@@ -446,6 +520,7 @@ export async function extractImageFieldsWithOpenAI(params: {
       fields: {},
       confidence: {},
       evidence: {},
+      suggestedFields: [],
       notes: ["OPENAI_API_KEY is not configured yet."],
     };
   }
@@ -477,6 +552,7 @@ export async function extractImageFieldsWithOpenAI(params: {
     fields: parsed.success ? parsed.fields : {},
     confidence: parsed.success ? parsed.confidence : {},
     evidence: parsed.success ? parsed.evidence : {},
+    suggestedFields: parsed.success ? parsed.suggestedFields : [],
     notes: parsed.success
       ? [`Parsed with OpenAI model ${process.env.OPENAI_MODEL || "gpt-5.4-mini"}.`]
       : ["AI output could not be parsed as field JSON."],

@@ -2,7 +2,12 @@ import {
   getMissingRequiredSubmissionDocuments,
   getSubmissionDocumentRequirements,
 } from "./request-builder.ts";
-import type { ApprovalAttachment, WorkflowField, WorkflowTemplate } from "./types.ts";
+import type {
+  ApprovalAttachment,
+  ExtractedFieldSuggestion,
+  WorkflowField,
+  WorkflowTemplate,
+} from "./types.ts";
 
 export type AdHocFieldDraft = {
   id: string;
@@ -71,6 +76,32 @@ export function buildAdHocExtractionFields(
       source: "ai" as const,
       instructions: draft.instructions || `Extract ${draft.label}.`,
     }));
+}
+
+export function createFieldDraftFromSuggestion(
+  suggestion: ExtractedFieldSuggestion,
+  index: number,
+): AdHocFieldDraft {
+  return {
+    id: `suggested-field-${index}`,
+    label: suggestion.label,
+    instructions: suggestion.instructions || `Extract ${suggestion.label}.`,
+  };
+}
+
+export function createHighlightedExtractionField(
+  label: string,
+  index: number,
+): WorkflowField {
+  const trimmedLabel = label.trim();
+  return {
+    name: `highlight_${slugify(trimmedLabel)}_${index}`,
+    label: trimmedLabel,
+    type: "text",
+    required: false,
+    source: "ai",
+    instructions: `Extract ${trimmedLabel} from the highlighted document region.`,
+  };
 }
 
 function slugify(value: string) {

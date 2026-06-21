@@ -11,6 +11,15 @@ import {
   Upload,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { MouseEvent } from "react";
+import {
+  cropPreviewPageToFile,
+  normalizedRectToPercentStyle,
+  normalizeSelectionRect,
+  type DocumentPreviewPage,
+  type NormalizedRect,
+  type Point,
+} from "@/lib/document-preview";
 import {
   acceptForDocumentFormat,
   formatDocumentFormat,
@@ -18,6 +27,8 @@ import {
 import {
   buildAdHocExtractionFields,
   createAdHocFieldDraft,
+  createFieldDraftFromSuggestion,
+  createHighlightedExtractionField,
   getUploadViewState,
   type AdHocFieldDraft,
 } from "@/lib/upload-view-state";
@@ -37,6 +48,8 @@ export function UploadView({
   isParsing,
   parseError,
   parseFile,
+  documentPreviewPages,
+  onExtractHighlightedRegion,
   uploadedAttachments,
   workflowTemplates,
   selectedTemplateId,
@@ -55,6 +68,11 @@ export function UploadView({
     documentRequirement?: WorkflowDocumentRequirement,
     adHocFields?: WorkflowField[],
   ) => void;
+  documentPreviewPages: DocumentPreviewPage[];
+  onExtractHighlightedRegion: (
+    file: File,
+    field: WorkflowField,
+  ) => Promise<void>;
   uploadedAttachments: ApprovalAttachment[];
   workflowTemplates: WorkflowTemplate[];
   selectedTemplateId: string;
@@ -65,6 +83,11 @@ export function UploadView({
   const [adHocFieldDrafts, setAdHocFieldDrafts] = useState<AdHocFieldDraft[]>([
     createAdHocFieldDraft(1),
   ]);
+  const [selectedPreviewPageId, setSelectedPreviewPageId] = useState("");
+  const [selectionStart, setSelectionStart] = useState<Point | null>(null);
+  const [highlightRect, setHighlightRect] = useState<NormalizedRect | null>(null);
+  const [highlightFieldLabel, setHighlightFieldLabel] = useState("");
+  const [highlightError, setHighlightError] = useState("");
   const {
     requestTemplates,
     selectedTemplate,
@@ -77,12 +100,59 @@ export function UploadView({
     uploadedAttachments,
   });
   const adHocFields = buildAdHocExtractionFields(adHocFieldDrafts);
+  const selectedPreviewPage =
+    documentPreviewPages.find((page) => page.id === selectedPreviewPageId) ||
+    documentPreviewPages[0];
+  const highlightStyle = highlightRect
+    ? normalizedRectToPercentStyle(highlightRect)
+    : null;
 
   useEffect(() => {
     if (selectedTemplate && selectedTemplate.id !== selectedTemplateId) {
       setSelectedTemplateId(selectedTemplate.id);
     }
   }, [selectedTemplate, selectedTemplateId, setSelectedTemplateId]);
+
+  function pointFromPreviewEvent(event: MouseEvent<HTMLDivElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+      bounds: {
+        width: rect.width,
+        height: rect.height,
+      },
+    };
+  }
+
+  async function extractHighlightedField() {
+    if (!selectedPreviewPage || !highlightRect || !highlightFieldLabel.trim()) {
+      setHighlightError("Highlight an area and enter a field name first.");
+      return;
+    }
+
+    setHighlightError("");
+    try {
+      const field = createHighlightedExtractionField(
+        highlightFieldLabel,
+        Object.keys(editedFields).length + 1,
+      );
+      const cropFile = await cropPreviewPageToFile({
+        page: selectedPreviewPage,
+        rect: highlightRect,
+        fileName: `${field.name}.png`,
+      });
+      await onExtractHighlightedRegion(cropFile, field);
+      setHighlightFieldLabel("");
+      setHighlightRect(null);
+    } catch (error) {
+      setHighlightError(
+        error instanceof Error
+          ? error.message
+          : "Unable to extract highlighted field.",
+      );
+    }
+  }
 
   return (
     <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
@@ -311,6 +381,99 @@ export function UploadView({
         </div>
 
         <div className="p-4">
+          {selectedPreviewPage && (
+            <div className="mb-4 rounded-md border border-white/10 bg-[#121518] p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-neutral-200">
+                    Document preview
+                  </p>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    Drag over a value, name the field, then extract just that area.
+                  </p>
+                </div>
+                {documentPreviewPages.length > 1 && (
+                  <select
+                    value={selectedPreviewPage.id}
+                    onChange={(event) => {
+                      setSelectedPreviewPageId(event.target.value);
+                      setHighlightRect(null);
+                    }}
+                    className="h-9 rounded-md border border-white/10 bg-[#101214] px-3 text-xs outline-none focus:border-emerald-400/60"
+                  >
+                    {documentPreviewPages.map((page) => (
+                      <option key={page.id} value={page.id}>
+                        Page {page.pageNumber}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div
+                className="relative mt-3 rounded-md border border-white/10 bg-black/30"
+                onMouseDown={(event) => {
+                  const point = pointFromPreviewEvent(event);
+                  setSelectionStart({ x: point.x, y: point.y });
+                }}
+                onMouseUp={(event) => {
+                  if (!selectionStart) {
+                    return;
+                  }
+
+                  const point = pointFromPreviewEvent(event);
+                  const rect = normalizeSelectionRect(selectionStart, point, point.bounds);
+                  if (rect.width >= 0.01 && rect.height >= 0.01) {
+                    setHighlightRect(rect);
+                  }
+                  setSelectionStart(null);
+                }}
+                onMouseLeave={() => setSelectionStart(null)}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={selectedPreviewPage.dataUrl}
+                  alt={`Document preview page ${selectedPreviewPage.pageNumber}`}
+                  draggable={false}
+                  className="block w-full select-none"
+                />
+                {highlightStyle && (
+                  <div
+                    className="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-300/20"
+                    style={highlightStyle}
+                  />
+                )}
+              </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                <input
+                  value={highlightFieldLabel}
+                  onChange={(event) => setHighlightFieldLabel(event.target.value)}
+                  placeholder="Highlighted field name"
+                  className="h-10 rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition focus:border-emerald-400/60"
+                />
+                <button
+                  type="button"
+                  onClick={extractHighlightedField}
+                  disabled={isParsing}
+                  className="flex h-10 items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isParsing ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <ImageIcon size={16} />
+                  )}
+                  Extract highlight
+                </button>
+              </div>
+              {highlightError && (
+                <p className="mt-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                  {highlightError}
+                </p>
+              )}
+            </div>
+          )}
+
           {!parseResult && !isParsing && (
             <div className="grid min-h-72 place-items-center rounded-md border border-white/10 bg-[#121518] text-center text-sm text-neutral-500">
               <div>
@@ -330,15 +493,77 @@ export function UploadView({
                 <span className="rounded-md border border-white/10 bg-[#121518] px-3 py-1">
                   Strategy: {parseResult.strategy}
                 </span>
-                {parseResult.notes.map((note) => (
+                {parseResult.notes.map((note, index) => (
                   <span
-                    key={note}
+                    key={`${note}-${index}`}
                     className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-amber-100"
                   >
                     {note}
                   </span>
                 ))}
               </div>
+
+              {parseResult.suggestedFields?.length ? (
+                <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-sky-100">
+                        Suggested fields
+                      </p>
+                      <p className="mt-1 text-xs text-sky-100/70">
+                        Add useful values the parser found but the workflow did not request.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    {parseResult.suggestedFields.map((suggestion, index) => (
+                      <div
+                        key={`${suggestion.name}-${index}`}
+                        className="rounded-md border border-white/10 bg-[#101214] p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="break-words text-sm font-medium text-neutral-100">
+                              {suggestion.label}
+                            </p>
+                            <p className="mt-1 break-words text-sm text-neutral-300">
+                              {suggestion.value}
+                            </p>
+                            {suggestion.evidence && (
+                              <p className="mt-1 break-words text-xs text-neutral-500">
+                                Evidence: {suggestion.evidence}
+                              </p>
+                            )}
+                          </div>
+                          <span className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-300">
+                            {suggestion.confidence}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAdHocFieldDrafts((drafts) => [
+                              ...drafts,
+                              createFieldDraftFromSuggestion(
+                                suggestion,
+                                drafts.length + 1,
+                              ),
+                            ]);
+                            setEditedFields({
+                              ...editedFields,
+                              [suggestion.label]: suggestion.value,
+                            });
+                          }}
+                          className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-md border border-sky-500/40 bg-sky-500/10 text-xs font-medium text-sky-100 transition hover:bg-sky-500/20"
+                        >
+                          <Plus size={14} />
+                          Include
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="grid gap-3 md:grid-cols-2">
                 {Object.entries(editedFields).map(([label, value]) => (

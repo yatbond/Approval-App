@@ -10,6 +10,11 @@ import {
   uploadWorkspaceAttachmentFile,
 } from "@/lib/workspace-file-api";
 import {
+  buildPreviewPagesFromPdfImages,
+  readImageFileAsPreviewPage,
+  type DocumentPreviewPage,
+} from "@/lib/document-preview";
+import {
   renderPdfFileToPageImages,
   shouldRenderPdfForVision,
 } from "@/lib/pdf-page-images";
@@ -137,6 +142,7 @@ function ApprovalWorkspaceBody({
   const [fileName, setFileName] = useState("");
   const [parseResult, setParseResult] = useState<ParsedWorkspaceFilePayload | null>(null);
   const [editedFields, setEditedFields] = useState<Record<string, string>>({});
+  const [documentPreviewPages, setDocumentPreviewPages] = useState<DocumentPreviewPage[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState("");
   const [submissionMessage, setSubmissionMessage] = useState("");
@@ -263,6 +269,7 @@ function ApprovalWorkspaceBody({
     setIsParsing(startState.isParsing);
     setParseResult(startState.parseResult);
     setEditedFields(startState.editedFields);
+    setDocumentPreviewPages([]);
     let storage: Awaited<ReturnType<typeof uploadWorkspaceAttachmentFile>> | null = null;
     try {
       storage = await uploadWorkspaceAttachmentFile({
@@ -293,6 +300,11 @@ function ApprovalWorkspaceBody({
       const pageImages = shouldRenderPdfForVision(file)
         ? await renderPdfFileToPageImages(file)
         : [];
+      if (pageImages.length) {
+        setDocumentPreviewPages(buildPreviewPagesFromPdfImages(pageImages));
+      } else if (file.type.startsWith("image/")) {
+        setDocumentPreviewPages([await readImageFileAsPreviewPage(file)]);
+      }
       const payload = await parseWorkspaceFile({
         file,
         documentRequirement,
@@ -305,6 +317,52 @@ function ApprovalWorkspaceBody({
       setIsParsing(successState.isParsing);
     } catch (error) {
       setParseError(error instanceof Error ? error.message : "Unable to parse file.");
+    } finally {
+      setIsParsing(false);
+    }
+  }
+
+  async function extractHighlightedRegion(
+    file: File,
+    field: WorkflowField,
+  ) {
+    setIsParsing(true);
+    setParseError("");
+    try {
+      const payload = await parseWorkspaceFile({
+        file,
+        adHocFields: [field],
+      });
+      setParseResult((current) => ({
+        ...(current || payload),
+        fields: {
+          ...(current?.fields || {}),
+          ...(payload.fields || {}),
+        },
+        confidence: {
+          ...(current?.confidence || {}),
+          ...(payload.confidence || {}),
+        },
+        evidence: {
+          ...(current?.evidence || {}),
+          ...(payload.evidence || {}),
+        },
+        suggestedFields: current?.suggestedFields || payload.suggestedFields || [],
+        notes: [
+          ...(current?.notes || []),
+          ...(payload.notes || []),
+        ],
+      }));
+      setEditedFields((current) => ({
+        ...current,
+        ...(payload.fields || {}),
+      }));
+    } catch (error) {
+      setParseError(
+        error instanceof Error
+          ? error.message
+          : "Unable to extract highlighted region.",
+      );
     } finally {
       setIsParsing(false);
     }
@@ -546,6 +604,8 @@ function ApprovalWorkspaceBody({
                 isParsing={isParsing}
                 parseError={parseError}
                 parseFile={parseFile}
+                documentPreviewPages={documentPreviewPages}
+                onExtractHighlightedRegion={extractHighlightedRegion}
                 uploadedAttachments={uploadedAttachments}
                 workflowTemplates={templates}
                 selectedTemplateId={selectedTemplate?.id || ""}

@@ -4,6 +4,8 @@ import { getUploadViewState } from "./upload-view-state.ts";
 import {
   buildAdHocExtractionFields,
   createAdHocFieldDraft,
+  createFieldDraftFromSuggestion,
+  createHighlightedExtractionField,
 } from "./upload-view-state.ts";
 
 const invoiceDocument = {
@@ -163,4 +165,35 @@ test("creates a blank ad hoc field draft with a stable id", () => {
   assert.equal(draft.id, "ad-hoc-field-3");
   assert.equal(draft.label, "");
   assert.equal(draft.instructions, "");
+});
+
+test("creates an ad hoc field draft from a suggested field", () => {
+  const draft = createFieldDraftFromSuggestion(
+    {
+      name: "suggested_vendor",
+      label: "Vendor",
+      value: "Northstar Cloud Limited",
+      confidence: "high",
+      evidence: "Vendor Northstar Cloud Limited",
+      instructions: "Extract Vendor.",
+    },
+    4,
+  );
+
+  assert.deepEqual(draft, {
+    id: "suggested-field-4",
+    label: "Vendor",
+    instructions: "Extract Vendor.",
+  });
+});
+
+test("creates an extraction field from a highlighted document region label", () => {
+  assert.deepEqual(createHighlightedExtractionField(" Doctor Name ", 2), {
+    name: "highlight_doctor_name_2",
+    label: "Doctor Name",
+    type: "text",
+    required: false,
+    source: "ai",
+    instructions: "Extract Doctor Name from the highlighted document region.",
+  });
 });

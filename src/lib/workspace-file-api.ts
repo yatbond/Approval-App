@@ -1,5 +1,9 @@
 import type { PdfPageImageInput } from "./parser.ts";
-import type { WorkflowDocumentRequirement, WorkflowField } from "./types.ts";
+import type {
+  ExtractedFieldSuggestion,
+  WorkflowDocumentRequirement,
+  WorkflowField,
+} from "./types.ts";
 
 export const defaultParseLanguageHint =
   "mixed English, Traditional Chinese, Simplified Chinese";
@@ -19,6 +23,7 @@ export type ParsedWorkspaceFilePayload = {
   fields: Record<string, string>;
   confidence: Record<string, string>;
   evidence?: Record<string, string>;
+  suggestedFields?: ExtractedFieldSuggestion[];
   notes: string[];
   tables?: { sheetName: string; rows: Record<string, unknown>[] }[];
   [key: string]: unknown;

@@ -1,4 +1,14 @@
 export type ParserStrategy = "image-ai" | "pdf-ocr" | "excel-table";
+export type ExtractionConfidence = "high" | "medium" | "low";
+
+export type ExtractedFieldSuggestion = {
+  name: string;
+  label: string;
+  value: string;
+  confidence: ExtractionConfidence;
+  evidence: string;
+  instructions: string;
+};
 
 export type ApprovalAction =
   | "approve"

@@ -146,3 +146,70 @@ test("extracts PDF fields from rendered page images through OpenRouter Qwen", as
     globalThis.fetch = previousFetch;
   }
 });
+
+test("keeps suggested fields separate from requested extracted fields", async () => {
+  const previousApiKey = process.env.OPENROUTER_API_KEY;
+  const previousVisionModel = process.env.OPENROUTER_VISION_OCR_MODEL;
+  const previousFetch = globalThis.fetch;
+
+  process.env.OPENROUTER_API_KEY = "test-key";
+  process.env.OPENROUTER_VISION_OCR_MODEL = "qwen/qwen3-vl-8b-instruct";
+  globalThis.fetch = async () =>
+    Response.json({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              fields: {
+                Amount: {
+                  value: "HKD 8,400",
+                  confidence: "high",
+                  evidence: "Total HKD 8,400",
+                },
+              },
+              suggestedFields: [
+                {
+                  label: "Vendor",
+                  value: "Northstar Cloud Limited",
+                  confidence: "high",
+                  evidence: "Vendor Northstar Cloud Limited",
+                },
+              ],
+            }),
+          },
+        },
+      ],
+    });
+
+  try {
+    const result = await extractPdfFieldsWithQwenPageImages({
+      pageImages: [{ pageNumber: 1, mimeType: "image/png", imageBase64: "page-one" }],
+      fields,
+      languageHint: "English",
+    });
+
+    assert.deepEqual(result.fields, { Amount: "HKD 8,400" });
+    assert.deepEqual(result.suggestedFields, [
+      {
+        name: "suggested_vendor",
+        label: "Vendor",
+        value: "Northstar Cloud Limited",
+        confidence: "high",
+        evidence: "Vendor Northstar Cloud Limited",
+        instructions: "Extract Vendor.",
+      },
+    ]);
+  } finally {
+    if (previousApiKey === undefined) {
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENROUTER_API_KEY = previousApiKey;
+    }
+    if (previousVisionModel === undefined) {
+      delete process.env.OPENROUTER_VISION_OCR_MODEL;
+    } else {
+      process.env.OPENROUTER_VISION_OCR_MODEL = previousVisionModel;
+    }
+    globalThis.fetch = previousFetch;
+  }
+});

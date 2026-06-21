@@ -1576,3 +1576,12 @@ Verification:
 - Added confidence and evidence display to the upload extraction draft so users can review low/medium confidence values.
 - Added config knobs: `OPENROUTER_VISION_OCR_MODEL=qwen/qwen3-vl-8b-instruct` and `NEXT_PUBLIC_PDF_OCR_MODE=qwen-page-images`.
 - Verification: red tests failed for missing parser/upload contracts, then passed after implementation; `npm test` passed 253/253; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning; live browser smoke at `http://localhost:3000/?tab=upload` showed the field editor, Add field interaction, and no console errors.
+
+## Step 61 - Combined Upload Field Selection, Suggestions, and Highlight Extraction
+- Added implementation plan `docs/superpowers/plans/2026-06-22-upload-ocr-review-workflows.md`.
+- Extended parser output to keep requested extracted fields separate from optional `suggestedFields`.
+- Added suggested-field cards in Upload so users can include parser-discovered fields after parsing.
+- Added document preview support for rendered PDF pages and uploaded images.
+- Added manual highlight extraction: users can drag a rectangle over the preview, name the field, crop the region locally, and send only that crop back through Qwen extraction.
+- Added shared preview geometry helpers and upload-state helpers for suggested and highlighted fields.
+- Verification: red tests failed for missing parser suggestion, upload-state, and preview helpers; focused tests passed after implementation; `npm test` passed 260/260; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning; live upload-page smoke showed the base field editor and no browser console errors.
