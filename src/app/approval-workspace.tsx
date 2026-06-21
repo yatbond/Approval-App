@@ -28,6 +28,11 @@ import {
   documentFormatOptions,
 } from "@/lib/workflow-documents";
 import {
+  parseWorkspaceFile,
+  type ParsedWorkspaceFilePayload,
+  uploadWorkspaceAttachmentFile,
+} from "@/lib/workspace-file-api";
+import {
   getConditionContext,
   workflowNodeOptions,
 } from "@/lib/workflow-condition-context";
@@ -149,14 +154,6 @@ const WorkflowCanvas = dynamic(() => import("@/app/workflow-canvas"), {
   ssr: false,
 });
 
-type ParseResult = {
-  strategy: string;
-  fields: Record<string, string>;
-  confidence: Record<string, string>;
-  notes: string[];
-  tables?: { sheetName: string; rows: Record<string, unknown>[] }[];
-};
-
 const workflowEditorTabs: { id: WorkflowEditorTab; label: string }[] = [
   { id: "canvas", label: "Canvas" },
   { id: "builder", label: "Template Builder" },
@@ -231,7 +228,7 @@ function ApprovalWorkspaceBody({
   const [comment, setComment] = useState("");
   const [targetEmail, setTargetEmail] = useState("");
   const [fileName, setFileName] = useState("");
-  const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [parseResult, setParseResult] = useState<ParsedWorkspaceFilePayload | null>(null);
   const [editedFields, setEditedFields] = useState<Record<string, string>>({});
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState("");
@@ -263,30 +260,6 @@ function ApprovalWorkspaceBody({
       }),
     [taskNotifications, workspaceSyncMode],
   );
-
-  async function uploadAttachmentFile(
-    file: File,
-    documentRequirement?: WorkflowDocumentRequirement,
-  ) {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("documentId", documentRequirement?.id || "ad-hoc");
-    formData.append("documentType", documentRequirement?.documentType || "Ad hoc document");
-
-    const response = await fetch("/api/attachments/upload", {
-      method: "POST",
-      body: formData,
-    });
-    const payload = (await response.json()) as {
-      storagePath?: string;
-      publicUrl?: string;
-      error?: string;
-    };
-    if (!response.ok || !payload.storagePath) {
-      throw new Error(payload.error || "Unable to store document in Supabase.");
-    }
-    return payload;
-  }
 
   function recordAction(action: ApprovalAction) {
     const nextState = getWorkspaceRecordTaskActionState({
@@ -323,7 +296,10 @@ function ApprovalWorkspaceBody({
     documentRequirement: WorkflowDocumentRequirement,
   ) {
     try {
-      const storage = await uploadAttachmentFile(file, documentRequirement);
+      const storage = await uploadWorkspaceAttachmentFile({
+        file,
+        documentRequirement,
+      });
       const nextTasks = attachDocumentToTaskState({
         tasks,
         templates,
@@ -377,9 +353,12 @@ function ApprovalWorkspaceBody({
     setIsParsing(true);
     setParseResult(null);
     setEditedFields({});
-    let storage: Awaited<ReturnType<typeof uploadAttachmentFile>> | null = null;
+    let storage: Awaited<ReturnType<typeof uploadWorkspaceAttachmentFile>> | null = null;
     try {
-      storage = await uploadAttachmentFile(file, documentRequirement);
+      storage = await uploadWorkspaceAttachmentFile({
+        file,
+        documentRequirement,
+      });
     } catch (error) {
       setParseError(
         error instanceof Error ? error.message : "Unable to store document.",
@@ -402,21 +381,8 @@ function ApprovalWorkspaceBody({
       ]);
     }
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("languageHint", "mixed English, Traditional Chinese, Simplified Chinese");
-
     try {
-      const response = await fetch("/api/parse", {
-        method: "POST",
-        body: formData,
-      });
-
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || "Unable to parse file.");
-      }
-
+      const payload = await parseWorkspaceFile({ file });
       setParseResult(payload);
       setEditedFields(payload.fields || {});
     } catch (error) {

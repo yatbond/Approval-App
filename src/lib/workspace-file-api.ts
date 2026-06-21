@@ -1,0 +1,88 @@
+import type { WorkflowDocumentRequirement } from "./types.ts";
+
+export const defaultParseLanguageHint =
+  "mixed English, Traditional Chinese, Simplified Chinese";
+
+type WorkspaceFetch = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
+export type AttachmentUploadPayload = {
+  storagePath: string;
+  publicUrl?: string;
+};
+
+export type ParsedWorkspaceFilePayload = {
+  strategy: string;
+  fields: Record<string, string>;
+  confidence: Record<string, string>;
+  notes: string[];
+  tables?: { sheetName: string; rows: Record<string, unknown>[] }[];
+  [key: string]: unknown;
+};
+
+export async function uploadWorkspaceAttachmentFile({
+  file,
+  documentRequirement,
+  fetcher = fetch,
+}: {
+  file: File;
+  documentRequirement?: WorkflowDocumentRequirement;
+  fetcher?: WorkspaceFetch;
+}): Promise<AttachmentUploadPayload> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("documentId", documentRequirement?.id || "ad-hoc");
+  formData.append(
+    "documentType",
+    documentRequirement?.documentType || "Ad hoc document",
+  );
+
+  const response = await fetcher("/api/attachments/upload", {
+    method: "POST",
+    body: formData,
+  });
+  const payload = (await response.json()) as {
+    storagePath?: string;
+    publicUrl?: string;
+    error?: string;
+  };
+
+  if (!response.ok || !payload.storagePath) {
+    throw new Error(payload.error || "Unable to store document in Supabase.");
+  }
+
+  return {
+    storagePath: payload.storagePath,
+    publicUrl: payload.publicUrl,
+  };
+}
+
+export async function parseWorkspaceFile({
+  file,
+  languageHint = defaultParseLanguageHint,
+  fetcher = fetch,
+}: {
+  file: File;
+  languageHint?: string;
+  fetcher?: WorkspaceFetch;
+}): Promise<ParsedWorkspaceFilePayload> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("languageHint", languageHint);
+
+  const response = await fetcher("/api/parse", {
+    method: "POST",
+    body: formData,
+  });
+  const payload = (await response.json()) as ParsedWorkspaceFilePayload & {
+    error?: string;
+  };
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Unable to parse file.");
+  }
+
+  return payload;
+}

@@ -13,19 +13,12 @@ import {
   formatDocumentFormat,
 } from "@/lib/workflow-documents";
 import { getUploadViewState } from "@/lib/upload-view-state";
+import type { ParsedWorkspaceFilePayload } from "@/lib/workspace-file-api";
 import type {
   ApprovalAttachment,
   WorkflowDocumentRequirement,
   WorkflowTemplate,
 } from "@/lib/types";
-
-type ParseResult = {
-  strategy: string;
-  fields: Record<string, string>;
-  confidence: Record<string, string>;
-  notes: string[];
-  tables?: { sheetName: string; rows: Record<string, unknown>[] }[];
-};
 
 export function UploadView({
   fileName,
@@ -43,7 +36,7 @@ export function UploadView({
   onSubmitRequest,
 }: {
   fileName: string;
-  parseResult: ParseResult | null;
+  parseResult: ParsedWorkspaceFilePayload | null;
   editedFields: Record<string, string>;
   setEditedFields: (fields: Record<string, string>) => void;
   isParsing: boolean;

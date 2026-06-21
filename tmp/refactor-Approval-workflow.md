@@ -1218,3 +1218,29 @@ Verification:
 - `npm test -- --runInBand`: passed, 197/197.
 - `npm run build`: passed. Webpack emitted a non-fatal cache `ENOENT` warning after the successful route summary.
 - Autoreview: passed with no Critical, Important, or Minor findings.
+
+## Step 46 - Workspace File API Boundary
+
+Status: complete.
+
+Plan:
+- Extract upload and parse API request construction out of `ApprovalWorkspaceBody`.
+- Centralize the parsed workspace file payload type so the page and upload view use the same contract.
+- Preserve attachment metadata, upload error messages, parse language hint, and parse API error handling.
+- Verify with red/green helper tests, typegen/typecheck, lint, live route smoke, full tests, build, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workspace-file-api.test.mjs`; verified the focused test failed before the helper module existed.
+- Added `src/lib/workspace-file-api.ts` with `uploadWorkspaceAttachmentFile`, `parseWorkspaceFile`, `defaultParseLanguageHint`, and `ParsedWorkspaceFilePayload`.
+- Rewired `parseFile` and `attachTaskDocument` in `src/app/approval-workspace.tsx` to use the helper instead of constructing `FormData` and calling `fetch` inline.
+- Updated `src/app/upload-view.tsx` and `src/app/approval-workspace.tsx` to use the shared parsed file payload type.
+
+Verification:
+- Red step: `node --experimental-strip-types --test src/lib/workspace-file-api.test.mjs` failed with missing module before implementation.
+- `node --experimental-strip-types --test src/lib/workspace-file-api.test.mjs`: passed, 5/5.
+- `npx next typegen && npx tsc --noEmit`: initially caught a too-loose parse payload type; after centralizing the stricter shared type, passed.
+- `npm run lint`: passed.
+- Live route smoke before full build: `http://localhost:3000/?tab=workflow` returned `307` to `/login`, matching the unauthenticated auth gate. Authenticated upload and parse behavior was not exercised because no test credentials or reusable clean-browser Supabase session cookie were available.
+- `npm test -- --runInBand`: passed, 202/202.
+- `npm run build`: passed. Webpack emitted a non-fatal cache `ENOENT` warning after the successful route summary.
+- Autoreview: passed with no Critical, Important, or Minor findings.
