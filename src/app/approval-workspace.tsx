@@ -76,6 +76,13 @@ import {
   shouldHandleCanvasUndoKey,
 } from "@/lib/workflow-keyboard";
 import {
+  getWorkflowHistory,
+  recordWorkflowHistoryEdit,
+  redoWorkflowHistory,
+  undoWorkflowHistory,
+  type WorkflowHistoryById,
+} from "@/lib/workflow-history";
+import {
   parseWorkspaceState,
   serializeWorkspaceState,
 } from "@/lib/workspace-persistence";
@@ -115,25 +122,6 @@ type UserDirectoryEntry = {
   email: string;
   role: UserRole;
 };
-
-type WorkflowHistoryEntry = {
-  template: WorkflowTemplate;
-  label: string;
-};
-
-type WorkflowHistoryState = {
-  undoStack: WorkflowHistoryEntry[];
-  redoStack: WorkflowHistoryEntry[];
-  lastEdit: string;
-};
-
-function createEmptyWorkflowHistory(): WorkflowHistoryState {
-  return {
-    undoStack: [],
-    redoStack: [],
-    lastEdit: "",
-  };
-}
 
 const WorkflowCanvas = dynamic(() => import("@/app/workflow-canvas"), {
   loading: () => (
@@ -2861,11 +2849,12 @@ function WorkflowView({
   const validationWarnings =
     workflowSimulation?.issues.filter((issue) => issue.severity === "warning") || [];
   const activeWorkflowHistoryId = workflow?.id || "";
-  const [workflowHistoryById, setWorkflowHistoryById] = useState<
-    Record<string, WorkflowHistoryState>
-  >({});
-  const workflowHistory =
-    workflowHistoryById[activeWorkflowHistoryId] || createEmptyWorkflowHistory();
+  const [workflowHistoryById, setWorkflowHistoryById] =
+    useState<WorkflowHistoryById>({});
+  const workflowHistory = getWorkflowHistory(
+    workflowHistoryById,
+    activeWorkflowHistoryId,
+  );
   const workflowUndoStack = workflow ? workflowHistory.undoStack : [];
   const workflowRedoStack = workflow ? workflowHistory.redoStack : [];
   const lastWorkflowEdit = workflow ? workflowHistory.lastEdit : "";
@@ -2983,21 +2972,9 @@ function WorkflowView({
       return;
     }
 
-    setWorkflowHistoryById((historyById) => {
-      const currentHistory =
-        historyById[activeWorkflowHistoryId] || createEmptyWorkflowHistory();
-      return {
-        ...historyById,
-        [activeWorkflowHistoryId]: {
-          undoStack: [
-            ...currentHistory.undoStack.slice(-49),
-            { template: workflow, label },
-          ],
-          redoStack: [],
-          lastEdit: label,
-        },
-      };
-    });
+    setWorkflowHistoryById((historyById) =>
+      recordWorkflowHistoryEdit(historyById, activeWorkflowHistoryId, workflow, label),
+    );
     onUpdateTemplate(nextTemplate);
   }
 
@@ -3070,22 +3047,17 @@ function WorkflowView({
       return;
     }
 
-    setWorkflowHistoryById((historyById) => {
-      const currentHistory =
-        historyById[activeWorkflowHistoryId] || createEmptyWorkflowHistory();
-      return {
-        ...historyById,
-        [activeWorkflowHistoryId]: {
-          undoStack: currentHistory.undoStack.slice(0, -1),
-          redoStack: [
-            ...currentHistory.redoStack.slice(-49),
-            { template: workflow, label: previousEntry.label },
-          ],
-          lastEdit: `Undid: ${previousEntry.label}`,
-        },
-      };
-    });
-    onUpdateTemplate(previousEntry.template);
+    const result = undoWorkflowHistory(
+      workflowHistoryById,
+      activeWorkflowHistoryId,
+      workflow,
+    );
+    if (!result.template) {
+      return;
+    }
+
+    setWorkflowHistoryById(result.historyById);
+    onUpdateTemplate(result.template);
     resetCanvasView();
   }
 
@@ -3099,22 +3071,17 @@ function WorkflowView({
       return;
     }
 
-    setWorkflowHistoryById((historyById) => {
-      const currentHistory =
-        historyById[activeWorkflowHistoryId] || createEmptyWorkflowHistory();
-      return {
-        ...historyById,
-        [activeWorkflowHistoryId]: {
-          undoStack: [
-            ...currentHistory.undoStack.slice(-49),
-            { template: workflow, label: nextEntry.label },
-          ],
-          redoStack: currentHistory.redoStack.slice(0, -1),
-          lastEdit: `Redid: ${nextEntry.label}`,
-        },
-      };
-    });
-    onUpdateTemplate(nextEntry.template);
+    const result = redoWorkflowHistory(
+      workflowHistoryById,
+      activeWorkflowHistoryId,
+      workflow,
+    );
+    if (!result.template) {
+      return;
+    }
+
+    setWorkflowHistoryById(result.historyById);
+    onUpdateTemplate(result.template);
     resetCanvasView();
   }
 

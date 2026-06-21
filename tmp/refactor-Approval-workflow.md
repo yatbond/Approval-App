@@ -77,3 +77,28 @@ Verification:
 - Live Workflow preview: passed, no browser console errors.
 - Live Admin preview: passed, no browser console errors.
 - Final autoreview: passed with no actionable Step 2 findings.
+
+## Step 3 - Workflow History Boundary
+
+Status: complete.
+
+Plan:
+- Extract workflow canvas undo/redo history from `approval-workspace.tsx` into a pure library.
+- Add focused tests for per-workflow history isolation, redo clearing, stack limits, and undo/redo transitions.
+- Keep the page component as a thin adapter around the pure history helpers.
+- Verify with typecheck, full tests, lint, build, live browser preview, autoreview, and commit.
+
+Implementation notes:
+- Added `src/lib/workflow-history.ts` for workflow history state, stack limits, record, undo, and redo helpers.
+- Added `src/lib/workflow-history.test.mjs` for focused coverage.
+- Rewired `approval-workspace.tsx` to use the history helpers instead of mutating undo/redo stacks inline.
+
+Verification:
+- `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/workflow-history.test.mjs src/lib/workflow-keyboard.test.mjs`: passed, 11/11.
+- `npx tsc --noEmit`: passed.
+- `npm test -- --runInBand`: passed, 75/75.
+- `npm run lint`: passed.
+- `npm run build`: passed.
+- Live Workflow preview: passed, no browser console errors.
+- Live Admin preview: passed, no browser console errors.
+- Final autoreview: passed with no actionable Step 3 findings.
