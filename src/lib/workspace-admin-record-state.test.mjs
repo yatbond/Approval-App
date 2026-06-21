@@ -102,6 +102,21 @@ test("allows local template delete when the remote template row is already missi
   assert.match(state.error, /already missing/i);
 });
 
+test("allows local template delete when the remote template soft-delete is blocked by RLS", () => {
+  const state = getAdminRecordDeleteFailureState({
+    record: {
+      type: "template",
+      templateKey: "template-finance",
+      versionNumber: 1,
+    },
+    reason:
+      'PATCH failed: 503 - new row violates row-level security policy for table "workflow_template_versions"',
+  });
+
+  assert.equal(state.canContinue, true);
+  assert.match(state.error, /row-level security/i);
+});
+
 test("blocks local delete for other remote deactivation failures", () => {
   const state = getAdminRecordDeleteFailureState({
     record: {

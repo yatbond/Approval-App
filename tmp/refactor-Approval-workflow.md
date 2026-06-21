@@ -1481,3 +1481,32 @@ Verification:
 - `npm run build`: passed with the known non-fatal webpack cache `ENOENT` warning.
 - `npm run lint`: passed after an initial environment timeout retry.
 - Browser verification was attempted, but the browser connector failed to attach to an active/new tab in this run. Automated tests cover the reported failing path.
+
+## Step 55 - Template Delete RLS Recovery
+
+Status: complete.
+
+Plan:
+- Trace the `PATCH failed: 503 - new row violates row-level security policy for table "workflow_template_versions"` delete path.
+- Add a narrow client-side recovery for template-version RLS soft-delete failures so Template Library delete can still remove the local template and persist the snapshot backup.
+- Add and apply a Supabase migration that lets authenticated template creators update their own `workflow_template_versions` rows, while keeping the existing admin update policy.
+- Verify the live Supabase policy, automated tests, typecheck, lint, production build, and browser preview.
+
+Root cause:
+- The workspace API correctly uses the signed-in user's Supabase session. The existing `workflow_template_versions` update policy only allowed admins, so a non-admin creator could fail the soft-delete update even though the workspace snapshot backup could still persist the intended local delete.
+
+Implementation notes:
+- Extended `getAdminRecordDeleteFailureState` to continue only when a template delete failure mentions both row-level security and `workflow_template_versions`.
+- Added `supabase/migrations/20260621143000_allow_template_owner_soft_delete.sql` with an authenticated update grant and a creator-owned update policy for template versions.
+- Applied the migration to live Supabase project `wlbxrdmpwuupjyarjcxb`.
+
+Verification:
+- Red step: focused admin-record-state test failed before the RLS classifier was added.
+- `npm test -- src/lib/workspace-admin-record-state.test.mjs`: passed, 236/236.
+- Supabase `pg_policies` verification: live project contains both `admins update workflow template versions` and `template creators update workflow template versions`.
+- `npm test`: passed, 236/236.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed.
+- `npm run build`: passed. Webpack emitted the known non-fatal cache `ENOENT` warning after the successful route summary.
+- Live browser preview: passed; `http://localhost:3000/?tab=workflow` loaded the Workflow page with Template Builder first and no browser console errors.
+- Autoreview: passed with no actionable Step 55 findings. Residual legacy-data note: template rows created by another user or with empty `created_by` can still be rejected by RLS, and the client fallback intentionally handles that case through the snapshot backup.

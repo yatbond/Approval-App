@@ -34,14 +34,23 @@ export function getAdminRecordDeleteFailureState({
   record: WorkspaceAdminDeactivation;
   reason: string;
 }) {
-  if (
-    record.type === "template" &&
-    /No active template version matched/i.test(reason)
-  ) {
+  if (record.type === "template" && /No active template version matched/i.test(reason)) {
     return {
       canContinue: true,
       error:
         "Remote template version was already missing; removed locally and will resync.",
+    };
+  }
+
+  if (
+    record.type === "template" &&
+    /row-level security policy/i.test(reason) &&
+    /workflow_template_versions/i.test(reason)
+  ) {
+    return {
+      canContinue: true,
+      error:
+        "Remote template version soft-delete was blocked by row-level security; removed locally and will resync from the snapshot backup.",
     };
   }
 
