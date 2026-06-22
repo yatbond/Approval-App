@@ -41,6 +41,7 @@ import {
   type HighlightFieldGroup,
 } from "@/lib/upload-view-state";
 import type { ParsedWorkspaceFilePayload } from "@/lib/workspace-file-api";
+import type { UploadRequestDraftStatus } from "@/lib/upload-request-draft-state";
 import type {
   ApprovalAttachment,
   WorkflowDocumentRequirement,
@@ -59,6 +60,14 @@ export function UploadView({
   documentPreviewPages,
   onExtractHighlightedRegion,
   uploadedAttachments,
+  uploadDraftStatus,
+  uploadDraftRestoreToken,
+  uploadDraftResetToken,
+  restoredHighlightGroups,
+  restoredActiveHighlightGroupId,
+  restoredHighlightBoxCounter,
+  onHighlightDraftChange,
+  onClearRequestDraft,
   workflowTemplates,
   selectedTemplateId,
   setSelectedTemplateId,
@@ -82,6 +91,18 @@ export function UploadView({
     field: WorkflowField,
   ) => Promise<ParsedWorkspaceFilePayload>;
   uploadedAttachments: ApprovalAttachment[];
+  uploadDraftStatus: UploadRequestDraftStatus;
+  uploadDraftRestoreToken: string;
+  uploadDraftResetToken: number;
+  restoredHighlightGroups: HighlightFieldGroup[];
+  restoredActiveHighlightGroupId: string;
+  restoredHighlightBoxCounter: number;
+  onHighlightDraftChange: (draft: {
+    highlightGroups: HighlightFieldGroup[];
+    activeHighlightGroupId: string;
+    highlightBoxCounter: number;
+  }) => void;
+  onClearRequestDraft: () => void;
   workflowTemplates: WorkflowTemplate[];
   selectedTemplateId: string;
   setSelectedTemplateId: (id: string) => void;
@@ -95,12 +116,17 @@ export function UploadView({
     bounds: { width: number; height: number };
   } | null>(null);
   const [highlightRect, setHighlightRect] = useState<NormalizedRect | null>(null);
-  const [highlightGroups, setHighlightGroups] = useState<HighlightFieldGroup[]>([
-    createHighlightFieldGroup(1),
-  ]);
+  const [highlightGroups, setHighlightGroups] = useState<HighlightFieldGroup[]>(
+    () =>
+      restoredHighlightGroups.length
+        ? restoredHighlightGroups
+        : [createHighlightFieldGroup(1)],
+  );
   const [activeHighlightGroupId, setActiveHighlightGroupId] =
-    useState("highlight-field-1");
-  const [highlightBoxCounter, setHighlightBoxCounter] = useState(1);
+    useState(restoredActiveHighlightGroupId || "highlight-field-1");
+  const [highlightBoxCounter, setHighlightBoxCounter] = useState(
+    restoredHighlightBoxCounter || 1,
+  );
   const [highlightError, setHighlightError] = useState("");
   const [previewContrast, setPreviewContrast] = useState(210);
   const [previewBrightness, setPreviewBrightness] = useState(88);
@@ -171,6 +197,74 @@ export function UploadView({
       setSelectedTemplateId(selectedTemplate.id);
     }
   }, [selectedTemplate, selectedTemplateId, setSelectedTemplateId]);
+
+  useEffect(() => {
+    if (!uploadDraftRestoreToken) {
+      return;
+    }
+
+    let didCancel = false;
+    queueMicrotask(() => {
+      if (didCancel) {
+        return;
+      }
+
+      setHighlightGroups(
+        restoredHighlightGroups.length
+          ? restoredHighlightGroups
+          : [createHighlightFieldGroup(1)],
+      );
+      setActiveHighlightGroupId(
+        restoredActiveHighlightGroupId || restoredHighlightGroups[0]?.id || "highlight-field-1",
+      );
+      setHighlightBoxCounter(restoredHighlightBoxCounter || 1);
+      setHighlightRect(null);
+      setSelectionStart(null);
+      setSelectionCurrent(null);
+    });
+
+    return () => {
+      didCancel = true;
+    };
+  }, [
+    restoredActiveHighlightGroupId,
+    restoredHighlightBoxCounter,
+    restoredHighlightGroups,
+    uploadDraftRestoreToken,
+  ]);
+
+  useEffect(() => {
+    let didCancel = false;
+    queueMicrotask(() => {
+      if (didCancel) {
+        return;
+      }
+
+      setHighlightGroups([createHighlightFieldGroup(1)]);
+      setActiveHighlightGroupId("highlight-field-1");
+      setHighlightBoxCounter(1);
+      setHighlightRect(null);
+      setSelectionStart(null);
+      setSelectionCurrent(null);
+    });
+
+    return () => {
+      didCancel = true;
+    };
+  }, [uploadDraftResetToken]);
+
+  useEffect(() => {
+    onHighlightDraftChange({
+      highlightGroups,
+      activeHighlightGroupId,
+      highlightBoxCounter,
+    });
+  }, [
+    activeHighlightGroupId,
+    highlightBoxCounter,
+    highlightGroups,
+    onHighlightDraftChange,
+  ]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -338,6 +432,19 @@ export function UploadView({
         <p className="mt-1 text-sm text-neutral-400">
           Choose a template, then upload each required or optional document.
         </p>
+        <div className="mt-3 flex flex-col gap-2 rounded-md border border-white/10 bg-[#121518] p-3 text-xs text-neutral-300 sm:flex-row sm:items-center sm:justify-between">
+          <span>{uploadDraftStatus.label}</span>
+          {uploadDraftStatus.hasDraft && (
+            <button
+              type="button"
+              onClick={onClearRequestDraft}
+              className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 font-medium text-rose-100 transition hover:bg-rose-500/20"
+            >
+              <X size={13} />
+              Clear draft
+            </button>
+          )}
+        </div>
 
         <label className="mt-4 block">
           <span className="mb-1 block text-xs text-neutral-400">Workflow template</span>

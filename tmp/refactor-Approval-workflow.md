@@ -1632,3 +1632,12 @@ Verification:
 - Fixed parser strategy detection so PDFs uploaded with a generic MIME type, such as `application/octet-stream`, are still routed to `pdf-ocr` based on the `.pdf` filename.
 - Updated `PRD/approval-workflow-platform-prd.md` with template-side recognition, feedback examples, confidence/evidence, Qwen visual OCR, and publish guardrails.
 - Verification: red focused tests failed for missing examples, template recognition helpers, publish guardrails, and generic-MIME PDF detection; after implementation `npm test` passed 280/280; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning after successful route generation; visible browser smoke loaded Workflow and Upload with no console errors, and Box Details showed recognition setup for a selected review node; live `/api/parse` smoke on `SKM_C550i26050716420 - Gleneagles.pdf` returned `pdf-ocr`, `Total amount: 500,000.00`, `Document title: STATEMENT OF FINAL ACCOUNT`, high confidence, evidence, and suggested fields.
+
+## Step 68 - Upload Request Autosave
+- Added browser-local upload request draft autosave so interrupted request creation can recover selected template, stored attachment references, OCR parse result, edited fields, parsed document id, and multi-box highlight field groups.
+- Added `src/lib/upload-request-draft-state.ts` with serialization, validation, status labeling, and clear-state helpers, covered by red-green tests.
+- Lifted upload highlight draft state into `approval-workspace.tsx` so boxed fields are included in autosave without persisting raw `File` objects.
+- Added an Upload page autosave banner showing `No request draft` or `Autosaved ...`, plus `Clear draft` to discard recoverable work.
+- Drafts are removed after successful submission or explicit clear; uploaded files remain in Supabase storage through their saved attachment references.
+- Updated `PRD/approval-workflow-platform-prd.md` with the autosave behavior and state boundary.
+- Verification: red test failed for missing autosave module; after implementation `npm test` passed 285/285; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning after successful route generation; visible browser smoke at `http://localhost:3000/?tab=upload` showed the autosave status and no console errors.

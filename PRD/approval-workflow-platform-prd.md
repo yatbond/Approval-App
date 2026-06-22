@@ -66,6 +66,7 @@ Current implemented areas:
 - Per-box document requirements, including document format, document type, required flag, and extraction fields.
 - Template-side sample document recognition inside Box Details, allowing a template creator to upload a sample document, accept suggested fields, or box a value from the preview to create template extraction fields.
 - Upload-side two-step field recognition: Step 1 suggested fields from OCR, followed by Step 2 add/correct fields through document preview boxing or direct manual values.
+- Upload request autosave for interrupted request creation, preserving selected template, Supabase attachment references, parsed OCR result, edited extraction draft fields, highlighted field groups/value boxes, and parsed document link in browser-local storage. Submitted or manually cleared drafts remove the saved recovery state.
 - Qwen/OpenRouter visual OCR path for PDFs rendered into page images, plus PDF.js decoder assets for scanner PDFs that require CMaps, standard fonts, and WASM decoders.
 - Extraction confidence and evidence display for parsed fields, with user corrections stored as workflow-specific extraction examples for future OCR prompts.
 - Condition cases with numbered display, optional nickname, approval-count rules, specific-reviewer rules, numeric rules, AND/OR joining, fallback route, and multiple outcome boxes.
@@ -96,7 +97,7 @@ The current codebase has been refactored into clearer UI, state, workflow, persi
 
 Current front-end component boundaries:
 
-- `src/app/approval-workspace.tsx`: authenticated workspace shell, active tab routing, queue/tracking/upload/admin orchestration, request submission, task action orchestration, parse/upload orchestration, and workspace persistence wiring.
+- `src/app/approval-workspace.tsx`: authenticated workspace shell, active tab routing, queue/tracking/upload/admin orchestration, request draft autosave wiring, request submission, task action orchestration, parse/upload orchestration, and workspace persistence wiring.
 - `src/app/workflow-view.tsx`: workflow canvas, template builder/library tabs, runtime task preview, condition details, box document configuration, workflow undo/redo, and workflow-local UI state.
 - `src/app/workspace-shell.tsx`: app frame, collapsible navigation, tab state, notifications, and sync status presentation.
 - `src/app/task-views.tsx`: queue, tracking, user directory datalist, and task-facing presentation.
@@ -114,6 +115,7 @@ Current pure state and domain boundaries:
 - `src/lib/workspace-template-record-state.ts`: create/update/delete template record state.
 - `src/lib/workspace-admin-record-state.ts`: business directory and role assignment record state.
 - `src/lib/workspace-request-submission-state.ts`: submit-request decision state and successful task creation state.
+- `src/lib/upload-request-draft-state.ts`: upload request draft serialization, validation, autosave status summary, and clear-state defaults.
 - `src/lib/workspace-task-action-state.ts`: manual queue action state and workflow-runner action state.
 - `src/lib/workspace-file-api.ts`: upload and parse API client boundary plus parsed file payload type.
 - `src/lib/workspace-parse-file-state.ts`: parse-file UI reset, stored attachment creation, and parse success mapping.

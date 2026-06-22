@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   notifications,
 } from "@/lib/mock-data";
@@ -30,6 +30,16 @@ import {
   appendExtractionExamplesToTemplate,
   buildExtractionTrainingExamples,
 } from "@/lib/template-recognition-state";
+import {
+  buildUploadRequestDraft,
+  clearUploadRequestDraft,
+  createEmptyUploadRequestDraftStatus,
+  parseUploadRequestDraft,
+  serializeUploadRequestDraft,
+} from "@/lib/upload-request-draft-state";
+import type {
+  HighlightFieldGroup,
+} from "@/lib/upload-view-state";
 import {
   buildTaskNotifications,
 } from "@/lib/workflow-system";
@@ -76,6 +86,8 @@ import type {
 } from "@/lib/types";
 
 type Tab = WorkspaceTab;
+
+const uploadRequestDraftStoragePrefix = "approval-upload-request-draft-v1";
 
 export type ApprovalWorkspaceProps = {
   initialTab: Tab;
@@ -158,11 +170,50 @@ function ApprovalWorkspaceBody({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [uploadedAttachments, setUploadedAttachments] = useState<ApprovalAttachment[]>([]);
   const [parsedDocumentId, setParsedDocumentId] = useState<string | undefined>();
+  const [uploadHighlightGroups, setUploadHighlightGroups] = useState<HighlightFieldGroup[]>([]);
+  const [uploadActiveHighlightGroupId, setUploadActiveHighlightGroupId] = useState("");
+  const [uploadHighlightBoxCounter, setUploadHighlightBoxCounter] = useState(1);
+  const [uploadDraftRestoreToken, setUploadDraftRestoreToken] = useState("");
+  const [uploadDraftResetToken, setUploadDraftResetToken] = useState(0);
+  const uploadDraftStorageReady = useRef(false);
   const selectedTemplate = useMemo(
     () =>
       templates.find((template) => template.id === selectedTemplateId) ||
       templates[0],
     [selectedTemplateId, templates],
+  );
+  const uploadRequestDraftStorageKey = useMemo(
+    () => `${uploadRequestDraftStoragePrefix}:${activeUser.email}`,
+    [activeUser.email],
+  );
+  const uploadDraftStatus = useMemo(
+    () =>
+      createEmptyUploadRequestDraftStatus(
+        buildUploadRequestDraft({
+          selectedTemplateId: selectedTemplate?.id || selectedTemplateId,
+          fileName,
+          parseResult,
+          editedFields,
+          uploadedAttachments,
+          parsedDocumentId,
+          highlightGroups: uploadHighlightGroups,
+          activeHighlightGroupId: uploadActiveHighlightGroupId,
+          highlightBoxCounter: uploadHighlightBoxCounter,
+          savedAt: "",
+        }),
+      ),
+    [
+      editedFields,
+      fileName,
+      parseResult,
+      parsedDocumentId,
+      selectedTemplate?.id,
+      selectedTemplateId,
+      uploadActiveHighlightGroupId,
+      uploadHighlightBoxCounter,
+      uploadHighlightGroups,
+      uploadedAttachments,
+    ],
   );
 
   const {
@@ -181,6 +232,115 @@ function ApprovalWorkspaceBody({
         workspaceSyncMode,
       }),
     [taskNotifications, workspaceSyncMode],
+  );
+
+  useEffect(() => {
+    let didCancel = false;
+    const savedDraft = localStorage.getItem(uploadRequestDraftStorageKey);
+    const parsedDraft = savedDraft ? parseUploadRequestDraft(savedDraft) : null;
+
+    queueMicrotask(() => {
+      if (didCancel) {
+        return;
+      }
+
+      if (!parsedDraft) {
+        uploadDraftStorageReady.current = true;
+        return;
+      }
+
+      setSelectedTemplateId(parsedDraft.selectedTemplateId);
+      setFileName(parsedDraft.fileName);
+      setParseResult(parsedDraft.parseResult);
+      setEditedFields(parsedDraft.editedFields);
+      setUploadedAttachments(parsedDraft.uploadedAttachments);
+      setParsedDocumentId(parsedDraft.parsedDocumentId);
+      setUploadHighlightGroups(parsedDraft.highlightGroups);
+      setUploadActiveHighlightGroupId(parsedDraft.activeHighlightGroupId);
+      setUploadHighlightBoxCounter(parsedDraft.highlightBoxCounter);
+      setUploadDraftRestoreToken(parsedDraft.savedAt);
+      uploadDraftStorageReady.current = true;
+    });
+
+    return () => {
+      didCancel = true;
+    };
+  }, [uploadRequestDraftStorageKey, setSelectedTemplateId]);
+
+  useEffect(() => {
+    if (!uploadDraftStorageReady.current) {
+      return;
+    }
+
+    const nextDraft = buildUploadRequestDraft({
+      selectedTemplateId: selectedTemplate?.id || selectedTemplateId,
+      fileName,
+      parseResult,
+      editedFields,
+      uploadedAttachments,
+      parsedDocumentId,
+      highlightGroups: uploadHighlightGroups,
+      activeHighlightGroupId: uploadActiveHighlightGroupId,
+      highlightBoxCounter: uploadHighlightBoxCounter,
+    });
+    const nextStatus = createEmptyUploadRequestDraftStatus(nextDraft);
+
+    if (!nextStatus.hasDraft) {
+      localStorage.removeItem(uploadRequestDraftStorageKey);
+      return;
+    }
+
+    localStorage.setItem(
+      uploadRequestDraftStorageKey,
+      serializeUploadRequestDraft(nextDraft),
+    );
+  }, [
+    editedFields,
+    fileName,
+    parseResult,
+    parsedDocumentId,
+    selectedTemplate?.id,
+    selectedTemplateId,
+    uploadActiveHighlightGroupId,
+    uploadDraftRestoreToken,
+    uploadHighlightBoxCounter,
+    uploadHighlightGroups,
+    uploadedAttachments,
+    uploadRequestDraftStorageKey,
+  ]);
+
+  function resetUploadRequestDraftState() {
+    const cleared = clearUploadRequestDraft();
+    setFileName(cleared.fileName);
+    setParseResult(cleared.parseResult);
+    setEditedFields(cleared.editedFields);
+    setUploadedAttachments(cleared.uploadedAttachments);
+    setParsedDocumentId(cleared.parsedDocumentId);
+    setDocumentPreviewPages([]);
+    setUploadHighlightGroups(cleared.highlightGroups);
+    setUploadActiveHighlightGroupId(cleared.activeHighlightGroupId);
+    setUploadHighlightBoxCounter(cleared.highlightBoxCounter);
+    setUploadDraftResetToken((value) => value + 1);
+    localStorage.removeItem(uploadRequestDraftStorageKey);
+  }
+
+  function clearUploadRequestDraftFromUi() {
+    resetUploadRequestDraftState();
+    setParseError("");
+    setSubmissionMessage("Request draft cleared.");
+  }
+
+  const updateUploadHighlightDraft = useCallback(
+    (draft: {
+      highlightGroups: HighlightFieldGroup[];
+      activeHighlightGroupId: string;
+      highlightBoxCounter: number;
+    }) => {
+      setUploadHighlightGroups(draft.highlightGroups);
+      setUploadActiveHighlightGroupId(draft.activeHighlightGroupId);
+      setUploadHighlightBoxCounter(draft.highlightBoxCounter);
+    },
+    [],
   );
 
   function recordAction(action: ApprovalAction) {
@@ -433,8 +593,9 @@ function ApprovalWorkspaceBody({
     }
     setSelectedTaskId(nextState.selectedTaskId);
     if (nextState.shouldClearUploadedAttachments) {
-      setUploadedAttachments([]);
+      resetUploadRequestDraftState();
     }
+    localStorage.removeItem(uploadRequestDraftStorageKey);
     void persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({
         approvalTasks: nextState.tasks,
@@ -655,6 +816,14 @@ function ApprovalWorkspaceBody({
                 documentPreviewPages={documentPreviewPages}
                 onExtractHighlightedRegion={extractHighlightedRegion}
                 uploadedAttachments={uploadedAttachments}
+                uploadDraftStatus={uploadDraftStatus}
+                uploadDraftRestoreToken={uploadDraftRestoreToken}
+                uploadDraftResetToken={uploadDraftResetToken}
+                restoredHighlightGroups={uploadHighlightGroups}
+                restoredActiveHighlightGroupId={uploadActiveHighlightGroupId}
+                restoredHighlightBoxCounter={uploadHighlightBoxCounter}
+                onHighlightDraftChange={updateUploadHighlightDraft}
+                onClearRequestDraft={clearUploadRequestDraftFromUi}
                 workflowTemplates={templates}
                 selectedTemplateId={selectedTemplate?.id || ""}
                 setSelectedTemplateId={selectTemplateRecord}
