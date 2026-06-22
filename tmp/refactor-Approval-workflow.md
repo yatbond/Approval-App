@@ -1614,3 +1614,11 @@ Verification:
 - Reworked the Upload preview highlight panel into `Highlight fields`: users can name a field, draw a rectangle, add it as a value box, add more boxes or more fields, and extract all boxes for a field into one multi-line data value.
 - Kept the parser API unchanged by sending each value box as a cropped image with the same field definition, then merging returned values on the client.
 - Verification: red tests failed for missing highlight group and active-selection helpers; after implementation `npm test -- src/lib/upload-view-state.test.mjs src/lib/document-preview.test.mjs` passed; `npx tsc --noEmit` passed; `npm run lint` passed; unauthenticated browser smoke redirected to `/login` with no console errors; `npm run build` passed with the known non-fatal webpack cache warning after successful route generation.
+
+## Step 66 - Two-Step Field Recognition Workflow
+- Added implementation plan `docs/superpowers/plans/2026-06-22-field-recognition-workflow.md`.
+- Removed the duplicate pre-upload ad hoc field-entry card from Upload so users choose fields inside the document review flow instead of in two places.
+- Reworked Upload document review into `Step 1: Suggested fields` for parser-found values and `Step 2: Add / correct fields` for boxed regions or direct manual values.
+- Made the box-add action contextual: after a user draws a rectangle, the UI shows `Add box to <field>` for the active field.
+- Mirrored the same concept in Workflow Box details by renaming document setup to recognition setup, adding `Step 1: Required template fields`, and changing field creation to `Add template field`.
+- Verification: `npm test -- src/lib/upload-view-state.test.mjs src/lib/document-preview.test.mjs src/lib/workflow-document-field-state.test.mjs` passed as part of the full lib test glob, 272/272; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning after successful route generation; headless browser smoke redirected to `/login` with no console errors; visible in-app browser smoke at `http://localhost:3000/?tab=upload` loaded the authenticated Upload page with no console errors.

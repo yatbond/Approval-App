@@ -30,9 +30,6 @@ import {
 } from "@/lib/workflow-documents";
 import {
   addBoxToHighlightFieldGroup,
-  buildAdHocExtractionFields,
-  createAdHocFieldDraft,
-  createFieldDraftFromSuggestion,
   createHighlightFieldGroup,
   createHighlightValueBox,
   createHighlightedExtractionField,
@@ -41,7 +38,6 @@ import {
   removeHighlightValueBox,
   updateHighlightFieldGroupLabel,
   updateHighlightValueBox,
-  type AdHocFieldDraft,
   type HighlightFieldGroup,
 } from "@/lib/upload-view-state";
 import type { ParsedWorkspaceFilePayload } from "@/lib/workspace-file-api";
@@ -92,9 +88,6 @@ export function UploadView({
   submissionMessage: string;
   onSubmitRequest: () => void;
 }) {
-  const [adHocFieldDrafts, setAdHocFieldDrafts] = useState<AdHocFieldDraft[]>([
-    createAdHocFieldDraft(1),
-  ]);
   const [selectedPreviewPageId, setSelectedPreviewPageId] = useState("");
   const [selectionStart, setSelectionStart] = useState<Point | null>(null);
   const [selectionCurrent, setSelectionCurrent] = useState<{
@@ -130,7 +123,6 @@ export function UploadView({
     selectedTemplateId,
     uploadedAttachments,
   });
-  const adHocFields = buildAdHocExtractionFields(adHocFieldDrafts);
   const selectedPreviewPage =
     documentPreviewPages.find((page) => page.id === selectedPreviewPageId) ||
     documentPreviewPages[0];
@@ -444,82 +436,6 @@ export function UploadView({
           </div>
         )}
 
-        <div className="mt-5 rounded-md border border-white/10 bg-[#121518] p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-neutral-200">
-                Fields to extract
-              </p>
-              <p className="mt-1 text-xs text-neutral-500">
-                Used for ad hoc uploads and Qwen visual OCR.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() =>
-                setAdHocFieldDrafts((drafts) => [
-                  ...drafts,
-                  createAdHocFieldDraft(drafts.length + 1),
-                ])
-              }
-              className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-medium text-emerald-100 transition hover:bg-emerald-500/20"
-            >
-              <Plus size={14} />
-              Add field
-            </button>
-          </div>
-
-          <div className="mt-3 space-y-3">
-            {adHocFieldDrafts.map((draft, index) => (
-              <div key={draft.id} className="grid gap-2 sm:grid-cols-[1fr_1.4fr_auto]">
-                <input
-                  value={draft.label}
-                  placeholder="Field name, e.g. invoice total"
-                  onChange={(event) =>
-                    setAdHocFieldDrafts((drafts) =>
-                      drafts.map((item) =>
-                        item.id === draft.id
-                          ? { ...item, label: event.target.value }
-                          : item,
-                      ),
-                    )
-                  }
-                  className="h-10 min-w-0 rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition focus:border-emerald-400/60"
-                />
-                <input
-                  value={draft.instructions}
-                  placeholder="Optional instruction"
-                  onChange={(event) =>
-                    setAdHocFieldDrafts((drafts) =>
-                      drafts.map((item) =>
-                        item.id === draft.id
-                          ? { ...item, instructions: event.target.value }
-                          : item,
-                      ),
-                    )
-                  }
-                  className="h-10 min-w-0 rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition focus:border-emerald-400/60"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setAdHocFieldDrafts((drafts) =>
-                      drafts.length === 1
-                        ? [createAdHocFieldDraft(1)]
-                        : drafts.filter((item) => item.id !== draft.id),
-                    )
-                  }
-                  className="flex h-10 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-xs text-rose-100 transition hover:bg-rose-500/20"
-                  aria-label={`Remove extraction field ${index + 1}`}
-                >
-                  <X size={14} />
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
         <label className="mt-4 flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-white/20 bg-[#121518] p-6 text-center transition hover:border-emerald-400/60 hover:bg-emerald-400/5">
           {isParsing ? (
             <Loader2 className="mb-3 animate-spin text-emerald-200" size={28} />
@@ -537,7 +453,7 @@ export function UploadView({
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) {
-                parseFile(file, undefined, adHocFields);
+                parseFile(file);
               }
             }}
           />
@@ -752,32 +668,100 @@ export function UploadView({
                 </div>
               </div>
 
+              <div className="mt-3 rounded-md border border-sky-500/25 bg-sky-500/10 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-sky-100">
+                      Step 1: Suggested fields
+                    </p>
+                    <p className="mt-1 text-xs text-sky-100/70">
+                      Review fields the parser found first. Use Step 2 only when something is missing or needs correction.
+                    </p>
+                  </div>
+                </div>
+                {parseResult?.suggestedFields?.length ? (
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    {parseResult.suggestedFields.map((suggestion, index) => (
+                      <div
+                        key={`${suggestion.name}-${index}`}
+                        className="rounded-md border border-white/10 bg-[#101214] p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="break-words text-sm font-medium text-neutral-100">
+                              {suggestion.label}
+                            </p>
+                            <p className="mt-1 break-words text-sm text-neutral-300">
+                              {suggestion.value}
+                            </p>
+                            {suggestion.evidence && (
+                              <p className="mt-1 break-words text-xs text-neutral-500">
+                                Evidence: {suggestion.evidence}
+                              </p>
+                            )}
+                            <p className="mt-1 text-xs text-sky-100/60">
+                              Page location is not returned reliably yet. Use Step 2 to box and correct this field if needed.
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-300">
+                            {suggestion.confidence}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditedFields({
+                              ...editedFields,
+                              [suggestion.label]: suggestion.value,
+                            })
+                          }
+                          className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-md border border-sky-500/40 bg-sky-500/10 text-xs font-medium text-sky-100 transition hover:bg-sky-500/20"
+                        >
+                          <Plus size={14} />
+                          Use field
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-xs text-neutral-400">
+                    No extra suggestions yet. Upload or parse a document, then use Step 2 for fields the parser missed.
+                  </p>
+                )}
+              </div>
+
               <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-neutral-200">
-                      Highlight fields
+                      Step 2: Add / correct fields
                     </p>
                     <p className="mt-1 text-xs text-neutral-500">
-                      One field can contain multiple value boxes from one or more pages.
+                      Create a field, draw one or more value boxes, or type the value directly if no box is needed.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={addSelectedBoxToActiveGroup}
-                      className="flex h-9 items-center justify-center gap-2 rounded-md border border-sky-500/40 bg-sky-500/10 px-3 text-xs font-medium text-sky-100 transition hover:bg-sky-500/20"
-                    >
-                      <Plus size={14} />
-                      Add selected box
-                    </button>
+                    {highlightRect && activeHighlightGroup ? (
+                      <button
+                        type="button"
+                        onClick={addSelectedBoxToActiveGroup}
+                        className="flex h-9 items-center justify-center gap-2 rounded-md border border-sky-500/40 bg-sky-500/10 px-3 text-xs font-medium text-sky-100 transition hover:bg-sky-500/20"
+                      >
+                        <Plus size={14} />
+                        Add box to {activeHighlightGroup.fieldLabel.trim() || "active field"}
+                      </button>
+                    ) : (
+                      <span className="flex min-h-9 items-center rounded-md border border-white/10 px-3 text-xs text-neutral-500">
+                        Draw a box to add it to the active field.
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={addHighlightFieldGroup}
                       className="flex h-9 items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-medium text-emerald-100 transition hover:bg-emerald-500/20"
                     >
                       <Plus size={14} />
-                      Add field
+                      New field
                     </button>
                   </div>
                 </div>
@@ -955,69 +939,11 @@ export function UploadView({
                 ))}
               </div>
 
-              {parseResult.suggestedFields?.length ? (
-                <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-sky-100">
-                        Suggested fields
-                      </p>
-                      <p className="mt-1 text-xs text-sky-100/70">
-                        Add useful values the parser found but the workflow did not request.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-3 grid gap-2 md:grid-cols-2">
-                    {parseResult.suggestedFields.map((suggestion, index) => (
-                      <div
-                        key={`${suggestion.name}-${index}`}
-                        className="rounded-md border border-white/10 bg-[#101214] p-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="break-words text-sm font-medium text-neutral-100">
-                              {suggestion.label}
-                            </p>
-                            <p className="mt-1 break-words text-sm text-neutral-300">
-                              {suggestion.value}
-                            </p>
-                            {suggestion.evidence && (
-                              <p className="mt-1 break-words text-xs text-neutral-500">
-                                Evidence: {suggestion.evidence}
-                              </p>
-                            )}
-                          </div>
-                          <span className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-300">
-                            {suggestion.confidence}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAdHocFieldDrafts((drafts) => [
-                              ...drafts,
-                              createFieldDraftFromSuggestion(
-                                suggestion,
-                                drafts.length + 1,
-                              ),
-                            ]);
-                            setEditedFields({
-                              ...editedFields,
-                              [suggestion.label]: suggestion.value,
-                            });
-                          }}
-                          className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-md border border-sky-500/40 bg-sky-500/10 text-xs font-medium text-sky-100 transition hover:bg-sky-500/20"
-                        >
-                          <Plus size={14} />
-                          Include
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <p className="mb-2 text-sm font-semibold text-neutral-200">
+                  Selected fields
+                </p>
+                <div className="grid gap-3 md:grid-cols-2">
                 {Object.entries(editedFields).map(([label, value]) => (
                   <label key={label} className="block">
                     <span className="mb-1 flex items-center justify-between gap-2 text-xs text-neutral-400">
@@ -1053,6 +979,7 @@ export function UploadView({
                     )}
                   </label>
                 ))}
+                </div>
               </div>
 
               {parseResult.tables?.[0] && (

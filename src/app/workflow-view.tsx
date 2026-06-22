@@ -1108,7 +1108,10 @@ export function WorkflowView({
                   {["approval", "review"].includes(selectedGraphNode.kind) && (
                       <div className="rounded-md border border-white/10 bg-[#101214] p-3">
                         <p className="text-xs font-semibold text-neutral-400">
-                          Document requirements for this box
+                          Recognition setup for this box
+                        </p>
+                        <p className="mt-1 text-xs text-neutral-500">
+                          Template fields configured here become the required fields that the Upload page reviews first.
                         </p>
                         <div className="mt-2 space-y-2">
                           {workflow.documents
@@ -1192,11 +1195,24 @@ export function WorkflowView({
                                     <X size={13} />
                                   </button>
                                 </div>
-                                <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <p className="text-xs font-semibold text-neutral-400">
-                                      Fields to extract
+                                <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
+                                  <div className="rounded-md border border-sky-500/20 bg-sky-500/10 p-2">
+                                    <p className="text-xs font-semibold text-sky-100">
+                                      Step 1: Required template fields
                                     </p>
+                                    <p className="mt-1 text-[11px] text-sky-100/70">
+                                      These fields guide OCR and appear first when a request document is uploaded.
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div>
+                                      <p className="text-xs font-semibold text-neutral-400">
+                                        Step 2: Add / correct fields
+                                      </p>
+                                      <p className="mt-1 text-[11px] text-neutral-500">
+                                        Add field names and extraction instructions for this document type.
+                                      </p>
+                                    </div>
                                     <button
                                       type="button"
                                       onClick={() => addBoxDocumentField(document.id)}
@@ -1204,7 +1220,7 @@ export function WorkflowView({
                                       className="flex min-h-7 items-center justify-center gap-1 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 text-xs text-sky-100 transition hover:bg-sky-400/20"
                                     >
                                       <Plus size={12} />
-                                      Add field
+                                      Add template field
                                     </button>
                                   </div>
                                   {document.fields.map((field, fieldIndex) => (
@@ -1271,7 +1287,7 @@ export function WorkflowView({
                                   ))}
                                   {!document.fields.length && (
                                     <p className="text-xs text-neutral-500">
-                                      No extraction fields configured.
+                                      No template fields configured. Add at least one field so the Upload page knows what to extract.
                                     </p>
                                   )}
                                 </div>
