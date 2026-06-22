@@ -177,6 +177,48 @@ test("posts ad hoc extraction fields and rendered PDF page images", async () => 
   ]);
 });
 
+test("posts extraction examples for workflow-specific OCR learning", async () => {
+  let capturedBody;
+  await parseWorkspaceFile({
+    file: makeFile(),
+    extractionExamples: [
+      {
+        id: "example-1",
+        templateId: "template-1",
+        documentId: "invoice-doc",
+        documentType: "Invoice",
+        fieldLabel: "Amount",
+        originalValue: "HKD 800",
+        correctedValue: "HKD 8,000",
+        evidence: "Total HKD 8,000",
+        sourceFileName: "invoice.pdf",
+        createdByEmail: "reviewer@example.com",
+        createdAt: "2026-06-22T09:00:00.000Z",
+      },
+    ],
+    fetcher: async (_url, init) => {
+      capturedBody = init.body;
+      return Response.json({ fields: {}, confidence: {} });
+    },
+  });
+
+  assert.deepEqual(JSON.parse(capturedBody.get("examplesJson")), [
+    {
+      id: "example-1",
+      templateId: "template-1",
+      documentId: "invoice-doc",
+      documentType: "Invoice",
+      fieldLabel: "Amount",
+      originalValue: "HKD 800",
+      correctedValue: "HKD 8,000",
+      evidence: "Total HKD 8,000",
+      sourceFileName: "invoice.pdf",
+      createdByEmail: "reviewer@example.com",
+      createdAt: "2026-06-22T09:00:00.000Z",
+    },
+  ]);
+});
+
 test("throws the parse API error when parsing fails", async () => {
   await assert.rejects(
     parseWorkspaceFile({

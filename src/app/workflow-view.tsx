@@ -38,6 +38,7 @@ import { UserDirectoryDatalist } from "@/app/task-views";
 import { ConditionBoxDetails } from "@/app/condition-box-details";
 import { WorkflowTemplateLibrary } from "@/app/workflow-template-library";
 import { WorkflowTemplateBuilder } from "@/app/workflow-template-builder";
+import { TemplateDocumentRecognitionPanel } from "@/app/template-document-recognition-panel";
 import { getWorkflowTemplateBuilderBusinessState } from "@/lib/workflow-template-builder-state";
 import { WorkflowRuntimePanel } from "@/app/workflow-runtime-panel";
 import { getSelectedRuntimeTask } from "@/lib/workflow-runtime-panel-state";
@@ -56,6 +57,9 @@ import {
   removeWorkflowDocumentField,
   updateWorkflowDocumentField,
 } from "@/lib/workflow-document-field-state";
+import {
+  appendExtractionExamplesToTemplate,
+} from "@/lib/template-recognition-state";
 import {
   getWorkflowAddOutcomeTargetState,
   getWorkflowAddConditionCaseState,
@@ -103,6 +107,7 @@ import type {
   WorkflowGraphEdge,
   WorkflowGraphNode,
   WorkflowNodeKind,
+  ExtractionTrainingExample,
   WorkflowField,
   WorkflowTemplate,
 } from "@/lib/types";
@@ -578,6 +583,36 @@ export function WorkflowView({
     updateTemplateDocuments((documents) =>
       removeWorkflowDocumentField(documents, documentId, fieldIndex),
     );
+  }
+
+  function addRecognizedDocumentField(
+    documentId: string,
+    field: WorkflowField,
+    example?: ExtractionTrainingExample,
+  ) {
+    if (!workflow) {
+      return;
+    }
+
+    const nextDocuments = workflow.documents.map((document) =>
+      document.id === documentId
+        ? {
+            ...document,
+            fields: [...document.fields, field],
+          }
+        : document,
+    );
+    const documentState = getWorkflowTemplateDocumentState({
+      template: workflow,
+      documents: nextDocuments,
+    });
+    const nextTemplate = example
+      ? appendExtractionExamplesToTemplate({
+          template: documentState.template,
+          examples: [example],
+        })
+      : documentState.template;
+    saveWorkflowTemplate(nextTemplate, `Added ${field.label} recognition field`);
   }
 
   function deleteSelectedCanvasItem() {
@@ -1290,6 +1325,17 @@ export function WorkflowView({
                                       No template fields configured. Add at least one field so the Upload page knows what to extract.
                                     </p>
                                   )}
+                                  <TemplateDocumentRecognitionPanel
+                                    document={document}
+                                    template={workflow}
+                                    onAddField={(field, example) =>
+                                      addRecognizedDocumentField(
+                                        document.id,
+                                        field,
+                                        example,
+                                      )
+                                    }
+                                  />
                                 </div>
                               </div>
                             ))}

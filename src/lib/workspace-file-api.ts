@@ -1,5 +1,6 @@
 import type { PdfPageImageInput } from "./parser.ts";
 import type {
+  ExtractionTrainingExample,
   ExtractedFieldSuggestion,
   WorkflowDocumentRequirement,
   WorkflowField,
@@ -71,6 +72,7 @@ export async function parseWorkspaceFile({
   documentRequirement,
   adHocFields = [],
   pageImages = [],
+  extractionExamples = [],
   languageHint = defaultParseLanguageHint,
   fetcher = fetch,
 }: {
@@ -78,6 +80,7 @@ export async function parseWorkspaceFile({
   documentRequirement?: WorkflowDocumentRequirement;
   adHocFields?: WorkflowField[];
   pageImages?: PdfPageImageInput[];
+  extractionExamples?: ExtractionTrainingExample[];
   languageHint?: string;
   fetcher?: WorkspaceFetch;
 }): Promise<ParsedWorkspaceFilePayload> {
@@ -93,6 +96,9 @@ export async function parseWorkspaceFile({
   }
   if (pageImages.length) {
     formData.append("pageImagesJson", JSON.stringify(pageImages));
+  }
+  if (extractionExamples.length) {
+    formData.append("examplesJson", JSON.stringify(extractionExamples));
   }
 
   const response = await fetcher("/api/parse", {

@@ -57,8 +57,8 @@ export function getWorkflowPublishTemplateActionState({
     };
   }
 
-  const blockingIssues = validateWorkflowTemplate(template).filter(
-    (issue) => issue.severity === "error",
+  const blockingIssues = validateWorkflowTemplate(template).filter((issue) =>
+    isBlockingPublishIssue(issue.message, issue.severity),
   );
   if (blockingIssues.length) {
     return {
@@ -72,6 +72,28 @@ export function getWorkflowPublishTemplateActionState({
     didCreate: true,
     template: publishWorkflowTemplateVersion(template, now),
   };
+}
+
+function isBlockingPublishIssue(
+  message: string,
+  severity: "error" | "warning",
+) {
+  if (severity === "error") {
+    return true;
+  }
+
+  return [
+    "has no fields to extract",
+    "has no outcome boxes selected",
+    "has no rule",
+    "approved upstream box(es) are not routed",
+    "No conditions are configured",
+    "uses \"",
+    "has an empty numeric value",
+    "can both match",
+    "cannot be reached from Start",
+    "Box is not connected",
+  ].some((pattern) => message.includes(pattern));
 }
 
 export function getWorkflowDuplicateTemplateActionState({

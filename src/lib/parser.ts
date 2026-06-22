@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type {
+  ExtractionTrainingExample,
   ExtractedFieldSuggestion,
   ParserStrategy,
   WorkflowField,
@@ -34,16 +35,17 @@ type OpenRouterChatCompletion = {
 };
 
 export function chooseParserStrategy(file: File): ParserStrategy {
-  if (file.type.includes("pdf")) {
+  const fileName = file.name.toLowerCase();
+  if (file.type.includes("pdf") || fileName.endsWith(".pdf")) {
     return "pdf-ocr";
   }
 
   if (
     file.type.includes("spreadsheet") ||
     file.type.includes("excel") ||
-    file.name.endsWith(".xlsx") ||
-    file.name.endsWith(".xls") ||
-    file.name.endsWith(".csv")
+    fileName.endsWith(".xlsx") ||
+    fileName.endsWith(".xls") ||
+    fileName.endsWith(".csv")
   ) {
     return "excel-table";
   }
@@ -51,9 +53,26 @@ export function chooseParserStrategy(file: File): ParserStrategy {
   return "image-ai";
 }
 
-export function buildExtractionPrompt(fields: WorkflowField[], languageHint: string) {
+export function buildExtractionPrompt(
+  fields: WorkflowField[],
+  languageHint: string,
+  examples: ExtractionTrainingExample[] = [],
+) {
   const requestedFields = fields
     .map((field) => `- ${field.label}: ${field.instructions}`)
+    .join("\n");
+  const correctedExamples = examples
+    .slice(0, 8)
+    .map((example) =>
+      [
+        `- ${example.fieldLabel}`,
+        `  Original: ${example.originalValue || "(blank)"}`,
+        `  Corrected: ${example.correctedValue}`,
+        example.evidence ? `  Evidence: ${example.evidence}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    )
     .join("\n");
 
   return [
@@ -69,6 +88,9 @@ export function buildExtractionPrompt(fields: WorkflowField[], languageHint: str
     `Document languages may include: ${languageHint}.`,
     "Requested fields:",
     requestedFields,
+    correctedExamples
+      ? ["Prior corrected examples:", correctedExamples].join("\n")
+      : "",
   ].join("\n");
 }
 
@@ -224,6 +246,7 @@ export async function extractImageFields(params: {
   mimeType: string;
   fields: WorkflowField[];
   languageHint: string;
+  examples?: ExtractionTrainingExample[];
 }): Promise<ParsedDocumentDraft> {
   if (process.env.AI_PROVIDER === "openai") {
     return extractImageFieldsWithOpenAI(params);
@@ -237,6 +260,7 @@ export async function extractPdfFields(params: {
   fileName: string;
   fields: WorkflowField[];
   languageHint: string;
+  examples?: ExtractionTrainingExample[];
 }): Promise<ParsedDocumentDraft> {
   return extractPdfFieldsWithOpenRouter(params);
 }
@@ -246,6 +270,7 @@ export async function extractImageFieldsWithOpenRouter(params: {
   mimeType: string;
   fields: WorkflowField[];
   languageHint: string;
+  examples?: ExtractionTrainingExample[];
 }): Promise<ParsedDocumentDraft> {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -260,7 +285,11 @@ export async function extractImageFieldsWithOpenRouter(params: {
     };
   }
 
-  const prompt = buildExtractionPrompt(params.fields, params.languageHint);
+  const prompt = buildExtractionPrompt(
+    params.fields,
+    params.languageHint,
+    params.examples,
+  );
   const response = await fetchOpenRouterChatCompletion({
     apiKey,
     body: {
@@ -318,6 +347,7 @@ export async function extractPdfFieldsWithOpenRouter(params: {
   fileName: string;
   fields: WorkflowField[];
   languageHint: string;
+  examples?: ExtractionTrainingExample[];
 }): Promise<ParsedDocumentDraft> {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -332,7 +362,11 @@ export async function extractPdfFieldsWithOpenRouter(params: {
     };
   }
 
-  const prompt = buildExtractionPrompt(params.fields, params.languageHint);
+  const prompt = buildExtractionPrompt(
+    params.fields,
+    params.languageHint,
+    params.examples,
+  );
   const pdfEngine = process.env.OPENROUTER_PDF_ENGINE || "mistral-ocr";
   const response = await fetchOpenRouterChatCompletion({
     apiKey,
@@ -401,6 +435,7 @@ export async function extractPdfFieldsWithQwenPageImages(params: {
   pageImages: PdfPageImageInput[];
   fields: WorkflowField[];
   languageHint: string;
+  examples?: ExtractionTrainingExample[];
 }): Promise<ParsedDocumentDraft> {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -429,7 +464,7 @@ export async function extractPdfFieldsWithQwenPageImages(params: {
   const model =
     process.env.OPENROUTER_VISION_OCR_MODEL || "qwen/qwen3-vl-8b-instruct";
   const prompt = [
-    buildExtractionPrompt(params.fields, params.languageHint),
+    buildExtractionPrompt(params.fields, params.languageHint, params.examples),
     `The PDF was rendered into ${params.pageImages.length} page image(s).`,
     "Read the page images directly and extract only the requested fields.",
   ].join("\n\n");
@@ -511,6 +546,7 @@ export async function extractImageFieldsWithOpenAI(params: {
   mimeType: string;
   fields: WorkflowField[];
   languageHint: string;
+  examples?: ExtractionTrainingExample[];
 }): Promise<ParsedDocumentDraft> {
   const apiKey = process.env.OPENAI_API_KEY;
 
@@ -526,7 +562,11 @@ export async function extractImageFieldsWithOpenAI(params: {
   }
 
   const client = new OpenAI({ apiKey });
-  const prompt = buildExtractionPrompt(params.fields, params.languageHint);
+  const prompt = buildExtractionPrompt(
+    params.fields,
+    params.languageHint,
+    params.examples,
+  );
 
   const response = await client.responses.create({
     model: process.env.OPENAI_MODEL || "gpt-5.4-mini",

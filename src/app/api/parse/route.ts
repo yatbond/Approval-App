@@ -7,7 +7,7 @@ import {
   extractPdfFieldsWithQwenPageImages,
 } from "@/lib/parser";
 import type { PdfPageImageInput } from "@/lib/parser";
-import type { WorkflowField } from "@/lib/types";
+import type { ExtractionTrainingExample, WorkflowField } from "@/lib/types";
 
 const fallbackFields: WorkflowField[] = [
   {
@@ -42,6 +42,7 @@ export async function POST(request: Request) {
   const languageHint = String(formData.get("languageHint") || "mixed English and Chinese");
   const fields = parseWorkflowFields(formData.get("fieldsJson")) || fallbackFields;
   const pageImages = parsePageImages(formData.get("pageImagesJson"));
+  const examples = parseExtractionExamples(formData.get("examplesJson"));
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "File is required." }, { status: 400 });
@@ -84,6 +85,7 @@ export async function POST(request: Request) {
       mimeType: file.type || "image/jpeg",
       fields,
       languageHint,
+      examples,
     });
 
     return NextResponse.json(parsed);
@@ -94,14 +96,31 @@ export async function POST(request: Request) {
         pageImages,
         fields,
         languageHint,
+        examples,
       })
     : await extractPdfFields({
     pdfBase64: buffer.toString("base64"),
     fileName: file.name || "document.pdf",
     fields,
     languageHint,
+    examples,
       });
   return NextResponse.json(parsed);
+}
+
+function parseExtractionExamples(
+  value: FormDataEntryValue | null,
+): ExtractionTrainingExample[] {
+  if (typeof value !== "string" || !value.trim()) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<ExtractionTrainingExample>[];
+    return parsed.filter(isExtractionTrainingExample);
+  } catch {
+    return [];
+  }
 }
 
 function parseWorkflowFields(value: FormDataEntryValue | null) {
@@ -151,5 +170,20 @@ function isWorkflowField(value: Partial<WorkflowField>): value is WorkflowField 
       typeof value.type === "string" &&
       typeof value.source === "string" &&
       typeof value.required === "boolean",
+  );
+}
+
+function isExtractionTrainingExample(
+  value: Partial<ExtractionTrainingExample>,
+): value is ExtractionTrainingExample {
+  return Boolean(
+    value &&
+      typeof value.id === "string" &&
+      typeof value.templateId === "string" &&
+      typeof value.fieldLabel === "string" &&
+      typeof value.originalValue === "string" &&
+      typeof value.correctedValue === "string" &&
+      typeof value.createdByEmail === "string" &&
+      typeof value.createdAt === "string",
   );
 }

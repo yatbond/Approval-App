@@ -63,6 +63,21 @@ export type WorkflowField = {
   source: "ai" | "ocr" | "excel" | "manual";
   instructions: string;
   documentId?: string;
+  examples?: ExtractionTrainingExample[];
+};
+
+export type ExtractionTrainingExample = {
+  id: string;
+  templateId: string;
+  documentId?: string;
+  documentType?: string;
+  fieldLabel: string;
+  originalValue: string;
+  correctedValue: string;
+  evidence?: string;
+  sourceFileName?: string;
+  createdByEmail: string;
+  createdAt: string;
 };
 
 export type DocumentFormat = "text" | "pdf" | "image" | "excel_csv";
@@ -210,6 +225,7 @@ export type WorkflowTemplate = {
   documents: WorkflowDocumentRequirement[];
   languages: string[];
   fields: WorkflowField[];
+  extractionExamples?: ExtractionTrainingExample[];
   steps: WorkflowStep[];
   graph?: WorkflowGraph;
 };

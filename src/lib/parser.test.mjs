@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildExtractionPrompt,
+  chooseParserStrategy,
   extractPdfFieldsWithQwenPageImages,
   extractPdfFieldsWithOpenRouter,
 } from "./parser.ts";
@@ -15,6 +17,14 @@ const fields = [
     instructions: "Extract the total amount.",
   },
 ];
+
+test("detects a PDF by filename when upload MIME type is generic", () => {
+  const file = new File(["pdf"], "invoice.PDF", {
+    type: "application/octet-stream",
+  });
+
+  assert.equal(chooseParserStrategy(file), "pdf-ocr");
+});
 
 test("extracts PDF fields through OpenRouter file input", async () => {
   const previousApiKey = process.env.OPENROUTER_API_KEY;
@@ -212,4 +222,27 @@ test("keeps suggested fields separate from requested extracted fields", async ()
     }
     globalThis.fetch = previousFetch;
   }
+});
+
+test("includes corrected extraction examples in the parser prompt", () => {
+  const prompt = buildExtractionPrompt(fields, "English", [
+    {
+      id: "example-1",
+      templateId: "template-1",
+      documentId: "invoice-doc",
+      documentType: "Invoice",
+      fieldLabel: "Amount",
+      originalValue: "HKD 800",
+      correctedValue: "HKD 8,000",
+      evidence: "Total HKD 8,000",
+      sourceFileName: "invoice.pdf",
+      createdByEmail: "reviewer@example.com",
+      createdAt: "2026-06-22T09:00:00.000Z",
+    },
+  ]);
+
+  assert.match(prompt, /Prior corrected examples/);
+  assert.match(prompt, /Amount/);
+  assert.match(prompt, /HKD 8,000/);
+  assert.match(prompt, /Total HKD 8,000/);
 });

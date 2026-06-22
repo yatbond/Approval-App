@@ -133,6 +133,60 @@ test("does not publish when the workflow has validation errors", () => {
   assert.match(result.message, /No first approver/i);
 });
 
+test("does not publish when guardrail warnings make the workflow incomplete", () => {
+  const result = getWorkflowPublishTemplateActionState({
+    template: {
+      ...template,
+      documents: [
+        {
+          id: "invoice-doc",
+          documentType: "Invoice",
+          format: "pdf",
+          required: true,
+          fields: [],
+        },
+      ],
+      graph: {
+        nodes: [
+          { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+          {
+            id: "review-1",
+            kind: "review",
+            label: "Review 1",
+            x: 240,
+            y: 0,
+            assigneeName: "Reviewer",
+            assigneeEmail: "reviewer@example.com",
+            documentIds: ["invoice-doc"],
+          },
+          { id: "end", kind: "end", label: "End", x: 480, y: 0 },
+        ],
+        edges: [
+          {
+            id: "start-review",
+            sourceId: "start",
+            targetId: "review-1",
+            label: "Review",
+            branchType: "main",
+          },
+          {
+            id: "review-end",
+            sourceId: "review-1",
+            targetId: "end",
+            label: "Approved",
+            branchType: "approved",
+          },
+        ],
+      },
+    },
+    now: new Date("2026-06-21T05:00:00.000Z"),
+  });
+
+  assert.equal(result.didCreate, false);
+  assert.equal(result.template, null);
+  assert.match(result.message, /Required Invoice has no fields/i);
+});
+
 test("duplicates a template as a new editable draft", () => {
   const result = getWorkflowDuplicateTemplateActionState({
     template: {

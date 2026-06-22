@@ -1,6 +1,6 @@
 # Approval Workflow Platform PRD
 
-Last updated: 2026-06-21
+Last updated: 2026-06-22
 Document owner: Product / Workflow Platform
 Status: Living PRD for the current prototype and next production build
 Repository: Approval Workflow Next.js application
@@ -64,6 +64,10 @@ Current implemented areas:
 - React Flow-based workflow canvas with start, approval, review, condition, for-information, return/reject, and end boxes.
 - Box Details panel for editing node type, label, due hours, assignee, escalation, document requirements, condition cases, and branch details.
 - Per-box document requirements, including document format, document type, required flag, and extraction fields.
+- Template-side sample document recognition inside Box Details, allowing a template creator to upload a sample document, accept suggested fields, or box a value from the preview to create template extraction fields.
+- Upload-side two-step field recognition: Step 1 suggested fields from OCR, followed by Step 2 add/correct fields through document preview boxing or direct manual values.
+- Qwen/OpenRouter visual OCR path for PDFs rendered into page images, plus PDF.js decoder assets for scanner PDFs that require CMaps, standard fonts, and WASM decoders.
+- Extraction confidence and evidence display for parsed fields, with user corrections stored as workflow-specific extraction examples for future OCR prompts.
 - Condition cases with numbered display, optional nickname, approval-count rules, specific-reviewer rules, numeric rules, AND/OR joining, fallback route, and multiple outcome boxes.
 - Canvas undo/redo actions, including Ctrl+Z/Ctrl+Y behavior and Delete-key deletion for selected boxes/branches.
 - Queue actions for approve, approve with comment, reject, reject with comment, reassign, delegate, amend/resubmit, and cancel.
@@ -81,7 +85,7 @@ Current areas that remain incomplete or need hardening:
 
 - The Supabase v2 baseline and grant-hardening migrations have been verified against the live `approval-app` Supabase project.
 - Storage access policy currently centers on object ownership; participant-based shared attachment access needs stronger production policy design.
-- Workflow publishing has a validation gate for blocking graph errors; additional business-rule validation may still be added before pilot.
+- Workflow publishing has validation guardrails for blocking graph errors and incomplete warnings, including required documents without extraction fields, unrouted condition outcomes, missing condition rules, overlapping condition rules, and unreachable connected boxes.
 - Condition coverage warnings exist, but the condition editor still needs more plain-language guidance and test coverage for complex overlapping rule sets.
 - End-to-end tests are still needed for full request lifecycles.
 - External delivery channels such as email or Teams are not yet implemented.
@@ -96,7 +100,8 @@ Current front-end component boundaries:
 - `src/app/workflow-view.tsx`: workflow canvas, template builder/library tabs, runtime task preview, condition details, box document configuration, workflow undo/redo, and workflow-local UI state.
 - `src/app/workspace-shell.tsx`: app frame, collapsible navigation, tab state, notifications, and sync status presentation.
 - `src/app/task-views.tsx`: queue, tracking, user directory datalist, and task-facing presentation.
-- `src/app/upload-view.tsx`: request upload, document selection, parse result review, and submission UI.
+- `src/app/upload-view.tsx`: request upload, document selection, parse result review, two-step field recognition, document preview boxing, and submission UI.
+- `src/app/template-document-recognition-panel.tsx`: sample-document OCR and boxed field setup inside workflow Box Details.
 - `src/app/admin-view.tsx`: business, department, user directory, role assignment, and admin notification UI.
 
 Current pure state and domain boundaries:
@@ -112,6 +117,7 @@ Current pure state and domain boundaries:
 - `src/lib/workspace-task-action-state.ts`: manual queue action state and workflow-runner action state.
 - `src/lib/workspace-file-api.ts`: upload and parse API client boundary plus parsed file payload type.
 - `src/lib/workspace-parse-file-state.ts`: parse-file UI reset, stored attachment creation, and parse success mapping.
+- `src/lib/template-recognition-state.ts`: template recognition field creation and extraction correction example helpers.
 
 Latest refactor completion state as of 2026-06-21:
 
@@ -255,7 +261,10 @@ Required content:
 - Required and optional starting document list.
 - File upload controls per required document.
 - Parser feedback and extracted field review.
+- Step 1 suggested fields, showing parser-discovered values, confidence, and evidence.
+- Step 2 add/correct fields, allowing document-preview boxing or direct manual values.
 - Editable extracted field values before submission.
+- Correction feedback storage so changed values become workflow-specific extraction examples for future requests.
 - Missing-document validation before task creation.
 
 ### Workflow Tab
@@ -272,6 +281,7 @@ Required content:
 - Template Library for load, publish, delete, and version visibility.
 - Validation panel with errors and warnings.
 - Box Details drawer/panel with context-sensitive editing.
+- Sample recognition panel in Box Details for each document requirement, so template creators can upload a sample document, accept suggested fields, or draw boxes around values to create extraction fields.
 
 ### Admin Tab
 
@@ -397,6 +407,7 @@ For each workflow box, users can configure:
 - Field data type.
 - Field source.
 - Extraction instructions.
+- Sample recognition examples collected from accepted suggestions, boxed sample values, or user corrections.
 
 ### 8.5 Field Extraction Requirements
 
@@ -418,6 +429,38 @@ Supported extraction sources:
 - Manual
 
 Numeric and currency fields are used by condition nodes for routing logic.
+
+### 8.6 Template Sample Recognition
+
+Template creators can configure document fields by using a sample document directly inside Box Details.
+
+Required behavior:
+
+- Uploading a sample document does not create a request.
+- The sample parser uses the same OCR path as the Upload page.
+- Step 1 shows suggested fields from OCR with confidence and evidence where available.
+- Selecting a suggestion creates a template field for the selected document requirement.
+- Step 2 lets the creator draw a box on the document preview, name the field, optionally add instructions or a sample value, and add that field to the template.
+- Boxed sample extraction can call the existing parser on the cropped region.
+- Accepted sample values can be stored as extraction examples for the template.
+
+### 8.7 Extraction Examples and Feedback
+
+When a user corrects parsed values before submission, the application records the correction as a workflow-specific extraction example.
+
+Each example includes:
+
+- Template ID.
+- Document ID and document type when known.
+- Field label.
+- Original parser value.
+- Corrected user value.
+- Evidence text when supplied by the parser.
+- Source file name.
+- Correcting user email.
+- Timestamp.
+
+Future parsing calls for the same workflow include recent corrected examples in the OCR prompt so the model can learn from prior corrections without changing the uploaded source document.
 
 ## 9. Visual Workflow Canvas
 
@@ -633,7 +676,7 @@ Validation checks include:
 - Required document has no extraction fields.
 - Approval/review box is missing assignee email.
 
-Warnings should be visible but not always blocking. Errors should prevent publishing or submission where they would make routing impossible.
+Warnings should be visible. Publishing must block on errors and on incomplete warning states that make a workflow unsafe to run, including missing document extraction fields, missing condition outcomes, missing condition rules, overlapping condition rules, incomplete approval-count coverage, and unreachable connected boxes. Non-blocking advisory warnings, such as missing FYI email, can remain visible without blocking publication until the pilot policy requires otherwise.
 
 ## 12. Request Submission Flow
 
@@ -668,7 +711,7 @@ The system chooses a parser strategy:
 - Image -> AI image strategy.
 - Text -> manual/text strategy.
 
-Current image extraction supports OpenAI or OpenRouter based on environment configuration.
+Current OCR extraction supports OpenRouter Qwen visual OCR for PDFs rendered into page images, OpenRouter PDF file parsing where configured, OpenAI image extraction where configured, and Excel/CSV table parsing. PDF preview uses browser-side PDF.js with decoder assets for scanner PDFs.
 
 Extraction prompt requirements:
 
@@ -676,6 +719,8 @@ Extraction prompt requirements:
 - Use configured field labels.
 - Do not invent uncertain values.
 - Support language hints.
+- Include recent workflow-specific corrected examples where available.
+- Return confidence and evidence for each requested field.
 
 ### 12.4 Extracted Draft Review
 
@@ -685,6 +730,9 @@ The system should show:
 
 - Extracted field values.
 - Confidence or notes where available.
+- Suggested fields found by OCR.
+- Document preview with boxed field extraction.
+- Manual value correction.
 - Editable corrections.
 - Parse notes/errors.
 
@@ -1392,11 +1440,11 @@ Important fields:
 1. Replace inferred user directory with a proper user/profile management workflow.
 2. Add real email/Teams notification delivery.
 3. Strengthen storage policies so participants, not only object owners, can access relevant files.
-4. Add richer PDF, text, Excel, and CSV extraction implementations.
+4. Production-harden document extraction with provider controls, cost limits, retry behavior, and broader PDF/text/Excel/CSV benchmark coverage.
 5. Add attachment preview/download UI with access checks.
 6. Add template import/export.
 7. Add drag handles and clearer connection affordances on the canvas.
-8. Extend workflow publish validation with business-specific checks beyond graph validity.
+8. Extend workflow publish validation with pilot-specific business rules beyond the current generic guardrails.
 9. Add production monitoring for route latency, client load, and Supabase API timings.
 10. Add E2E tests for the full submit -> approve -> reject -> amend -> resubmit lifecycle.
 11. Add admin controls for assigning superuser status.

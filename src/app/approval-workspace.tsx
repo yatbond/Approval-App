@@ -27,6 +27,10 @@ import {
   getWorkspaceParseFileSuccessState,
 } from "@/lib/workspace-parse-file-state";
 import {
+  appendExtractionExamplesToTemplate,
+  buildExtractionTrainingExamples,
+} from "@/lib/template-recognition-state";
+import {
   buildTaskNotifications,
 } from "@/lib/workflow-system";
 import { useApprovalWorkspaceState } from "@/app/use-approval-workspace-state";
@@ -153,6 +157,7 @@ function ApprovalWorkspaceBody({
   const [adminRecordError, setAdminRecordError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [uploadedAttachments, setUploadedAttachments] = useState<ApprovalAttachment[]>([]);
+  const [parsedDocumentId, setParsedDocumentId] = useState<string | undefined>();
   const selectedTemplate = useMemo(
     () =>
       templates.find((template) => template.id === selectedTemplateId) ||
@@ -273,6 +278,7 @@ function ApprovalWorkspaceBody({
     setParseResult(startState.parseResult);
     setEditedFields(startState.editedFields);
     setDocumentPreviewPages([]);
+    setParsedDocumentId(documentRequirement?.id);
     let storage: Awaited<ReturnType<typeof uploadWorkspaceAttachmentFile>> | null = null;
     try {
       storage = await uploadWorkspaceAttachmentFile({
@@ -316,6 +322,10 @@ function ApprovalWorkspaceBody({
         documentRequirement,
         adHocFields,
         pageImages,
+        extractionExamples: (selectedTemplate?.extractionExamples || []).filter(
+          (example) =>
+            !documentRequirement?.id || example.documentId === documentRequirement.id,
+        ),
       });
       const successState = getWorkspaceParseFileSuccessState(payload);
       setParseResult(successState.parseResult);
@@ -338,6 +348,7 @@ function ApprovalWorkspaceBody({
       const payload = await parseWorkspaceFile({
         file,
         adHocFields: [field],
+        extractionExamples: selectedTemplate?.extractionExamples || [],
       });
       setParseResult((current) => ({
         ...(current || payload),
@@ -393,13 +404,42 @@ function ApprovalWorkspaceBody({
       return;
     }
 
+    const extractionExamples = selectedTemplate
+      ? buildExtractionTrainingExamples({
+          template: selectedTemplate,
+          documentId: parsedDocumentId,
+          parseFields: parseResult?.fields || {},
+          correctedFields: editedFields,
+          evidence: parseResult?.evidence || {},
+          sourceFileName: fileName,
+          actorEmail: activeUser.email,
+        })
+      : [];
+    const nextTemplates =
+      selectedTemplate && extractionExamples.length
+        ? templates.map((template) =>
+            template.id === selectedTemplate.id
+              ? appendExtractionExamplesToTemplate({
+                  template,
+                  examples: extractionExamples,
+                })
+              : template,
+          )
+        : templates;
+
     setTasks(nextState.tasks);
+    if (nextTemplates !== templates) {
+      setTemplates(nextTemplates);
+    }
     setSelectedTaskId(nextState.selectedTaskId);
     if (nextState.shouldClearUploadedAttachments) {
       setUploadedAttachments([]);
     }
     void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
+      buildWorkspaceSnapshot({
+        approvalTasks: nextState.tasks,
+        workflowTemplates: nextTemplates,
+      }),
     );
     setSubmissionMessage(nextState.submissionMessage);
   }
