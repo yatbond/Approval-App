@@ -1641,3 +1641,11 @@ Verification:
 - Drafts are removed after successful submission or explicit clear; uploaded files remain in Supabase storage through their saved attachment references.
 - Updated `PRD/approval-workflow-platform-prd.md` with the autosave behavior and state boundary.
 - Verification: red test failed for missing autosave module; after implementation `npm test` passed 285/285; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning after successful route generation; visible browser smoke at `http://localhost:3000/?tab=upload` showed the autosave status and no console errors.
+
+## Step 69 - Upload Draft Restore Loop Fix
+- Root cause: restoring upload highlight groups from an autosaved draft could create a fresh default highlight group, notify the parent draft autosave state, then receive a new restored-highlight prop while the same restore token was still active.
+- Added a token guard so Upload restores highlight state only once per autosave restore token.
+- Skipped the highlight reset effect on initial mount so reset logic only runs after an explicit draft clear/submit reset token change.
+- Autoreview caught a React Strict Mode edge case where a queued restore could be cancelled after the token was marked; moved token marking into the queued restore/reset execution path.
+- Added a regression helper test for one-time highlight restore decisions.
+- Verification: red focused test failed for the missing restore guard; after implementation `npm test -- src/lib/upload-request-draft-state.test.mjs` passed as part of the full lib glob, 286/286; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning after successful route generation.

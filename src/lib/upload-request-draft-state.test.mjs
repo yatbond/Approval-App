@@ -6,6 +6,7 @@ import {
   createEmptyUploadRequestDraftStatus,
   parseUploadRequestDraft,
   serializeUploadRequestDraft,
+  shouldRestoreUploadRequestDraftHighlightState,
 } from "./upload-request-draft-state.ts";
 
 const attachment = {
@@ -168,4 +169,28 @@ test("clears upload request draft state after submit or discard", () => {
     activeHighlightGroupId: "",
     highlightBoxCounter: 1,
   });
+});
+
+test("restores upload highlight state only once for a draft restore token", () => {
+  assert.equal(
+    shouldRestoreUploadRequestDraftHighlightState({
+      restoreToken: "",
+      lastRestoredToken: "",
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRestoreUploadRequestDraftHighlightState({
+      restoreToken: "2026-06-23T00:01:00.000Z",
+      lastRestoredToken: "",
+    }),
+    true,
+  );
+  assert.equal(
+    shouldRestoreUploadRequestDraftHighlightState({
+      restoreToken: "2026-06-23T00:01:00.000Z",
+      lastRestoredToken: "2026-06-23T00:01:00.000Z",
+    }),
+    false,
+  );
 });

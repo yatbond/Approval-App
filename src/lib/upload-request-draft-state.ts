@@ -146,6 +146,16 @@ export function clearUploadRequestDraft() {
   };
 }
 
+export function shouldRestoreUploadRequestDraftHighlightState({
+  restoreToken,
+  lastRestoredToken,
+}: {
+  restoreToken: string;
+  lastRestoredToken: string;
+}) {
+  return Boolean(restoreToken) && restoreToken !== lastRestoredToken;
+}
+
 function hasRecoverableDraftWork(draft: UploadRequestDraft) {
   return (
     draft.uploadedAttachments.length > 0 ||

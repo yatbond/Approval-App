@@ -10,7 +10,7 @@ import {
   X,
   Upload,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import {
   buildPreviewImageStyle,
@@ -41,7 +41,10 @@ import {
   type HighlightFieldGroup,
 } from "@/lib/upload-view-state";
 import type { ParsedWorkspaceFilePayload } from "@/lib/workspace-file-api";
-import type { UploadRequestDraftStatus } from "@/lib/upload-request-draft-state";
+import {
+  shouldRestoreUploadRequestDraftHighlightState,
+  type UploadRequestDraftStatus,
+} from "@/lib/upload-request-draft-state";
 import type {
   ApprovalAttachment,
   WorkflowDocumentRequirement,
@@ -133,6 +136,8 @@ export function UploadView({
   const [previewZoom, setPreviewZoom] = useState(145);
   const [previewEnhancementMode, setPreviewEnhancementMode] =
     useState<PreviewEnhancementMode>("black-text");
+  const lastRestoredDraftToken = useRef("");
+  const lastResetToken = useRef(uploadDraftResetToken);
   const [enhancedPreview, setEnhancedPreview] = useState({
     key: "",
     dataUrl: "",
@@ -199,7 +204,12 @@ export function UploadView({
   }, [selectedTemplate, selectedTemplateId, setSelectedTemplateId]);
 
   useEffect(() => {
-    if (!uploadDraftRestoreToken) {
+    if (
+      !shouldRestoreUploadRequestDraftHighlightState({
+        restoreToken: uploadDraftRestoreToken,
+        lastRestoredToken: lastRestoredDraftToken.current,
+      })
+    ) {
       return;
     }
 
@@ -209,6 +219,7 @@ export function UploadView({
         return;
       }
 
+      lastRestoredDraftToken.current = uploadDraftRestoreToken;
       setHighlightGroups(
         restoredHighlightGroups.length
           ? restoredHighlightGroups
@@ -234,12 +245,17 @@ export function UploadView({
   ]);
 
   useEffect(() => {
+    if (lastResetToken.current === uploadDraftResetToken) {
+      return;
+    }
+
     let didCancel = false;
     queueMicrotask(() => {
       if (didCancel) {
         return;
       }
 
+      lastResetToken.current = uploadDraftResetToken;
       setHighlightGroups([createHighlightFieldGroup(1)]);
       setActiveHighlightGroupId("highlight-field-1");
       setHighlightBoxCounter(1);
