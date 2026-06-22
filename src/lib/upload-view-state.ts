@@ -255,6 +255,32 @@ export function getExtractionFieldSourceLabel({
   return "Manual";
 }
 
+export function getUploadSubmissionMessageTone(message: string) {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) {
+    return "success" as const;
+  }
+
+  if (
+    normalized.startsWith("missing ") ||
+    normalized.startsWith("review ") ||
+    normalized.startsWith("publish ") ||
+    normalized.startsWith("archived ")
+  ) {
+    return "warning" as const;
+  }
+
+  if (
+    normalized.startsWith("unable ") ||
+    normalized.startsWith("failed ") ||
+    normalized.includes(" error")
+  ) {
+    return "error" as const;
+  }
+
+  return "success" as const;
+}
+
 function slugify(value: string) {
   return (
     value

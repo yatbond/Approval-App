@@ -35,6 +35,7 @@ import {
   createHighlightValueBox,
   createHighlightedExtractionField,
   getExtractionFieldSourceLabel,
+  getUploadSubmissionMessageTone,
   getUploadViewState,
   mergeHighlightedFieldValue,
   removeHighlightValueBox,
@@ -45,6 +46,7 @@ import {
 import type { ParsedWorkspaceFilePayload } from "@/lib/workspace-file-api";
 import {
   shouldRestoreUploadRequestDraftHighlightState,
+  getUploadWorkInProgressItems,
   type SavedUploadRequestDraft,
   type UploadRequestDraftStatus,
 } from "@/lib/upload-request-draft-state";
@@ -222,6 +224,7 @@ export function UploadView({
       suggestionKey: `${suggestion.name}-${index}`,
     }))
     .filter((item) => !dismissedSuggestionKeys.includes(item.suggestionKey));
+  const submissionMessageTone = getUploadSubmissionMessageTone(submissionMessage);
 
   useEffect(() => {
     if (selectedTemplate && selectedTemplate.id !== selectedTemplateId) {
@@ -1194,7 +1197,15 @@ export function UploadView({
           )}
 
           {submissionMessage && (
-            <div className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+            <div
+              className={`mt-4 rounded-md border p-3 text-sm ${
+                submissionMessageTone === "success"
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+                  : submissionMessageTone === "warning"
+                    ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
+                    : "border-rose-500/30 bg-rose-500/10 text-rose-100"
+              }`}
+            >
               {submissionMessage}
             </div>
           )}
@@ -1227,45 +1238,69 @@ function UploadDraftPanel({
   onDeleteRequestDraft: (draftId: string) => void;
   onClearRequestDraft: () => void;
 }) {
+  const workInProgressItems = getUploadWorkInProgressItems({
+    currentDraftStatus: uploadDraftStatus,
+    savedDrafts: savedUploadDrafts,
+  });
+
   return (
     <div className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3">
-      <div className="flex flex-col gap-2 text-xs text-neutral-300 sm:flex-row sm:items-center sm:justify-between">
-        <span>{uploadDraftStatus.label}</span>
-        <div className="flex flex-wrap gap-2">
-          {uploadDraftStatus.hasDraft && (
-            <button
-              type="button"
-              onClick={onSaveRequestDraft}
-              className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 font-medium text-emerald-100 transition hover:bg-emerald-500/20"
-            >
-              <Save size={13} />
-              Save draft
-            </button>
-          )}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-neutral-200">
+            Request work in progress
+          </p>
+          <p className="mt-1 text-xs text-neutral-500">
+            Autosave keeps the current screen. Save a named draft when you want to return later.
+          </p>
+        </div>
+        <span className="shrink-0 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-neutral-400">
+          {workInProgressItems.length} item(s)
+        </span>
+      </div>
+
+      <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              Current autosave
+            </p>
+            <p className="mt-1 text-sm text-neutral-200">{uploadDraftStatus.label}</p>
+          </div>
           {uploadDraftStatus.hasDraft && (
             <button
               type="button"
               onClick={onClearRequestDraft}
-              className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 font-medium text-rose-100 transition hover:bg-rose-500/20"
+              className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-xs font-medium text-rose-100 transition hover:bg-rose-500/20"
             >
               <X size={13} />
               Clear current
             </button>
           )}
         </div>
-      </div>
 
-      {uploadDraftStatus.hasDraft && (
-        <label className="mt-3 block">
-          <span className="mb-1 block text-xs text-neutral-400">Draft name</span>
-          <input
-            value={uploadDraftTitle}
-            onChange={(event) => setUploadDraftTitle(event.target.value)}
-            placeholder="Optional name for this saved draft"
-            className="h-9 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-xs outline-none transition focus:border-emerald-400/60"
-          />
-        </label>
-      )}
+        {uploadDraftStatus.hasDraft && (
+          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+            <label className="block">
+              <span className="mb-1 block text-xs text-neutral-400">Saved draft name</span>
+              <input
+                value={uploadDraftTitle}
+                onChange={(event) => setUploadDraftTitle(event.target.value)}
+                placeholder="Example: Gleneagles final account"
+                className="h-9 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-xs outline-none transition focus:border-emerald-400/60"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={onSaveRequestDraft}
+              className="mt-auto inline-flex h-9 items-center justify-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 text-xs font-medium text-emerald-100 transition hover:bg-emerald-500/20"
+            >
+              <Save size={13} />
+              Save named draft
+            </button>
+          </div>
+        )}
+      </div>
 
       {uploadDraftMessage && (
         <p className="mt-2 rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-xs text-neutral-300">
@@ -1273,51 +1308,59 @@ function UploadDraftPanel({
         </p>
       )}
 
-      {savedUploadDrafts.length > 0 && (
-        <div className="mt-3">
-          <p className="text-xs font-semibold text-neutral-300">Saved drafts</p>
+      <div className="mt-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          Named saved drafts
+        </p>
+        {savedUploadDrafts.length === 0 ? (
+          <p className="mt-2 rounded-md border border-dashed border-white/10 bg-[#101214] px-3 py-2 text-xs text-neutral-500">
+            No named drafts yet.
+          </p>
+        ) : (
           <div className="mt-2 space-y-2">
-            {savedUploadDrafts.map((draft) => (
-              <div
-                key={draft.id}
-                className={`rounded-md border p-2 text-xs ${
-                  draft.id === selectedUploadDraftId
-                    ? "border-emerald-400/50 bg-emerald-400/5"
-                    : "border-white/10 bg-[#101214]"
-                }`}
-              >
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="break-words font-medium text-neutral-100">
-                      {draft.title}
-                    </p>
-                    <p className="mt-1 text-neutral-500">
-                      {draft.draft.uploadedAttachments.length} attachment(s),{" "}
-                      {Object.keys(draft.draft.editedFields).length} field(s)
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onLoadRequestDraft(draft)}
-                      className="inline-flex h-8 items-center justify-center rounded-md border border-sky-500/30 bg-sky-500/10 px-3 font-medium text-sky-100 transition hover:bg-sky-500/20"
-                    >
-                      Load
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteRequestDraft(draft.id)}
-                      className="inline-flex h-8 items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3 font-medium text-rose-100 transition hover:bg-rose-500/20"
-                    >
-                      Delete
-                    </button>
+            {savedUploadDrafts.map((draft) => {
+              const summary = workInProgressItems.find((item) => item.id === draft.id);
+              return (
+                <div
+                  key={draft.id}
+                  className={`rounded-md border p-2 text-xs ${
+                    draft.id === selectedUploadDraftId
+                      ? "border-emerald-400/50 bg-emerald-400/5"
+                      : "border-white/10 bg-[#101214]"
+                  }`}
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="break-words font-medium text-neutral-100">
+                        {draft.title}
+                      </p>
+                      <p className="mt-1 text-neutral-500">
+                        {summary?.detail}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onLoadRequestDraft(draft)}
+                        className="inline-flex h-8 items-center justify-center rounded-md border border-sky-500/30 bg-sky-500/10 px-3 font-medium text-sky-100 transition hover:bg-sky-500/20"
+                      >
+                        Load
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteRequestDraft(draft.id)}
+                        className="inline-flex h-8 items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3 font-medium text-rose-100 transition hover:bg-rose-500/20"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

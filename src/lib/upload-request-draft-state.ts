@@ -38,6 +38,13 @@ export type SavedUploadRequestDraft = {
   draft: UploadRequestDraft;
 };
 
+export type SavedUploadRequestDraftAccess = {
+  canView: boolean;
+  canLoad: boolean;
+  canDelete: boolean;
+  label: string;
+};
+
 export function buildUploadRequestDraft({
   selectedTemplateId,
   fileName,
@@ -179,6 +186,58 @@ export function getCreatorVisibleUploadRequestDrafts({
   return drafts
     .filter((draft) => isUploadRequestDraftCreator({ draft, activeUserEmail, activeUserId }))
     .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+}
+
+export function getSavedUploadRequestDraftAccess({
+  draft,
+  activeUserEmail,
+  activeUserId,
+}: {
+  draft: SavedUploadRequestDraft;
+  activeUserEmail: string;
+  activeUserId?: string;
+}): SavedUploadRequestDraftAccess {
+  const isCreator = isUploadRequestDraftCreator({
+    draft,
+    activeUserEmail,
+    activeUserId,
+  });
+
+  return {
+    canView: isCreator,
+    canLoad: isCreator,
+    canDelete: isCreator,
+    label: isCreator ? "Created by you" : "Creator only",
+  };
+}
+
+export function getUploadWorkInProgressItems({
+  currentDraftStatus,
+  savedDrafts,
+}: {
+  currentDraftStatus: UploadRequestDraftStatus;
+  savedDrafts: SavedUploadRequestDraft[];
+}) {
+  return [
+    ...(currentDraftStatus.hasDraft
+      ? [
+          {
+            id: "current-autosave",
+            title: "Current autosave",
+            detail: currentDraftStatus.label,
+            type: "current" as const,
+          },
+        ]
+      : []),
+    ...savedDrafts.map((draft) => ({
+      id: draft.id,
+      title: draft.title,
+      detail: `${draft.draft.uploadedAttachments.length} attachment(s), ${
+        Object.keys(draft.draft.editedFields).length
+      } field(s)`,
+      type: "saved" as const,
+    })),
+  ];
 }
 
 export function getNextSavedUploadRequestDrafts({

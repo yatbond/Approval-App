@@ -10,6 +10,7 @@ import {
   createHighlightValueBox,
   createHighlightedExtractionField,
   getExtractionFieldSourceLabel,
+  getUploadSubmissionMessageTone,
   mergeHighlightedFieldValue,
   updateHighlightFieldGroupLabel,
   updateHighlightValueBox,
@@ -304,5 +305,24 @@ test("labels extraction field source for review", () => {
       highlightGroups: [],
     }),
     "Manual",
+  );
+});
+
+test("classifies upload submission messages by actionability", () => {
+  assert.equal(
+    getUploadSubmissionMessageTone("REQ-123 submitted and routed to approver@example.com."),
+    "success",
+  );
+  assert.equal(
+    getUploadSubmissionMessageTone("Missing required extracted field(s): Total."),
+    "warning",
+  );
+  assert.equal(
+    getUploadSubmissionMessageTone("Review low confidence field(s) before submitting: Total."),
+    "warning",
+  );
+  assert.equal(
+    getUploadSubmissionMessageTone("Unable to submit request because the parser failed."),
+    "error",
   );
 });

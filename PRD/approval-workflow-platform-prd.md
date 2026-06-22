@@ -67,7 +67,7 @@ Current implemented areas:
 - Template-side sample document recognition inside Box Details, allowing a template creator to upload a sample document, accept suggested fields, or box a value from the preview to create template extraction fields.
 - Upload-side two-step field recognition: Step 1 suggested fields from OCR, followed by Step 2 add/correct fields through document preview boxing or direct manual values. Selected fields show their source as AI/OCR, Boxed field, or Manual.
 - Upload request autosave for interrupted request creation, preserving selected template, Supabase attachment references, parsed OCR result, edited extraction draft fields, highlighted field groups/value boxes, and parsed document link in browser-local storage. Submitted or manually cleared drafts remove the saved recovery state.
-- Saved upload request drafts, allowing an originator to explicitly name, save, reload, and delete recoverable request work. Saved drafts sync to Supabase when available and are filtered both client-side and by RLS so only the creating user can access them.
+- Saved upload request drafts, allowing an originator to explicitly name, save, reload, and delete recoverable request work. Upload separates the current autosave from named saved drafts so users can tell transient recovery state from intentional saved work. Saved drafts sync to Supabase when available and are filtered both client-side and by RLS so only the creating user can access them; superusers do not bypass saved upload draft ownership.
 - Qwen/OpenRouter visual OCR path for PDFs rendered into page images, plus PDF.js decoder assets for scanner PDFs that require CMaps, standard fonts, and WASM decoders.
 - Extraction confidence and evidence display for parsed fields, with user corrections stored as workflow-specific extraction examples for future OCR prompts.
 - Condition cases with numbered display, optional nickname, approval-count rules, specific-reviewer rules, numeric rules, AND/OR joining, fallback route, and multiple outcome boxes.
@@ -87,6 +87,7 @@ Current implemented areas:
 Current areas that remain incomplete or need hardening:
 
 - The Supabase v2 baseline and grant-hardening migrations have been verified against the live `approval-app` Supabase project.
+- The upload request draft migration has been applied to the live `approval-app` Supabase project. RLS and authenticated grants were verified, including a live own-row visibility check using temporary test rows.
 - Storage access policy currently centers on object ownership; participant-based shared attachment access needs stronger production policy design.
 - Workflow publishing has validation guardrails for blocking graph errors and incomplete warnings, including required documents without extraction fields, unrouted condition outcomes, missing condition rules, overlapping condition rules, and unreachable connected boxes.
 - Condition coverage warnings exist, but the condition editor still needs more plain-language guidance and test coverage for complex overlapping rule sets.
@@ -265,8 +266,8 @@ Required content:
 - Business and department context.
 - Required and optional starting document list.
 - File upload controls per required document.
-- Local autosave status for the current in-progress request.
-- Saved draft controls to name, save, load, and remove interrupted request work.
+- Work-in-progress panel with local autosave status for the current in-progress request.
+- Named saved draft controls to name, save, load, and remove interrupted request work.
 - Parser feedback and extracted field review.
 - Step 1 suggested fields, showing parser-discovered values, confidence, and evidence.
 - Step 2 add/correct fields, allowing document-preview boxing or direct manual values.
@@ -276,6 +277,7 @@ Required content:
 - Missing-document validation before task creation.
 - Required extracted-field validation before task creation.
 - Low-confidence extracted values must be reviewed before task creation.
+- Submission blocker messages must render as warnings or errors, not success confirmations.
 
 ### Workflow Tab
 

@@ -1662,3 +1662,22 @@ Verification:
 - Live browser smoke: authenticated Upload page at `http://localhost:3000/?tab=upload` loaded with the Upload heading and no browser console errors.
 - Live Supabase migration status: not applied from this shell. The Supabase CLI is not installed on PATH, no database URL/psql connection is available in `.env`, and the available Supabase connector in this session only exposed Edge Function deployment, not SQL execution.
 - Review: local code review found no blocker in the saved draft creator boundary. Existing route response-cookie propagation uses the same pattern as other API routes and was left out of scope for this commit.
+
+## Step 71 - Upload Draft UX and Submission Blocking Pass
+- Attempted to apply the live `upload_request_drafts` migration to Supabase project `wlbxrdmpwuupjyarjcxb`; the Supabase MCP returned `token_expired`, and `npx supabase projects list` reported no CLI access token. Live migration and multi-user RLS testing remain blocked until Supabase auth is refreshed.
+- Added explicit saved upload draft access helpers showing that only the creator can view/load/delete a saved upload draft; superuser status does not bypass this rule.
+- Added work-in-progress summary helpers that distinguish the current autosave from named saved drafts.
+- Reworked the Upload draft panel into `Request work in progress`, with a current autosave section and a separate named saved drafts section.
+- Added submission message tone classification so missing uploads, missing extracted fields, low-confidence fields, draft-template blocks, and archive blocks render as warnings instead of green success messages.
+- Updated `PRD/approval-workflow-platform-prd.md` with the clarified saved-draft UX, creator-only policy, live migration status, and submission blocker styling requirement.
+- Verification: `npm test` passed 301/301; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning after successful route generation.
+- Live browser smoke: authenticated Upload page at `http://localhost:3000/?tab=upload` showed `Request work in progress`, `CURRENT AUTOSAVE`, `NAMED SAVED DRAFTS`, and no browser console errors.
+
+## Step 72 - Live Upload Draft Migration Applied
+- Confirmed Supabase CLI authentication can list the `approval-app` project (`wlbxrdmpwuupjyarjcxb`) and linked the repo to that project.
+- `npx supabase db push --linked --dry-run` could not be used because old remote migration-history entries are missing from the local migrations directory. No migration-history repair was attempted because that would affect unrelated historical entries.
+- Applied `supabase/migrations/20260623073000_create_upload_request_drafts.sql` directly with `npx supabase db query --linked --file ...`.
+- Verified the live `public.upload_request_drafts` table exists, RLS is enabled, and `authenticated` has select/insert/update/delete table privileges.
+- Verified the four own-row RLS policies exist for select, insert, update, and delete.
+- Inserted temporary tagged rows for two existing auth users, simulated one authenticated user's JWT claim, and confirmed only that user's tagged row was visible. Also confirmed the simulated authenticated user can insert its own row. Temporary test rows were removed and cleanup verified with `remaining_test_rows = 0`.
+- Git repair note: the prior local commit object `99daaf0...` was corrupt on disk and contained an index (`DIRC`) header instead of a Git object. Repaired by moving the branch ref back to valid parent `a18c8fc...`, rebuilding the index with `git read-tree HEAD`, then preserving the seven-file working-tree diff for recommit.

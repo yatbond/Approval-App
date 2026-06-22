@@ -7,6 +7,8 @@ import {
   createEmptyUploadRequestDraftStatus,
   getCreatorVisibleUploadRequestDrafts,
   getNextSavedUploadRequestDrafts,
+  getSavedUploadRequestDraftAccess,
+  getUploadWorkInProgressItems,
   parseUploadRequestDraft,
   parseUploadRequestDraftList,
   serializeUploadRequestDraftList,
@@ -362,5 +364,100 @@ test("upserts and removes saved upload request drafts only for their creator", (
       activeUserId: "",
     }).map((item) => item.id),
     ["other-draft"],
+  );
+});
+
+test("denies saved upload draft access to non-creators including superusers", () => {
+  const draft = buildSavedUploadRequestDraft({
+    draft: buildUploadRequestDraft({
+      selectedTemplateId: "template-finance",
+      fileName: "invoice.pdf",
+      parseResult,
+      editedFields: { Amount: "500,000.00" },
+      uploadedAttachments: [attachment],
+      parsedDocumentId: "invoice-doc",
+      highlightGroups,
+      activeHighlightGroupId: "highlight-field-1",
+      highlightBoxCounter: 2,
+      savedAt: "2026-06-23T00:01:00.000Z",
+    }),
+    id: "own-draft",
+    title: "Own draft",
+    createdByEmail: "dpang@chunwo.com",
+    createdByUserId: "user-1",
+    savedAt: "2026-06-23T00:03:00.000Z",
+  });
+
+  assert.deepEqual(
+    getSavedUploadRequestDraftAccess({
+      draft,
+      activeUserEmail: "dpang@chunwo.com",
+      activeUserId: "user-1",
+    }),
+    {
+      canView: true,
+      canLoad: true,
+      canDelete: true,
+      label: "Created by you",
+    },
+  );
+
+  assert.deepEqual(
+    getSavedUploadRequestDraftAccess({
+      draft,
+      activeUserEmail: "admin@example.com",
+      activeUserId: "admin-user",
+    }),
+    {
+      canView: false,
+      canLoad: false,
+      canDelete: false,
+      label: "Creator only",
+    },
+  );
+});
+
+test("builds work-in-progress items from current autosave and saved drafts", () => {
+  const draft = buildSavedUploadRequestDraft({
+    draft: buildUploadRequestDraft({
+      selectedTemplateId: "template-finance",
+      fileName: "invoice.pdf",
+      parseResult,
+      editedFields: { Amount: "500,000.00" },
+      uploadedAttachments: [attachment],
+      parsedDocumentId: "invoice-doc",
+      highlightGroups,
+      activeHighlightGroupId: "highlight-field-1",
+      highlightBoxCounter: 2,
+      savedAt: "2026-06-23T00:01:00.000Z",
+    }),
+    id: "saved-draft",
+    title: "Named saved draft",
+    createdByEmail: "dpang@chunwo.com",
+    savedAt: "2026-06-23T00:03:00.000Z",
+  });
+
+  assert.deepEqual(
+    getUploadWorkInProgressItems({
+      currentDraftStatus: {
+        hasDraft: true,
+        label: "Autosaved 1 attachment, 1 field",
+      },
+      savedDrafts: [draft],
+    }),
+    [
+      {
+        id: "current-autosave",
+        title: "Current autosave",
+        detail: "Autosaved 1 attachment, 1 field",
+        type: "current",
+      },
+      {
+        id: "saved-draft",
+        title: "Named saved draft",
+        detail: "1 attachment(s), 1 field(s)",
+        type: "saved",
+      },
+    ],
   );
 });
