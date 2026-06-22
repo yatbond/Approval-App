@@ -226,6 +226,35 @@ export function mergeHighlightedFieldValue(
   };
 }
 
+export function getExtractionFieldSourceLabel({
+  label,
+  parseFields,
+  highlightGroups,
+}: {
+  label: string;
+  parseFields: Record<string, string>;
+  highlightGroups: HighlightFieldGroup[];
+}) {
+  const normalizedLabel = label.trim().toLowerCase();
+  const parsedLabels = new Set(
+    Object.keys(parseFields).map((fieldLabel) => fieldLabel.trim().toLowerCase()),
+  );
+  if (parsedLabels.has(normalizedLabel)) {
+    return "AI/OCR";
+  }
+
+  const highlightedLabels = new Set(
+    highlightGroups
+      .map((group) => group.fieldLabel.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (highlightedLabels.has(normalizedLabel)) {
+    return "Boxed field";
+  }
+
+  return "Manual";
+}
+
 function slugify(value: string) {
   return (
     value

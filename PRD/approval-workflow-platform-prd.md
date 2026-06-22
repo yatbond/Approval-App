@@ -1,6 +1,6 @@
 # Approval Workflow Platform PRD
 
-Last updated: 2026-06-22
+Last updated: 2026-06-23
 Document owner: Product / Workflow Platform
 Status: Living PRD for the current prototype and next production build
 Repository: Approval Workflow Next.js application
@@ -65,8 +65,9 @@ Current implemented areas:
 - Box Details panel for editing node type, label, due hours, assignee, escalation, document requirements, condition cases, and branch details.
 - Per-box document requirements, including document format, document type, required flag, and extraction fields.
 - Template-side sample document recognition inside Box Details, allowing a template creator to upload a sample document, accept suggested fields, or box a value from the preview to create template extraction fields.
-- Upload-side two-step field recognition: Step 1 suggested fields from OCR, followed by Step 2 add/correct fields through document preview boxing or direct manual values.
+- Upload-side two-step field recognition: Step 1 suggested fields from OCR, followed by Step 2 add/correct fields through document preview boxing or direct manual values. Selected fields show their source as AI/OCR, Boxed field, or Manual.
 - Upload request autosave for interrupted request creation, preserving selected template, Supabase attachment references, parsed OCR result, edited extraction draft fields, highlighted field groups/value boxes, and parsed document link in browser-local storage. Submitted or manually cleared drafts remove the saved recovery state.
+- Saved upload request drafts, allowing an originator to explicitly name, save, reload, and delete recoverable request work. Saved drafts sync to Supabase when available and are filtered both client-side and by RLS so only the creating user can access them.
 - Qwen/OpenRouter visual OCR path for PDFs rendered into page images, plus PDF.js decoder assets for scanner PDFs that require CMaps, standard fonts, and WASM decoders.
 - Extraction confidence and evidence display for parsed fields, with user corrections stored as workflow-specific extraction examples for future OCR prompts.
 - Condition cases with numbered display, optional nickname, approval-count rules, specific-reviewer rules, numeric rules, AND/OR joining, fallback route, and multiple outcome boxes.
@@ -80,6 +81,7 @@ Current implemented areas:
 - Template lifecycle metadata for Draft, Published, and Archived states, including creator/updater/archive metadata and visible Template Library permission labels.
 - Template admin audit events for create, publish, duplicate, update, and archive actions, shown in the Admin tab and persisted in the workspace snapshot.
 - Supabase RLS policies that allow authenticated template creators to insert/update their own template versions and claim ownerless legacy template rows during normalized save repair.
+- Supabase upload draft RLS policies that restrict draft select, insert, update, and delete to the signed-in creator through `owner_user_id = auth.uid()`.
 - Production performance optimizations for server response time and deferred workspace loading.
 
 Current areas that remain incomplete or need hardening:
@@ -115,7 +117,8 @@ Current pure state and domain boundaries:
 - `src/lib/workspace-template-record-state.ts`: create/update/delete template record state.
 - `src/lib/workspace-admin-record-state.ts`: business directory and role assignment record state.
 - `src/lib/workspace-request-submission-state.ts`: submit-request decision state and successful task creation state.
-- `src/lib/upload-request-draft-state.ts`: upload request draft serialization, validation, autosave status summary, and clear-state defaults.
+- `src/lib/upload-request-draft-state.ts`: upload request draft serialization, validation, autosave status summary, creator-owned saved draft helpers, and clear-state defaults.
+- `src/lib/upload-request-draft-api.ts`: client boundary for loading, saving, and deleting saved upload request drafts through `/api/upload-drafts`.
 - `src/lib/workspace-task-action-state.ts`: manual queue action state and workflow-runner action state.
 - `src/lib/workspace-file-api.ts`: upload and parse API client boundary plus parsed file payload type.
 - `src/lib/workspace-parse-file-state.ts`: parse-file UI reset, stored attachment creation, and parse success mapping.
@@ -262,12 +265,17 @@ Required content:
 - Business and department context.
 - Required and optional starting document list.
 - File upload controls per required document.
+- Local autosave status for the current in-progress request.
+- Saved draft controls to name, save, load, and remove interrupted request work.
 - Parser feedback and extracted field review.
 - Step 1 suggested fields, showing parser-discovered values, confidence, and evidence.
 - Step 2 add/correct fields, allowing document-preview boxing or direct manual values.
+- Source labels for selected extraction fields: AI/OCR, Boxed field, or Manual.
 - Editable extracted field values before submission.
 - Correction feedback storage so changed values become workflow-specific extraction examples for future requests.
 - Missing-document validation before task creation.
+- Required extracted-field validation before task creation.
+- Low-confidence extracted values must be reviewed before task creation.
 
 ### Workflow Tab
 
@@ -1030,6 +1038,7 @@ The current Supabase schema includes:
 - approval_requests
 - approval_request_events
 - approval_request_attachments
+- upload_request_drafts
 - workspace_snapshots
 - storage bucket: approval-documents
 
@@ -1045,6 +1054,7 @@ Workspace state includes:
 - Workflow templates.
 - User role assignments.
 - Template admin audit events.
+- Upload request saved drafts, scoped to the creating user.
 
 Workspace state is serialized to localStorage and saved to Supabase.
 
@@ -1063,6 +1073,7 @@ The live migration `20260621151500_harden_template_lifecycle_permissions.sql` ap
 Remote persistence includes:
 
 - Normalized tables for workflow templates, requests, events, attachments, businesses, and departments.
+- Creator-owned upload request drafts in `upload_request_drafts`.
 - Snapshot fallback in workspace_snapshots.
 - Supabase storage for uploaded approval documents.
 
@@ -1076,6 +1087,9 @@ Current API surface:
 - `POST /api/workspace`: saves workspace snapshot and normalized data where possible.
 - `POST /api/attachments/upload`: uploads task documents to the `approval-documents` storage bucket.
 - `POST /api/parse`: parses uploaded files and returns extracted draft fields.
+- `GET /api/upload-drafts`: loads saved request drafts owned by the signed-in user.
+- `POST /api/upload-drafts`: creates or updates a signed-in user's saved request draft.
+- `DELETE /api/upload-drafts?id=...`: deletes a signed-in user's saved request draft.
 - `GET /logout`: signs out and redirects to login.
 
 API requirements:
@@ -1086,6 +1100,7 @@ API requirements:
 - Workspace save should not block first page render.
 - Attachment upload must sanitize file names and store files under a user/document scoped path.
 - Parse route must return structured JSON with extracted fields, notes, and errors.
+- Upload draft routes must stamp ownership from the authenticated Supabase user and never trust client-provided creator identity.
 
 ### 19.2.2 Local-First Sync
 
@@ -1110,6 +1125,7 @@ Supabase RLS must enforce:
 - Originators and current owners can update requests where allowed.
 - Participants can read events and attachments for requests they are allowed to see.
 - Users can read and update their own workspace snapshots.
+- Users can read, create, update, and delete only their own saved upload request drafts.
 - Storage object access should be limited to authenticated owners/participants as the document security model matures.
 
 ## 20. Role Management

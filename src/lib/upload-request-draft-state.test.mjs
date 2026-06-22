@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  buildSavedUploadRequestDraft,
   buildUploadRequestDraft,
   clearUploadRequestDraft,
   createEmptyUploadRequestDraftStatus,
+  getCreatorVisibleUploadRequestDrafts,
+  getNextSavedUploadRequestDrafts,
   parseUploadRequestDraft,
+  parseUploadRequestDraftList,
+  serializeUploadRequestDraftList,
   serializeUploadRequestDraft,
   shouldRestoreUploadRequestDraftHighlightState,
 } from "./upload-request-draft-state.ts";
@@ -192,5 +197,170 @@ test("restores upload highlight state only once for a draft restore token", () =
       lastRestoredToken: "2026-06-23T00:01:00.000Z",
     }),
     false,
+  );
+});
+
+test("builds creator-owned saved upload request drafts", () => {
+  const draft = buildUploadRequestDraft({
+    selectedTemplateId: "template-finance",
+    fileName: "invoice.pdf",
+    parseResult,
+    editedFields: { Vendor: "Gleneagles Hospital" },
+    uploadedAttachments: [attachment],
+    parsedDocumentId: "invoice-doc",
+    highlightGroups,
+    activeHighlightGroupId: "highlight-field-1",
+    highlightBoxCounter: 2,
+    savedAt: "2026-06-23T00:01:00.000Z",
+  });
+
+  const savedDraft = buildSavedUploadRequestDraft({
+    draft,
+    id: "upload-draft-1",
+    title: "Gleneagles final account",
+    createdByEmail: "dpang@chunwo.com",
+    createdByUserId: "user-1",
+    savedAt: "2026-06-23T00:02:00.000Z",
+  });
+
+  assert.equal(savedDraft.id, "upload-draft-1");
+  assert.equal(savedDraft.title, "Gleneagles final account");
+  assert.equal(savedDraft.createdByEmail, "dpang@chunwo.com");
+  assert.equal(savedDraft.createdByUserId, "user-1");
+  assert.equal(savedDraft.draft.fileName, "invoice.pdf");
+});
+
+test("round trips only valid saved upload request drafts", () => {
+  const draft = buildSavedUploadRequestDraft({
+    draft: buildUploadRequestDraft({
+      selectedTemplateId: "template-finance",
+      fileName: "invoice.pdf",
+      parseResult,
+      editedFields: { Amount: "500,000.00" },
+      uploadedAttachments: [attachment],
+      parsedDocumentId: "invoice-doc",
+      highlightGroups,
+      activeHighlightGroupId: "highlight-field-1",
+      highlightBoxCounter: 2,
+      savedAt: "2026-06-23T00:01:00.000Z",
+    }),
+    id: "upload-draft-1",
+    title: "",
+    createdByEmail: "dpang@chunwo.com",
+    createdByUserId: "user-1",
+    savedAt: "2026-06-23T00:02:00.000Z",
+  });
+
+  const restored = parseUploadRequestDraftList(
+    serializeUploadRequestDraftList([draft, { invalid: true }]),
+  );
+
+  assert.deepEqual(restored, [draft]);
+  assert.deepEqual(parseUploadRequestDraftList("not-json"), []);
+});
+
+test("filters saved upload request drafts by creator", () => {
+  const baseDraft = buildUploadRequestDraft({
+    selectedTemplateId: "template-finance",
+    fileName: "invoice.pdf",
+    parseResult,
+    editedFields: { Amount: "500,000.00" },
+    uploadedAttachments: [attachment],
+    parsedDocumentId: "invoice-doc",
+    highlightGroups,
+    activeHighlightGroupId: "highlight-field-1",
+    highlightBoxCounter: 2,
+    savedAt: "2026-06-23T00:01:00.000Z",
+  });
+  const visible = buildSavedUploadRequestDraft({
+    draft: baseDraft,
+    id: "own-draft",
+    title: "Own draft",
+    createdByEmail: "dpang@chunwo.com",
+    savedAt: "2026-06-23T00:03:00.000Z",
+  });
+  const hidden = buildSavedUploadRequestDraft({
+    draft: baseDraft,
+    id: "other-draft",
+    title: "Other draft",
+    createdByEmail: "other@example.com",
+    savedAt: "2026-06-23T00:04:00.000Z",
+  });
+
+  assert.deepEqual(
+    getCreatorVisibleUploadRequestDrafts({
+      drafts: [hidden, visible],
+      activeUserEmail: "DPANG@CHUNWO.COM",
+      activeUserId: "",
+    }).map((item) => item.id),
+    ["own-draft"],
+  );
+});
+
+test("upserts and removes saved upload request drafts only for their creator", () => {
+  const baseDraft = buildUploadRequestDraft({
+    selectedTemplateId: "template-finance",
+    fileName: "invoice.pdf",
+    parseResult,
+    editedFields: { Amount: "500,000.00" },
+    uploadedAttachments: [attachment],
+    parsedDocumentId: "invoice-doc",
+    highlightGroups,
+    activeHighlightGroupId: "highlight-field-1",
+    highlightBoxCounter: 2,
+    savedAt: "2026-06-23T00:01:00.000Z",
+  });
+  const ownDraft = buildSavedUploadRequestDraft({
+    draft: baseDraft,
+    id: "own-draft",
+    title: "Own draft",
+    createdByEmail: "dpang@chunwo.com",
+    savedAt: "2026-06-23T00:03:00.000Z",
+  });
+  const otherDraft = buildSavedUploadRequestDraft({
+    draft: baseDraft,
+    id: "other-draft",
+    title: "Other draft",
+    createdByEmail: "other@example.com",
+    savedAt: "2026-06-23T00:04:00.000Z",
+  });
+
+  const updated = getNextSavedUploadRequestDrafts({
+    drafts: [ownDraft, otherDraft],
+    action: "upsert",
+    draft: {
+      ...ownDraft,
+      title: "Updated own draft",
+      savedAt: "2026-06-23T00:05:00.000Z",
+    },
+    activeUserEmail: "dpang@chunwo.com",
+    activeUserId: "",
+  });
+  assert.deepEqual(
+    updated.map((item) => `${item.id}:${item.title}`),
+    ["own-draft:Updated own draft", "other-draft:Other draft"],
+  );
+
+  const removed = getNextSavedUploadRequestDrafts({
+    drafts: updated,
+    action: "remove",
+    draftId: "other-draft",
+    activeUserEmail: "dpang@chunwo.com",
+    activeUserId: "",
+  });
+  assert.deepEqual(
+    removed.map((item) => item.id),
+    ["own-draft", "other-draft"],
+  );
+
+  assert.deepEqual(
+    getNextSavedUploadRequestDrafts({
+      drafts: updated,
+      action: "remove",
+      draftId: "own-draft",
+      activeUserEmail: "dpang@chunwo.com",
+      activeUserId: "",
+    }).map((item) => item.id),
+    ["other-draft"],
   );
 });

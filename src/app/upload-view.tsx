@@ -7,6 +7,7 @@ import {
   Loader2,
   Plus,
   Send,
+  Save,
   X,
   Upload,
 } from "lucide-react";
@@ -33,6 +34,7 @@ import {
   createHighlightFieldGroup,
   createHighlightValueBox,
   createHighlightedExtractionField,
+  getExtractionFieldSourceLabel,
   getUploadViewState,
   mergeHighlightedFieldValue,
   removeHighlightValueBox,
@@ -43,6 +45,7 @@ import {
 import type { ParsedWorkspaceFilePayload } from "@/lib/workspace-file-api";
 import {
   shouldRestoreUploadRequestDraftHighlightState,
+  type SavedUploadRequestDraft,
   type UploadRequestDraftStatus,
 } from "@/lib/upload-request-draft-state";
 import type {
@@ -64,6 +67,14 @@ export function UploadView({
   onExtractHighlightedRegion,
   uploadedAttachments,
   uploadDraftStatus,
+  savedUploadDrafts,
+  selectedUploadDraftId,
+  uploadDraftTitle,
+  setUploadDraftTitle,
+  uploadDraftMessage,
+  onSaveRequestDraft,
+  onLoadRequestDraft,
+  onDeleteRequestDraft,
   uploadDraftRestoreToken,
   uploadDraftResetToken,
   restoredHighlightGroups,
@@ -95,6 +106,14 @@ export function UploadView({
   ) => Promise<ParsedWorkspaceFilePayload>;
   uploadedAttachments: ApprovalAttachment[];
   uploadDraftStatus: UploadRequestDraftStatus;
+  savedUploadDrafts: SavedUploadRequestDraft[];
+  selectedUploadDraftId: string;
+  uploadDraftTitle: string;
+  setUploadDraftTitle: (title: string) => void;
+  uploadDraftMessage: string;
+  onSaveRequestDraft: () => void;
+  onLoadRequestDraft: (draft: SavedUploadRequestDraft) => void;
+  onDeleteRequestDraft: (draftId: string) => void;
   uploadDraftRestoreToken: string;
   uploadDraftResetToken: number;
   restoredHighlightGroups: HighlightFieldGroup[];
@@ -131,6 +150,7 @@ export function UploadView({
     restoredHighlightBoxCounter || 1,
   );
   const [highlightError, setHighlightError] = useState("");
+  const [dismissedSuggestionKeys, setDismissedSuggestionKeys] = useState<string[]>([]);
   const [previewContrast, setPreviewContrast] = useState(210);
   const [previewBrightness, setPreviewBrightness] = useState(88);
   const [previewZoom, setPreviewZoom] = useState(145);
@@ -196,6 +216,12 @@ export function UploadView({
       : hasCurrentEnhancedPreview
         ? enhancedPreview.dataUrl
         : selectedPreviewPage?.dataUrl;
+  const visibleSuggestedFields = (parseResult?.suggestedFields || [])
+    .map((suggestion, index) => ({
+      suggestion,
+      suggestionKey: `${suggestion.name}-${index}`,
+    }))
+    .filter((item) => !dismissedSuggestionKeys.includes(item.suggestionKey));
 
   useEffect(() => {
     if (selectedTemplate && selectedTemplate.id !== selectedTemplateId) {
@@ -448,19 +474,18 @@ export function UploadView({
         <p className="mt-1 text-sm text-neutral-400">
           Choose a template, then upload each required or optional document.
         </p>
-        <div className="mt-3 flex flex-col gap-2 rounded-md border border-white/10 bg-[#121518] p-3 text-xs text-neutral-300 sm:flex-row sm:items-center sm:justify-between">
-          <span>{uploadDraftStatus.label}</span>
-          {uploadDraftStatus.hasDraft && (
-            <button
-              type="button"
-              onClick={onClearRequestDraft}
-              className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 font-medium text-rose-100 transition hover:bg-rose-500/20"
-            >
-              <X size={13} />
-              Clear draft
-            </button>
-          )}
-        </div>
+        <UploadDraftPanel
+          uploadDraftStatus={uploadDraftStatus}
+          savedUploadDrafts={savedUploadDrafts}
+          selectedUploadDraftId={selectedUploadDraftId}
+          uploadDraftTitle={uploadDraftTitle}
+          setUploadDraftTitle={setUploadDraftTitle}
+          uploadDraftMessage={uploadDraftMessage}
+          onSaveRequestDraft={onSaveRequestDraft}
+          onLoadRequestDraft={onLoadRequestDraft}
+          onDeleteRequestDraft={onDeleteRequestDraft}
+          onClearRequestDraft={onClearRequestDraft}
+        />
 
         <label className="mt-4 block">
           <span className="mb-1 block text-xs text-neutral-400">Workflow template</span>
@@ -802,11 +827,12 @@ export function UploadView({
                     </p>
                   </div>
                 </div>
-                {parseResult?.suggestedFields?.length ? (
+                {visibleSuggestedFields.length ? (
                   <div className="mt-3 grid gap-2 md:grid-cols-2">
-                    {parseResult.suggestedFields.map((suggestion, index) => (
+                    {visibleSuggestedFields.map(({ suggestion, suggestionKey }) => {
+                      return (
                       <div
-                        key={`${suggestion.name}-${index}`}
+                        key={suggestionKey}
                         className="rounded-md border border-white/10 bg-[#101214] p-3"
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -843,8 +869,22 @@ export function UploadView({
                           <Plus size={14} />
                           Use field
                         </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDismissedSuggestionKeys((keys) => [
+                              ...keys,
+                              suggestionKey,
+                            ])
+                          }
+                          className="mt-2 flex h-8 w-full items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.03] text-xs font-medium text-neutral-300 transition hover:bg-white/10"
+                        >
+                          <X size={13} />
+                          Dismiss
+                        </button>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="mt-3 rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-xs text-neutral-400">
@@ -1070,10 +1110,21 @@ export function UploadView({
                 {Object.entries(editedFields).map(([label, value]) => (
                   <label key={label} className="block">
                     <span className="mb-1 flex items-center justify-between gap-2 text-xs text-neutral-400">
-                      <span>{label}</span>
+                      <span className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span>{label}</span>
+                        <span
+                          className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-0.5 text-neutral-300"
+                        >
+                          {getExtractionFieldSourceLabel({
+                            label,
+                            parseFields: parseResult.fields || {},
+                            highlightGroups,
+                          })}
+                        </span>
+                      </span>
                       {parseResult.confidence?.[label] && (
                         <span
-                          className={`rounded-md border px-2 py-0.5 ${
+                          className={`shrink-0 rounded-md border px-2 py-0.5 ${
                             parseResult.confidence[label] === "high"
                               ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
                               : parseResult.confidence[label] === "medium"
@@ -1149,6 +1200,124 @@ export function UploadView({
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+function UploadDraftPanel({
+  uploadDraftStatus,
+  savedUploadDrafts,
+  selectedUploadDraftId,
+  uploadDraftTitle,
+  setUploadDraftTitle,
+  uploadDraftMessage,
+  onSaveRequestDraft,
+  onLoadRequestDraft,
+  onDeleteRequestDraft,
+  onClearRequestDraft,
+}: {
+  uploadDraftStatus: UploadRequestDraftStatus;
+  savedUploadDrafts: SavedUploadRequestDraft[];
+  selectedUploadDraftId: string;
+  uploadDraftTitle: string;
+  setUploadDraftTitle: (title: string) => void;
+  uploadDraftMessage: string;
+  onSaveRequestDraft: () => void;
+  onLoadRequestDraft: (draft: SavedUploadRequestDraft) => void;
+  onDeleteRequestDraft: (draftId: string) => void;
+  onClearRequestDraft: () => void;
+}) {
+  return (
+    <div className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3">
+      <div className="flex flex-col gap-2 text-xs text-neutral-300 sm:flex-row sm:items-center sm:justify-between">
+        <span>{uploadDraftStatus.label}</span>
+        <div className="flex flex-wrap gap-2">
+          {uploadDraftStatus.hasDraft && (
+            <button
+              type="button"
+              onClick={onSaveRequestDraft}
+              className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 font-medium text-emerald-100 transition hover:bg-emerald-500/20"
+            >
+              <Save size={13} />
+              Save draft
+            </button>
+          )}
+          {uploadDraftStatus.hasDraft && (
+            <button
+              type="button"
+              onClick={onClearRequestDraft}
+              className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 font-medium text-rose-100 transition hover:bg-rose-500/20"
+            >
+              <X size={13} />
+              Clear current
+            </button>
+          )}
+        </div>
+      </div>
+
+      {uploadDraftStatus.hasDraft && (
+        <label className="mt-3 block">
+          <span className="mb-1 block text-xs text-neutral-400">Draft name</span>
+          <input
+            value={uploadDraftTitle}
+            onChange={(event) => setUploadDraftTitle(event.target.value)}
+            placeholder="Optional name for this saved draft"
+            className="h-9 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-xs outline-none transition focus:border-emerald-400/60"
+          />
+        </label>
+      )}
+
+      {uploadDraftMessage && (
+        <p className="mt-2 rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-xs text-neutral-300">
+          {uploadDraftMessage}
+        </p>
+      )}
+
+      {savedUploadDrafts.length > 0 && (
+        <div className="mt-3">
+          <p className="text-xs font-semibold text-neutral-300">Saved drafts</p>
+          <div className="mt-2 space-y-2">
+            {savedUploadDrafts.map((draft) => (
+              <div
+                key={draft.id}
+                className={`rounded-md border p-2 text-xs ${
+                  draft.id === selectedUploadDraftId
+                    ? "border-emerald-400/50 bg-emerald-400/5"
+                    : "border-white/10 bg-[#101214]"
+                }`}
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="break-words font-medium text-neutral-100">
+                      {draft.title}
+                    </p>
+                    <p className="mt-1 text-neutral-500">
+                      {draft.draft.uploadedAttachments.length} attachment(s),{" "}
+                      {Object.keys(draft.draft.editedFields).length} field(s)
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onLoadRequestDraft(draft)}
+                      className="inline-flex h-8 items-center justify-center rounded-md border border-sky-500/30 bg-sky-500/10 px-3 font-medium text-sky-100 transition hover:bg-sky-500/20"
+                    >
+                      Load
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteRequestDraft(draft.id)}
+                      className="inline-flex h-8 items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3 font-medium text-rose-100 transition hover:bg-rose-500/20"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

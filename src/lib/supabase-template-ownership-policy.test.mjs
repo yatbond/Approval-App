@@ -10,6 +10,10 @@ const inactiveReadMigration = readFileSync(
   "supabase/migrations/20260621162000_allow_template_creator_inactive_reads.sql",
   "utf8",
 );
+const uploadDraftMigration = readFileSync(
+  "supabase/migrations/20260623073000_create_upload_request_drafts.sql",
+  "utf8",
+);
 
 test("migration allows template creators to insert and update their own template versions", () => {
   assert.match(
@@ -38,4 +42,14 @@ test("migration lets template creators read owned inactive template versions for
   );
   assert.match(inactiveReadMigration, /on public\.workflow_template_versions for select/i);
   assert.match(inactiveReadMigration, /created_by = \(select auth\.uid\(\)\)/i);
+});
+
+test("migration lets users access only their own upload request drafts", () => {
+  assert.match(uploadDraftMigration, /create table if not exists public\.upload_request_drafts/i);
+  assert.match(uploadDraftMigration, /alter table public\.upload_request_drafts enable row level security/i);
+  assert.match(uploadDraftMigration, /create policy "users read own upload request drafts"/i);
+  assert.match(uploadDraftMigration, /create policy "users insert own upload request drafts"/i);
+  assert.match(uploadDraftMigration, /create policy "users update own upload request drafts"/i);
+  assert.match(uploadDraftMigration, /create policy "users delete own upload request drafts"/i);
+  assert.match(uploadDraftMigration, /owner_user_id = \(select auth\.uid\(\)\)/i);
 });

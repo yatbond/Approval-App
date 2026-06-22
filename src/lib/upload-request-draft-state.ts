@@ -29,6 +29,15 @@ export type UploadRequestDraftStatus = {
   label: string;
 };
 
+export type SavedUploadRequestDraft = {
+  id: string;
+  title: string;
+  createdByEmail: string;
+  createdByUserId?: string;
+  savedAt: string;
+  draft: UploadRequestDraft;
+};
+
 export function buildUploadRequestDraft({
   selectedTemplateId,
   fileName,
@@ -58,8 +67,48 @@ export function buildUploadRequestDraft({
   };
 }
 
+export function buildSavedUploadRequestDraft({
+  draft,
+  id,
+  title,
+  createdByEmail,
+  createdByUserId,
+  savedAt = new Date().toISOString(),
+}: {
+  draft: UploadRequestDraft;
+  id: string;
+  title: string;
+  createdByEmail: string;
+  createdByUserId?: string;
+  savedAt?: string;
+}): SavedUploadRequestDraft {
+  const cleanTitle =
+    title.trim() ||
+    draft.fileName.trim() ||
+    Object.keys(draft.editedFields)[0] ||
+    "Untitled request draft";
+
+  return {
+    id,
+    title: cleanTitle,
+    createdByEmail,
+    ...(createdByUserId ? { createdByUserId } : {}),
+    savedAt,
+    draft: {
+      ...draft,
+      savedAt,
+    },
+  };
+}
+
 export function serializeUploadRequestDraft(draft: UploadRequestDraft) {
   return JSON.stringify(draft);
+}
+
+export function serializeUploadRequestDraftList(
+  drafts: Array<SavedUploadRequestDraft | unknown>,
+) {
+  return JSON.stringify(drafts);
 }
 
 export function parseUploadRequestDraft(value: string): UploadRequestDraft | null {
@@ -101,6 +150,68 @@ export function parseUploadRequestDraft(value: string): UploadRequestDraft | nul
   } catch {
     return null;
   }
+}
+
+export function parseUploadRequestDraftList(value: string): SavedUploadRequestDraft[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .map(parseSavedUploadRequestDraft)
+      .filter((draft): draft is SavedUploadRequestDraft => Boolean(draft));
+  } catch {
+    return [];
+  }
+}
+
+export function getCreatorVisibleUploadRequestDrafts({
+  drafts,
+  activeUserEmail,
+  activeUserId,
+}: {
+  drafts: SavedUploadRequestDraft[];
+  activeUserEmail: string;
+  activeUserId?: string;
+}) {
+  return drafts
+    .filter((draft) => isUploadRequestDraftCreator({ draft, activeUserEmail, activeUserId }))
+    .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+}
+
+export function getNextSavedUploadRequestDrafts({
+  drafts,
+  action,
+  draft,
+  draftId,
+  activeUserEmail,
+  activeUserId,
+}: {
+  drafts: SavedUploadRequestDraft[];
+  action: "upsert" | "remove";
+  draft?: SavedUploadRequestDraft;
+  draftId?: string;
+  activeUserEmail: string;
+  activeUserId?: string;
+}) {
+  if (action === "remove") {
+    return drafts.filter((item) => {
+      if (item.id !== draftId) {
+        return true;
+      }
+
+      return !isUploadRequestDraftCreator({ draft: item, activeUserEmail, activeUserId });
+    });
+  }
+
+  if (!draft || !isUploadRequestDraftCreator({ draft, activeUserEmail, activeUserId })) {
+    return drafts;
+  }
+
+  const withoutExisting = drafts.filter((item) => item.id !== draft.id);
+  return [draft, ...withoutExisting];
 }
 
 export function createEmptyUploadRequestDraftStatus(
@@ -163,6 +274,55 @@ function hasRecoverableDraftWork(draft: UploadRequestDraft) {
     Boolean(draft.parseResult) ||
     draft.highlightGroups.some((group) => group.fieldLabel || group.boxes.length)
   );
+}
+
+function parseSavedUploadRequestDraft(value: unknown): SavedUploadRequestDraft | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const parsed = value as Partial<SavedUploadRequestDraft>;
+  if (
+    typeof parsed.id !== "string" ||
+    typeof parsed.title !== "string" ||
+    typeof parsed.createdByEmail !== "string" ||
+    (parsed.createdByUserId !== undefined && typeof parsed.createdByUserId !== "string") ||
+    typeof parsed.savedAt !== "string" ||
+    !parsed.draft
+  ) {
+    return null;
+  }
+
+  const draft = parseUploadRequestDraft(JSON.stringify(parsed.draft));
+  if (!draft) {
+    return null;
+  }
+
+  return {
+    id: parsed.id,
+    title: parsed.title,
+    createdByEmail: parsed.createdByEmail,
+    ...(parsed.createdByUserId ? { createdByUserId: parsed.createdByUserId } : {}),
+    savedAt: parsed.savedAt,
+    draft,
+  };
+}
+
+function isUploadRequestDraftCreator({
+  draft,
+  activeUserEmail,
+  activeUserId,
+}: {
+  draft: SavedUploadRequestDraft;
+  activeUserEmail: string;
+  activeUserId?: string;
+}) {
+  const emailMatches =
+    draft.createdByEmail.trim().toLowerCase() === activeUserEmail.trim().toLowerCase();
+  const idMatches =
+    Boolean(activeUserId) && draft.createdByUserId === activeUserId;
+
+  return emailMatches || idMatches;
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {

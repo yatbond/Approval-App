@@ -19,7 +19,17 @@ const template = {
       documentType: "Invoice",
       format: "pdf",
       required: true,
-      fields: [],
+      fields: [
+        {
+          name: "invoice_total",
+          label: "Total",
+          type: "currency",
+          required: true,
+          source: "ocr",
+          instructions: "Extract invoice total.",
+          documentId: "invoice-doc",
+        },
+      ],
     },
   ],
   languages: ["English"],
@@ -62,6 +72,63 @@ test("returns a missing required upload message before creating a task", () => {
   assert.equal(state.submissionMessage, "Missing required upload(s): Invoice.");
   assert.equal(state.tasks.length, 0);
   assert.equal(state.shouldClearUploadedAttachments, false);
+});
+
+test("returns a missing required extracted field message before creating a task", () => {
+  const attachment = {
+    id: "attachment-1",
+    fileName: "invoice.pdf",
+    documentId: "invoice-doc",
+    documentType: "Invoice",
+    format: "pdf",
+    uploadedBy: "derrick@example.com",
+    uploadedAt: "2026-06-21T02:00:00.000Z",
+  };
+
+  const state = getWorkspaceRequestSubmissionState({
+    selectedTemplate: template,
+    parseResult,
+    activeUser: actor,
+    fileName: "invoice.pdf",
+    editedFields: { Vendor: "Northstar Cloud Limited" },
+    uploadedAttachments: [attachment],
+    tasks: [],
+  });
+
+  assert.equal(state.didSubmit, false);
+  assert.equal(state.submissionMessage, "Missing required extracted field(s): Total.");
+  assert.equal(state.tasks.length, 0);
+});
+
+test("warns before submitting low confidence extracted values", () => {
+  const attachment = {
+    id: "attachment-1",
+    fileName: "invoice.pdf",
+    documentId: "invoice-doc",
+    documentType: "Invoice",
+    format: "pdf",
+    uploadedBy: "derrick@example.com",
+    uploadedAt: "2026-06-21T02:00:00.000Z",
+  };
+
+  const state = getWorkspaceRequestSubmissionState({
+    selectedTemplate: template,
+    parseResult: {
+      fields: parseResult.fields,
+      confidence: { Total: "low" },
+    },
+    activeUser: actor,
+    fileName: "invoice.pdf",
+    editedFields: parseResult.fields,
+    uploadedAttachments: [attachment],
+    tasks: [],
+  });
+
+  assert.equal(state.didSubmit, false);
+  assert.equal(
+    state.submissionMessage,
+    "Review low confidence field(s) before submitting: Total.",
+  );
 });
 
 test("creates a task, selects it, clears uploads, and returns a submission message", () => {

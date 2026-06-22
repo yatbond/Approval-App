@@ -11,6 +11,7 @@ import {
 
 type ParseResultLike = {
   fields?: Record<string, string>;
+  confidence?: Record<string, string>;
 };
 
 export function getWorkspaceRequestSubmissionState({
@@ -80,6 +81,34 @@ export function getWorkspaceRequestSubmissionState({
     };
   }
 
+  const missingRequiredFields = getMissingRequiredExtractedFields({
+    selectedTemplate,
+    editedFields,
+  });
+  if (missingRequiredFields.length) {
+    return {
+      didSubmit: false,
+      tasks,
+      selectedTaskId: "",
+      shouldClearUploadedAttachments: false,
+      submissionMessage: `Missing required extracted field(s): ${missingRequiredFields.join(", ")}.`,
+    };
+  }
+
+  const lowConfidenceFields = getLowConfidenceExtractedFields({
+    parseResult,
+    editedFields,
+  });
+  if (lowConfidenceFields.length) {
+    return {
+      didSubmit: false,
+      tasks,
+      selectedTaskId: "",
+      shouldClearUploadedAttachments: false,
+      submissionMessage: `Review low confidence field(s) before submitting: ${lowConfidenceFields.join(", ")}.`,
+    };
+  }
+
   const task = createApprovalTaskFromTemplate({
     id: taskId,
     now,
@@ -98,4 +127,37 @@ export function getWorkspaceRequestSubmissionState({
     shouldClearUploadedAttachments: true,
     submissionMessage: `${task.id} submitted and routed to ${task.currentOwner}. It is now visible in Tracking.`,
   };
+}
+
+function getMissingRequiredExtractedFields({
+  selectedTemplate,
+  editedFields,
+}: {
+  selectedTemplate: WorkflowTemplate;
+  editedFields: Record<string, string>;
+}) {
+  const requiredFields = [
+    ...selectedTemplate.fields,
+    ...selectedTemplate.documents.flatMap((document) => document.fields),
+  ].filter((field) => field.required);
+
+  return requiredFields
+    .filter((field) => {
+      const labelValue = editedFields[field.label]?.trim();
+      const nameValue = editedFields[field.name]?.trim();
+      return !labelValue && !nameValue;
+    })
+    .map((field) => field.label);
+}
+
+function getLowConfidenceExtractedFields({
+  parseResult,
+  editedFields,
+}: {
+  parseResult: ParseResultLike;
+  editedFields: Record<string, string>;
+}) {
+  return Object.entries(parseResult.confidence || {})
+    .filter(([field, confidence]) => confidence === "low" && editedFields[field]?.trim())
+    .map(([field]) => field);
 }

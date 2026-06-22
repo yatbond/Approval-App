@@ -31,12 +31,23 @@ import {
   buildExtractionTrainingExamples,
 } from "@/lib/template-recognition-state";
 import {
+  buildSavedUploadRequestDraft,
   buildUploadRequestDraft,
   clearUploadRequestDraft,
   createEmptyUploadRequestDraftStatus,
+  getCreatorVisibleUploadRequestDrafts,
+  getNextSavedUploadRequestDrafts,
   parseUploadRequestDraft,
+  parseUploadRequestDraftList,
+  serializeUploadRequestDraftList,
   serializeUploadRequestDraft,
+  type SavedUploadRequestDraft,
 } from "@/lib/upload-request-draft-state";
+import {
+  deleteSavedUploadRequestDraft,
+  loadSavedUploadRequestDrafts,
+  saveSavedUploadRequestDraft,
+} from "@/lib/upload-request-draft-api";
 import type {
   HighlightFieldGroup,
 } from "@/lib/upload-view-state";
@@ -88,6 +99,7 @@ import type {
 type Tab = WorkspaceTab;
 
 const uploadRequestDraftStoragePrefix = "approval-upload-request-draft-v1";
+const uploadRequestDraftListStoragePrefix = "approval-upload-request-drafts-v1";
 
 export type ApprovalWorkspaceProps = {
   initialTab: Tab;
@@ -175,6 +187,10 @@ function ApprovalWorkspaceBody({
   const [uploadHighlightBoxCounter, setUploadHighlightBoxCounter] = useState(1);
   const [uploadDraftRestoreToken, setUploadDraftRestoreToken] = useState("");
   const [uploadDraftResetToken, setUploadDraftResetToken] = useState(0);
+  const [savedUploadDrafts, setSavedUploadDrafts] = useState<SavedUploadRequestDraft[]>([]);
+  const [selectedUploadDraftId, setSelectedUploadDraftId] = useState("");
+  const [uploadDraftTitle, setUploadDraftTitle] = useState("");
+  const [uploadDraftMessage, setUploadDraftMessage] = useState("");
   const uploadDraftStorageReady = useRef(false);
   const selectedTemplate = useMemo(
     () =>
@@ -186,22 +202,24 @@ function ApprovalWorkspaceBody({
     () => `${uploadRequestDraftStoragePrefix}:${activeUser.email}`,
     [activeUser.email],
   );
-  const uploadDraftStatus = useMemo(
+  const uploadRequestDraftListStorageKey = useMemo(
+    () => `${uploadRequestDraftListStoragePrefix}:${activeUser.email}`,
+    [activeUser.email],
+  );
+  const currentUploadRequestDraft = useMemo(
     () =>
-      createEmptyUploadRequestDraftStatus(
-        buildUploadRequestDraft({
-          selectedTemplateId: selectedTemplate?.id || selectedTemplateId,
-          fileName,
-          parseResult,
-          editedFields,
-          uploadedAttachments,
-          parsedDocumentId,
-          highlightGroups: uploadHighlightGroups,
-          activeHighlightGroupId: uploadActiveHighlightGroupId,
-          highlightBoxCounter: uploadHighlightBoxCounter,
-          savedAt: "",
-        }),
-      ),
+      buildUploadRequestDraft({
+        selectedTemplateId: selectedTemplate?.id || selectedTemplateId,
+        fileName,
+        parseResult,
+        editedFields,
+        uploadedAttachments,
+        parsedDocumentId,
+        highlightGroups: uploadHighlightGroups,
+        activeHighlightGroupId: uploadActiveHighlightGroupId,
+        highlightBoxCounter: uploadHighlightBoxCounter,
+        savedAt: "",
+      }),
     [
       editedFields,
       fileName,
@@ -214,6 +232,11 @@ function ApprovalWorkspaceBody({
       uploadHighlightGroups,
       uploadedAttachments,
     ],
+  );
+  const uploadDraftStatus = useMemo(
+    () =>
+      createEmptyUploadRequestDraftStatus(currentUploadRequestDraft),
+    [currentUploadRequestDraft],
   );
 
   const {
@@ -234,6 +257,26 @@ function ApprovalWorkspaceBody({
     [taskNotifications, workspaceSyncMode],
   );
 
+  const restoreUploadRequestDraft = useCallback(
+    (draft: ReturnType<typeof parseUploadRequestDraft>) => {
+      if (!draft) {
+        return;
+      }
+
+      setSelectedTemplateId(draft.selectedTemplateId);
+      setFileName(draft.fileName);
+      setParseResult(draft.parseResult);
+      setEditedFields(draft.editedFields);
+      setUploadedAttachments(draft.uploadedAttachments);
+      setParsedDocumentId(draft.parsedDocumentId);
+      setUploadHighlightGroups(draft.highlightGroups);
+      setUploadActiveHighlightGroupId(draft.activeHighlightGroupId);
+      setUploadHighlightBoxCounter(draft.highlightBoxCounter);
+      setUploadDraftRestoreToken(draft.savedAt);
+    },
+    [setSelectedTemplateId],
+  );
+
   useEffect(() => {
     let didCancel = false;
     const savedDraft = localStorage.getItem(uploadRequestDraftStorageKey);
@@ -244,28 +287,65 @@ function ApprovalWorkspaceBody({
         return;
       }
 
-      if (!parsedDraft) {
-        uploadDraftStorageReady.current = true;
-        return;
-      }
-
-      setSelectedTemplateId(parsedDraft.selectedTemplateId);
-      setFileName(parsedDraft.fileName);
-      setParseResult(parsedDraft.parseResult);
-      setEditedFields(parsedDraft.editedFields);
-      setUploadedAttachments(parsedDraft.uploadedAttachments);
-      setParsedDocumentId(parsedDraft.parsedDocumentId);
-      setUploadHighlightGroups(parsedDraft.highlightGroups);
-      setUploadActiveHighlightGroupId(parsedDraft.activeHighlightGroupId);
-      setUploadHighlightBoxCounter(parsedDraft.highlightBoxCounter);
-      setUploadDraftRestoreToken(parsedDraft.savedAt);
+      restoreUploadRequestDraft(parsedDraft);
       uploadDraftStorageReady.current = true;
     });
 
     return () => {
       didCancel = true;
     };
-  }, [uploadRequestDraftStorageKey, setSelectedTemplateId]);
+  }, [restoreUploadRequestDraft, uploadRequestDraftStorageKey]);
+
+  useEffect(() => {
+    let didCancel = false;
+    const localDrafts = getCreatorVisibleUploadRequestDrafts({
+      drafts: parseUploadRequestDraftList(
+        localStorage.getItem(uploadRequestDraftListStorageKey) || "[]",
+      ),
+      activeUserEmail: activeUser.email,
+      activeUserId: "",
+    });
+
+    queueMicrotask(() => {
+      if (!didCancel) {
+        setSavedUploadDrafts(localDrafts);
+      }
+    });
+
+    loadSavedUploadRequestDrafts()
+      .then((remoteDrafts) => {
+        if (didCancel) {
+          return;
+        }
+
+        const mergedById = new Map<string, SavedUploadRequestDraft>();
+        [...localDrafts, ...remoteDrafts].forEach((draft) => {
+          const current = mergedById.get(draft.id);
+          if (!current || draft.savedAt > current.savedAt) {
+            mergedById.set(draft.id, draft);
+          }
+        });
+        const merged = getCreatorVisibleUploadRequestDrafts({
+          drafts: Array.from(mergedById.values()),
+          activeUserEmail: activeUser.email,
+          activeUserId: "",
+        });
+        setSavedUploadDrafts(merged);
+        localStorage.setItem(
+          uploadRequestDraftListStorageKey,
+          serializeUploadRequestDraftList(merged),
+        );
+      })
+      .catch(() => {
+        if (!didCancel) {
+          setUploadDraftMessage("Using local saved drafts. Supabase draft sync is unavailable.");
+        }
+      });
+
+    return () => {
+      didCancel = true;
+    };
+  }, [activeUser.email, uploadRequestDraftListStorageKey]);
 
   useEffect(() => {
     if (!uploadDraftStorageReady.current) {
@@ -273,15 +353,8 @@ function ApprovalWorkspaceBody({
     }
 
     const nextDraft = buildUploadRequestDraft({
-      selectedTemplateId: selectedTemplate?.id || selectedTemplateId,
-      fileName,
-      parseResult,
-      editedFields,
-      uploadedAttachments,
-      parsedDocumentId,
-      highlightGroups: uploadHighlightGroups,
-      activeHighlightGroupId: uploadActiveHighlightGroupId,
-      highlightBoxCounter: uploadHighlightBoxCounter,
+      ...currentUploadRequestDraft,
+      savedAt: new Date().toISOString(),
     });
     const nextStatus = createEmptyUploadRequestDraftStatus(nextDraft);
 
@@ -299,8 +372,7 @@ function ApprovalWorkspaceBody({
     fileName,
     parseResult,
     parsedDocumentId,
-    selectedTemplate?.id,
-    selectedTemplateId,
+    currentUploadRequestDraft,
     uploadActiveHighlightGroupId,
     uploadDraftRestoreToken,
     uploadHighlightBoxCounter,
@@ -321,6 +393,8 @@ function ApprovalWorkspaceBody({
     setUploadActiveHighlightGroupId(cleared.activeHighlightGroupId);
     setUploadHighlightBoxCounter(cleared.highlightBoxCounter);
     setUploadDraftResetToken((value) => value + 1);
+    setSelectedUploadDraftId("");
+    setUploadDraftTitle("");
     localStorage.removeItem(uploadRequestDraftStorageKey);
   }
 
@@ -328,6 +402,107 @@ function ApprovalWorkspaceBody({
     resetUploadRequestDraftState();
     setParseError("");
     setSubmissionMessage("Request draft cleared.");
+  }
+
+  function persistSavedUploadDraftList(nextDrafts: SavedUploadRequestDraft[]) {
+    const visibleDrafts = getCreatorVisibleUploadRequestDrafts({
+      drafts: nextDrafts,
+      activeUserEmail: activeUser.email,
+      activeUserId: "",
+    });
+    setSavedUploadDrafts(visibleDrafts);
+    localStorage.setItem(
+      uploadRequestDraftListStorageKey,
+      serializeUploadRequestDraftList(visibleDrafts),
+    );
+    return visibleDrafts;
+  }
+
+  async function saveCurrentUploadRequestDraft() {
+    const nextStatus = createEmptyUploadRequestDraftStatus(currentUploadRequestDraft);
+    if (!nextStatus.hasDraft) {
+      setUploadDraftMessage("Upload a document or enter a field before saving a draft.");
+      return;
+    }
+
+    const savedDraft = buildSavedUploadRequestDraft({
+      draft: currentUploadRequestDraft,
+      id: selectedUploadDraftId || crypto.randomUUID(),
+      title: uploadDraftTitle,
+      createdByEmail: activeUser.email,
+      savedAt: new Date().toISOString(),
+    });
+    const nextDrafts = persistSavedUploadDraftList(
+      getNextSavedUploadRequestDrafts({
+        drafts: savedUploadDrafts,
+        action: "upsert",
+        draft: savedDraft,
+        activeUserEmail: activeUser.email,
+        activeUserId: "",
+      }),
+    );
+    setSelectedUploadDraftId(savedDraft.id);
+    setUploadDraftTitle(savedDraft.title);
+    setUploadDraftMessage(`Saved draft "${savedDraft.title}".`);
+
+    try {
+      const remoteDraft = await saveSavedUploadRequestDraft({ draft: savedDraft });
+      if (remoteDraft) {
+        persistSavedUploadDraftList(
+          getNextSavedUploadRequestDrafts({
+            drafts: nextDrafts,
+            action: "upsert",
+            draft: remoteDraft,
+            activeUserEmail: activeUser.email,
+            activeUserId: "",
+          }),
+        );
+      }
+    } catch (error) {
+      setUploadDraftMessage(
+        error instanceof Error
+          ? `Saved locally. Supabase draft sync failed: ${error.message}`
+          : "Saved locally. Supabase draft sync failed.",
+      );
+    }
+  }
+
+  function loadUploadRequestDraft(savedDraft: SavedUploadRequestDraft) {
+    restoreUploadRequestDraft(savedDraft.draft);
+    setSelectedUploadDraftId(savedDraft.id);
+    setUploadDraftTitle(savedDraft.title);
+    setUploadDraftMessage(`Loaded draft "${savedDraft.title}".`);
+  }
+
+  async function deleteUploadRequestDraft(draftId: string) {
+    const target = savedUploadDrafts.find((draft) => draft.id === draftId);
+    const nextDrafts = persistSavedUploadDraftList(
+      getNextSavedUploadRequestDrafts({
+        drafts: savedUploadDrafts,
+        action: "remove",
+        draftId,
+        activeUserEmail: activeUser.email,
+        activeUserId: "",
+      }),
+    );
+    if (selectedUploadDraftId === draftId) {
+      setSelectedUploadDraftId("");
+      setUploadDraftTitle("");
+    }
+    setUploadDraftMessage(
+      target ? `Deleted saved draft "${target.title}".` : "Deleted saved draft.",
+    );
+
+    try {
+      await deleteSavedUploadRequestDraft({ draftId });
+    } catch (error) {
+      setUploadDraftMessage(
+        error instanceof Error
+          ? `Deleted locally. Supabase draft delete failed: ${error.message}`
+          : "Deleted locally. Supabase draft delete failed.",
+      );
+      persistSavedUploadDraftList(nextDrafts);
+    }
   }
 
   const updateUploadHighlightDraft = useCallback(
@@ -595,6 +770,9 @@ function ApprovalWorkspaceBody({
     if (nextState.shouldClearUploadedAttachments) {
       resetUploadRequestDraftState();
     }
+    if (selectedUploadDraftId) {
+      void deleteUploadRequestDraft(selectedUploadDraftId);
+    }
     localStorage.removeItem(uploadRequestDraftStorageKey);
     void persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({
@@ -816,8 +994,16 @@ function ApprovalWorkspaceBody({
                 documentPreviewPages={documentPreviewPages}
                 onExtractHighlightedRegion={extractHighlightedRegion}
                 uploadedAttachments={uploadedAttachments}
-                uploadDraftStatus={uploadDraftStatus}
-                uploadDraftRestoreToken={uploadDraftRestoreToken}
+          uploadDraftStatus={uploadDraftStatus}
+          savedUploadDrafts={savedUploadDrafts}
+          selectedUploadDraftId={selectedUploadDraftId}
+          uploadDraftTitle={uploadDraftTitle}
+          setUploadDraftTitle={setUploadDraftTitle}
+          uploadDraftMessage={uploadDraftMessage}
+          onSaveRequestDraft={saveCurrentUploadRequestDraft}
+          onLoadRequestDraft={loadUploadRequestDraft}
+          onDeleteRequestDraft={deleteUploadRequestDraft}
+          uploadDraftRestoreToken={uploadDraftRestoreToken}
                 uploadDraftResetToken={uploadDraftResetToken}
                 restoredHighlightGroups={uploadHighlightGroups}
                 restoredActiveHighlightGroupId={uploadActiveHighlightGroupId}

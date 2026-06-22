@@ -9,6 +9,7 @@ import {
   createHighlightFieldGroup,
   createHighlightValueBox,
   createHighlightedExtractionField,
+  getExtractionFieldSourceLabel,
   mergeHighlightedFieldValue,
   updateHighlightFieldGroupLabel,
   updateHighlightValueBox,
@@ -270,5 +271,38 @@ test("merges many highlighted values under one field label", () => {
       Vendor: "Existing vendor",
       "Payment milestones": "100,000\n250,000",
     },
+  );
+});
+
+test("labels extraction field source for review", () => {
+  assert.equal(
+    getExtractionFieldSourceLabel({
+      label: "Amount",
+      parseFields: { Amount: "500,000.00" },
+      highlightGroups: [],
+    }),
+    "AI/OCR",
+  );
+  assert.equal(
+    getExtractionFieldSourceLabel({
+      label: "Payment schedule",
+      parseFields: {},
+      highlightGroups: [
+        {
+          id: "highlight-field-1",
+          fieldLabel: "Payment schedule",
+          boxes: [],
+        },
+      ],
+    }),
+    "Boxed field",
+  );
+  assert.equal(
+    getExtractionFieldSourceLabel({
+      label: "Manual note",
+      parseFields: {},
+      highlightGroups: [],
+    }),
+    "Manual",
   );
 });

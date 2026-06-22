@@ -1649,3 +1649,16 @@ Verification:
 - Autoreview caught a React Strict Mode edge case where a queued restore could be cancelled after the token was marked; moved token marking into the queued restore/reset execution path.
 - Added a regression helper test for one-time highlight restore decisions.
 - Verification: red focused test failed for the missing restore guard; after implementation `npm test -- src/lib/upload-request-draft-state.test.mjs` passed as part of the full lib glob, 286/286; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning after successful route generation.
+
+## Step 70 - Creator-Owned Saved Upload Drafts
+- Added explicit saved upload request drafts on top of local autosave, so users can name, save, reload, and delete interrupted request work from the Upload page.
+- Added `src/lib/upload-request-draft-state.ts` helpers for creator-owned saved draft construction, serialization, parsing, filtering, upsert, and removal. Client-side saved draft lists are filtered by the active creator email/id.
+- Added `src/lib/upload-request-draft-api.ts` and `/api/upload-drafts` for loading, saving, and deleting signed-in users' saved upload drafts. The API stamps the creator from Supabase auth and does not trust client-provided owner identity.
+- Added migration `20260623073000_create_upload_request_drafts.sql` with `upload_request_drafts`, RLS enabled, and select/insert/update/delete policies scoped to `owner_user_id = auth.uid()`.
+- Strengthened request submission validation so required extracted fields must be present and low-confidence extracted values must be reviewed before task creation.
+- Cleaned the Upload extraction review by adding field source labels for AI/OCR, boxed fields, and manual values, plus dismissible parser suggestions.
+- Updated `PRD/approval-workflow-platform-prd.md` with saved request drafts, creator-only access, draft API routes, validation behavior, and upload draft RLS.
+- Verification: red focused tests failed before the saved-draft helpers/API, RLS migration assertion, submission validation, and source-label helper existed; after implementation `npm test` passed 298/298, `npx tsc --noEmit` passed, `npm run lint` passed, and `npm run build` passed with the known non-fatal webpack cache warning after successful route generation.
+- Live browser smoke: authenticated Upload page at `http://localhost:3000/?tab=upload` loaded with the Upload heading and no browser console errors.
+- Live Supabase migration status: not applied from this shell. The Supabase CLI is not installed on PATH, no database URL/psql connection is available in `.env`, and the available Supabase connector in this session only exposed Edge Function deployment, not SQL execution.
+- Review: local code review found no blocker in the saved draft creator boundary. Existing route response-cookie propagation uses the same pattern as other API routes and was left out of scope for this commit.
