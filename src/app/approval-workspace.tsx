@@ -363,12 +363,14 @@ function ApprovalWorkspaceBody({
         ...current,
         ...(payload.fields || {}),
       }));
+      return payload;
     } catch (error) {
       setParseError(
         error instanceof Error
           ? error.message
           : "Unable to extract highlighted region.",
       );
+      throw error;
     } finally {
       setIsParsing(false);
     }

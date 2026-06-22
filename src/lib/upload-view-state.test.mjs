@@ -2,10 +2,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getUploadViewState } from "./upload-view-state.ts";
 import {
+  addBoxToHighlightFieldGroup,
   buildAdHocExtractionFields,
   createAdHocFieldDraft,
   createFieldDraftFromSuggestion,
+  createHighlightFieldGroup,
+  createHighlightValueBox,
   createHighlightedExtractionField,
+  mergeHighlightedFieldValue,
+  updateHighlightFieldGroupLabel,
+  updateHighlightValueBox,
 } from "./upload-view-state.ts";
 
 const invoiceDocument = {
@@ -196,4 +202,73 @@ test("creates an extraction field from a highlighted document region label", () 
     source: "ai",
     instructions: "Extract Doctor Name from the highlighted document region.",
   });
+});
+
+test("creates highlight field groups with multiple value boxes", () => {
+  const group = createHighlightFieldGroup(2);
+  const firstBox = createHighlightValueBox(1, {
+    pageId: "pdf-page-1",
+    pageNumber: 1,
+    rect: { x: 0.1, y: 0.2, width: 0.3, height: 0.04 },
+  });
+  const secondBox = createHighlightValueBox(2, {
+    pageId: "pdf-page-2",
+    pageNumber: 2,
+    rect: { x: 0.2, y: 0.3, width: 0.4, height: 0.05 },
+  });
+
+  const renamed = updateHighlightFieldGroupLabel([group], group.id, "Contract sum");
+  const withBoxes = addBoxToHighlightFieldGroup(
+    addBoxToHighlightFieldGroup(renamed, group.id, firstBox),
+    group.id,
+    secondBox,
+  );
+
+  assert.equal(withBoxes[0].fieldLabel, "Contract sum");
+  assert.deepEqual(withBoxes[0].boxes.map((box) => box.id), [
+    "highlight-value-box-1",
+    "highlight-value-box-2",
+  ]);
+});
+
+test("updates one highlighted value box without changing other boxes", () => {
+  const group = {
+    ...createHighlightFieldGroup(1),
+    fieldLabel: "Payment",
+    boxes: [
+      createHighlightValueBox(1, {
+        pageId: "pdf-page-1",
+        pageNumber: 1,
+        rect: { x: 0.1, y: 0.2, width: 0.3, height: 0.04 },
+      }),
+      createHighlightValueBox(2, {
+        pageId: "pdf-page-1",
+        pageNumber: 1,
+        rect: { x: 0.2, y: 0.4, width: 0.3, height: 0.04 },
+      }),
+    ],
+  };
+
+  const updated = updateHighlightValueBox([group], group.id, "highlight-value-box-2", {
+    value: "500,000.00",
+    status: "done",
+  });
+
+  assert.equal(updated[0].boxes[0].value, "");
+  assert.equal(updated[0].boxes[1].value, "500,000.00");
+  assert.equal(updated[0].boxes[1].status, "done");
+});
+
+test("merges many highlighted values under one field label", () => {
+  assert.deepEqual(
+    mergeHighlightedFieldValue(
+      { Vendor: "Existing vendor" },
+      "Payment milestones",
+      ["100,000", " ", "250,000"],
+    ),
+    {
+      Vendor: "Existing vendor",
+      "Payment milestones": "100,000\n250,000",
+    },
+  );
 });

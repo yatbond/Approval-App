@@ -1606,3 +1606,11 @@ Verification:
 - Split PDF rendering defaults so human preview renders up to 25 pages at 3x scale, while OCR remains bounded to 3 pages at 2x scale.
 - Filled preview canvases with a white background before rendering to avoid transparent/black compositing artifacts.
 - Verification: Poppler rendered `C:\Users\Derrick Pang\Desktop\S-003_IP-08 (Final Account) Signed 20250211 - Gleneagles.pdf` clearly, proving the source file was readable; a temporary browser probe initially reproduced PDF.js `JBig2 failed to initialize` warnings; after adding decoder assets the same probe rendered all 6 pages with no decoder warnings and a readable first-page screenshot, then the generated probe artifacts were removed; `npm test -- src/lib/pdf-page-images.test.mjs src/lib/document-preview.test.mjs` passed; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning after successful route generation.
+
+## Step 65 - Multi-Box Highlight Extraction
+- Root cause: the document preview only committed `highlightRect` on mouse-up, so no rectangle could be drawn during drag; highlighted extraction also modeled one field as one box, which could not represent one field with multiple value regions.
+- Added a tested active-selection helper so the preview draws the in-progress rectangle on every mouse move.
+- Added tested upload highlight group helpers for one field name with many value boxes, per-box extraction status, remove-box behavior, and multi-value merge into one editable field value.
+- Reworked the Upload preview highlight panel into `Highlight fields`: users can name a field, draw a rectangle, add it as a value box, add more boxes or more fields, and extract all boxes for a field into one multi-line data value.
+- Kept the parser API unchanged by sending each value box as a cropped image with the same field definition, then merging returned values on the client.
+- Verification: red tests failed for missing highlight group and active-selection helpers; after implementation `npm test -- src/lib/upload-view-state.test.mjs src/lib/document-preview.test.mjs` passed; `npx tsc --noEmit` passed; `npm run lint` passed; unauthenticated browser smoke redirected to `/login` with no console errors; `npm run build` passed with the known non-fatal webpack cache warning after successful route generation.

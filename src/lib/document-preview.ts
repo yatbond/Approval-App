@@ -88,6 +88,24 @@ export function normalizedRectToPercentStyle(rect: NormalizedRect) {
   };
 }
 
+export function getActiveSelectionRect({
+  committedRect,
+  selectionStart,
+  currentPoint,
+  bounds,
+}: {
+  committedRect: NormalizedRect | null;
+  selectionStart: Point | null;
+  currentPoint: Point | null;
+  bounds: { width: number; height: number } | null;
+}) {
+  if (selectionStart && currentPoint && bounds) {
+    return normalizeSelectionRect(selectionStart, currentPoint, bounds);
+  }
+
+  return committedRect;
+}
+
 export function buildPreviewImageStyle({
   contrast,
   brightness,

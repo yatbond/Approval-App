@@ -16,6 +16,7 @@ import {
   buildPreviewImageStyle,
   createEnhancedPreviewDataUrl,
   cropPreviewPageToFile,
+  getActiveSelectionRect,
   normalizedRectToPercentStyle,
   normalizeSelectionRect,
   type DocumentPreviewPage,
@@ -28,12 +29,20 @@ import {
   formatDocumentFormat,
 } from "@/lib/workflow-documents";
 import {
+  addBoxToHighlightFieldGroup,
   buildAdHocExtractionFields,
   createAdHocFieldDraft,
   createFieldDraftFromSuggestion,
+  createHighlightFieldGroup,
+  createHighlightValueBox,
   createHighlightedExtractionField,
   getUploadViewState,
+  mergeHighlightedFieldValue,
+  removeHighlightValueBox,
+  updateHighlightFieldGroupLabel,
+  updateHighlightValueBox,
   type AdHocFieldDraft,
+  type HighlightFieldGroup,
 } from "@/lib/upload-view-state";
 import type { ParsedWorkspaceFilePayload } from "@/lib/workspace-file-api";
 import type {
@@ -75,7 +84,7 @@ export function UploadView({
   onExtractHighlightedRegion: (
     file: File,
     field: WorkflowField,
-  ) => Promise<void>;
+  ) => Promise<ParsedWorkspaceFilePayload>;
   uploadedAttachments: ApprovalAttachment[];
   workflowTemplates: WorkflowTemplate[];
   selectedTemplateId: string;
@@ -88,8 +97,17 @@ export function UploadView({
   ]);
   const [selectedPreviewPageId, setSelectedPreviewPageId] = useState("");
   const [selectionStart, setSelectionStart] = useState<Point | null>(null);
+  const [selectionCurrent, setSelectionCurrent] = useState<{
+    point: Point;
+    bounds: { width: number; height: number };
+  } | null>(null);
   const [highlightRect, setHighlightRect] = useState<NormalizedRect | null>(null);
-  const [highlightFieldLabel, setHighlightFieldLabel] = useState("");
+  const [highlightGroups, setHighlightGroups] = useState<HighlightFieldGroup[]>([
+    createHighlightFieldGroup(1),
+  ]);
+  const [activeHighlightGroupId, setActiveHighlightGroupId] =
+    useState("highlight-field-1");
+  const [highlightBoxCounter, setHighlightBoxCounter] = useState(1);
   const [highlightError, setHighlightError] = useState("");
   const [previewContrast, setPreviewContrast] = useState(210);
   const [previewBrightness, setPreviewBrightness] = useState(88);
@@ -116,8 +134,17 @@ export function UploadView({
   const selectedPreviewPage =
     documentPreviewPages.find((page) => page.id === selectedPreviewPageId) ||
     documentPreviewPages[0];
-  const highlightStyle = highlightRect
-    ? normalizedRectToPercentStyle(highlightRect)
+  const activeHighlightGroup =
+    highlightGroups.find((group) => group.id === activeHighlightGroupId) ||
+    highlightGroups[0];
+  const activeSelectionRect = getActiveSelectionRect({
+    committedRect: highlightRect,
+    selectionStart,
+    currentPoint: selectionCurrent?.point || null,
+    bounds: selectionCurrent?.bounds || null,
+  });
+  const highlightStyle = activeSelectionRect
+    ? normalizedRectToPercentStyle(activeSelectionRect)
     : null;
   const previewImageStyle = buildPreviewImageStyle({
     contrast: previewContrast,
@@ -199,26 +226,110 @@ export function UploadView({
     };
   }
 
-  async function extractHighlightedField() {
-    if (!selectedPreviewPage || !highlightRect || !highlightFieldLabel.trim()) {
-      setHighlightError("Highlight an area and enter a field name first.");
+  function addHighlightFieldGroup() {
+    const nextGroup = createHighlightFieldGroup(highlightGroups.length + 1);
+    setHighlightGroups((groups) => [...groups, nextGroup]);
+    setActiveHighlightGroupId(nextGroup.id);
+    setHighlightRect(null);
+    setHighlightError("");
+  }
+
+  function addSelectedBoxToActiveGroup() {
+    if (!selectedPreviewPage || !highlightRect || !activeHighlightGroup) {
+      setHighlightError("Draw a value box first.");
       return;
     }
 
+    setHighlightGroups((groups) =>
+      addBoxToHighlightFieldGroup(
+        groups,
+        activeHighlightGroup.id,
+        createHighlightValueBox(highlightBoxCounter, {
+          pageId: selectedPreviewPage.id,
+          pageNumber: selectedPreviewPage.pageNumber,
+          rect: highlightRect,
+        }),
+      ),
+    );
+    setHighlightBoxCounter((value) => value + 1);
+    setHighlightRect(null);
     setHighlightError("");
+  }
+
+  async function extractHighlightGroup(group: HighlightFieldGroup) {
+    const fieldLabel = group.fieldLabel.trim();
+    if (!fieldLabel) {
+      setHighlightError("Enter a field name first.");
+      return;
+    }
+    if (!group.boxes.length) {
+      setHighlightError("Add at least one value box for this field.");
+      return;
+    }
+
     try {
       const field = createHighlightedExtractionField(
-        highlightFieldLabel,
+        fieldLabel,
         Object.keys(editedFields).length + 1,
       );
-      const cropFile = await cropPreviewPageToFile({
-        page: selectedPreviewPage,
-        rect: highlightRect,
-        fileName: `${field.name}.png`,
-      });
-      await onExtractHighlightedRegion(cropFile, field);
-      setHighlightFieldLabel("");
-      setHighlightRect(null);
+      const extractedValues: string[] = [];
+
+      for (const box of group.boxes) {
+        const page = documentPreviewPages.find((item) => item.id === box.pageId);
+        if (!page) {
+          setHighlightGroups((groups) =>
+            updateHighlightValueBox(groups, group.id, box.id, {
+              status: "error",
+              error: "Preview page is no longer available.",
+            }),
+          );
+          continue;
+        }
+
+        setHighlightGroups((groups) =>
+          updateHighlightValueBox(groups, group.id, box.id, {
+            status: "extracting",
+            error: "",
+          }),
+        );
+        const cropFile = await cropPreviewPageToFile({
+          page,
+          rect: box.rect,
+          fileName: `${field.name}-${box.id}.png`,
+        });
+        const payload = await onExtractHighlightedRegion(cropFile, field);
+        const payloadFields = payload.fields || {};
+        const extractedValue =
+          payloadFields[field.label] ||
+          payloadFields[field.name] ||
+          Object.values(payloadFields)[0] ||
+          "";
+        const confidence =
+          payload.confidence?.[field.label] ||
+          payload.confidence?.[field.name] ||
+          Object.values(payload.confidence || {})[0];
+        const evidence =
+          payload.evidence?.[field.label] ||
+          payload.evidence?.[field.name] ||
+          Object.values(payload.evidence || {})[0] ||
+          "";
+
+        extractedValues.push(extractedValue);
+        setHighlightGroups((groups) =>
+          updateHighlightValueBox(groups, group.id, box.id, {
+            value: extractedValue,
+            confidence,
+            evidence,
+            status: "done",
+            error: "",
+          }),
+        );
+      }
+
+      setEditedFields(
+        mergeHighlightedFieldValue(editedFields, fieldLabel, extractedValues),
+      );
+      setHighlightError("");
     } catch (error) {
       setHighlightError(
         error instanceof Error
@@ -472,6 +583,8 @@ export function UploadView({
                     onChange={(event) => {
                       setSelectedPreviewPageId(event.target.value);
                       setHighlightRect(null);
+                      setSelectionStart(null);
+                      setSelectionCurrent(null);
                     }}
                     className="h-9 rounded-md border border-white/10 bg-[#101214] px-3 text-xs outline-none focus:border-emerald-400/60"
                   >
@@ -569,6 +682,21 @@ export function UploadView({
                   onMouseDown={(event) => {
                     const point = pointFromPreviewEvent(event);
                     setSelectionStart({ x: point.x, y: point.y });
+                    setSelectionCurrent({
+                      point: { x: point.x, y: point.y },
+                      bounds: point.bounds,
+                    });
+                  }}
+                  onMouseMove={(event) => {
+                    if (!selectionStart) {
+                      return;
+                    }
+
+                    const point = pointFromPreviewEvent(event);
+                    setSelectionCurrent({
+                      point: { x: point.x, y: point.y },
+                      bounds: point.bounds,
+                    });
                   }}
                   onMouseUp={(event) => {
                     if (!selectionStart) {
@@ -581,8 +709,12 @@ export function UploadView({
                       setHighlightRect(rect);
                     }
                     setSelectionStart(null);
+                    setSelectionCurrent(null);
                   }}
-                  onMouseLeave={() => setSelectionStart(null)}
+                  onMouseLeave={() => {
+                    setSelectionStart(null);
+                    setSelectionCurrent(null);
+                  }}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -592,6 +724,25 @@ export function UploadView({
                     className="block select-none"
                     style={readablePreviewImageStyle}
                   />
+                  {highlightGroups.flatMap((group) =>
+                    group.boxes
+                      .filter((box) => box.pageId === selectedPreviewPage.id)
+                      .map((box, index) => (
+                        <div
+                          key={box.id}
+                          className={`pointer-events-none absolute border-2 ${
+                            group.id === activeHighlightGroup?.id
+                              ? "border-emerald-300 bg-emerald-300/15"
+                              : "border-sky-300 bg-sky-300/10"
+                          }`}
+                          style={normalizedRectToPercentStyle(box.rect)}
+                        >
+                          <span className="absolute -left-px -top-6 rounded-sm bg-black/80 px-1.5 py-0.5 text-[10px] text-white">
+                            {group.fieldLabel.trim() || `Field ${index + 1}`}
+                          </span>
+                        </div>
+                      )),
+                  )}
                   {highlightStyle && (
                     <div
                       className="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-300/20"
@@ -601,26 +752,171 @@ export function UploadView({
                 </div>
               </div>
 
-              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-                <input
-                  value={highlightFieldLabel}
-                  onChange={(event) => setHighlightFieldLabel(event.target.value)}
-                  placeholder="Highlighted field name"
-                  className="h-10 rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition focus:border-emerald-400/60"
-                />
-                <button
-                  type="button"
-                  onClick={extractHighlightedField}
-                  disabled={isParsing}
-                  className="flex h-10 items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isParsing ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <ImageIcon size={16} />
-                  )}
-                  Extract highlight
-                </button>
+              <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-200">
+                      Highlight fields
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      One field can contain multiple value boxes from one or more pages.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={addSelectedBoxToActiveGroup}
+                      className="flex h-9 items-center justify-center gap-2 rounded-md border border-sky-500/40 bg-sky-500/10 px-3 text-xs font-medium text-sky-100 transition hover:bg-sky-500/20"
+                    >
+                      <Plus size={14} />
+                      Add selected box
+                    </button>
+                    <button
+                      type="button"
+                      onClick={addHighlightFieldGroup}
+                      className="flex h-9 items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-medium text-emerald-100 transition hover:bg-emerald-500/20"
+                    >
+                      <Plus size={14} />
+                      Add field
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 space-y-3">
+                  {highlightGroups.map((group, groupIndex) => {
+                    const fieldLabel = group.fieldLabel.trim();
+                    const groupedValue =
+                      (fieldLabel ? editedFields[fieldLabel] : "") ||
+                      group.boxes
+                        .map((box) => box.value)
+                        .filter(Boolean)
+                        .join("\n");
+
+                    return (
+                      <div
+                        key={group.id}
+                        className={`rounded-md border p-3 ${
+                          group.id === activeHighlightGroup?.id
+                            ? "border-emerald-400/50 bg-emerald-400/5"
+                            : "border-white/10 bg-[#0d1012]"
+                        }`}
+                      >
+                        <div className="grid gap-2 lg:grid-cols-[1fr_1.2fr_auto]">
+                          <label className="block">
+                            <span className="mb-1 block text-xs text-neutral-400">
+                              Field name
+                            </span>
+                            <input
+                              value={group.fieldLabel}
+                              onFocus={() => setActiveHighlightGroupId(group.id)}
+                              onChange={(event) => {
+                                setHighlightGroups((groups) =>
+                                  updateHighlightFieldGroupLabel(
+                                    groups,
+                                    group.id,
+                                    event.target.value,
+                                  ),
+                                );
+                              }}
+                              placeholder={`Field ${groupIndex + 1}, e.g. variation order`}
+                              className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition focus:border-emerald-400/60"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="mb-1 block text-xs text-neutral-400">
+                              Data value(s)
+                            </span>
+                            <textarea
+                              value={groupedValue}
+                              onFocus={() => setActiveHighlightGroupId(group.id)}
+                              onChange={(event) => {
+                                if (!fieldLabel) {
+                                  return;
+                                }
+                                setEditedFields({
+                                  ...editedFields,
+                                  [fieldLabel]: event.target.value,
+                                });
+                              }}
+                              placeholder="Extracted values appear here, one per line"
+                              rows={Math.max(2, Math.min(5, group.boxes.length || 2))}
+                              className="min-h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-sm outline-none transition focus:border-emerald-400/60"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveHighlightGroupId(group.id);
+                              void extractHighlightGroup(group);
+                            }}
+                            disabled={isParsing}
+                            className="flex h-10 self-end items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-medium text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isParsing ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <ImageIcon size={14} />
+                            )}
+                            Extract field
+                          </button>
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          {group.boxes.length === 0 ? (
+                            <p className="rounded-md border border-dashed border-white/10 px-3 py-2 text-xs text-neutral-500">
+                              Draw a rectangle on the preview, then add it as a value box.
+                            </p>
+                          ) : (
+                            group.boxes.map((box, boxIndex) => (
+                              <div
+                                key={box.id}
+                                className="grid gap-2 rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-300 sm:grid-cols-[1fr_auto]"
+                              >
+                                <div className="min-w-0">
+                                  <p className="font-medium text-neutral-200">
+                                    Box {boxIndex + 1} - Page {box.pageNumber} -{" "}
+                                    {box.status}
+                                  </p>
+                                  {box.value && (
+                                    <p className="mt-1 break-words text-neutral-400">
+                                      {box.value}
+                                    </p>
+                                  )}
+                                  {box.evidence && (
+                                    <p className="mt-1 break-words text-neutral-500">
+                                      Evidence: {box.evidence}
+                                    </p>
+                                  )}
+                                  {box.error && (
+                                    <p className="mt-1 break-words text-rose-100">
+                                      {box.error}
+                                    </p>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setHighlightGroups((groups) =>
+                                      removeHighlightValueBox(
+                                        groups,
+                                        group.id,
+                                        box.id,
+                                      ),
+                                    )
+                                  }
+                                  className="flex h-8 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 text-rose-100 transition hover:bg-rose-500/20"
+                                >
+                                  <X size={13} />
+                                  Remove
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
               {highlightError && (
                 <p className="mt-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">

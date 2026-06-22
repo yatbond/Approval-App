@@ -4,6 +4,7 @@ import {
   buildPreviewImageStyle,
   buildPreviewPagesFromPdfImages,
   createPreviewPageFromDataUrl,
+  getActiveSelectionRect,
   enhancePreviewPixels,
   normalizedRectToPercentStyle,
   normalizeSelectionRect,
@@ -68,6 +69,23 @@ test("formats normalized selection as percentage CSS", () => {
       top: "10%",
       width: "50%",
       height: "20%",
+    },
+  );
+});
+
+test("uses the in-progress drag rectangle before the committed highlight", () => {
+  assert.deepEqual(
+    getActiveSelectionRect({
+      committedRect: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+      selectionStart: { x: 10, y: 20 },
+      currentPoint: { x: 70, y: 80 },
+      bounds: { width: 100, height: 200 },
+    }),
+    {
+      x: 0.1,
+      y: 0.1,
+      width: 0.6,
+      height: 0.3,
     },
   );
 });
