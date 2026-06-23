@@ -95,6 +95,7 @@ import { deactivateRemoteWorkspaceAdminRecord } from "@/lib/workspace-sync";
 import type {
   ApprovalAction,
   ApprovalAttachment,
+  ApprovalTask,
   BusinessUnit,
   WorkflowTemplate,
   WorkflowDocumentRequirement,
@@ -187,6 +188,7 @@ function ApprovalWorkspaceBody({
   const [parseError, setParseError] = useState("");
   const [submissionMessage, setSubmissionMessage] = useState("");
   const [actionError, setActionError] = useState("");
+  const [emailDeliveryMessage, setEmailDeliveryMessage] = useState("");
   const [adminRecordError, setAdminRecordError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [uploadedAttachments, setUploadedAttachments] = useState<ApprovalAttachment[]>([]);
@@ -671,6 +673,10 @@ function ApprovalWorkspaceBody({
     }
 
     setTasks(nextState.tasks);
+    const changedTask = nextState.tasks.find((task) => task.id === selectedTask.id);
+    if (changedTask) {
+      void sendWorkflowEmailNotifications(changedTask);
+    }
     void persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
     );
@@ -726,6 +732,10 @@ function ApprovalWorkspaceBody({
     }
 
     setTasks(nextState.tasks);
+    const changedTask = nextState.tasks.find((task) => task.id === taskId);
+    if (changedTask) {
+      void sendWorkflowEmailNotifications(changedTask);
+    }
     void persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
     );
@@ -897,6 +907,12 @@ function ApprovalWorkspaceBody({
         : templates;
 
     setTasks(nextState.tasks);
+    const submittedTask = nextState.tasks.find(
+      (task) => task.id === nextState.selectedTaskId,
+    );
+    if (submittedTask) {
+      void sendWorkflowEmailNotifications(submittedTask);
+    }
     if (nextTemplates !== templates) {
       setTemplates(nextTemplates);
     }
@@ -921,6 +937,42 @@ function ApprovalWorkspaceBody({
         syncReason: syncResult.mode === "local" ? syncResult.reason : undefined,
       }),
     );
+  }
+
+  async function sendWorkflowEmailNotifications(task: ApprovalTask) {
+    try {
+      const response = await fetch("/api/email/task-notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task }),
+      });
+      const result = await response.json();
+      setEmailDeliveryMessage(formatEmailDeliveryMessage(result));
+    } catch (error) {
+      setEmailDeliveryMessage(
+        error instanceof Error
+          ? `Email delivery failed: ${error.message}`
+          : "Email delivery failed.",
+      );
+    }
+  }
+
+  async function sendTestEmail(to: string) {
+    try {
+      const response = await fetch("/api/email/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to }),
+      });
+      const result = await response.json();
+      setEmailDeliveryMessage(formatEmailDeliveryMessage(result));
+    } catch (error) {
+      setEmailDeliveryMessage(
+        error instanceof Error
+          ? `Email test failed: ${error.message}`
+          : "Email test failed.",
+      );
+    }
   }
 
   function createTemplateRecord(template: WorkflowTemplate) {
@@ -1213,8 +1265,35 @@ function ApprovalWorkspaceBody({
                 roleAssignments={effectiveRoleAssignments}
                 setRoleAssignments={updateRoleAssignmentRecords}
                 adminAuditEvents={adminAuditEvents}
+                activeUserEmail={activeUser.email}
+                emailDeliveryMessage={emailDeliveryMessage}
+                onSendTestEmail={sendTestEmail}
               />
             )}
     </WorkspaceShell>
   );
+}
+
+function formatEmailDeliveryMessage(result: {
+  mode?: string;
+  attempted?: number;
+  sent?: number;
+  skipped?: number;
+  failures?: Array<{ message?: string }>;
+  error?: string;
+}) {
+  if (result.error) {
+    return `Email failed: ${result.error}`;
+  }
+
+  const attempted = result.attempted || 0;
+  const sent = result.sent || 0;
+  const skipped = result.skipped || 0;
+  const failureCount = result.failures?.length || 0;
+  const mode = result.mode || "unknown";
+  const suffix = failureCount
+    ? ` ${failureCount} failed: ${result.failures?.[0]?.message || "Unknown error"}`
+    : "";
+
+  return `Email ${mode}: ${sent} sent, ${skipped} skipped, ${attempted} attempted.${suffix}`;
 }

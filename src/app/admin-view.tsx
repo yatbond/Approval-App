@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, Check, Plus, X } from "lucide-react";
+import { CalendarClock, Check, Mail, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import {
@@ -43,6 +43,9 @@ export function AdminView({
   roleAssignments,
   setRoleAssignments,
   adminAuditEvents,
+  activeUserEmail,
+  emailDeliveryMessage,
+  onSendTestEmail,
 }: {
   businessDirectory: BusinessUnit[];
   adminRecordError?: string;
@@ -60,6 +63,9 @@ export function AdminView({
     updater: (items: UserRoleAssignment[]) => UserRoleAssignment[],
   ) => void;
   adminAuditEvents: AdminAuditEvent[];
+  activeUserEmail: string;
+  emailDeliveryMessage: string;
+  onSendTestEmail: (to: string) => Promise<void>;
 }) {
   const initialSelection = getAdminBusinessSelectionState({
     businessDirectory,
@@ -78,6 +84,8 @@ export function AdminView({
     initialSelection.businessNameDraft,
   );
   const [newDepartmentName, setNewDepartmentName] = useState("");
+  const [testEmail, setTestEmail] = useState(activeUserEmail);
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
 
   function selectBusiness(business: BusinessUnit) {
     setSelectedBusinessId(business.id);
@@ -411,6 +419,41 @@ export function AdminView({
           <p className="mt-1 text-sm text-neutral-400">
             {legacyDepartments.length} existing department label(s) are still available to older mock data.
           </p>
+        </div>
+        <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+          <h2 className="font-semibold">Live email</h2>
+          <p className="mt-1 text-sm text-neutral-400">
+            Send a test email before routing workflow tasks to real inboxes.
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+            <input
+              value={testEmail}
+              onChange={(event) => setTestEmail(event.target.value)}
+              placeholder="recipient@example.com"
+              className="h-10 rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+            />
+            <button
+              type="button"
+              disabled={isSendingTestEmail || !testEmail.trim()}
+              onClick={async () => {
+                setIsSendingTestEmail(true);
+                try {
+                  await onSendTestEmail(testEmail);
+                } finally {
+                  setIsSendingTestEmail(false);
+                }
+              }}
+              className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <Mail size={16} />
+              {isSendingTestEmail ? "Sending" : "Send test"}
+            </button>
+          </div>
+          {emailDeliveryMessage ? (
+            <p className="mt-3 break-words rounded-md border border-white/10 bg-[#121518] p-3 text-xs text-neutral-300">
+              {emailDeliveryMessage}
+            </p>
+          ) : null}
         </div>
         <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
           <h2 className="font-semibold">In-app notifications</h2>
