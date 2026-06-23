@@ -1702,3 +1702,13 @@ Verification:
 - Supabase advisors completed with existing warnings for leaked-password protection and multiple permissive `workflow_template_versions` policies; no new storage-policy blocker was reported.
 - Verification: focused tests passed 30/30; full `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/*.test.mjs` passed 308/308; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed; unauthenticated live route smoke for `http://localhost:3000/?tab=drafts` returned `307 /login`; `npm run e2e:drafts` passed the Drafts auth-gate smoke.
 - Local autoreview: no blocker found. Residual gap: authenticated Drafts E2E was not run because no test credentials were provided to the script environment.
+
+## Step 75 - Supabase Migration History Cleanup
+- Repaired the missing local Git index with `git read-tree HEAD` after Git reported every file as deleted/untracked; no working files were overwritten.
+- Audited `npx supabase migration list --linked`; local files were missing for older remote history entries, and six local migrations were absent from remote history.
+- Preserved the old remote history locally by copying the three root SQL files into `supabase/migrations` and adding comment-only placeholder migrations for older remote-only versions whose original SQL is no longer in this repository snapshot.
+- Verified the six local-only migrations were already reflected in the live database through policy/table checks, then marked them as applied with `npx supabase migration repair --linked --status applied`.
+- `npx supabase db push --linked --dry-run` now reports `Remote database is up to date.`
+- `npx supabase migration list --linked` now shows every local version matched to the same remote version.
+- `npx supabase db advisors --linked --output json` still reports only the existing leaked-password-protection warning and multiple permissive `workflow_template_versions` policy warnings.
+- Note: `supabase db dump --linked` could not create a schema dump because Docker Desktop is unavailable on this machine; the zero-byte failed dump artifact was removed.
