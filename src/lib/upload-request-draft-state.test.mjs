@@ -8,6 +8,7 @@ import {
   getCreatorVisibleUploadRequestDrafts,
   getNextSavedUploadRequestDrafts,
   getSavedUploadRequestDraftAccess,
+  getUploadDraftResumeItems,
   getUploadWorkInProgressItems,
   parseUploadRequestDraft,
   parseUploadRequestDraftList,
@@ -457,6 +458,74 @@ test("builds work-in-progress items from current autosave and saved drafts", () 
         title: "Named saved draft",
         detail: "1 attachment(s), 1 field(s)",
         type: "saved",
+      },
+    ],
+  );
+});
+
+test("builds resume items with template names for current and saved drafts", () => {
+  const currentDraft = buildUploadRequestDraft({
+    selectedTemplateId: "template-finance",
+    fileName: "current.pdf",
+    parseResult,
+    editedFields: { Amount: "500,000.00" },
+    uploadedAttachments: [attachment],
+    parsedDocumentId: "invoice-doc",
+    highlightGroups,
+    activeHighlightGroupId: "highlight-field-1",
+    highlightBoxCounter: 2,
+    savedAt: "2026-06-23T00:01:00.000Z",
+  });
+  const savedDraft = buildSavedUploadRequestDraft({
+    draft: buildUploadRequestDraft({
+      selectedTemplateId: "template-hr",
+      fileName: "leave.pdf",
+      parseResult,
+      editedFields: { Date: "2026-06-23" },
+      uploadedAttachments: [],
+      parsedDocumentId: "doctor-slip",
+      highlightGroups,
+      activeHighlightGroupId: "highlight-field-1",
+      highlightBoxCounter: 2,
+      savedAt: "2026-06-23T00:03:00.000Z",
+    }),
+    id: "saved-hr-draft",
+    title: "HR request",
+    createdByEmail: "dpang@chunwo.com",
+    savedAt: "2026-06-23T00:04:00.000Z",
+  });
+
+  assert.deepEqual(
+    getUploadDraftResumeItems({
+      currentDraft,
+      currentDraftStatus: {
+        hasDraft: true,
+        label: "Autosaved 1 attachment, 1 field",
+      },
+      savedDrafts: [savedDraft],
+      templates: [
+        { id: "template-finance", name: "Finance invoice approval" },
+        { id: "template-hr", name: "HR annual leave" },
+      ],
+    }),
+    [
+      {
+        id: "current-autosave",
+        title: "Current autosave",
+        detail: "Autosaved 1 attachment, 1 field",
+        fileName: "current.pdf",
+        templateName: "Finance invoice approval",
+        type: "current",
+        updatedAt: "2026-06-23T00:01:00.000Z",
+      },
+      {
+        id: "saved-hr-draft",
+        title: "HR request",
+        detail: "0 attachment(s), 1 field(s)",
+        fileName: "leave.pdf",
+        templateName: "HR annual leave",
+        type: "saved",
+        updatedAt: "2026-06-23T00:04:00.000Z",
       },
     ],
   );

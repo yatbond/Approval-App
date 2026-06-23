@@ -67,7 +67,7 @@ Current implemented areas:
 - Template-side sample document recognition inside Box Details, allowing a template creator to upload a sample document, accept suggested fields, or box a value from the preview to create template extraction fields.
 - Upload-side two-step field recognition: Step 1 suggested fields from OCR, followed by Step 2 add/correct fields through document preview boxing or direct manual values. Selected fields show their source as AI/OCR, Boxed field, or Manual.
 - Upload request autosave for interrupted request creation, preserving selected template, Supabase attachment references, parsed OCR result, edited extraction draft fields, highlighted field groups/value boxes, and parsed document link in browser-local storage. Submitted or manually cleared drafts remove the saved recovery state.
-- Saved upload request drafts, allowing an originator to explicitly name, save, reload, and delete recoverable request work. Upload separates the current autosave from named saved drafts so users can tell transient recovery state from intentional saved work. Saved drafts sync to Supabase when available and are filtered both client-side and by RLS so only the creating user can access them; superusers do not bypass saved upload draft ownership.
+- Saved upload request drafts, allowing an originator to explicitly name, save, reload, and delete recoverable request work. Upload separates the current autosave from named saved drafts so users can tell transient recovery state from intentional saved work. A dedicated Drafts tab lets users find and resume interrupted current autosaves or named saved drafts without staying on the Upload tab. Saved drafts sync to Supabase when available and are filtered both client-side and by RLS so only the creating user can access them; superusers do not bypass saved upload draft ownership.
 - Qwen/OpenRouter visual OCR path for PDFs rendered into page images, plus PDF.js decoder assets for scanner PDFs that require CMaps, standard fonts, and WASM decoders.
 - Extraction confidence and evidence display for parsed fields, with user corrections stored as workflow-specific extraction examples for future OCR prompts.
 - Condition cases with numbered display, optional nickname, approval-count rules, specific-reviewer rules, numeric rules, AND/OR joining, fallback route, and multiple outcome boxes.
@@ -278,6 +278,24 @@ Required content:
 - Required extracted-field validation before task creation.
 - Low-confidence extracted values must be reviewed before task creation.
 - Submission blocker messages must render as warnings or errors, not success confirmations.
+
+### Drafts Tab
+
+Purpose: let requesters quickly resume interrupted request creation work.
+
+Required content:
+
+- Current autosave, when recoverable work exists.
+- Named saved drafts owned by the signed-in user.
+- Template name, source file name, attachment/field counts, and last saved time for each resumable item.
+- Resume action for current autosave and each named saved draft.
+- Delete action for named saved drafts.
+
+Behavior:
+
+- The Drafts tab must not expose drafts created by other users, including to superusers.
+- Resuming a named saved draft restores it into the Upload tab as the current working draft.
+- If no drafts exist, the tab shows an empty state and a New request action.
 
 ### Workflow Tab
 

@@ -1681,3 +1681,12 @@ Verification:
 - Verified the four own-row RLS policies exist for select, insert, update, and delete.
 - Inserted temporary tagged rows for two existing auth users, simulated one authenticated user's JWT claim, and confirmed only that user's tagged row was visible. Also confirmed the simulated authenticated user can insert its own row. Temporary test rows were removed and cleanup verified with `remaining_test_rows = 0`.
 - Git repair note: the prior local commit object `99daaf0...` was corrupt on disk and contained an index (`DIRC`) header instead of a Git object. Repaired by moving the branch ref back to valid parent `a18c8fc...`, rebuilding the index with `git read-tree HEAD`, then preserving the seven-file working-tree diff for recommit.
+
+## Step 73 - Drafts Resume Surface
+- Added a first-class `Drafts` workspace tab between Upload and Workflow so users can find interrupted request work outside the Upload form.
+- Added `workspace-tabs-state` to centralize supported tab IDs and fallback resolution for `/?tab=...`.
+- Added `getUploadDraftResumeItems` so the app can summarize current autosave and named saved drafts with template name, file name, attachment/field counts, and saved timestamp.
+- Added `UploadDraftsView`, showing current autosave, named saved drafts, resume actions, delete for named drafts, and an empty state with New request.
+- Resuming a named saved draft writes it into the current autosave slot before navigating to Upload, so a route reload still restores the selected work.
+- Verification: `npm test` passed 304/304; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning after successful route generation.
+- Restarted the stale Next dev server on port 3000 and confirmed `http://localhost:3000/?tab=drafts` returns HTTP 200.

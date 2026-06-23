@@ -45,6 +45,16 @@ export type SavedUploadRequestDraftAccess = {
   label: string;
 };
 
+export type UploadDraftResumeItem = {
+  id: string;
+  title: string;
+  detail: string;
+  fileName: string;
+  templateName: string;
+  type: "current" | "saved";
+  updatedAt: string;
+};
+
 export function buildUploadRequestDraft({
   selectedTemplateId,
   fileName,
@@ -236,6 +246,51 @@ export function getUploadWorkInProgressItems({
         Object.keys(draft.draft.editedFields).length
       } field(s)`,
       type: "saved" as const,
+    })),
+  ];
+}
+
+export function getUploadDraftResumeItems({
+  currentDraft,
+  currentDraftStatus,
+  savedDrafts,
+  templates,
+}: {
+  currentDraft: UploadRequestDraft | null;
+  currentDraftStatus: UploadRequestDraftStatus;
+  savedDrafts: SavedUploadRequestDraft[];
+  templates: { id: string; name: string }[];
+}): UploadDraftResumeItem[] {
+  const templateNameById = new Map(
+    templates.map((template) => [template.id, template.name]),
+  );
+  const formatTemplateName = (templateId: string) =>
+    templateNameById.get(templateId) || "Template unavailable";
+
+  return [
+    ...(currentDraftStatus.hasDraft && currentDraft
+      ? [
+          {
+            id: "current-autosave",
+            title: "Current autosave",
+            detail: currentDraftStatus.label,
+            fileName: currentDraft.fileName || "No file attached",
+            templateName: formatTemplateName(currentDraft.selectedTemplateId),
+            type: "current" as const,
+            updatedAt: currentDraft.savedAt,
+          },
+        ]
+      : []),
+    ...savedDrafts.map((draft) => ({
+      id: draft.id,
+      title: draft.title,
+      detail: `${draft.draft.uploadedAttachments.length} attachment(s), ${
+        Object.keys(draft.draft.editedFields).length
+      } field(s)`,
+      fileName: draft.draft.fileName || "No file attached",
+      templateName: formatTemplateName(draft.draft.selectedTemplateId),
+      type: "saved" as const,
+      updatedAt: draft.savedAt,
     })),
   ];
 }

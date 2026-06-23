@@ -5,19 +5,20 @@ import {
   History,
   LogOut,
   Plus,
+  ReceiptText,
   Settings,
   ShieldCheck,
   Upload,
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-
-export type WorkspaceTab = "queue" | "tracking" | "upload" | "workflow" | "admin";
+import type { WorkspaceTab } from "@/lib/workspace-tabs-state";
 
 const tabs: { id: WorkspaceTab; label: string; icon: React.ElementType }[] = [
   { id: "queue", label: "Queue", icon: ClipboardList },
   { id: "tracking", label: "Tracking", icon: History },
   { id: "upload", label: "Upload", icon: Upload },
+  { id: "drafts", label: "Drafts", icon: ReceiptText },
   { id: "workflow", label: "Workflow", icon: Settings },
   { id: "admin", label: "Admin", icon: ShieldCheck },
 ];

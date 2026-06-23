@@ -64,8 +64,9 @@ import { AdminView } from "@/app/admin-view";
 import { WorkflowView } from "@/app/workflow-view";
 import {
   WorkspaceShell,
-  type WorkspaceTab,
 } from "@/app/workspace-shell";
+import { UploadDraftsView } from "@/app/upload-drafts-view";
+import type { WorkspaceTab } from "@/lib/workspace-tabs-state";
 import { getWorkspaceShellState } from "@/lib/workspace-shell-state";
 import {
   getCreatedTemplateRecordState,
@@ -472,6 +473,18 @@ function ApprovalWorkspaceBody({
     setSelectedUploadDraftId(savedDraft.id);
     setUploadDraftTitle(savedDraft.title);
     setUploadDraftMessage(`Loaded draft "${savedDraft.title}".`);
+  }
+
+  function resumeUploadRequestDraft(savedDraft: SavedUploadRequestDraft) {
+    loadUploadRequestDraft(savedDraft);
+    localStorage.setItem(
+      uploadRequestDraftStorageKey,
+      serializeUploadRequestDraft({
+        ...savedDraft.draft,
+        savedAt: new Date().toISOString(),
+      }),
+    );
+    window.location.href = "/?tab=upload";
   }
 
   async function deleteUploadRequestDraft(draftId: string) {
@@ -1015,6 +1028,18 @@ function ApprovalWorkspaceBody({
                 setSelectedTemplateId={selectTemplateRecord}
                 submissionMessage={submissionMessage}
                 onSubmitRequest={submitParsedRequest}
+              />
+            )}
+
+            {activeTab === "drafts" && (
+              <UploadDraftsView
+                currentDraft={currentUploadRequestDraft}
+                uploadDraftStatus={uploadDraftStatus}
+                savedUploadDrafts={savedUploadDrafts}
+                workflowTemplates={templates}
+                selectedUploadDraftId={selectedUploadDraftId}
+                onResumeSavedDraft={resumeUploadRequestDraft}
+                onDeleteRequestDraft={deleteUploadRequestDraft}
               />
             )}
 
