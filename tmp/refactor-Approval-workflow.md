@@ -1690,3 +1690,15 @@ Verification:
 - Resuming a named saved draft writes it into the current autosave slot before navigating to Upload, so a route reload still restores the selected work.
 - Verification: `npm test` passed 304/304; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed with the known non-fatal webpack cache warning after successful route generation.
 - Restarted the stale Next dev server on port 3000 and confirmed `http://localhost:3000/?tab=drafts` returns HTTP 200.
+
+## Step 74 - Drafts Hardening and Attachment Access
+- Added a Drafts sidebar badge that counts the current private autosave plus named saved drafts.
+- Added explicit access labels to Drafts cards: current autosave is marked private, creator-owned saved drafts are marked `Created by you`, and any non-creator draft is disabled and marked `Creator only`.
+- Changed request submit persistence to await the workspace save result and report whether the submitted request was saved to Supabase or only saved locally because Supabase failed.
+- Added `scripts/e2e-drafts-smoke.mjs` plus `npm run e2e:drafts`; without credentials it verifies the Drafts auth gate, and with `E2E_EMAIL`/`E2E_PASSWORD` it signs in and checks Upload and Drafts.
+- Added migration `20260623061935_allow_request_participant_storage_reads.sql` so submitted approval request participants can read attachment storage objects while owner-only access still protects draft/ad-hoc files.
+- `npx supabase db push --linked --dry-run` remains blocked by older remote migration-history entries missing from the local migrations directory. Applied this narrow storage policy directly with `npx supabase db query --linked --file ...`.
+- Verified the live storage policy exists in `pg_policies` as `approval document owners and request participants read` on `storage.objects`.
+- Supabase advisors completed with existing warnings for leaked-password protection and multiple permissive `workflow_template_versions` policies; no new storage-policy blocker was reported.
+- Verification: focused tests passed 30/30; full `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/*.test.mjs` passed 308/308; `npx tsc --noEmit` passed; `npm run lint` passed; `npm run build` passed; unauthenticated live route smoke for `http://localhost:3000/?tab=drafts` returned `307 /login`; `npm run e2e:drafts` passed the Drafts auth-gate smoke.
+- Local autoreview: no blocker found. Residual gap: authenticated Drafts E2E was not run because no test credentials were provided to the script environment.

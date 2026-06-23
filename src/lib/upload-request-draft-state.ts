@@ -53,6 +53,9 @@ export type UploadDraftResumeItem = {
   templateName: string;
   type: "current" | "saved";
   updatedAt: string;
+  accessLabel: string;
+  canResume: boolean;
+  canDelete: boolean;
 };
 
 export function buildUploadRequestDraft({
@@ -251,11 +254,15 @@ export function getUploadWorkInProgressItems({
 }
 
 export function getUploadDraftResumeItems({
+  activeUserEmail,
+  activeUserId,
   currentDraft,
   currentDraftStatus,
   savedDrafts,
   templates,
 }: {
+  activeUserEmail?: string;
+  activeUserId?: string;
   currentDraft: UploadRequestDraft | null;
   currentDraftStatus: UploadRequestDraftStatus;
   savedDrafts: SavedUploadRequestDraft[];
@@ -278,20 +285,41 @@ export function getUploadDraftResumeItems({
             templateName: formatTemplateName(currentDraft.selectedTemplateId),
             type: "current" as const,
             updatedAt: currentDraft.savedAt,
+            accessLabel: "Private autosave",
+            canResume: true,
+            canDelete: false,
           },
         ]
       : []),
-    ...savedDrafts.map((draft) => ({
-      id: draft.id,
-      title: draft.title,
-      detail: `${draft.draft.uploadedAttachments.length} attachment(s), ${
-        Object.keys(draft.draft.editedFields).length
-      } field(s)`,
-      fileName: draft.draft.fileName || "No file attached",
-      templateName: formatTemplateName(draft.draft.selectedTemplateId),
-      type: "saved" as const,
-      updatedAt: draft.savedAt,
-    })),
+    ...savedDrafts.map((draft) => {
+      const access =
+        activeUserEmail === undefined
+          ? {
+              canLoad: true,
+              canDelete: true,
+              label: "Created by you",
+            }
+          : getSavedUploadRequestDraftAccess({
+              draft,
+              activeUserEmail,
+              activeUserId,
+            });
+
+      return {
+        id: draft.id,
+        title: draft.title,
+        detail: `${draft.draft.uploadedAttachments.length} attachment(s), ${
+          Object.keys(draft.draft.editedFields).length
+        } field(s)`,
+        fileName: draft.draft.fileName || "No file attached",
+        templateName: formatTemplateName(draft.draft.selectedTemplateId),
+        type: "saved" as const,
+        updatedAt: draft.savedAt,
+        accessLabel: access.label,
+        canResume: access.canLoad,
+        canDelete: access.canDelete,
+      };
+    }),
   ];
 }
 

@@ -273,6 +273,7 @@ export function useApprovalWorkspaceState({
     if (result.mode === "supabase") {
       lastRemoteSnapshotRef.current = serializedSnapshot;
     }
+    return result;
   }
 
   function buildWorkspaceSnapshot(

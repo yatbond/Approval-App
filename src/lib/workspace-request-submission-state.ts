@@ -129,6 +129,24 @@ export function getWorkspaceRequestSubmissionState({
   };
 }
 
+export function getWorkspaceRequestSubmissionPersistenceMessage({
+  submissionMessage,
+  syncMode,
+  syncReason,
+}: {
+  submissionMessage: string;
+  syncMode: "supabase" | "local";
+  syncReason?: string;
+}) {
+  if (syncMode === "supabase") {
+    return `${submissionMessage} Saved to Supabase.`;
+  }
+
+  return `${submissionMessage} Saved locally. Supabase save failed: ${
+    syncReason || "Remote save unavailable"
+  }.`;
+}
+
 function getMissingRequiredExtractedFields({
   selectedTemplate,
   editedFields,

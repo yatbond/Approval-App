@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getWorkspaceRequestSubmissionState } from "./workspace-request-submission-state.ts";
+import {
+  getWorkspaceRequestSubmissionPersistenceMessage,
+  getWorkspaceRequestSubmissionState,
+} from "./workspace-request-submission-state.ts";
 
 const actor = { name: "Derrick", email: "derrick@example.com" };
 
@@ -234,4 +237,23 @@ test("allows legacy templates without draft metadata to submit requests", () => 
 
   assert.equal(state.didSubmit, true);
   assert.equal(state.selectedTaskId, "APR-LEGACY");
+});
+
+test("formats request submission persistence messages", () => {
+  assert.equal(
+    getWorkspaceRequestSubmissionPersistenceMessage({
+      submissionMessage: "APR-1 submitted.",
+      syncMode: "supabase",
+    }),
+    "APR-1 submitted. Saved to Supabase.",
+  );
+
+  assert.equal(
+    getWorkspaceRequestSubmissionPersistenceMessage({
+      submissionMessage: "APR-1 submitted.",
+      syncMode: "local",
+      syncReason: "POST failed: 503",
+    }),
+    "APR-1 submitted. Saved locally. Supabase save failed: POST failed: 503.",
+  );
 });

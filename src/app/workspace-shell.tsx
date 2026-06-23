@@ -26,6 +26,7 @@ const tabs: { id: WorkspaceTab; label: string; icon: React.ElementType }[] = [
 export function WorkspaceShell({
   activeTab,
   children,
+  draftItemCount,
   sessionUser,
   sidebarCollapsed,
   syncLabel,
@@ -34,6 +35,7 @@ export function WorkspaceShell({
 }: {
   activeTab: WorkspaceTab;
   children: ReactNode;
+  draftItemCount: number;
   sessionUser: string;
   sidebarCollapsed: boolean;
   syncLabel: string;
@@ -76,12 +78,13 @@ export function WorkspaceShell({
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
+              const showDraftBadge = tab.id === "drafts" && draftItemCount > 0;
               return (
                 <Link
                   key={tab.id}
                   href={`/?tab=${tab.id}`}
                   title={tab.label}
-                  className={`flex h-11 min-w-16 flex-1 items-center justify-center gap-2 rounded-md border px-3 text-sm transition lg:w-full lg:flex-none ${
+                  className={`relative flex h-11 min-w-16 flex-1 items-center justify-center gap-2 rounded-md border px-3 text-sm transition lg:w-full lg:flex-none ${
                     sidebarCollapsed ? "lg:justify-center lg:px-2" : "lg:justify-start"
                   } ${
                     active
@@ -93,6 +96,15 @@ export function WorkspaceShell({
                   <span className={`hidden lg:inline ${sidebarCollapsed ? "lg:hidden" : ""}`}>
                     {tab.label}
                   </span>
+                  {showDraftBadge && (
+                    <span
+                      className={`inline-flex min-w-5 items-center justify-center rounded-full border border-amber-300/30 bg-amber-300/15 px-1.5 text-[11px] font-semibold text-amber-100 ${
+                        sidebarCollapsed ? "lg:absolute lg:ml-7 lg:mt-[-18px]" : "lg:ml-auto"
+                      }`}
+                    >
+                      {draftItemCount > 99 ? "99+" : draftItemCount}
+                    </span>
+                  )}
                 </Link>
               );
             })}

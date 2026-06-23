@@ -14,6 +14,10 @@ const uploadDraftMigration = readFileSync(
   "supabase/migrations/20260623073000_create_upload_request_drafts.sql",
   "utf8",
 );
+const attachmentStorageReadMigration = readFileSync(
+  "supabase/migrations/20260623061935_allow_request_participant_storage_reads.sql",
+  "utf8",
+);
 
 test("migration allows template creators to insert and update their own template versions", () => {
   assert.match(
@@ -52,4 +56,17 @@ test("migration lets users access only their own upload request drafts", () => {
   assert.match(uploadDraftMigration, /create policy "users update own upload request drafts"/i);
   assert.match(uploadDraftMigration, /create policy "users delete own upload request drafts"/i);
   assert.match(uploadDraftMigration, /owner_user_id = \(select auth\.uid\(\)\)/i);
+});
+
+test("migration lets request participants read submitted attachment storage objects", () => {
+  assert.match(
+    attachmentStorageReadMigration,
+    /create policy "approval document owners and request participants read"/i,
+  );
+  assert.match(attachmentStorageReadMigration, /bucket_id = 'approval-documents'/i);
+  assert.match(attachmentStorageReadMigration, /owner_id = \(select auth\.uid\(\)::text\)/i);
+  assert.match(attachmentStorageReadMigration, /public\.approval_request_attachments/i);
+  assert.match(attachmentStorageReadMigration, /public\.approval_requests/i);
+  assert.match(attachmentStorageReadMigration, /a\.storage_path = storage\.objects\.name/i);
+  assert.match(attachmentStorageReadMigration, /= any\(r\.participants\)/i);
 });

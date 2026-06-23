@@ -497,6 +497,7 @@ test("builds resume items with template names for current and saved drafts", () 
 
   assert.deepEqual(
     getUploadDraftResumeItems({
+      activeUserEmail: "dpang@chunwo.com",
       currentDraft,
       currentDraftStatus: {
         hasDraft: true,
@@ -517,6 +518,9 @@ test("builds resume items with template names for current and saved drafts", () 
         templateName: "Finance invoice approval",
         type: "current",
         updatedAt: "2026-06-23T00:01:00.000Z",
+        accessLabel: "Private autosave",
+        canResume: true,
+        canDelete: false,
       },
       {
         id: "saved-hr-draft",
@@ -526,6 +530,54 @@ test("builds resume items with template names for current and saved drafts", () 
         templateName: "HR annual leave",
         type: "saved",
         updatedAt: "2026-06-23T00:04:00.000Z",
+        accessLabel: "Created by you",
+        canResume: true,
+        canDelete: true,
+      },
+    ],
+  );
+});
+
+test("marks non-creator saved drafts as inaccessible in resume items", () => {
+  const savedDraft = buildSavedUploadRequestDraft({
+    draft: buildUploadRequestDraft({
+      selectedTemplateId: "template-hr",
+      fileName: "leave.pdf",
+      parseResult,
+      editedFields: { Date: "2026-06-23" },
+      uploadedAttachments: [],
+      parsedDocumentId: "doctor-slip",
+      highlightGroups,
+      activeHighlightGroupId: "highlight-field-1",
+      highlightBoxCounter: 2,
+      savedAt: "2026-06-23T00:03:00.000Z",
+    }),
+    id: "other-draft",
+    title: "Other user draft",
+    createdByEmail: "other@example.com",
+    savedAt: "2026-06-23T00:04:00.000Z",
+  });
+
+  assert.deepEqual(
+    getUploadDraftResumeItems({
+      activeUserEmail: "dpang@chunwo.com",
+      currentDraft: null,
+      currentDraftStatus: {
+        hasDraft: false,
+        label: "No request draft",
+      },
+      savedDrafts: [savedDraft],
+      templates: [{ id: "template-hr", name: "HR annual leave" }],
+    }).map((item) => ({
+      accessLabel: item.accessLabel,
+      canDelete: item.canDelete,
+      canResume: item.canResume,
+    })),
+    [
+      {
+        accessLabel: "Creator only",
+        canDelete: false,
+        canResume: false,
       },
     ],
   );

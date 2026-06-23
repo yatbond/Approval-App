@@ -16,6 +16,8 @@ export function UploadDraftsView({
   savedUploadDrafts,
   workflowTemplates,
   selectedUploadDraftId,
+  activeUserEmail,
+  activeUserId,
   onResumeSavedDraft,
   onDeleteRequestDraft,
 }: {
@@ -24,10 +26,14 @@ export function UploadDraftsView({
   savedUploadDrafts: SavedUploadRequestDraft[];
   workflowTemplates: WorkflowTemplate[];
   selectedUploadDraftId: string;
+  activeUserEmail: string;
+  activeUserId?: string;
   onResumeSavedDraft: (draft: SavedUploadRequestDraft) => void;
   onDeleteRequestDraft: (draftId: string) => void;
 }) {
   const resumeItems = getUploadDraftResumeItems({
+    activeUserEmail,
+    activeUserId,
     currentDraft,
     currentDraftStatus: uploadDraftStatus,
     savedDrafts: savedUploadDrafts,
@@ -87,6 +93,9 @@ export function UploadDraftsView({
                       <span className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-neutral-400">
                         {item.type === "current" ? "Autosave" : "Saved draft"}
                       </span>
+                      <span className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-neutral-400">
+                        {item.accessLabel}
+                      </span>
                     </div>
                     <p className="mt-2 break-words text-sm text-neutral-400">
                       {item.templateName}
@@ -113,8 +122,11 @@ export function UploadDraftsView({
                   ) : (
                     <button
                       type="button"
-                      onClick={() => savedDraft && onResumeSavedDraft(savedDraft)}
-                      className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20"
+                      onClick={() =>
+                        item.canResume && savedDraft && onResumeSavedDraft(savedDraft)
+                      }
+                      disabled={!item.canResume}
+                      className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500"
                     >
                       <RotateCcw size={15} />
                       Resume
@@ -123,8 +135,9 @@ export function UploadDraftsView({
                   {item.type === "saved" && (
                     <button
                       type="button"
-                      onClick={() => onDeleteRequestDraft(item.id)}
-                      className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 sm:flex-none"
+                      onClick={() => item.canDelete && onDeleteRequestDraft(item.id)}
+                      disabled={!item.canDelete}
+                      className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500 sm:flex-none"
                     >
                       <Trash2 size={15} />
                       Delete

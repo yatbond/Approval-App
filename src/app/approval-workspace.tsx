@@ -79,7 +79,10 @@ import {
   getUpdatedBusinessDirectoryRecordState,
   getUpdatedRoleAssignmentRecordState,
 } from "@/lib/workspace-admin-record-state";
-import { getWorkspaceRequestSubmissionState } from "@/lib/workspace-request-submission-state";
+import {
+  getWorkspaceRequestSubmissionPersistenceMessage,
+  getWorkspaceRequestSubmissionState,
+} from "@/lib/workspace-request-submission-state";
 import { getApprovalWorkspaceTaskState } from "@/lib/approval-workspace-task-state";
 import { attachDocumentToTaskState } from "@/lib/task-document-attachment-state";
 import {
@@ -252,10 +255,12 @@ function ApprovalWorkspaceBody({
     () =>
       getWorkspaceShellState({
         baseNotifications: notifications,
+        draftItemCount:
+          (uploadDraftStatus.hasDraft ? 1 : 0) + savedUploadDrafts.length,
         taskNotifications,
         workspaceSyncMode,
       }),
-    [taskNotifications, workspaceSyncMode],
+    [savedUploadDrafts.length, taskNotifications, uploadDraftStatus.hasDraft, workspaceSyncMode],
   );
 
   const restoreUploadRequestDraft = useCallback(
@@ -735,7 +740,7 @@ function ApprovalWorkspaceBody({
     }
   }
 
-  function submitParsedRequest() {
+  async function submitParsedRequest() {
     const nextState = getWorkspaceRequestSubmissionState({
       selectedTemplate,
       parseResult,
@@ -787,13 +792,19 @@ function ApprovalWorkspaceBody({
       void deleteUploadRequestDraft(selectedUploadDraftId);
     }
     localStorage.removeItem(uploadRequestDraftStorageKey);
-    void persistWorkspaceSnapshot(
+    const syncResult = await persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({
         approvalTasks: nextState.tasks,
         workflowTemplates: nextTemplates,
       }),
     );
-    setSubmissionMessage(nextState.submissionMessage);
+    setSubmissionMessage(
+      getWorkspaceRequestSubmissionPersistenceMessage({
+        submissionMessage: nextState.submissionMessage,
+        syncMode: syncResult.mode,
+        syncReason: syncResult.mode === "local" ? syncResult.reason : undefined,
+      }),
+    );
   }
 
   function createTemplateRecord(template: WorkflowTemplate) {
@@ -959,6 +970,7 @@ function ApprovalWorkspaceBody({
       sessionUser={sessionUser}
       sidebarCollapsed={sidebarCollapsed}
       syncLabel={shellState.syncLabel}
+      draftItemCount={shellState.draftItemCount}
       unreadCount={shellState.unreadCount}
       onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
     >
@@ -1038,6 +1050,7 @@ function ApprovalWorkspaceBody({
                 savedUploadDrafts={savedUploadDrafts}
                 workflowTemplates={templates}
                 selectedUploadDraftId={selectedUploadDraftId}
+                activeUserEmail={activeUser.email}
                 onResumeSavedDraft={resumeUploadRequestDraft}
                 onDeleteRequestDraft={deleteUploadRequestDraft}
               />
