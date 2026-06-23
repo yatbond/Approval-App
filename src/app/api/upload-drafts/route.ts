@@ -16,6 +16,7 @@ type UploadDraftRow = {
   owner_user_id: string;
   owner_email: string;
   title: string;
+  draft_kind?: SavedUploadRequestDraft["draftKind"];
   draft_payload: unknown;
   updated_at: string;
 };
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("upload_request_drafts")
-    .select("id,owner_user_id,owner_email,title,draft_payload,updated_at")
+    .select("id,owner_user_id,owner_email,title,draft_kind,draft_payload,updated_at")
     .order("updated_at", { ascending: false })
     .returns<UploadDraftRow[]>();
 
@@ -100,13 +101,14 @@ export async function POST(request: NextRequest) {
         owner_user_id: user.id,
         owner_email: user.email,
         title: savedDraft.title,
+        draft_kind: savedDraft.draftKind,
         selected_template_id: savedDraft.draft.selectedTemplateId,
         draft_payload: savedDraft.draft,
         updated_at: savedDraft.savedAt,
       },
       { onConflict: "id" },
     )
-    .select("id,owner_user_id,owner_email,title,draft_payload,updated_at")
+    .select("id,owner_user_id,owner_email,title,draft_kind,draft_payload,updated_at")
     .single<UploadDraftRow>();
 
   if (error) {
@@ -158,6 +160,7 @@ function rowToSavedDraft(
         title: row.title,
         createdByEmail: row.owner_email,
         createdByUserId: row.owner_user_id,
+        draftKind: row.draft_kind || "named",
         savedAt: row.updated_at,
         draft: row.draft_payload,
       },

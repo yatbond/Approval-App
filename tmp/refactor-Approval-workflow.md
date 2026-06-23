@@ -1712,3 +1712,13 @@ Verification:
 - `npx supabase migration list --linked` now shows every local version matched to the same remote version.
 - `npx supabase db advisors --linked --output json` still reports only the existing leaked-password-protection warning and multiple permissive `workflow_template_versions` policy warnings.
 - Note: `supabase db dump --linked` could not create a schema dump because Docker Desktop is unavailable on this machine; the zero-byte failed dump artifact was removed.
+
+## Step 76 - Autosave and Supabase Policy Cleanup
+- Added `draft_kind` to `upload_request_drafts` so automatic current autosaves are separated from named saved drafts while preserving creator-only RLS.
+- Added debounced Supabase current-request autosave from the Upload tab. Current autosave remains private to the creator, restores only when newer than the browser-local copy, and is deleted when the request draft is cleared or submitted.
+- Simplified Upload extraction controls with a method selector for Suggested fields, Box from preview, and Manual values so all field-entry methods are not shown at once.
+- Consolidated `workflow_template_versions` policies into one SELECT, one INSERT, and one UPDATE policy while preserving active reads, creator/admin writes, and ownerless legacy repair.
+- Applied live migrations `20260623113043_consolidate_workflow_template_version_policies.sql` and `20260623113319_add_upload_request_draft_kind.sql` with `npx supabase db push --linked`.
+- Verified `npx supabase migration list --linked` shows both new migrations on local and remote. Verified `upload_request_drafts.draft_kind` exists live with default `named`.
+- Verified live `workflow_template_versions` policies are now exactly: one INSERT policy, one SELECT policy, and one UPDATE policy. `supabase db advisors` could not complete because the CLI temp role hit Supabase auth failures and requested `SUPABASE_DB_PASSWORD`.
+- Updated `PRD/approval-workflow-platform-prd.md` with remote current autosave, consolidated template RLS, field-recognition mode selector, and the Supabase leaked-password-protection setup note.

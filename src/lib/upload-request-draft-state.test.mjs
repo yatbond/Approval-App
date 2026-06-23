@@ -6,7 +6,9 @@ import {
   clearUploadRequestDraft,
   createEmptyUploadRequestDraftStatus,
   getCreatorVisibleUploadRequestDrafts,
+  getCurrentAutosaveUploadRequestDraft,
   getNextSavedUploadRequestDrafts,
+  getNamedSavedUploadRequestDrafts,
   getSavedUploadRequestDraftAccess,
   getUploadDraftResumeItems,
   getUploadWorkInProgressItems,
@@ -231,6 +233,49 @@ test("builds creator-owned saved upload request drafts", () => {
   assert.equal(savedDraft.createdByEmail, "dpang@chunwo.com");
   assert.equal(savedDraft.createdByUserId, "user-1");
   assert.equal(savedDraft.draft.fileName, "invoice.pdf");
+});
+
+test("separates private current autosave drafts from named saved drafts", () => {
+  const baseDraft = buildUploadRequestDraft({
+    selectedTemplateId: "template-finance",
+    fileName: "invoice.pdf",
+    parseResult,
+    editedFields: { Vendor: "Gleneagles Hospital" },
+    uploadedAttachments: [attachment],
+    parsedDocumentId: "invoice-doc",
+    highlightGroups,
+    activeHighlightGroupId: "highlight-field-1",
+    highlightBoxCounter: 2,
+    savedAt: "2026-06-23T00:01:00.000Z",
+  });
+  const currentAutosave = buildSavedUploadRequestDraft({
+    draft: baseDraft,
+    id: "current-autosave-id",
+    title: "",
+    createdByEmail: "dpang@chunwo.com",
+    createdByUserId: "user-1",
+    savedAt: "2026-06-23T00:03:00.000Z",
+    draftKind: "current",
+  });
+  const namedDraft = buildSavedUploadRequestDraft({
+    draft: baseDraft,
+    id: "named-draft-id",
+    title: "Named draft",
+    createdByEmail: "dpang@chunwo.com",
+    createdByUserId: "user-1",
+    savedAt: "2026-06-23T00:02:00.000Z",
+    draftKind: "named",
+  });
+
+  assert.equal(currentAutosave.title, "Current autosave");
+  assert.equal(currentAutosave.draftKind, "current");
+  assert.deepEqual(getNamedSavedUploadRequestDrafts([currentAutosave, namedDraft]), [
+    namedDraft,
+  ]);
+  assert.deepEqual(
+    getCurrentAutosaveUploadRequestDraft([namedDraft, currentAutosave]),
+    currentAutosave,
+  );
 });
 
 test("round trips only valid saved upload request drafts", () => {

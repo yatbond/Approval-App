@@ -35,7 +35,9 @@ import {
   buildUploadRequestDraft,
   clearUploadRequestDraft,
   createEmptyUploadRequestDraftStatus,
+  getCurrentAutosaveUploadRequestDraft,
   getCreatorVisibleUploadRequestDrafts,
+  getNamedSavedUploadRequestDrafts,
   getNextSavedUploadRequestDrafts,
   parseUploadRequestDraft,
   parseUploadRequestDraftList,
@@ -104,6 +106,9 @@ type Tab = WorkspaceTab;
 
 const uploadRequestDraftStoragePrefix = "approval-upload-request-draft-v1";
 const uploadRequestDraftListStoragePrefix = "approval-upload-request-drafts-v1";
+const uploadRequestCurrentAutosaveIdStoragePrefix =
+  "approval-upload-current-autosave-id-v1";
+const remoteUploadAutosaveDelayMs = 12_000;
 
 export type ApprovalWorkspaceProps = {
   initialTab: Tab;
@@ -195,7 +200,9 @@ function ApprovalWorkspaceBody({
   const [selectedUploadDraftId, setSelectedUploadDraftId] = useState("");
   const [uploadDraftTitle, setUploadDraftTitle] = useState("");
   const [uploadDraftMessage, setUploadDraftMessage] = useState("");
+  const [remoteUploadAutosaveId, setRemoteUploadAutosaveId] = useState("");
   const uploadDraftStorageReady = useRef(false);
+  const lastRemoteUploadAutosavePayloadRef = useRef("");
   const selectedTemplate = useMemo(
     () =>
       templates.find((template) => template.id === selectedTemplateId) ||
@@ -208,6 +215,10 @@ function ApprovalWorkspaceBody({
   );
   const uploadRequestDraftListStorageKey = useMemo(
     () => `${uploadRequestDraftListStoragePrefix}:${activeUser.email}`,
+    [activeUser.email],
+  );
+  const uploadRequestCurrentAutosaveIdStorageKey = useMemo(
+    () => `${uploadRequestCurrentAutosaveIdStoragePrefix}:${activeUser.email}`,
     [activeUser.email],
   );
   const currentUploadRequestDraft = useMemo(
@@ -294,23 +305,32 @@ function ApprovalWorkspaceBody({
       }
 
       restoreUploadRequestDraft(parsedDraft);
+      setRemoteUploadAutosaveId(
+        localStorage.getItem(uploadRequestCurrentAutosaveIdStorageKey) || "",
+      );
       uploadDraftStorageReady.current = true;
     });
 
     return () => {
       didCancel = true;
     };
-  }, [restoreUploadRequestDraft, uploadRequestDraftStorageKey]);
+  }, [
+    restoreUploadRequestDraft,
+    uploadRequestCurrentAutosaveIdStorageKey,
+    uploadRequestDraftStorageKey,
+  ]);
 
   useEffect(() => {
     let didCancel = false;
-    const localDrafts = getCreatorVisibleUploadRequestDrafts({
-      drafts: parseUploadRequestDraftList(
-        localStorage.getItem(uploadRequestDraftListStorageKey) || "[]",
-      ),
-      activeUserEmail: activeUser.email,
-      activeUserId: "",
-    });
+    const localDrafts = getNamedSavedUploadRequestDrafts(
+      getCreatorVisibleUploadRequestDrafts({
+        drafts: parseUploadRequestDraftList(
+          localStorage.getItem(uploadRequestDraftListStorageKey) || "[]",
+        ),
+        activeUserEmail: activeUser.email,
+        activeUserId: "",
+      }),
+    );
 
     queueMicrotask(() => {
       if (!didCancel) {
@@ -331,11 +351,36 @@ function ApprovalWorkspaceBody({
             mergedById.set(draft.id, draft);
           }
         });
-        const merged = getCreatorVisibleUploadRequestDrafts({
-          drafts: Array.from(mergedById.values()),
+        const visibleRemoteDrafts = getCreatorVisibleUploadRequestDrafts({
+          drafts: remoteDrafts,
           activeUserEmail: activeUser.email,
           activeUserId: "",
         });
+        const remoteCurrentAutosave =
+          getCurrentAutosaveUploadRequestDraft(visibleRemoteDrafts);
+        const localCurrentAutosave = parseUploadRequestDraft(
+          localStorage.getItem(uploadRequestDraftStorageKey) || "",
+        );
+        if (
+          remoteCurrentAutosave &&
+          (!localCurrentAutosave ||
+            remoteCurrentAutosave.savedAt > localCurrentAutosave.savedAt)
+        ) {
+          restoreUploadRequestDraft(remoteCurrentAutosave.draft);
+          setRemoteUploadAutosaveId(remoteCurrentAutosave.id);
+          localStorage.setItem(
+            uploadRequestCurrentAutosaveIdStorageKey,
+            remoteCurrentAutosave.id,
+          );
+        }
+
+        const merged = getNamedSavedUploadRequestDrafts(
+          getCreatorVisibleUploadRequestDrafts({
+            drafts: Array.from(mergedById.values()),
+            activeUserEmail: activeUser.email,
+            activeUserId: "",
+          }),
+        );
         setSavedUploadDrafts(merged);
         localStorage.setItem(
           uploadRequestDraftListStorageKey,
@@ -351,7 +396,13 @@ function ApprovalWorkspaceBody({
     return () => {
       didCancel = true;
     };
-  }, [activeUser.email, uploadRequestDraftListStorageKey]);
+  }, [
+    activeUser.email,
+    restoreUploadRequestDraft,
+    uploadRequestCurrentAutosaveIdStorageKey,
+    uploadRequestDraftListStorageKey,
+    uploadRequestDraftStorageKey,
+  ]);
 
   useEffect(() => {
     if (!uploadDraftStorageReady.current) {
@@ -387,6 +438,62 @@ function ApprovalWorkspaceBody({
     uploadRequestDraftStorageKey,
   ]);
 
+  useEffect(() => {
+    if (!uploadDraftStorageReady.current) {
+      return;
+    }
+
+    const nextDraft = buildUploadRequestDraft({
+      ...currentUploadRequestDraft,
+      savedAt: new Date().toISOString(),
+    });
+    const nextStatus = createEmptyUploadRequestDraftStatus(nextDraft);
+    if (!nextStatus.hasDraft) {
+      return;
+    }
+
+    const serializedDraft = serializeUploadRequestDraft(nextDraft);
+    if (lastRemoteUploadAutosavePayloadRef.current === serializedDraft) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      const draftId =
+        remoteUploadAutosaveId ||
+        localStorage.getItem(uploadRequestCurrentAutosaveIdStorageKey) ||
+        crypto.randomUUID();
+      localStorage.setItem(uploadRequestCurrentAutosaveIdStorageKey, draftId);
+      setRemoteUploadAutosaveId(draftId);
+
+      const savedDraft = buildSavedUploadRequestDraft({
+        draft: nextDraft,
+        id: draftId,
+        title: "",
+        createdByEmail: activeUser.email,
+        draftKind: "current",
+        savedAt: nextDraft.savedAt,
+      });
+
+      try {
+        await saveSavedUploadRequestDraft({ draft: savedDraft });
+        lastRemoteUploadAutosavePayloadRef.current = serializedDraft;
+      } catch (error) {
+        setUploadDraftMessage(
+          error instanceof Error
+            ? `Current request is saved locally. Supabase autosave failed: ${error.message}`
+            : "Current request is saved locally. Supabase autosave failed.",
+        );
+      }
+    }, remoteUploadAutosaveDelayMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    activeUser.email,
+    currentUploadRequestDraft,
+    remoteUploadAutosaveId,
+    uploadRequestCurrentAutosaveIdStorageKey,
+  ]);
+
   function resetUploadRequestDraftState() {
     const cleared = clearUploadRequestDraft();
     setFileName(cleared.fileName);
@@ -402,6 +509,14 @@ function ApprovalWorkspaceBody({
     setSelectedUploadDraftId("");
     setUploadDraftTitle("");
     localStorage.removeItem(uploadRequestDraftStorageKey);
+    if (remoteUploadAutosaveId) {
+      void deleteSavedUploadRequestDraft({ draftId: remoteUploadAutosaveId }).catch(() => {
+        // A failed cleanup should not block clearing the local draft.
+      });
+    }
+    setRemoteUploadAutosaveId("");
+    lastRemoteUploadAutosavePayloadRef.current = "";
+    localStorage.removeItem(uploadRequestCurrentAutosaveIdStorageKey);
   }
 
   function clearUploadRequestDraftFromUi() {
@@ -416,12 +531,13 @@ function ApprovalWorkspaceBody({
       activeUserEmail: activeUser.email,
       activeUserId: "",
     });
-    setSavedUploadDrafts(visibleDrafts);
+    const namedVisibleDrafts = getNamedSavedUploadRequestDrafts(visibleDrafts);
+    setSavedUploadDrafts(namedVisibleDrafts);
     localStorage.setItem(
       uploadRequestDraftListStorageKey,
-      serializeUploadRequestDraftList(visibleDrafts),
+      serializeUploadRequestDraftList(namedVisibleDrafts),
     );
-    return visibleDrafts;
+    return namedVisibleDrafts;
   }
 
   async function saveCurrentUploadRequestDraft() {

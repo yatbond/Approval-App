@@ -18,6 +18,14 @@ const attachmentStorageReadMigration = readFileSync(
   "supabase/migrations/20260623061935_allow_request_participant_storage_reads.sql",
   "utf8",
 );
+const consolidatedTemplatePolicyMigration = readFileSync(
+  "supabase/migrations/20260623113043_consolidate_workflow_template_version_policies.sql",
+  "utf8",
+);
+const uploadDraftKindMigration = readFileSync(
+  "supabase/migrations/20260623113319_add_upload_request_draft_kind.sql",
+  "utf8",
+);
 
 test("migration allows template creators to insert and update their own template versions", () => {
   assert.match(
@@ -69,4 +77,36 @@ test("migration lets request participants read submitted attachment storage obje
   assert.match(attachmentStorageReadMigration, /public\.approval_requests/i);
   assert.match(attachmentStorageReadMigration, /a\.storage_path = storage\.objects\.name/i);
   assert.match(attachmentStorageReadMigration, /= any\(r\.participants\)/i);
+});
+
+test("migration consolidates workflow template version policies", () => {
+  assert.match(
+    consolidatedTemplatePolicyMigration,
+    /drop policy if exists "authenticated read active workflow template versions"/i,
+  );
+  assert.match(
+    consolidatedTemplatePolicyMigration,
+    /drop policy if exists "template creators read own workflow template versions"/i,
+  );
+  assert.match(
+    consolidatedTemplatePolicyMigration,
+    /create policy "workflow template versions readable by active users"/i,
+  );
+  assert.match(
+    consolidatedTemplatePolicyMigration,
+    /create policy "workflow template versions writable by owners or admins"/i,
+  );
+  assert.match(consolidatedTemplatePolicyMigration, /is_active/i);
+  assert.match(consolidatedTemplatePolicyMigration, /created_by is null/i);
+  assert.match(consolidatedTemplatePolicyMigration, /p\.is_admin/i);
+});
+
+test("migration separates current autosave drafts from named upload drafts", () => {
+  assert.match(
+    uploadDraftKindMigration,
+    /alter table public\.upload_request_drafts/i,
+  );
+  assert.match(uploadDraftKindMigration, /add column if not exists draft_kind text/i);
+  assert.match(uploadDraftKindMigration, /check \(draft_kind in \('current', 'named'\)\)/i);
+  assert.match(uploadDraftKindMigration, /upload_request_drafts_owner_kind_idx/i);
 });

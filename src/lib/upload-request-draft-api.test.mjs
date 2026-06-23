@@ -11,6 +11,7 @@ const savedDraft = {
   title: "Invoice draft",
   createdByEmail: "dpang@chunwo.com",
   createdByUserId: "user-1",
+  draftKind: "named",
   savedAt: "2026-06-23T00:02:00.000Z",
   draft: {
     version: 1,

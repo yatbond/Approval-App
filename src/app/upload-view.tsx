@@ -158,6 +158,9 @@ export function UploadView({
   const [previewZoom, setPreviewZoom] = useState(145);
   const [previewEnhancementMode, setPreviewEnhancementMode] =
     useState<PreviewEnhancementMode>("black-text");
+  const [fieldInputMode, setFieldInputMode] = useState<
+    "suggested" | "boxed" | "manual"
+  >("suggested");
   const lastRestoredDraftToken = useRef("");
   const lastResetToken = useRef(uploadDraftResetToken);
   const [enhancedPreview, setEnhancedPreview] = useState({
@@ -820,6 +823,30 @@ export function UploadView({
               </div>
 
               <div className="mt-3 rounded-md border border-sky-500/25 bg-sky-500/10 p-3">
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {[
+                    ["suggested", "Suggested fields"],
+                    ["boxed", "Box from preview"],
+                    ["manual", "Manual values"],
+                  ].map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() =>
+                        setFieldInputMode(mode as "suggested" | "boxed" | "manual")
+                      }
+                      className={`min-h-9 rounded-md border px-3 py-2 text-xs font-medium transition ${
+                        fieldInputMode === mode
+                          ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-100"
+                          : "border-white/10 bg-[#101214] text-neutral-300 hover:bg-white/10"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {fieldInputMode === "suggested" && (
+                  <>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-sky-100">
@@ -894,20 +921,27 @@ export function UploadView({
                     No extra suggestions yet. Upload or parse a document, then use Step 2 for fields the parser missed.
                   </p>
                 )}
+                  </>
+                )}
               </div>
 
+              {fieldInputMode !== "suggested" && (
               <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-neutral-200">
-                      Step 2: Add / correct fields
+                      {fieldInputMode === "boxed"
+                        ? "Box from preview"
+                        : "Manual values"}
                     </p>
                     <p className="mt-1 text-xs text-neutral-500">
-                      Create a field, draw one or more value boxes, or type the value directly if no box is needed.
+                      {fieldInputMode === "boxed"
+                        ? "Create a field, draw one or more value boxes, then extract only those highlighted areas."
+                        : "Create a field and type or paste the value directly when the parser and boxing are not enough."}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {highlightRect && activeHighlightGroup ? (
+                    {fieldInputMode === "boxed" && highlightRect && activeHighlightGroup ? (
                       <button
                         type="button"
                         onClick={addSelectedBoxToActiveGroup}
@@ -916,11 +950,11 @@ export function UploadView({
                         <Plus size={14} />
                         Add box to {activeHighlightGroup.fieldLabel.trim() || "active field"}
                       </button>
-                    ) : (
+                    ) : fieldInputMode === "boxed" ? (
                       <span className="flex min-h-9 items-center rounded-md border border-white/10 px-3 text-xs text-neutral-500">
                         Draw a box to add it to the active field.
                       </span>
-                    )}
+                    ) : null}
                     <button
                       type="button"
                       onClick={addHighlightFieldGroup}
@@ -993,25 +1027,28 @@ export function UploadView({
                               className="min-h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-sm outline-none transition focus:border-emerald-400/60"
                             />
                           </label>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveHighlightGroupId(group.id);
-                              void extractHighlightGroup(group);
-                            }}
-                            disabled={isParsing}
-                            className="flex h-10 self-end items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-medium text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {isParsing ? (
-                              <Loader2 size={14} className="animate-spin" />
-                            ) : (
-                              <ImageIcon size={14} />
-                            )}
-                            Extract field
-                          </button>
+                          {fieldInputMode === "boxed" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveHighlightGroupId(group.id);
+                                void extractHighlightGroup(group);
+                              }}
+                              disabled={isParsing}
+                              className="flex h-10 self-end items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-medium text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {isParsing ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <ImageIcon size={14} />
+                              )}
+                              Extract field
+                            </button>
+                          )}
                         </div>
 
-                        <div className="mt-3 space-y-2">
+                        {fieldInputMode === "boxed" && (
+                          <div className="mt-3 space-y-2">
                           {group.boxes.length === 0 ? (
                             <p className="rounded-md border border-dashed border-white/10 px-3 py-2 text-xs text-neutral-500">
                               Draw a rectangle on the preview, then add it as a value box.
@@ -1062,12 +1099,14 @@ export function UploadView({
                               </div>
                             ))
                           )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
               </div>
+              )}
               {highlightError && (
                 <p className="mt-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
                   {highlightError}

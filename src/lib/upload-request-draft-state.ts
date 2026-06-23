@@ -34,6 +34,7 @@ export type SavedUploadRequestDraft = {
   title: string;
   createdByEmail: string;
   createdByUserId?: string;
+  draftKind: "current" | "named";
   savedAt: string;
   draft: UploadRequestDraft;
 };
@@ -93,6 +94,7 @@ export function buildSavedUploadRequestDraft({
   title,
   createdByEmail,
   createdByUserId,
+  draftKind = "named",
   savedAt = new Date().toISOString(),
 }: {
   draft: UploadRequestDraft;
@@ -100,19 +102,23 @@ export function buildSavedUploadRequestDraft({
   title: string;
   createdByEmail: string;
   createdByUserId?: string;
+  draftKind?: SavedUploadRequestDraft["draftKind"];
   savedAt?: string;
 }): SavedUploadRequestDraft {
   const cleanTitle =
-    title.trim() ||
-    draft.fileName.trim() ||
-    Object.keys(draft.editedFields)[0] ||
-    "Untitled request draft";
+    draftKind === "current"
+      ? "Current autosave"
+      : title.trim() ||
+        draft.fileName.trim() ||
+        Object.keys(draft.editedFields)[0] ||
+        "Untitled request draft";
 
   return {
     id,
     title: cleanTitle,
     createdByEmail,
     ...(createdByUserId ? { createdByUserId } : {}),
+    draftKind,
     savedAt,
     draft: {
       ...draft,
@@ -199,6 +205,20 @@ export function getCreatorVisibleUploadRequestDrafts({
   return drafts
     .filter((draft) => isUploadRequestDraftCreator({ draft, activeUserEmail, activeUserId }))
     .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+}
+
+export function getNamedSavedUploadRequestDrafts(
+  drafts: SavedUploadRequestDraft[],
+) {
+  return drafts.filter((draft) => draft.draftKind !== "current");
+}
+
+export function getCurrentAutosaveUploadRequestDraft(
+  drafts: SavedUploadRequestDraft[],
+) {
+  return drafts
+    .filter((draft) => draft.draftKind === "current")
+    .sort((a, b) => b.savedAt.localeCompare(a.savedAt))[0];
 }
 
 export function getSavedUploadRequestDraftAccess({
@@ -429,6 +449,9 @@ function parseSavedUploadRequestDraft(value: unknown): SavedUploadRequestDraft |
     typeof parsed.title !== "string" ||
     typeof parsed.createdByEmail !== "string" ||
     (parsed.createdByUserId !== undefined && typeof parsed.createdByUserId !== "string") ||
+    (parsed.draftKind !== undefined &&
+      parsed.draftKind !== "current" &&
+      parsed.draftKind !== "named") ||
     typeof parsed.savedAt !== "string" ||
     !parsed.draft
   ) {
@@ -445,6 +468,7 @@ function parseSavedUploadRequestDraft(value: unknown): SavedUploadRequestDraft |
     title: parsed.title,
     createdByEmail: parsed.createdByEmail,
     ...(parsed.createdByUserId ? { createdByUserId: parsed.createdByUserId } : {}),
+    draftKind: parsed.draftKind || "named",
     savedAt: parsed.savedAt,
     draft,
   };

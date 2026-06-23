@@ -65,9 +65,9 @@ Current implemented areas:
 - Box Details panel for editing node type, label, due hours, assignee, escalation, document requirements, condition cases, and branch details.
 - Per-box document requirements, including document format, document type, required flag, and extraction fields.
 - Template-side sample document recognition inside Box Details, allowing a template creator to upload a sample document, accept suggested fields, or box a value from the preview to create template extraction fields.
-- Upload-side two-step field recognition: Step 1 suggested fields from OCR, followed by Step 2 add/correct fields through document preview boxing or direct manual values. Selected fields show their source as AI/OCR, Boxed field, or Manual.
-- Upload request autosave for interrupted request creation, preserving selected template, Supabase attachment references, parsed OCR result, edited extraction draft fields, highlighted field groups/value boxes, and parsed document link in browser-local storage. Submitted or manually cleared drafts remove the saved recovery state.
-- Saved upload request drafts, allowing an originator to explicitly name, save, reload, and delete recoverable request work. Upload separates the current autosave from named saved drafts so users can tell transient recovery state from intentional saved work. A dedicated Drafts tab lets users find and resume interrupted current autosaves or named saved drafts without staying on the Upload tab. Saved drafts sync to Supabase when available and are filtered both client-side and by RLS so only the creating user can access them; superusers do not bypass saved upload draft ownership.
+- Upload-side field recognition with an explicit method selector for Suggested fields, Box from preview, and Manual values. Selected fields show their source as AI/OCR, Boxed field, or Manual.
+- Upload request autosave for interrupted request creation, preserving selected template, Supabase attachment references, parsed OCR result, edited extraction draft fields, highlighted field groups/value boxes, and parsed document link in browser-local storage. Current autosave is also debounced to Supabase as a creator-owned private draft with `draft_kind = current`, then restored when it is newer than the browser-local copy. Submitted or manually cleared drafts remove the saved recovery state.
+- Saved upload request drafts, allowing an originator to explicitly name, save, reload, and delete recoverable request work. Upload separates the current autosave from named saved drafts so users can tell transient recovery state from intentional saved work. A dedicated Drafts tab lets users find and resume interrupted current autosaves or named saved drafts without staying on the Upload tab. Current and named drafts sync to Supabase when available and are filtered both client-side and by RLS so only the creating user can access them; superusers do not bypass saved upload draft ownership.
 - Qwen/OpenRouter visual OCR path for PDFs rendered into page images, plus PDF.js decoder assets for scanner PDFs that require CMaps, standard fonts, and WASM decoders.
 - Extraction confidence and evidence display for parsed fields, with user corrections stored as workflow-specific extraction examples for future OCR prompts.
 - Condition cases with numbered display, optional nickname, approval-count rules, specific-reviewer rules, numeric rules, AND/OR joining, fallback route, and multiple outcome boxes.
@@ -80,7 +80,7 @@ Current implemented areas:
 - Seed business and department directory with admin add/edit/delete controls. Add/edit persists through the normalized workspace save path; delete uses a dedicated admin soft-deactivation API that sets `is_active=false`.
 - Template lifecycle metadata for Draft, Published, and Archived states, including creator/updater/archive metadata and visible Template Library permission labels.
 - Template admin audit events for create, publish, duplicate, update, and archive actions, shown in the Admin tab and persisted in the workspace snapshot.
-- Supabase RLS policies that allow authenticated template creators to insert/update their own template versions and claim ownerless legacy template rows during normalized save repair.
+- Supabase RLS policies that allow active template reads, creator/admin template writes, and ownerless legacy row repair through one consolidated SELECT, INSERT, and UPDATE policy on `workflow_template_versions`.
 - Supabase upload draft RLS policies that restrict draft select, insert, update, and delete to the signed-in creator through `owner_user_id = auth.uid()`.
 - Production performance optimizations for server response time and deferred workspace loading.
 
@@ -1083,17 +1083,21 @@ Workspace state is serialized to localStorage and saved to Supabase.
 Workflow template versions use Supabase RLS:
 
 - Authenticated users can read active template versions.
-- Admin profile users can create and update template versions.
-- Template creators can insert template versions where `created_by = auth.uid()`.
-- Template creators can update template versions they own.
+- Template creators and admin profile users can read inactive versions they own or administer.
+- Template creators and admin profile users can insert template versions.
+- Template creators and admin profile users can update template versions.
 - Ownerless legacy template rows can be claimed during update when `created_by is null` and the new row sets `created_by = auth.uid()`.
 
-The live migration `20260621151500_harden_template_lifecycle_permissions.sql` applies the creator insert/update and ownerless legacy-claim policies. The legacy ownerless check currently reports zero active ownerless template versions in the live project.
+The live migration `20260623113043_consolidate_workflow_template_version_policies.sql` consolidates template-version access into one SELECT policy, one INSERT policy, and one UPDATE policy. Live policy verification on 2026-06-23 showed only:
+
+- `workflow template versions readable by active users` for SELECT.
+- `workflow template versions insertable by owners or admins` for INSERT.
+- `workflow template versions writable by owners or admins` for UPDATE.
 
 Remote persistence includes:
 
 - Normalized tables for workflow templates, requests, events, attachments, businesses, and departments.
-- Creator-owned upload request drafts in `upload_request_drafts`.
+- Creator-owned upload request drafts in `upload_request_drafts`, separated by `draft_kind = current` for automatic current autosave and `draft_kind = named` for explicit saved drafts.
 - Snapshot fallback in workspace_snapshots.
 - Supabase storage for uploaded approval documents.
 
@@ -1120,7 +1124,7 @@ API requirements:
 - Workspace save should not block first page render.
 - Attachment upload must sanitize file names and store files under a user/document scoped path.
 - Parse route must return structured JSON with extracted fields, notes, and errors.
-- Upload draft routes must stamp ownership from the authenticated Supabase user and never trust client-provided creator identity.
+- Upload draft routes must stamp ownership and draft kind from the authenticated Supabase user/session path and never trust client-provided creator identity.
 
 ### 19.2.2 Local-First Sync
 
@@ -1130,7 +1134,7 @@ Requirements:
 
 - Browser local state should be used as the first available UI snapshot.
 - Remote workspace load should update state once available.
-- Remote autosave should be delayed/debounced to avoid save storms.
+- Remote workspace and current request draft autosave should be delayed/debounced to avoid save storms.
 - If remote load/save fails, the app should stay usable in local mode and display a non-blocking sync status.
 - Local and remote payloads should use the same workspace snapshot shape.
 
@@ -1145,7 +1149,7 @@ Supabase RLS must enforce:
 - Originators and current owners can update requests where allowed.
 - Participants can read events and attachments for requests they are allowed to see.
 - Users can read and update their own workspace snapshots.
-- Users can read, create, update, and delete only their own saved upload request drafts.
+- Users can read, create, update, and delete only their own current and named upload request drafts.
 - Storage object access should be limited to authenticated owners/participants as the document security model matures.
 
 ## 20. Role Management
@@ -1184,6 +1188,7 @@ Requirements:
 - Prefer fast JWT claims validation with fallback to user lookup.
 - Authenticated pages redirect unauthenticated users to login.
 - Login redirects signed-in users back to the app.
+- Supabase leaked-password protection should be enabled in the Auth dashboard when the project plan supports it, so new or changed passwords are checked against known breached-password datasets.
 
 ## 21.1 Authorization Requirements
 
