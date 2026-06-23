@@ -5,6 +5,7 @@ import {
   isActionableBy,
   isVisibleToParticipant,
 } from "./approval-state.ts";
+import { createApprovalTaskFromTemplate } from "./request-builder.ts";
 
 const actor = {
   name: "Derrick Pang",
@@ -136,6 +137,155 @@ function makeGraphTemplate() {
       ],
     },
   };
+}
+
+function makeAllNodeKindsTemplate(conditionCases) {
+  return {
+    id: "all-node-kinds",
+    name: "All node kinds workflow",
+    business: "Asia Allied Infrastructure",
+    department: "Finance",
+    documentTypes: [],
+    documents: [],
+    languages: ["English"],
+    fields: [],
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Submit request", x: 0, y: 0 },
+        {
+          id: "approval-1",
+          kind: "approval",
+          label: "Approval 1",
+          x: 200,
+          y: 0,
+          assigneeName: "Approver 1",
+          assigneeEmail: "approver1@example.com",
+        },
+        {
+          id: "review-1",
+          kind: "review",
+          label: "Review 1",
+          x: 200,
+          y: 140,
+          assigneeName: "Reviewer 1",
+          assigneeEmail: "reviewer1@example.com",
+        },
+        {
+          id: "approval-2",
+          kind: "approval",
+          label: "Approval 2",
+          x: 200,
+          y: 280,
+          assigneeName: "Approver 2",
+          assigneeEmail: "approver2@example.com",
+        },
+        {
+          id: "condition-1",
+          kind: "condition",
+          label: "Routing condition",
+          x: 480,
+          y: 140,
+          conditionCases,
+        },
+        {
+          id: "fyi-1",
+          kind: "for_information",
+          label: "Finance FYI",
+          x: 720,
+          y: 0,
+          assigneeName: "Finance FYI",
+          assigneeEmail: "finance.fyi@example.com",
+          blocking: false,
+        },
+        {
+          id: "extra-review",
+          kind: "review",
+          label: "Extra review",
+          x: 720,
+          y: 140,
+          assigneeName: "Extra Reviewer",
+          assigneeEmail: "extra@example.com",
+        },
+        {
+          id: "return-1",
+          kind: "return_reject",
+          label: "Return/Reject",
+          x: 720,
+          y: 280,
+        },
+        { id: "end", kind: "end", label: "End", x: 960, y: 140 },
+      ],
+      edges: [
+        {
+          id: "edge-start-approval-1",
+          sourceId: "start",
+          targetId: "approval-1",
+          label: "Start approval",
+          branchType: "main",
+        },
+        {
+          id: "edge-start-review-1",
+          sourceId: "start",
+          targetId: "review-1",
+          label: "Start review",
+          branchType: "main",
+        },
+        {
+          id: "edge-start-approval-2",
+          sourceId: "start",
+          targetId: "approval-2",
+          label: "Start approval 2",
+          branchType: "main",
+        },
+        {
+          id: "edge-approval-1-condition",
+          sourceId: "approval-1",
+          targetId: "condition-1",
+          label: "Approved",
+          branchType: "approved",
+        },
+        {
+          id: "edge-review-1-condition",
+          sourceId: "review-1",
+          targetId: "condition-1",
+          label: "Reviewed",
+          branchType: "approved",
+        },
+        {
+          id: "edge-approval-2-condition",
+          sourceId: "approval-2",
+          targetId: "condition-1",
+          label: "Approved",
+          branchType: "approved",
+        },
+        {
+          id: "edge-extra-end",
+          sourceId: "extra-review",
+          targetId: "end",
+          label: "Approved",
+          branchType: "approved",
+        },
+        {
+          id: "edge-extra-return",
+          sourceId: "extra-review",
+          targetId: "return-1",
+          label: "Rejected",
+          branchType: "rejected",
+        },
+      ],
+    },
+  };
+}
+
+function makeCreatedTask(template, extractedFields = {}) {
+  return createApprovalTaskFromTemplate({
+    id: "APR-MATRIX",
+    now: new Date("2026-06-23T09:00:00+08:00"),
+    requester: { name: "Mandy Chan", email: "mandy@example.com" },
+    template,
+    extractedFields,
+  });
 }
 
 test("approve moves the task out of the actor queue but leaves it trackable", () => {
@@ -517,7 +667,7 @@ test("parallel approvals wait until a condition case is satisfied", () => {
               approvalRule: {
                 upstreamNodeIds: ["review-1", "review-2", "review-3"],
                 minimumApproved: 2,
-                mode: "exactly",
+                mode: "at_least",
               },
               join: "and",
               targetNodeIds: ["cfo"],
@@ -600,6 +750,414 @@ test("parallel approvals wait until a condition case is satisfied", () => {
   assert.equal(second.currentNodeId, "cfo");
   assert.deepEqual(second.pendingNodeIds, ["cfo"]);
   assert.equal(second.activeBranchId, "case-2");
+});
+
+test("condition case can route a 2 of 3 approval count through FYI and review in a graph with every node kind", () => {
+  const template = makeAllNodeKindsTemplate([
+    {
+      id: "case-2-of-3",
+      name: "At least two approve",
+      approvalRule: {
+        upstreamNodeIds: ["approval-1", "review-1", "approval-2"],
+        minimumApproved: 2,
+        mode: "at_least",
+      },
+      join: "and",
+      targetNodeIds: ["fyi-1", "extra-review"],
+    },
+  ]);
+  const task = makeCreatedTask(template, { invoice_total: "HKD 12,000" });
+
+  const first = applyTaskAction(task, {
+    action: "approve",
+    actor: { name: "Approver 1", email: "approver1@example.com" },
+    template,
+  });
+
+  assert.equal(first.currentOwner, "reviewer1@example.com");
+  assert.deepEqual(first.pendingNodeIds, ["review-1", "approval-2"]);
+  assert.equal(first.notifiedNodeIds.includes("fyi-1"), false);
+
+  const second = applyTaskAction(first, {
+    action: "approve",
+    actor: { name: "Reviewer 1", email: "reviewer1@example.com" },
+    template,
+  });
+
+  assert.equal(second.status, "pending");
+  assert.equal(second.currentOwner, "extra@example.com");
+  assert.equal(second.currentNodeId, "extra-review");
+  assert.deepEqual(second.pendingNodeIds, ["extra-review"]);
+  assert.equal(second.activeBranchId, "case-2-of-3");
+  assert.ok(second.notifiedNodeIds.includes("fyi-1"));
+  assert.ok(second.participants.includes("finance.fyi@example.com"));
+
+  const completed = applyTaskAction(second, {
+    action: "approve",
+    actor: { name: "Extra Reviewer", email: "extra@example.com" },
+    template,
+  });
+
+  assert.equal(completed.status, "approved");
+  assert.equal(completed.currentOwner, "");
+  assert.ok(completed.completedNodeIds.includes("extra-review"));
+});
+
+test("fallback approval-count condition waits while unresolved upstream boxes could still match a specified case", () => {
+  const template = makeAllNodeKindsTemplate([
+    {
+      id: "case-all-3",
+      name: "All three approve",
+      approvalRule: {
+        upstreamNodeIds: ["approval-1", "review-1", "approval-2"],
+        minimumApproved: 3,
+        mode: "exactly",
+      },
+      join: "and",
+      targetNodeIds: ["extra-review"],
+    },
+    {
+      id: "case-fallback",
+      name: "All other outcomes",
+      isFallback: true,
+      join: "and",
+      targetNodeIds: ["return-1"],
+    },
+  ]);
+  const task = makeCreatedTask(template, { invoice_total: "HKD 12,000" });
+
+  const first = applyTaskAction(task, {
+    action: "approve",
+    actor: { name: "Approver 1", email: "approver1@example.com" },
+    template,
+  });
+
+  assert.equal(first.status, "pending");
+  assert.equal(first.currentOwner, "reviewer1@example.com");
+  assert.equal(first.currentNodeId, "review-1");
+  assert.deepEqual(first.pendingNodeIds, ["review-1", "approval-2"]);
+  assert.equal(first.activeBranchId, undefined);
+});
+
+test("exact approval-count condition waits for unresolved upstream boxes before routing mixed decisions", () => {
+  const template = makeAllNodeKindsTemplate([
+    {
+      id: "case-exactly-1",
+      name: "Exactly one approved",
+      approvalRule: {
+        upstreamNodeIds: ["approval-1", "review-1", "approval-2"],
+        minimumApproved: 1,
+        mode: "exactly",
+      },
+      join: "and",
+      targetNodeIds: ["return-1"],
+    },
+    {
+      id: "case-fallback",
+      name: "All other outcomes",
+      isFallback: true,
+      join: "and",
+      targetNodeIds: ["end"],
+    },
+  ]);
+  const graph = template.graph;
+  graph.edges = [
+    ...graph.edges,
+    {
+      id: "edge-approval-1-rejected-condition",
+      sourceId: "approval-1",
+      targetId: "condition-1",
+      label: "Rejected",
+      branchType: "rejected",
+    },
+    {
+      id: "edge-review-1-rejected-condition",
+      sourceId: "review-1",
+      targetId: "condition-1",
+      label: "Rejected",
+      branchType: "rejected",
+    },
+    {
+      id: "edge-approval-2-rejected-condition",
+      sourceId: "approval-2",
+      targetId: "condition-1",
+      label: "Rejected",
+      branchType: "rejected",
+    },
+  ];
+  const task = makeCreatedTask(template, { invoice_total: "HKD 12,000" });
+
+  const first = applyTaskAction(task, {
+    action: "approve",
+    actor: { name: "Approver 1", email: "approver1@example.com" },
+    template,
+  });
+  assert.equal(first.status, "pending");
+  assert.equal(first.currentOwner, "reviewer1@example.com");
+
+  const second = applyTaskAction(first, {
+    action: "reject",
+    actor: { name: "Reviewer 1", email: "reviewer1@example.com" },
+    template,
+  });
+  assert.equal(second.status, "pending");
+  assert.equal(second.currentOwner, "approver2@example.com");
+  assert.deepEqual(second.pendingNodeIds, ["approval-2"]);
+
+  const routed = applyTaskAction(second, {
+    action: "reject",
+    actor: { name: "Approver 2", email: "approver2@example.com" },
+    template,
+  });
+  assert.equal(routed.status, "returned");
+  assert.equal(routed.currentOwner, "mandy@example.com");
+  assert.equal(routed.currentNodeId, "return-1");
+  assert.equal(routed.activeBranchId, "case-exactly-1");
+});
+
+test("condition supports numeric greater-than, fallback, and return-reject outcomes", () => {
+  const template = {
+    ...makeGraphTemplate(),
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Submit request", x: 0, y: 0 },
+        {
+          id: "review-1",
+          kind: "review",
+          label: "Initial review",
+          x: 200,
+          y: 0,
+          assigneeName: "Reviewer",
+          assigneeEmail: "reviewer@example.com",
+        },
+        {
+          id: "condition-1",
+          kind: "condition",
+          label: "Amount routing",
+          x: 400,
+          y: 0,
+          conditionCases: [
+            {
+              id: "case-high",
+              name: "High amount",
+              numericRule: { field: "invoice_total", operator: ">", value: "5000" },
+              join: "and",
+              targetNodeIds: ["extra-review"],
+            },
+            {
+              id: "case-zero",
+              name: "Zero amount",
+              numericRule: { field: "invoice_total", operator: "=", value: "0" },
+              join: "and",
+              targetNodeIds: ["return-1"],
+            },
+            {
+              id: "case-fallback",
+              name: "All other amounts",
+              isFallback: true,
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+          ],
+        },
+        {
+          id: "extra-review",
+          kind: "review",
+          label: "High value review",
+          x: 600,
+          y: 0,
+          assigneeName: "High Value Reviewer",
+          assigneeEmail: "high.value@example.com",
+        },
+        {
+          id: "return-1",
+          kind: "return_reject",
+          label: "Return/Reject",
+          x: 600,
+          y: 140,
+        },
+        { id: "end", kind: "end", label: "End", x: 800, y: 0 },
+      ],
+      edges: [
+        {
+          id: "edge-start-review",
+          sourceId: "start",
+          targetId: "review-1",
+          label: "Submit",
+          branchType: "main",
+        },
+        {
+          id: "edge-review-condition",
+          sourceId: "review-1",
+          targetId: "condition-1",
+          label: "Reviewed",
+          branchType: "approved",
+        },
+        {
+          id: "edge-extra-end",
+          sourceId: "extra-review",
+          targetId: "end",
+          label: "Approved",
+          branchType: "approved",
+        },
+      ],
+    },
+  };
+
+  const high = applyTaskAction(makeCreatedTask(template, { invoice_total: "HKD 8,400" }), {
+    action: "approve",
+    actor: { name: "Reviewer", email: "reviewer@example.com" },
+    template,
+  });
+  assert.equal(high.status, "pending");
+  assert.equal(high.currentNodeId, "extra-review");
+  assert.equal(high.activeBranchId, "case-high");
+
+  const normal = applyTaskAction(makeCreatedTask(template, { invoice_total: "HKD 3,000" }), {
+    action: "approve",
+    actor: { name: "Reviewer", email: "reviewer@example.com" },
+    template,
+  });
+  assert.equal(normal.status, "approved");
+  assert.equal(normal.activeBranchId, "case-fallback");
+
+  const zero = applyTaskAction(makeCreatedTask(template, { invoice_total: "0" }), {
+    action: "approve",
+    actor: { name: "Reviewer", email: "reviewer@example.com" },
+    template,
+  });
+  assert.equal(zero.status, "returned");
+  assert.equal(zero.currentOwner, "mandy@example.com");
+  assert.equal(zero.currentNodeId, "return-1");
+  assert.equal(zero.activeBranchId, "case-zero");
+});
+
+test("condition supports combined approval and numeric rules with and/or joins", () => {
+  const template = {
+    ...makeGraphTemplate(),
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Submit request", x: 0, y: 0 },
+        {
+          id: "approval-1",
+          kind: "approval",
+          label: "Department approval",
+          x: 200,
+          y: 0,
+          assigneeName: "Department Approver",
+          assigneeEmail: "approver@example.com",
+        },
+        {
+          id: "condition-1",
+          kind: "condition",
+          label: "Combined routing",
+          x: 400,
+          y: 0,
+          conditionCases: [
+            {
+              id: "case-approval-and-high",
+              name: "Approved and high amount",
+              approvalRule: {
+                upstreamNodeIds: ["approval-1"],
+                minimumApproved: 1,
+                mode: "at_least",
+              },
+              numericRule: { field: "invoice_total", operator: ">=", value: "10000" },
+              join: "and",
+              targetNodeIds: ["extra-review"],
+            },
+            {
+              id: "case-approval-or-high",
+              name: "Approved or high amount",
+              approvalRule: {
+                upstreamNodeIds: ["approval-1"],
+                minimumApproved: 2,
+                mode: "at_least",
+              },
+              numericRule: { field: "invoice_total", operator: ">=", value: "5000" },
+              join: "or",
+              targetNodeIds: ["end"],
+            },
+            {
+              id: "case-fallback",
+              name: "All other cases",
+              isFallback: true,
+              join: "and",
+              targetNodeIds: ["return-1"],
+            },
+          ],
+        },
+        {
+          id: "extra-review",
+          kind: "review",
+          label: "High value review",
+          x: 600,
+          y: 0,
+          assigneeName: "High Value Reviewer",
+          assigneeEmail: "high.value@example.com",
+        },
+        {
+          id: "return-1",
+          kind: "return_reject",
+          label: "Return/Reject",
+          x: 600,
+          y: 140,
+        },
+        { id: "end", kind: "end", label: "End", x: 800, y: 0 },
+      ],
+      edges: [
+        {
+          id: "edge-start-approval",
+          sourceId: "start",
+          targetId: "approval-1",
+          label: "Submit",
+          branchType: "main",
+        },
+        {
+          id: "edge-approval-condition",
+          sourceId: "approval-1",
+          targetId: "condition-1",
+          label: "Approved",
+          branchType: "approved",
+        },
+      ],
+    },
+  };
+
+  const andMatch = applyTaskAction(
+    makeCreatedTask(template, { invoice_total: "HKD 12,000" }),
+    {
+      action: "approve",
+      actor: { name: "Department Approver", email: "approver@example.com" },
+      template,
+    },
+  );
+  assert.equal(andMatch.status, "pending");
+  assert.equal(andMatch.currentNodeId, "extra-review");
+  assert.equal(andMatch.activeBranchId, "case-approval-and-high");
+
+  const orMatch = applyTaskAction(
+    makeCreatedTask(template, { invoice_total: "HKD 6,000" }),
+    {
+      action: "approve",
+      actor: { name: "Department Approver", email: "approver@example.com" },
+      template,
+    },
+  );
+  assert.equal(orMatch.status, "approved");
+  assert.equal(orMatch.activeBranchId, "case-approval-or-high");
+
+  const fallback = applyTaskAction(
+    makeCreatedTask(template, { invoice_total: "HKD 3,000" }),
+    {
+      action: "approve",
+      actor: { name: "Department Approver", email: "approver@example.com" },
+      template,
+    },
+  );
+  assert.equal(fallback.status, "returned");
+  assert.equal(fallback.currentOwner, "mandy@example.com");
+  assert.equal(fallback.activeBranchId, "case-fallback");
 });
 
 test("reject returns the task to the originator for amendment or cancellation", () => {

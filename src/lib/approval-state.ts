@@ -600,12 +600,18 @@ function chooseConditionCaseTarget(
   notifiedNodes: WorkflowGraphNode[],
 ) {
   const conditionCases = conditionNode.conditionCases || [];
+  const specifiedCases = conditionCases.filter(
+    (conditionCase) => !conditionCase.isFallback,
+  );
+  const fallbackCase = conditionCases.find((conditionCase) => conditionCase.isFallback);
   const matchedCase =
-    conditionCases.find(
-      (conditionCase) =>
-        !conditionCase.isFallback &&
-        doesConditionCaseMatch(conditionCase, extractedFields, nodeDecisions),
-    ) || conditionCases.find((conditionCase) => conditionCase.isFallback);
+    specifiedCases.find((conditionCase) =>
+      doesConditionCaseMatch(conditionCase, extractedFields, nodeDecisions),
+    ) ||
+    (fallbackCase &&
+    canFallbackConditionRoute(specifiedCases, extractedFields, nodeDecisions)
+      ? fallbackCase
+      : undefined);
 
   if (!matchedCase) {
     return undefined;
@@ -630,6 +636,49 @@ function chooseConditionCaseTarget(
     caseId: matchedCase.id,
     targetNodeId,
   };
+}
+
+function canFallbackConditionRoute(
+  specifiedCases: NonNullable<WorkflowGraphNode["conditionCases"]>,
+  extractedFields: Record<string, string>,
+  nodeDecisions: ApprovalTask["nodeDecisions"],
+) {
+  return !specifiedCases.some((conditionCase) =>
+    canApprovalConditionStillMatch(conditionCase, extractedFields, nodeDecisions),
+  );
+}
+
+function canApprovalConditionStillMatch(
+  conditionCase: NonNullable<WorkflowGraphNode["conditionCases"]>[number],
+  extractedFields: Record<string, string>,
+  nodeDecisions: ApprovalTask["nodeDecisions"],
+) {
+  if (!conditionCase.approvalRule) {
+    return false;
+  }
+
+  const numericMatches = conditionCase.numericRule
+    ? doesRuleMatch(conditionCase.numericRule, extractedFields)
+    : undefined;
+
+  if (conditionCase.numericRule && conditionCase.join === "and" && !numericMatches) {
+    return false;
+  }
+
+  const { upstreamNodeIds, minimumApproved, mode } = conditionCase.approvalRule;
+  const approvedCount = upstreamNodeIds.filter(
+    (nodeId) => nodeDecisions?.[nodeId] === "approved",
+  ).length;
+  const decidedCount = upstreamNodeIds.filter((nodeId) =>
+    Boolean(nodeDecisions?.[nodeId]),
+  ).length;
+  const remainingCount = Math.max(upstreamNodeIds.length - decidedCount, 0);
+
+  if (mode === "exactly") {
+    return approvedCount <= minimumApproved && minimumApproved <= approvedCount + remainingCount;
+  }
+
+  return approvedCount + remainingCount >= minimumApproved;
 }
 
 function doesConditionCaseMatch(
@@ -672,10 +721,18 @@ function doesApprovalRuleMatch(
   const approvedCount = approvalRule.upstreamNodeIds.filter(
     (nodeId) => nodeDecisions?.[nodeId] === "approved",
   ).length;
+  const decidedCount = approvalRule.upstreamNodeIds.filter((nodeId) =>
+    Boolean(nodeDecisions?.[nodeId]),
+  ).length;
 
-  return approvalRule.mode === "exactly"
-    ? approvedCount === approvalRule.minimumApproved
-    : approvedCount >= approvalRule.minimumApproved;
+  if (approvalRule.mode === "exactly") {
+    return (
+      decidedCount === approvalRule.upstreamNodeIds.length &&
+      approvedCount === approvalRule.minimumApproved
+    );
+  }
+
+  return approvedCount >= approvalRule.minimumApproved;
 }
 
 function chooseNextEdge(
