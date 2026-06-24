@@ -18,6 +18,7 @@ import type {
   BusinessUnit,
   UserRoleAssignment,
 } from "@/lib/types";
+import type { EmailOutboxEntry } from "@/lib/email-outbox-state";
 import type { UserDirectoryEntry } from "@/lib/user-directory";
 import type { TaskNotification } from "@/lib/workflow-system";
 
@@ -45,6 +46,7 @@ export function AdminView({
   adminAuditEvents,
   activeUserEmail,
   emailDeliveryMessage,
+  emailOutboxEntries,
   onSendTestEmail,
 }: {
   businessDirectory: BusinessUnit[];
@@ -65,6 +67,7 @@ export function AdminView({
   adminAuditEvents: AdminAuditEvent[];
   activeUserEmail: string;
   emailDeliveryMessage: string;
+  emailOutboxEntries: EmailOutboxEntry[];
   onSendTestEmail: (to: string) => Promise<void>;
 }) {
   const initialSelection = getAdminBusinessSelectionState({
@@ -425,6 +428,10 @@ export function AdminView({
           <p className="mt-1 text-sm text-neutral-400">
             Send a test email before routing workflow tasks to real inboxes.
           </p>
+          <p className="mt-2 rounded-md border border-yellow-400/20 bg-yellow-400/10 p-2 text-xs text-yellow-100">
+            Resend test mode can only send to the account email until a sending domain is
+            verified. Verify a domain in Resend before sending to real approvers.
+          </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
             <input
               value={testEmail}
@@ -454,6 +461,53 @@ export function AdminView({
               {emailDeliveryMessage}
             </p>
           ) : null}
+          <div className="mt-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-neutral-300">Email outbox</h3>
+              <span className="text-xs text-neutral-500">
+                {emailOutboxEntries.length} recent attempt(s)
+              </span>
+            </div>
+            <div className="mt-2 space-y-2">
+              {emailOutboxEntries.slice(0, 10).map((entry) => (
+                <div
+                  key={entry.id}
+                  className="rounded-md border border-white/10 bg-[#121518] p-3 text-xs"
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="break-words font-medium text-neutral-200">
+                        {entry.title} - {entry.recipientEmail}
+                      </p>
+                      <p className="mt-1 break-words text-neutral-500">
+                        {entry.requestId} - {entry.kind} - {entry.mode}
+                      </p>
+                    </div>
+                    <span
+                      className={`w-fit rounded border px-2 py-1 ${
+                        entry.status === "sent"
+                          ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+                          : entry.status === "failed"
+                            ? "border-rose-400/30 bg-rose-400/10 text-rose-100"
+                            : "border-yellow-400/30 bg-yellow-400/10 text-yellow-100"
+                      }`}
+                    >
+                      {entry.status}
+                    </span>
+                  </div>
+                  <p className="mt-2 break-words text-neutral-400">{entry.message}</p>
+                  <p className="mt-1 text-neutral-600">
+                    {new Date(entry.createdAt).toLocaleString()}
+                  </p>
+                </div>
+              ))}
+              {!emailOutboxEntries.length && (
+                <p className="rounded-md border border-white/10 bg-[#121518] p-3 text-xs text-neutral-500">
+                  No email attempts yet. Send a test email or route a workflow task.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
         <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
           <h2 className="font-semibold">In-app notifications</h2>

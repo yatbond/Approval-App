@@ -54,6 +54,11 @@ import type {
   HighlightFieldGroup,
 } from "@/lib/upload-view-state";
 import {
+  buildEmailOutboxEntries,
+  mergeEmailOutboxEntries,
+  type EmailOutboxEntry,
+} from "@/lib/email-outbox-state";
+import {
   buildTaskNotifications,
 } from "@/lib/workflow-system";
 import { useApprovalWorkspaceState } from "@/app/use-approval-workspace-state";
@@ -189,6 +194,7 @@ function ApprovalWorkspaceBody({
   const [submissionMessage, setSubmissionMessage] = useState("");
   const [actionError, setActionError] = useState("");
   const [emailDeliveryMessage, setEmailDeliveryMessage] = useState("");
+  const [emailOutboxEntries, setEmailOutboxEntries] = useState<EmailOutboxEntry[]>([]);
   const [adminRecordError, setAdminRecordError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [uploadedAttachments, setUploadedAttachments] = useState<ApprovalAttachment[]>([]);
@@ -940,6 +946,7 @@ function ApprovalWorkspaceBody({
   }
 
   async function sendWorkflowEmailNotifications(task: ApprovalTask) {
+    const taskNotifications = buildTaskNotifications([task]);
     try {
       const response = await fetch("/api/email/task-notifications", {
         method: "POST",
@@ -948,7 +955,30 @@ function ApprovalWorkspaceBody({
       });
       const result = await response.json();
       setEmailDeliveryMessage(formatEmailDeliveryMessage(result));
+      setEmailOutboxEntries((entries) =>
+        mergeEmailOutboxEntries(
+          entries,
+          buildEmailOutboxEntries({
+            notifications: taskNotifications,
+            result,
+          }),
+        ),
+      );
     } catch (error) {
+      setEmailOutboxEntries((entries) =>
+        mergeEmailOutboxEntries(
+          entries,
+          buildEmailOutboxEntries({
+            notifications: taskNotifications,
+            result: {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Email delivery failed.",
+            },
+          }),
+        ),
+      );
       setEmailDeliveryMessage(
         error instanceof Error
           ? `Email delivery failed: ${error.message}`
@@ -958,6 +988,16 @@ function ApprovalWorkspaceBody({
   }
 
   async function sendTestEmail(to: string) {
+    const testNotification = {
+      id: `test-email-${Date.now()}`,
+      title: "Test email",
+      body: "This is a live Approval App email test.",
+      time: new Date().toISOString(),
+      unread: true,
+      requestId: "TEST",
+      recipientEmail: to,
+      kind: "fyi" as const,
+    };
     try {
       const response = await fetch("/api/email/test", {
         method: "POST",
@@ -966,7 +1006,30 @@ function ApprovalWorkspaceBody({
       });
       const result = await response.json();
       setEmailDeliveryMessage(formatEmailDeliveryMessage(result));
+      setEmailOutboxEntries((entries) =>
+        mergeEmailOutboxEntries(
+          entries,
+          buildEmailOutboxEntries({
+            notifications: [testNotification],
+            result,
+          }),
+        ),
+      );
     } catch (error) {
+      setEmailOutboxEntries((entries) =>
+        mergeEmailOutboxEntries(
+          entries,
+          buildEmailOutboxEntries({
+            notifications: [testNotification],
+            result: {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Email test failed.",
+            },
+          }),
+        ),
+      );
       setEmailDeliveryMessage(
         error instanceof Error
           ? `Email test failed: ${error.message}`
@@ -1267,6 +1330,7 @@ function ApprovalWorkspaceBody({
                 adminAuditEvents={adminAuditEvents}
                 activeUserEmail={activeUser.email}
                 emailDeliveryMessage={emailDeliveryMessage}
+                emailOutboxEntries={emailOutboxEntries}
                 onSendTestEmail={sendTestEmail}
               />
             )}
