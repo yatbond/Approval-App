@@ -60,6 +60,13 @@ export function getWorkspaceRecordTaskActionState({
         (request) =>
           request.blocksApproval !== false && request.status === "requested",
       ),
+    pendingSharedFulfillments: (selectedTask.sharedFulfillments || []).filter(
+      (fulfillment) =>
+        fulfillment.required && fulfillment.status === "pending_confirmation",
+    ),
+    pendingCorrectionRequests: (selectedTask.correctionRequests || []).filter(
+      (request) => request.blocksApproval && request.status === "requested",
+    ),
   });
 
   if (!preflight.canProceed) {

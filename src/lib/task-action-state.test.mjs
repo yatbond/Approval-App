@@ -78,6 +78,66 @@ test("blocks approval when blocking contributor requests are still pending", () 
   );
 });
 
+test("blocks approval when shared fulfillment confirmation is pending", () => {
+  const state = getTaskActionPreflightState({
+    action: "approve",
+    targetEmail: "",
+    missingCurrentDocuments: [],
+    pendingSharedFulfillments: [
+      {
+        id: "shared-1",
+        taskId: "APR-1",
+        requirementNodeId: "submit-site",
+        documentId: "doc-delivery",
+        documentType: "Delivery Note",
+        assignedSubmitterEmail: "site@example.com",
+        assignedSubmitterName: "Site Team",
+        uploaderEmail: "contractor@example.com",
+        uploaderName: "Contractor",
+        attachmentId: "attachment-1",
+        required: true,
+        status: "pending_confirmation",
+        submittedAt: "2026-06-26 11:00",
+      },
+    ],
+  });
+
+  assert.equal(state.canProceed, false);
+  assert.equal(
+    state.errorMessage,
+    "Resolve shared fulfillment confirmation(s) before approving: Delivery Note.",
+  );
+});
+
+test("blocks approval when correction requests are unresolved", () => {
+  const state = getTaskActionPreflightState({
+    action: "approve_with_comment",
+    targetEmail: "",
+    missingCurrentDocuments: [],
+    pendingCorrectionRequests: [
+      {
+        id: "correction-1",
+        taskId: "APR-1",
+        sharedFulfillmentId: "shared-1",
+        requestedByEmail: "reviewer@example.com",
+        requestedByName: "Reviewer",
+        assignedSubmitterEmail: "site@example.com",
+        uploaderEmail: "contractor@example.com",
+        rejectionNote: "Missing stamp.",
+        status: "requested",
+        blocksApproval: true,
+        createdAt: "2026-06-26 11:40",
+      },
+    ],
+  });
+
+  assert.equal(state.canProceed, false);
+  assert.equal(
+    state.errorMessage,
+    "Resolve correction request(s) before approving: correction-1.",
+  );
+});
+
 test("allows non-approval actions without document checks", () => {
   const state = getTaskActionPreflightState({
     action: "reject",

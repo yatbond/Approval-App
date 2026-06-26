@@ -124,6 +124,43 @@ test("blocks approval when the current workflow box still requires documents", (
   assert.equal(nextState.tasks[0], selectedTask);
 });
 
+test("blocks approval when selected task has pending shared confirmation", () => {
+  const selectedTask = makeTask({
+    sharedFulfillments: [
+      {
+        id: "shared-1",
+        taskId: "task-1",
+        requirementNodeId: "submit-site",
+        documentId: "doc-delivery",
+        documentType: "Delivery Note",
+        assignedSubmitterEmail: "site@example.com",
+        assignedSubmitterName: "Site Team",
+        uploaderEmail: "contractor@example.com",
+        uploaderName: "Contractor",
+        attachmentId: "attachment-1",
+        required: true,
+        status: "pending_confirmation",
+        submittedAt: "2026-06-26 11:00",
+      },
+    ],
+  });
+  const nextState = getWorkspaceRecordTaskActionState({
+    tasks: [selectedTask],
+    selectedTask,
+    templates: [template],
+    activeUser,
+    action: "approve",
+    comment: "",
+    targetEmail: "",
+  });
+
+  assert.equal(nextState.didApply, false);
+  assert.equal(
+    nextState.actionError,
+    "Resolve shared fulfillment confirmation(s) before approving: Delivery Note.",
+  );
+});
+
 test("runs a workflow simulation action with the task owner as actor", () => {
   const task = makeTask({
     currentOwner: "owner@example.com",
