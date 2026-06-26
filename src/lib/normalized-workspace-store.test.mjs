@@ -362,6 +362,117 @@ test("restores template version numbers from normalized template rows", async ()
   assert.equal(snapshot.workflowTemplates[0].version, 3);
 });
 
+test("hydrates collaboration state from mirror tables during normalized load", async () => {
+  const task = createSnapshot().approvalTasks[0];
+  const supabase = new FakeSupabase({
+    workflow_template_versions: [
+      {
+        id: "template-finance-db",
+        template_key: "template-finance",
+        version_number: 1,
+        name: "Finance invoice approval",
+        graph: template.graph,
+        document_requirements: [],
+        supported_languages: ["English"],
+        template_snapshot: template,
+        business_units: { name: "Asia Allied Infrastructure" },
+        business_departments: { name: "Finance" },
+        is_active: true,
+      },
+    ],
+    approval_requests: [
+      {
+        id: "request-1",
+        request_no: "APR-1",
+        requester_name: task.requester,
+        requester_email: task.requesterEmail,
+        title: task.title,
+        workflow_name: task.workflow,
+        department_name: task.department,
+        status: task.status,
+        due_label: task.due,
+        due_at: null,
+        value_label: task.value,
+        current_step: task.currentStep,
+        current_node_id: null,
+        current_owner_email: task.currentOwner,
+        pending_node_ids: [],
+        pending_owner_emails: [],
+        completed_node_ids: [],
+        notified_node_ids: [],
+        node_decisions: {},
+        active_branch_id: null,
+        extracted_fields: task.extractedFields,
+        participants: task.participants,
+        last_action: task.lastAction,
+        task_snapshot: task,
+      },
+    ],
+    workflow_collaboration_requests: [
+      {
+        approval_request_no: "APR-1",
+        payload: {
+          id: "APR-1-collab-1",
+          contributorName: "Site Team",
+          contributorEmail: "site@example.com",
+          requestedByName: "Reviewer",
+          requestedByEmail: "reviewer@example.com",
+          requestNote: "Upload site confirmation.",
+          dueAt: "",
+          blocksApproval: true,
+          status: "requested",
+          createdAt: "2026-06-26T10:00:00.000Z",
+        },
+      },
+    ],
+    workflow_shared_fulfillments: [
+      {
+        approval_request_no: "APR-1",
+        payload: {
+          id: "shared-1",
+          taskId: "APR-1",
+          requirementNodeId: "review-1",
+          documentId: "site-confirmation",
+          documentType: "Site confirmation",
+          assignedSubmitterEmail: "site@example.com",
+          assignedSubmitterName: "Site Team",
+          uploaderEmail: "uploader@example.com",
+          uploaderName: "Uploader",
+          attachmentId: "attachment-1",
+          required: true,
+          status: "pending_confirmation",
+          submittedAt: "2026-06-26T10:05:00.000Z",
+        },
+      },
+    ],
+    workflow_correction_requests: [
+      {
+        approval_request_no: "APR-1",
+        payload: {
+          id: "correction-1",
+          taskId: "APR-1",
+          sharedFulfillmentId: "shared-1",
+          requestedByEmail: "reviewer@example.com",
+          requestedByName: "Reviewer",
+          assignedSubmitterEmail: "site@example.com",
+          uploaderEmail: "uploader@example.com",
+          rejectionNote: "Wrong document.",
+          status: "requested",
+          blocksApproval: true,
+          createdAt: "2026-06-26T10:10:00.000Z",
+        },
+      },
+    ],
+  });
+
+  const snapshot = await loadNormalizedWorkspaceState(supabase, "template-finance");
+  const restoredTask = snapshot.approvalTasks[0];
+
+  assert.equal(restoredTask.collaborationRequests[0].contributorEmail, "site@example.com");
+  assert.equal(restoredTask.sharedFulfillments[0].status, "pending_confirmation");
+  assert.equal(restoredTask.correctionRequests[0].rejectionNote, "Wrong document.");
+});
+
 class FakeSupabase {
   constructor(seed = {}) {
     this.rows = {

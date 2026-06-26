@@ -10,6 +10,11 @@ import {
 } from "./normalized-workspace.ts";
 import type { WorkspaceStateSnapshot } from "./workspace-persistence.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type {
+  TaskCollaborationRequest,
+  TaskCorrectionRequest,
+  TaskSharedFulfillment,
+} from "./types.ts";
 
 type SupabaseError = {
   message: string;
@@ -118,6 +123,17 @@ type AttachmentDbRow = {
   storage_path?: string | null;
   uploaded_by_email: string;
   created_at: string;
+};
+
+type CollaborationMirrorDbRow = {
+  approval_request_no: string;
+  payload: unknown;
+};
+
+type CollaborationMirrorRows = {
+  collaborationRequests: CollaborationMirrorDbRow[];
+  sharedFulfillments: CollaborationMirrorDbRow[];
+  correctionRequests: CollaborationMirrorDbRow[];
 };
 
 export async function saveNormalizedWorkspaceState(
@@ -298,6 +314,16 @@ export async function loadNormalizedWorkspaceState(
   const requestNoById = new Map(
     requests.map((request) => [request.id, request.request_no]),
   );
+  const collaborationMirrors = requestIds.length
+    ? await loadCollaborationMirrors(
+        supabase,
+        requests.map((request) => request.request_no),
+      )
+    : {
+        collaborationRequests: [],
+        sharedFulfillments: [],
+        correctionRequests: [],
+      };
 
   return restoreWorkspaceStateFromNormalizedRows({
     selectedTemplateId: selectedTemplateId || templates[0]?.template_key || "",
@@ -310,7 +336,9 @@ export async function loadNormalizedWorkspaceState(
       name: department.name,
     })),
     workflowTemplateVersions: templates.map(mapTemplateRow),
-    approvalRequests: requests.map(mapRequestRow),
+    approvalRequests: requests.map((request) =>
+      mapRequestRow(request, collaborationMirrors),
+    ),
     approvalRequestEvents: events.map((event) => ({
       approvalRequestNo: requestNoById.get(event.approval_request_id) || "",
       eventKey: event.event_key,
@@ -334,6 +362,42 @@ export async function loadNormalizedWorkspaceState(
       createdAt: attachment.created_at,
     })),
   });
+}
+
+async function loadCollaborationMirrors(
+  supabase: SupabaseLike,
+  requestNos: string[],
+): Promise<CollaborationMirrorRows> {
+  const [
+    collaborationRequests,
+    sharedFulfillments,
+    correctionRequests,
+  ] = await Promise.all([
+    selectRows<CollaborationMirrorDbRow>(
+      supabase
+        .from("workflow_collaboration_requests")
+        .select("approval_request_no,payload")
+        .in("approval_request_no", requestNos),
+    ),
+    selectRows<CollaborationMirrorDbRow>(
+      supabase
+        .from("workflow_shared_fulfillments")
+        .select("approval_request_no,payload")
+        .in("approval_request_no", requestNos),
+    ),
+    selectRows<CollaborationMirrorDbRow>(
+      supabase
+        .from("workflow_correction_requests")
+        .select("approval_request_no,payload")
+        .in("approval_request_no", requestNos),
+    ),
+  ]);
+
+  return {
+    collaborationRequests,
+    sharedFulfillments,
+    correctionRequests,
+  };
 }
 
 async function upsertBusinessUnits(
@@ -628,8 +692,23 @@ function mapTemplateRow(row: TemplateDbRow): NormalizedWorkflowTemplateVersionRo
   };
 }
 
-function mapRequestRow(row: RequestDbRow): NormalizedApprovalRequestRow {
+function mapRequestRow(
+  row: RequestDbRow,
+  collaborationMirrors: CollaborationMirrorRows,
+): NormalizedApprovalRequestRow {
   const snapshot = row.task_snapshot as NormalizedApprovalRequestRow["taskSnapshot"];
+  const collaborationRequests = payloadsForRequest<TaskCollaborationRequest>(
+    collaborationMirrors.collaborationRequests,
+    row.request_no,
+  );
+  const sharedFulfillments = payloadsForRequest<TaskSharedFulfillment>(
+    collaborationMirrors.sharedFulfillments,
+    row.request_no,
+  );
+  const correctionRequests = payloadsForRequest<TaskCorrectionRequest>(
+    collaborationMirrors.correctionRequests,
+    row.request_no,
+  );
   return {
     requestNo: row.request_no,
     workflowTemplateKey: row.workflow_template_versions?.template_key || snapshot.workflowTemplateId || "",
@@ -655,8 +734,27 @@ function mapRequestRow(row: RequestDbRow): NormalizedApprovalRequestRow {
     extractedFields: row.extracted_fields || {},
     participants: row.participants || [],
     lastAction: row.last_action,
-    taskSnapshot: snapshot,
+    taskSnapshot: {
+      ...snapshot,
+      ...(collaborationRequests.length ? { collaborationRequests } : {}),
+      ...(sharedFulfillments.length ? { sharedFulfillments } : {}),
+      ...(correctionRequests.length ? { correctionRequests } : {}),
+    },
   };
+}
+
+function payloadsForRequest<T>(
+  rows: CollaborationMirrorDbRow[],
+  requestNo: string,
+): T[] {
+  return rows
+    .filter((row) => row.approval_request_no === requestNo)
+    .map((row) => row.payload)
+    .filter(isObject) as T[];
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 async function selectRows<T>(
