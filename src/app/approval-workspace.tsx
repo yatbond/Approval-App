@@ -60,9 +60,14 @@ import {
 } from "@/lib/email-outbox-state";
 import {
   buildTaskNotifications,
+  mergeTaskNotifications,
   type TaskNotification,
 } from "@/lib/workflow-system";
 import { buildCollaborationNotifications } from "@/lib/collaboration-notification-state";
+import {
+  getTaskCorrectionUploadState,
+  getTaskSharedFulfillmentDecisionState,
+} from "@/lib/shared-fulfillment-state";
 import { useApprovalWorkspaceState } from "@/app/use-approval-workspace-state";
 import {
   QueueView,
@@ -907,6 +912,178 @@ function ApprovalWorkspaceBody({
     }
   }
 
+  async function decideSharedFulfillment({
+    taskId,
+    fulfillmentId,
+    decision,
+    note,
+  }: {
+    taskId: string;
+    fulfillmentId: string;
+    decision: "confirm" | "reject";
+    note?: string;
+  }) {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) {
+      setActionError("Task was not found.");
+      return;
+    }
+    const result = getTaskSharedFulfillmentDecisionState({
+      task,
+      fulfillmentId,
+      actor: activeUser,
+      currentOwnerEmail: task.currentOwner,
+      decision,
+      note,
+    });
+    if (!result.didApply) {
+      setActionError(result.errorMessage);
+      return;
+    }
+
+    const notifications = mergeTaskNotifications([
+      ...buildCollaborationNotifications({
+        task: result.task,
+        event: {
+          type: decision === "confirm" ? "shared_confirmed" : "shared_rejected",
+          fulfillmentId,
+        },
+      }),
+      ...(decision === "reject"
+        ? buildCollaborationNotifications({
+            task: result.task,
+            event: {
+              type: "correction_created",
+              correctionRequestId:
+                result.task.sharedFulfillments?.find((item) => item.id === fulfillmentId)
+                  ?.correctionRequestId || "",
+            },
+          })
+        : []),
+    ]);
+
+    try {
+      await persistCollaborationTransition({
+        task: result.task,
+        notifications,
+      });
+      const nextTasks = tasks.map((item) =>
+        item.id === taskId ? result.task : item,
+      );
+      setTasks(nextTasks);
+      void sendWorkflowEmailNotifications(result.task, notifications);
+      void persistWorkspaceSnapshot(
+        buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
+      );
+      setActionError("");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to persist shared fulfillment decision.",
+      );
+    }
+  }
+
+  async function submitCorrectionUpload({
+    taskId,
+    correctionRequestId,
+    file,
+  }: {
+    taskId: string;
+    correctionRequestId: string;
+    file: File;
+  }) {
+    try {
+      const storage = await uploadWorkspaceAttachmentFile({ file });
+      const pageImages = shouldRenderPdfForVision(file)
+        ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
+        : [];
+      const payload = await parseWorkspaceFile({
+        file,
+        pageImages,
+        adHocFields: [
+          {
+            name: "correction_response",
+            label: "Correction response",
+            type: "text",
+            required: false,
+            source: "ai",
+            instructions:
+              "Extract the corrected information from this resubmitted document.",
+          },
+        ],
+      });
+      const attachment: ApprovalAttachment = {
+        id: `correction-${Date.now()}-${file.name}`,
+        fileName: file.name,
+        documentType: "Correction upload",
+        format: "ad_hoc",
+        storagePath: storage.storagePath,
+        publicUrl: storage.publicUrl,
+        uploadedBy: activeUser.email,
+        uploadedAt: new Date().toISOString(),
+      };
+      const task = tasks.find((item) => item.id === taskId);
+      if (!task) {
+        setActionError("Task was not found.");
+        return;
+      }
+      const result = getTaskCorrectionUploadState({
+        task,
+        correctionRequestId,
+        actor: activeUser,
+        attachment,
+        extractedFields: payload.fields || {},
+      });
+      if (!result.didApply) {
+        setActionError(result.errorMessage);
+        return;
+      }
+      const correction = result.task.correctionRequests?.find(
+        (item) => item.id === correctionRequestId,
+      );
+      const notifications = mergeTaskNotifications([
+        ...buildCollaborationNotifications({
+          task: result.task,
+          event: {
+            type: "correction_resolved",
+            correctionRequestId,
+          },
+        }),
+        ...(correction?.resolvedByFulfillmentId
+          ? buildCollaborationNotifications({
+              task: result.task,
+              event: {
+                type: "shared_pending_confirmation",
+                fulfillmentId: correction.resolvedByFulfillmentId,
+              },
+            })
+          : []),
+      ]);
+
+      await persistCollaborationTransition({
+        task: result.task,
+        notifications,
+      });
+      const nextTasks = tasks.map((item) =>
+        item.id === taskId ? result.task : item,
+      );
+      setTasks(nextTasks);
+      void sendWorkflowEmailNotifications(result.task, notifications);
+      void persistWorkspaceSnapshot(
+        buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
+      );
+      setActionError("");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit correction upload.",
+      );
+    }
+  }
+
   async function attachTaskDocument(
     taskId: string,
     file: File,
@@ -1614,6 +1791,8 @@ function ApprovalWorkspaceBody({
                 activeUserEmail={activeUser.email}
                 userDirectory={userDirectory}
                 onSubmitContributorUpload={submitContributorRequestUpload}
+                onDecideSharedFulfillment={decideSharedFulfillment}
+                onSubmitCorrectionUpload={submitCorrectionUpload}
               />
             )}
 

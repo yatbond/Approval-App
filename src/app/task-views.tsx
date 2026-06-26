@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, type ElementType } from "react";
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -24,6 +25,7 @@ import {
   formatTaskAccessRole,
   getPathNodeState,
 } from "@/lib/task-display";
+import { getCollaborationStatusPanelState } from "@/lib/collaboration-status-panel-state";
 import type {
   ApprovalAction,
   ApprovalTask,
@@ -35,7 +37,7 @@ import type { UserDirectoryEntry } from "@/lib/user-directory";
 
 const actionConfig: Record<
   ApprovalAction,
-  { label: string; icon: React.ElementType; tone: string }
+  { label: string; icon: ElementType; tone: string }
 > = {
   approve: {
     label: "Approve",
@@ -419,6 +421,8 @@ export function TrackingView({
   activeUserEmail,
   userDirectory,
   onSubmitContributorUpload,
+  onDecideSharedFulfillment,
+  onSubmitCorrectionUpload,
 }: {
   tasks: ApprovalTask[];
   selectedTaskId: string;
@@ -430,6 +434,17 @@ export function TrackingView({
     taskId: string;
     collaborationRequestId: string;
     requestNote: string;
+    file: File;
+  }) => void;
+  onDecideSharedFulfillment: (input: {
+    taskId: string;
+    fulfillmentId: string;
+    decision: "confirm" | "reject";
+    note?: string;
+  }) => void;
+  onSubmitCorrectionUpload: (input: {
+    taskId: string;
+    correctionRequestId: string;
     file: File;
   }) => void;
 }) {
@@ -588,6 +603,13 @@ export function TrackingView({
                   onSubmitContributorUpload={onSubmitContributorUpload}
                 />
               ) : null}
+              <CollaborationStatusPanel
+                task={selectedTask}
+                template={selectedTemplate}
+                activeUserEmail={activeUserEmail}
+                onDecideSharedFulfillment={onDecideSharedFulfillment}
+                onSubmitCorrectionUpload={onSubmitCorrectionUpload}
+              />
             </div>
             {selectedTemplate && (
               <TaskPathSummary task={selectedTask} template={selectedTemplate} />
@@ -662,6 +684,248 @@ function TaskPathSummary({
       </div>
     </div>
   );
+}
+
+function CollaborationStatusPanel({
+  task,
+  template,
+  activeUserEmail,
+  onDecideSharedFulfillment,
+  onSubmitCorrectionUpload,
+}: {
+  task: ApprovalTask;
+  template?: WorkflowTemplate;
+  activeUserEmail: string;
+  onDecideSharedFulfillment: (input: {
+    taskId: string;
+    fulfillmentId: string;
+    decision: "confirm" | "reject";
+    note?: string;
+  }) => void;
+  onSubmitCorrectionUpload: (input: {
+    taskId: string;
+    correctionRequestId: string;
+    file: File;
+  }) => void;
+}) {
+  const [rejectionNotes, setRejectionNotes] = useState<Record<string, string>>({});
+  const state = getCollaborationStatusPanelState({
+    task,
+    template,
+    activeUserEmail,
+  });
+  const hasRows =
+    state.requiredSubmissions.length ||
+    state.pendingConfirmations.length ||
+    state.corrections.length ||
+    state.contributorRequests.length ||
+    state.blockingReasons.length;
+
+  if (!hasRows) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold text-neutral-300">
+            Collaboration status
+          </p>
+          <p className="mt-1 text-xs text-neutral-500">
+            Upstream submissions, confirmations, and corrections.
+          </p>
+        </div>
+        {state.blockingReasons.length ? (
+          <span className="self-start rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-xs text-amber-100">
+            Blocking approval
+          </span>
+        ) : null}
+      </div>
+      {state.blockingReasons.length ? (
+        <div className="mt-3 space-y-1 rounded-md border border-amber-400/25 bg-amber-400/10 p-2 text-xs text-amber-100">
+          {state.blockingReasons.map((reason) => (
+            <p key={reason} className="break-words">
+              {reason}
+            </p>
+          ))}
+        </div>
+      ) : null}
+      <StatusPanelGroup
+        title="Required submissions"
+        rows={state.requiredSubmissions}
+      />
+      <div className="mt-3 space-y-2">
+        {state.pendingConfirmations.map((item) => (
+          <div
+            key={item.id}
+            className="rounded-md border border-sky-400/25 bg-sky-400/10 p-2 text-xs"
+          >
+            <StatusPanelRow item={item} />
+            {item.canAct ? (
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onDecideSharedFulfillment({
+                      taskId: task.id,
+                      fulfillmentId: item.id,
+                      decision: "confirm",
+                    })
+                  }
+                  className="flex min-h-9 items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/10 px-3 py-2 text-emerald-100 transition hover:bg-emerald-400/20"
+                >
+                  <Check size={14} />
+                  Confirm
+                </button>
+                <div className="space-y-2">
+                  <input
+                    value={rejectionNotes[item.id] || ""}
+                    onChange={(event) =>
+                      setRejectionNotes((notes) => ({
+                        ...notes,
+                        [item.id]: event.target.value,
+                      }))
+                    }
+                    placeholder="Rejection note"
+                    className="h-9 w-full rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-rose-400/60"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onDecideSharedFulfillment({
+                        taskId: task.id,
+                        fulfillmentId: item.id,
+                        decision: "reject",
+                        note: rejectionNotes[item.id] || "",
+                      })
+                    }
+                    className="flex min-h-9 w-full items-center justify-center gap-2 rounded-md border border-rose-400/40 bg-rose-400/10 px-3 py-2 text-rose-100 transition hover:bg-rose-400/20"
+                  >
+                    <X size={14} />
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 space-y-2">
+        {state.corrections.map((item) => (
+          <div
+            key={item.id}
+            className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs"
+          >
+            <StatusPanelRow item={item} />
+            {item.canAct ? (
+              <label className="mt-2 flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/10 px-3 py-2 text-emerald-100 transition hover:bg-emerald-400/20">
+                <Upload size={14} />
+                Upload correction
+                <input
+                  type="file"
+                  className="sr-only"
+                  accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.csv,.txt,.md"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      onSubmitCorrectionUpload({
+                        taskId: task.id,
+                        correctionRequestId: item.id,
+                        file,
+                      });
+                    }
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </label>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <StatusPanelGroup
+        title="Contributor requests"
+        rows={state.contributorRequests}
+      />
+    </div>
+  );
+}
+
+function StatusPanelGroup({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{
+    id: string;
+    label: string;
+    assignedEmail: string;
+    actualActorEmail: string;
+    status: string;
+    detail: string;
+    dueAt?: string;
+  }>;
+}) {
+  if (!rows.length) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 space-y-2">
+      <p className="text-xs font-semibold text-neutral-400">{title}</p>
+      {rows.map((item) => (
+        <div
+          key={item.id}
+          className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs"
+        >
+          <StatusPanelRow item={item} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StatusPanelRow({
+  item,
+}: {
+  item: {
+    label: string;
+    assignedEmail: string;
+    actualActorEmail: string;
+    status: string;
+    detail: string;
+    dueAt?: string;
+  };
+}) {
+  return (
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
+        <p className="break-words font-medium text-neutral-200">{item.label}</p>
+        <p className="mt-1 break-words text-neutral-500">
+          Assigned {item.assignedEmail}
+          {item.actualActorEmail && item.actualActorEmail !== item.assignedEmail
+            ? ` - uploaded by ${item.actualActorEmail}`
+            : ""}
+        </p>
+        {item.detail ? (
+          <p className="mt-1 break-words text-neutral-400">{item.detail}</p>
+        ) : null}
+        {item.dueAt ? (
+          <p className="mt-1 break-words text-neutral-500">Due {item.dueAt}</p>
+        ) : null}
+      </div>
+      <span className="self-start rounded-md border border-white/10 px-2 py-1 text-[11px] text-neutral-300">
+        {formatStatusText(item.status)}
+      </span>
+    </div>
+  );
+}
+
+function formatStatusText(status: string) {
+  return status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function ContributorRequestList({

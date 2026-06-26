@@ -34,7 +34,13 @@ export function getCollaborationStatusPanelState({
     : [];
   const pendingConfirmations = (task.sharedFulfillments || [])
     .filter((fulfillment) => fulfillment.status === "pending_confirmation")
-    .map((fulfillment) => mapFulfillmentItem(fulfillment, activeEmail));
+    .map((fulfillment) =>
+      mapFulfillmentItem({
+        fulfillment,
+        activeEmail,
+        currentOwnerEmail: task.currentOwner,
+      }),
+    );
   const corrections = (task.correctionRequests || []).map((correction) =>
     mapCorrectionItem({ correction, task, activeEmail }),
   );
@@ -168,10 +174,15 @@ function mapRequiredSubmissionItem({
   };
 }
 
-function mapFulfillmentItem(
-  fulfillment: TaskSharedFulfillment,
-  activeEmail: string,
-): CollaborationStatusItem {
+function mapFulfillmentItem({
+  fulfillment,
+  activeEmail,
+  currentOwnerEmail,
+}: {
+  fulfillment: TaskSharedFulfillment;
+  activeEmail: string;
+  currentOwnerEmail: string;
+}): CollaborationStatusItem {
   return {
     id: fulfillment.id,
     label: fulfillment.documentType,
@@ -180,7 +191,8 @@ function mapFulfillmentItem(
     status: fulfillment.status,
     detail: `Uploaded by ${fulfillment.uploaderEmail}`,
     canAct:
-      normalizeEmail(fulfillment.assignedSubmitterEmail) === activeEmail,
+      normalizeEmail(fulfillment.assignedSubmitterEmail) === activeEmail ||
+      normalizeEmail(currentOwnerEmail) === activeEmail,
   };
 }
 
