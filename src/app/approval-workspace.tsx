@@ -60,7 +60,9 @@ import {
 } from "@/lib/email-outbox-state";
 import {
   buildTaskNotifications,
+  type TaskNotification,
 } from "@/lib/workflow-system";
+import { buildCollaborationNotifications } from "@/lib/collaboration-notification-state";
 import { useApprovalWorkspaceState } from "@/app/use-approval-workspace-state";
 import {
   QueueView,
@@ -770,7 +772,7 @@ function ApprovalWorkspaceBody({
     setActionError(nextState.actionError);
   }
 
-  function requestTaskContributor() {
+  async function requestTaskContributor() {
     if (!selectedTask) {
       return;
     }
@@ -789,20 +791,32 @@ function ApprovalWorkspaceBody({
       return;
     }
 
-    const nextTasks = tasks.map((task) =>
-      task.id === selectedTask.id ? result.task : task,
-    );
-    setTasks(nextTasks);
-    void sendWorkflowEmailNotifications(result.task);
-    void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
-    );
-    setContributorName("");
-    setContributorEmail("");
-    setContributorRequestNote("");
-    setContributorDueAt("");
-    setContributorBlocksApproval(true);
-    setContributorRequestError("");
+    try {
+      await persistCollaborationTransition({
+        task: result.task,
+        notifications: [],
+      });
+      const nextTasks = tasks.map((task) =>
+        task.id === selectedTask.id ? result.task : task,
+      );
+      setTasks(nextTasks);
+      void sendWorkflowEmailNotifications(result.task);
+      void persistWorkspaceSnapshot(
+        buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
+      );
+      setContributorName("");
+      setContributorEmail("");
+      setContributorRequestNote("");
+      setContributorDueAt("");
+      setContributorBlocksApproval(true);
+      setContributorRequestError("");
+    } catch (error) {
+      setContributorRequestError(
+        error instanceof Error
+          ? error.message
+          : "Unable to persist contributor request.",
+      );
+    }
   }
 
   async function submitContributorRequestUpload({
@@ -864,11 +878,22 @@ function ApprovalWorkspaceBody({
         return;
       }
 
+      const collaborationNotifications = buildCollaborationNotifications({
+        task: result.task,
+        event: {
+          type: "contributor_submitted",
+          collaborationRequestId,
+        },
+      });
+      await persistCollaborationTransition({
+        task: result.task,
+        notifications: collaborationNotifications,
+      });
       const nextTasks = tasks.map((item) =>
         item.id === taskId ? result.task : item,
       );
       setTasks(nextTasks);
-      void sendWorkflowEmailNotifications(result.task);
+      void sendWorkflowEmailNotifications(result.task, collaborationNotifications);
       void persistWorkspaceSnapshot(
         buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
       );
@@ -1261,13 +1286,38 @@ function ApprovalWorkspaceBody({
     );
   }
 
-  async function sendWorkflowEmailNotifications(task: ApprovalTask) {
-    const taskNotifications = buildTaskNotifications([task]);
+  async function persistCollaborationTransition({
+    task,
+    notifications,
+  }: {
+    task: ApprovalTask;
+    notifications: TaskNotification[];
+  }) {
+    const response = await fetch("/api/workflow-collaboration", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task, notifications }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.reason || "Collaboration persistence failed.");
+    }
+  }
+
+  async function sendWorkflowEmailNotifications(
+    task: ApprovalTask,
+    notificationsOverride?: TaskNotification[],
+  ) {
+    const taskNotifications = notificationsOverride || buildTaskNotifications([task]);
     try {
       const response = await fetch("/api/email/task-notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task }),
+        body: JSON.stringify(
+          notificationsOverride
+            ? { notifications: notificationsOverride }
+            : { task },
+        ),
       });
       const result = await response.json();
       setEmailDeliveryMessage(formatEmailDeliveryMessage(result));
