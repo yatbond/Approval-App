@@ -7,7 +7,12 @@ import type {
 export type TaskNotification = NotificationItem & {
   requestId: string;
   recipientEmail: string;
-  kind: "action_required" | "originator_update" | "fyi" | "escalation";
+  kind:
+    | "action_required"
+    | "originator_update"
+    | "fyi"
+    | "escalation"
+    | "collaboration_update";
 };
 
 export function publishWorkflowTemplateVersion(
@@ -72,11 +77,11 @@ export function buildTaskNotifications(tasks: ApprovalTask[]): TaskNotification[
         });
       });
 
-    return dedupeNotifications(notifications);
+    return mergeTaskNotifications(notifications);
   });
 }
 
-function dedupeNotifications(notifications: TaskNotification[]) {
+export function mergeTaskNotifications(notifications: TaskNotification[]) {
   const byRecipient = new Map<string, TaskNotification>();
   notifications.forEach((notification) => {
     if (!byRecipient.has(notification.recipientEmail)) {
