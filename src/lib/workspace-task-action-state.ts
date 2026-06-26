@@ -55,6 +55,11 @@ export function getWorkspaceRecordTaskActionState({
     action,
     targetEmail,
     missingCurrentDocuments,
+    pendingBlockingContributorRequests: (selectedTask.collaborationRequests || [])
+      .filter(
+        (request) =>
+          request.blocksApproval !== false && request.status === "requested",
+      ),
   });
 
   if (!preflight.canProceed) {

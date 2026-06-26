@@ -3,9 +3,13 @@ import { test } from "node:test";
 import {
   acceptForDocumentFormat,
   createAttachmentRecord,
+  documentInputModeOptions,
   documentFormatOptions,
   fieldSourceForDocumentFormat,
+  formatDocumentInputMode,
   formatDocumentFormat,
+  getDocumentInputMode,
+  isManualFormRequirement,
 } from "./workflow-documents.ts";
 
 const template = {
@@ -57,6 +61,18 @@ test("lists document formats in the UI order", () => {
     { value: "image", label: "Image" },
     { value: "excel_csv", label: "Excel/CSV" },
   ]);
+});
+
+test("lists and normalizes document input modes", () => {
+  assert.deepEqual(documentInputModeOptions, [
+    { value: "upload", label: "Document upload with OCR" },
+    { value: "manual_form", label: "Manual digital form" },
+  ]);
+  assert.equal(getDocumentInputMode({}), "upload");
+  assert.equal(getDocumentInputMode({ inputMode: "manual_form" }), "manual_form");
+  assert.equal(isManualFormRequirement({ inputMode: "manual_form" }), true);
+  assert.equal(isManualFormRequirement({ inputMode: "upload" }), false);
+  assert.equal(formatDocumentInputMode("manual_form"), "Manual digital form");
 });
 
 test("formats document labels and accepted upload extensions", () => {

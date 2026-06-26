@@ -307,7 +307,7 @@ export function getUploadDraftResumeItems({
             updatedAt: currentDraft.savedAt,
             accessLabel: "Private autosave",
             canResume: true,
-            canDelete: false,
+            canDelete: true,
           },
         ]
       : []),

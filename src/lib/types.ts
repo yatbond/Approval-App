@@ -47,7 +47,9 @@ export type AuditEvent = {
     | "escalated"
     | "amended"
     | "resubmitted"
-    | "cancelled";
+    | "cancelled"
+    | "contribution_requested"
+    | "contribution_submitted";
   actor: string;
   actorEmail: string;
   timestamp: string;
@@ -81,11 +83,13 @@ export type ExtractionTrainingExample = {
 };
 
 export type DocumentFormat = "text" | "pdf" | "image" | "excel_csv";
+export type WorkflowDocumentInputMode = "upload" | "manual_form";
 
 export type WorkflowDocumentRequirement = {
   id: string;
   documentType: string;
   format: DocumentFormat;
+  inputMode?: WorkflowDocumentInputMode;
   required: boolean;
   fields: WorkflowField[];
 };
@@ -103,6 +107,22 @@ export type ApprovalAttachment = {
   uploadedAt: string;
 };
 
+export type TaskCollaborationRequest = {
+  id: string;
+  contributorName: string;
+  contributorEmail: string;
+  requestedByName: string;
+  requestedByEmail: string;
+  requestNote: string;
+  dueAt: string;
+  blocksApproval?: boolean;
+  status: "requested" | "submitted" | "cancelled";
+  createdAt: string;
+  submittedAt?: string;
+  attachmentIds?: string[];
+  extractedFields?: Record<string, string>;
+};
+
 export type WorkflowStep = {
   name: string;
   role: string;
@@ -118,6 +138,7 @@ export type WorkflowStep = {
 
 export type WorkflowNodeKind =
   | "start"
+  | "submit_request"
   | "approval"
   | "review"
   | "for_information"
@@ -184,6 +205,8 @@ export type WorkflowGraphNode = {
   escalationName?: string;
   escalationEmail?: string;
   documentIds?: string[];
+  allowSharedFulfillment?: boolean;
+  requireSharedFulfillmentConfirmation?: boolean;
   blocking?: boolean;
   acknowledgementRequired?: boolean;
   conditionCases?: WorkflowConditionCase[];
@@ -281,6 +304,7 @@ export type ApprovalTask = {
   lastAction: string;
   extractedFields: Record<string, string>;
   attachments?: ApprovalAttachment[];
+  collaborationRequests?: TaskCollaborationRequest[];
   auditTrail: AuditEvent[];
 };
 

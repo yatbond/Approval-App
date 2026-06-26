@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  getWorkspaceBatchRequestSubmissionState,
   getWorkspaceRequestSubmissionPersistenceMessage,
   getWorkspaceRequestSubmissionState,
 } from "./workspace-request-submission-state.ts";
@@ -59,6 +60,18 @@ const parseResult = {
     Total: "HKD 8,400",
   },
 };
+
+function makeAttachment(id, fileName = "invoice.pdf") {
+  return {
+    id,
+    fileName,
+    documentId: "invoice-doc",
+    documentType: "Invoice",
+    format: "pdf",
+    uploadedBy: "derrick@example.com",
+    uploadedAt: "2026-06-21T02:00:00.000Z",
+  };
+}
 
 test("returns a missing required upload message before creating a task", () => {
   const state = getWorkspaceRequestSubmissionState({
@@ -197,6 +210,87 @@ test("does not submit without a selected template or parse result", () => {
   );
 });
 
+test("submits a manual form request without a parsed upload", () => {
+  const manualTemplate = {
+    ...template,
+    documents: [
+      {
+        id: "manual-leave-form",
+        documentType: "Leave request form",
+        format: "text",
+        inputMode: "manual_form",
+        required: true,
+        fields: [
+          {
+            name: "leave_reason",
+            label: "Leave reason",
+            type: "text",
+            required: true,
+            source: "manual",
+            instructions: "Requester enters the reason.",
+            documentId: "manual-leave-form",
+          },
+        ],
+      },
+    ],
+  };
+
+  const state = getWorkspaceRequestSubmissionState({
+    selectedTemplate: manualTemplate,
+    parseResult: null,
+    activeUser: actor,
+    fileName: "",
+    editedFields: { "Leave reason": "Family event" },
+    uploadedAttachments: [],
+    tasks: [],
+    taskId: "APR-MANUAL",
+  });
+
+  assert.equal(state.didSubmit, true);
+  assert.equal(state.selectedTaskId, "APR-MANUAL");
+  assert.equal(state.tasks[0].extractedFields["Leave reason"], "Family event");
+  assert.deepEqual(state.tasks[0].attachments, []);
+});
+
+test("blocks a manual form request when a required manual value is missing", () => {
+  const manualTemplate = {
+    ...template,
+    documents: [
+      {
+        id: "manual-leave-form",
+        documentType: "Leave request form",
+        format: "text",
+        inputMode: "manual_form",
+        required: true,
+        fields: [
+          {
+            name: "leave_reason",
+            label: "Leave reason",
+            type: "text",
+            required: true,
+            source: "manual",
+            instructions: "Requester enters the reason.",
+            documentId: "manual-leave-form",
+          },
+        ],
+      },
+    ],
+  };
+
+  const state = getWorkspaceRequestSubmissionState({
+    selectedTemplate: manualTemplate,
+    parseResult: null,
+    activeUser: actor,
+    fileName: "",
+    editedFields: {},
+    uploadedAttachments: [],
+    tasks: [],
+  });
+
+  assert.equal(state.didSubmit, false);
+  assert.equal(state.submissionMessage, "Missing required extracted field(s): Leave reason.");
+});
+
 test("does not submit a request from a draft template", () => {
   const state = getWorkspaceRequestSubmissionState({
     selectedTemplate: { ...template, isDraft: true, publishedAt: undefined },
@@ -237,6 +331,89 @@ test("allows legacy templates without draft metadata to submit requests", () => 
 
   assert.equal(state.didSubmit, true);
   assert.equal(state.selectedTaskId, "APR-LEGACY");
+});
+
+test("submits multiple request drafts as separate workflow tasks", () => {
+  const state = getWorkspaceBatchRequestSubmissionState({
+    selectedTemplate: template,
+    activeUser: actor,
+    drafts: [
+      {
+        id: "draft-1",
+        fileName: "invoice-a.pdf",
+        parseResult,
+        editedFields: parseResult.fields,
+        uploadedAttachments: [makeAttachment("attachment-1", "invoice-a.pdf")],
+      },
+      {
+        id: "draft-2",
+        fileName: "invoice-b.pdf",
+        parseResult: {
+          fields: {
+            Vendor: "Southstar Cloud Limited",
+            Total: "HKD 12,000",
+          },
+        },
+        editedFields: {
+          Vendor: "Southstar Cloud Limited",
+          Total: "HKD 12,000",
+        },
+        uploadedAttachments: [makeAttachment("attachment-2", "invoice-b.pdf")],
+      },
+    ],
+    tasks: [],
+    now: new Date("2026-06-21T10:00:00+08:00"),
+    taskIdPrefix: "APR-BATCH",
+  });
+
+  assert.equal(state.didSubmit, true);
+  assert.equal(state.tasks.length, 2);
+  assert.deepEqual(
+    state.tasks.map((task) => task.id),
+    ["APR-BATCH-2", "APR-BATCH-1"],
+  );
+  assert.equal(state.selectedTaskId, "APR-BATCH-2");
+  assert.equal(state.shouldClearUploadedAttachments, true);
+  assert.equal(state.tasks[0].title, "Invoice approval - invoice-b.pdf");
+  assert.equal(state.tasks[1].attachments?.[0].fileName, "invoice-a.pdf");
+  assert.equal(
+    state.submissionMessage,
+    "2 requests submitted and routed. Latest request: APR-BATCH-2. They are now visible in Tracking.",
+  );
+});
+
+test("blocks batch submission when any request draft is invalid", () => {
+  const state = getWorkspaceBatchRequestSubmissionState({
+    selectedTemplate: template,
+    activeUser: actor,
+    drafts: [
+      {
+        id: "draft-1",
+        fileName: "invoice-a.pdf",
+        parseResult,
+        editedFields: parseResult.fields,
+        uploadedAttachments: [makeAttachment("attachment-1", "invoice-a.pdf")],
+      },
+      {
+        id: "draft-2",
+        fileName: "invoice-b.pdf",
+        parseResult,
+        editedFields: { Vendor: "Southstar Cloud Limited" },
+        uploadedAttachments: [makeAttachment("attachment-2", "invoice-b.pdf")],
+      },
+    ],
+    tasks: [],
+    taskIdPrefix: "APR-BATCH",
+  });
+
+  assert.equal(state.didSubmit, false);
+  assert.equal(state.tasks.length, 0);
+  assert.equal(state.selectedTaskId, "");
+  assert.equal(state.shouldClearUploadedAttachments, false);
+  assert.equal(
+    state.submissionMessage,
+    "Request 2 (invoice-b.pdf): Missing required extracted field(s): Total.",
+  );
 });
 
 test("formats request submission persistence messages", () => {

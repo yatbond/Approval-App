@@ -21,7 +21,10 @@ import {
   shouldHandleCanvasUndoKey,
 } from "@/lib/workflow-keyboard";
 import {
+  documentInputModeOptions,
   documentFormatOptions,
+  formatDocumentInputMode,
+  isManualFormRequirement,
 } from "@/lib/workflow-documents";
 import {
   getConditionContext,
@@ -103,6 +106,7 @@ import type {
   ApprovalTask,
   BusinessUnit,
   DocumentFormat,
+  WorkflowDocumentInputMode,
   WorkflowGraph,
   WorkflowGraphEdge,
   WorkflowGraphNode,
@@ -234,6 +238,8 @@ export function WorkflowView({
   const [boxDocumentType, setBoxDocumentType] = useState("Supporting document");
   const [boxDocumentFormat, setBoxDocumentFormat] =
     useState<DocumentFormat>("pdf");
+  const [boxDocumentInputMode, setBoxDocumentInputMode] =
+    useState<WorkflowDocumentInputMode>("upload");
   const [boxDocumentRequired, setBoxDocumentRequired] = useState(true);
   const firstBusiness = businessDirectory[0];
   const [templateName, setTemplateName] = useState("General document approval");
@@ -520,6 +526,7 @@ export function WorkflowView({
       selectedNodeLabel: selectedGraphNode.label,
       documentType: boxDocumentType,
       format: boxDocumentFormat,
+      inputMode: boxDocumentInputMode,
       required: boxDocumentRequired,
     });
     if (!nextState.didUpdate || !nextState.resetForm) {
@@ -529,6 +536,7 @@ export function WorkflowView({
     saveWorkflowTemplate(nextState.template, nextState.label);
     setBoxDocumentType(nextState.resetForm.documentType);
     setBoxDocumentFormat(nextState.resetForm.format);
+    setBoxDocumentInputMode(nextState.resetForm.inputMode);
     setBoxDocumentRequired(nextState.resetForm.required);
   }
 
@@ -594,14 +602,26 @@ export function WorkflowView({
       return;
     }
 
-    const nextDocuments = workflow.documents.map((document) =>
-      document.id === documentId
+    const nextDocuments = workflow.documents.map((document) => {
+      if (document.id !== documentId) {
+        return document;
+      }
+
+      const nextField = isManualFormRequirement(document)
         ? {
-            ...document,
-            fields: [...document.fields, field],
+            ...field,
+            source: "manual" as const,
+            instructions:
+              field.instructions ||
+              `Requester enters ${field.label} in the digital form.`,
           }
-        : document,
-    );
+        : field;
+
+      return {
+        ...document,
+        fields: [...document.fields, nextField],
+      };
+    });
     const documentState = getWorkflowTemplateDocumentState({
       template: workflow,
       documents: nextDocuments,
@@ -952,11 +972,14 @@ export function WorkflowView({
                     <span className="mb-1 block text-xs text-neutral-400">Box type</span>
                     <select
                       value={selectedGraphNode.kind}
-                      title="Choose what this box does in the workflow: approval, review, FYI, condition, return/reject, or end."
+                      title="Choose what this box does in the workflow: submit request, approval, review, FYI, condition, return/reject, or end."
                       onChange={(event) =>
                         updateSelectedNode({
                           kind: event.target.value as WorkflowNodeKind,
-                          blocking: event.target.value !== "for_information",
+                          blocking:
+                            event.target.value !== "for_information" &&
+                            event.target.value !== "end" &&
+                            event.target.value !== "return_reject",
                         })
                       }
                       className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
@@ -978,17 +1001,23 @@ export function WorkflowView({
                       className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
                     />
                   </label>
-                  {["approval", "review", "for_information"].includes(
+                  {["submit_request", "approval", "review", "for_information"].includes(
                     selectedGraphNode.kind,
                   ) && (
                     <>
                       <label className="block">
                         <span className="mb-1 block text-xs text-neutral-400">
-                          Person name
+                          {selectedGraphNode.kind === "submit_request"
+                            ? "Submitter name"
+                            : "Person name"}
                         </span>
                         <input
                           value={selectedGraphNode.assigneeName || ""}
-                          title="Name of the person responsible for this approval, review, or information step."
+                          title={
+                            selectedGraphNode.kind === "submit_request"
+                              ? "Name of the person expected to upload documents or fill information for this submit box."
+                              : "Name of the person responsible for this approval, review, or information step."
+                          }
                           onChange={(event) =>
                             updateSelectedNode({ assigneeName: event.target.value })
                           }
@@ -997,11 +1026,17 @@ export function WorkflowView({
                       </label>
                       <label className="block">
                         <span className="mb-1 block text-xs text-neutral-400">
-                          Person email
+                          {selectedGraphNode.kind === "submit_request"
+                            ? "Submitter email"
+                            : "Person email"}
                         </span>
                         <input
                           value={selectedGraphNode.assigneeEmail || ""}
-                          title="Email address that this workflow step will route to."
+                          title={
+                            selectedGraphNode.kind === "submit_request"
+                              ? "Email address that can see this submit box's assigned upload requirements."
+                              : "Email address that this workflow step will route to."
+                          }
                           onChange={(event) =>
                             updateSelectedNode({ assigneeEmail: event.target.value })
                           }
@@ -1012,8 +1047,59 @@ export function WorkflowView({
                       </label>
                     </>
                   )}
+                  {selectedGraphNode.kind === "submit_request" && (
+                    <div className="space-y-3 rounded-md border border-sky-500/20 bg-sky-500/10 p-3">
+                      <p className="text-xs font-semibold text-sky-100">
+                        Submission contributor
+                      </p>
+                      <p className="mt-1 text-xs text-sky-100/70">
+                        This box defines documents or form fields expected from the
+                        submitter above. Add documents below to require uploads before
+                        the workflow is reviewed.
+                      </p>
+                      <label className="flex items-start gap-2 text-xs text-sky-50">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={Boolean(selectedGraphNode.allowSharedFulfillment)}
+                          title="When enabled, this submitter can see other submit boxes' required uploads and choose to fulfill them."
+                          onChange={(event) =>
+                            updateSelectedNode({
+                              allowSharedFulfillment: event.target.checked,
+                              requireSharedFulfillmentConfirmation:
+                                event.target.checked
+                                  ? selectedGraphNode.requireSharedFulfillmentConfirmation !== false
+                                  : selectedGraphNode.requireSharedFulfillmentConfirmation,
+                            })
+                          }
+                        />
+                        Allow this submitter to fulfill other submit boxes
+                      </label>
+                      {selectedGraphNode.allowSharedFulfillment && (
+                        <label className="flex items-start gap-2 text-xs text-sky-50">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={
+                              selectedGraphNode.requireSharedFulfillmentConfirmation !== false
+                            }
+                            title="When enabled, a reviewer or initiator must confirm before a shared upload satisfies another submit box."
+                            onChange={(event) =>
+                              updateSelectedNode({
+                                requireSharedFulfillmentConfirmation:
+                                  event.target.checked,
+                              })
+                            }
+                          />
+                          Require confirmation for shared fulfillment
+                        </label>
+                      )}
+                    </div>
+                  )}
                   {selectedGraphNode.kind !== "for_information" &&
-                    selectedGraphNode.kind !== "end" && (
+                    selectedGraphNode.kind !== "end" &&
+                    selectedGraphNode.kind !== "start" &&
+                    selectedGraphNode.kind !== "submit_request" && (
                       <>
                         <label className="block">
                           <span className="mb-1 block text-xs text-neutral-400">
@@ -1140,24 +1226,31 @@ export function WorkflowView({
                       }
                     />
                   )}
-                  {["approval", "review"].includes(selectedGraphNode.kind) && (
+                  {["submit_request", "approval", "review"].includes(
+                    selectedGraphNode.kind,
+                  ) && (
                       <div className="rounded-md border border-white/10 bg-[#101214] p-3">
                         <p className="text-xs font-semibold text-neutral-400">
                           Recognition setup for this box
                         </p>
                         <p className="mt-1 text-xs text-neutral-500">
-                          Template fields configured here become the required fields that the Upload page reviews first.
+                          {selectedGraphNode.kind === "submit_request"
+                            ? "Documents configured here are shown on the Upload page before submission."
+                            : "Documents configured here are requested when this workflow box is active."}
                         </p>
                         <div className="mt-2 space-y-2">
                           {workflow.documents
                             .filter((document) =>
                               selectedGraphNode.documentIds?.includes(document.id),
                             )
-                            .map((document) => (
-                              <div
-                                key={document.id}
-                                className="rounded-md border border-white/10 bg-[#121518] p-2"
-                              >
+                            .map((document) => {
+                              const isManualForm = isManualFormRequirement(document);
+
+                              return (
+                                <div
+                                  key={document.id}
+                                  className="rounded-md border border-white/10 bg-[#121518] p-2"
+                                >
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="min-w-0 flex-1 space-y-2">
                                     <label className="block">
@@ -1175,10 +1268,36 @@ export function WorkflowView({
                                         className="h-9 w-full rounded-md border border-white/10 bg-[#101214] px-2 text-sm outline-none focus:border-emerald-400/60"
                                       />
                                     </label>
+                                    <label className="block">
+                                      <span className="mb-1 block text-[11px] text-neutral-500">
+                                        Input method
+                                      </span>
+                                      <select
+                                        value={document.inputMode || "upload"}
+                                        title="Choose whether the requester uploads a document for OCR or fills a digital form manually."
+                                        onChange={(event) =>
+                                          updateBoxDocumentRequirement(document.id, {
+                                            inputMode: event.target.value as WorkflowDocumentInputMode,
+                                          })
+                                        }
+                                        className="h-9 w-full rounded-md border border-white/10 bg-[#101214] px-2 text-sm outline-none focus:border-emerald-400/60"
+                                      >
+                                        {documentInputModeOptions.map((option) => (
+                                          <option
+                                            key={option.value}
+                                            value={option.value}
+                                          >
+                                            {option.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
                                     <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
                                       <label className="block">
                                         <span className="mb-1 block text-[11px] text-neutral-500">
-                                          Document format
+                                          {isManualForm
+                                            ? "Sample form format"
+                                            : "Document format"}
                                         </span>
                                         <select
                                           value={document.format}
@@ -1211,9 +1330,12 @@ export function WorkflowView({
                                             })
                                           }
                                         />
-                                        Required
+                                        {isManualForm ? "Required form" : "Required"}
                                       </label>
                                     </div>
+                                    <p className="rounded-md border border-white/10 bg-[#101214] px-2 py-1 text-[11px] text-neutral-500">
+                                      {formatDocumentInputMode(document.inputMode || "upload")}
+                                    </p>
                                   </div>
                                   <button
                                     type="button"
@@ -1322,7 +1444,7 @@ export function WorkflowView({
                                   ))}
                                   {!document.fields.length && (
                                     <p className="text-xs text-neutral-500">
-                                      No template fields configured. Add at least one field so the Upload page knows what to extract.
+                                  No template fields configured. Add at least one field so the Upload page knows what to extract.
                                     </p>
                                   )}
                                   <TemplateDocumentRecognitionPanel
@@ -1338,7 +1460,8 @@ export function WorkflowView({
                                   />
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           {!selectedGraphNode.documentIds?.length && (
                             <p className="text-xs text-neutral-500">
                               No documents are required at this box yet.
@@ -1353,6 +1476,22 @@ export function WorkflowView({
                             placeholder="Document type, e.g. Doctor slip"
                             className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
                           />
+                          <select
+                            value={boxDocumentInputMode}
+                            title="Choose whether this requirement is a requester upload or a manual digital form."
+                            onChange={(event) =>
+                              setBoxDocumentInputMode(
+                                event.target.value as WorkflowDocumentInputMode,
+                              )
+                            }
+                            className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+                          >
+                            {documentInputModeOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
                           <select
                             value={boxDocumentFormat}
                             title="Choose the file format expected for the new document requirement."
@@ -1371,17 +1510,19 @@ export function WorkflowView({
                             <input
                               type="checkbox"
                               checked={boxDocumentRequired}
-                              title="Mark the new document requirement as mandatory for this box."
+                              title="Mark the new requirement as mandatory for this box."
                               onChange={(event) =>
                                 setBoxDocumentRequired(event.target.checked)
                               }
                             />
-                            Required upload
+                            {boxDocumentInputMode === "manual_form"
+                              ? "Required form"
+                              : "Required upload"}
                           </label>
                           <button
                             type="button"
                             onClick={addDocumentToSelectedBox}
-                            title="Add this document upload requirement to the selected workflow box."
+                            title="Add this input requirement to the selected workflow box."
                             className="flex min-h-9 w-full items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 py-2 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
                           >
                             <Plus size={15} />

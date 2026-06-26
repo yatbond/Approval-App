@@ -1,6 +1,6 @@
 # Approval Workflow Platform PRD
 
-Last updated: 2026-06-23
+Last updated: 2026-06-26
 Document owner: Product / Workflow Platform
 Status: Living PRD for the current prototype and next production build
 Repository: Approval Workflow Next.js application
@@ -43,6 +43,8 @@ Business approvals often involve multiple document types, several reviewers or a
 14. Persist workflow templates, requests, events, attachments, and workspace state in Supabase.
 15. Keep the UI usable on desktop and mobile.
 16. Maintain strong page-load performance, with production HTTP response medians under 50 ms for every primary route.
+17. Support collaborative submission, where multiple submitters can contribute their own documents or information before downstream review continues.
+18. Allow reviewers or approvers to request additional contributor input during an active request without reassigning the task owner.
 
 ## 4. Non-Goals
 
@@ -66,8 +68,13 @@ Current implemented areas:
 - Per-box document requirements, including document format, document type, required flag, and extraction fields.
 - Template-side sample document recognition inside Box Details, allowing a template creator to upload a sample document, accept suggested fields, or box a value from the preview to create template extraction fields.
 - Upload-side field recognition with an explicit method selector for Suggested fields, Box from preview, and Manual values. Selected fields show their source as AI/OCR, Boxed field, or Manual.
+- Multi-document request upload, with each uploaded document tracked as its own recoverable draft row before final submission.
 - Upload request autosave for interrupted request creation, preserving selected template, Supabase attachment references, parsed OCR result, edited extraction draft fields, highlighted field groups/value boxes, and parsed document link in browser-local storage. Current autosave is also debounced to Supabase as a creator-owned private draft with `draft_kind = current`, then restored when it is newer than the browser-local copy. Submitted or manually cleared drafts remove the saved recovery state.
 - Saved upload request drafts, allowing an originator to explicitly name, save, reload, and delete recoverable request work. Upload separates the current autosave from named saved drafts so users can tell transient recovery state from intentional saved work. A dedicated Drafts tab lets users find and resume interrupted current autosaves or named saved drafts without staying on the Upload tab. Current and named drafts sync to Supabase when available and are filtered both client-side and by RLS so only the creating user can access them; superusers do not bypass saved upload draft ownership.
+- Submit Request workflow boxes. The template start node remains structural, while submit boxes define requester/submission responsibilities, required documents, manual form requirements, and whether other assigned submitters can fulfill each other's requirements.
+- Collaborative submission foundations. Multiple submit boxes can be configured in a template, request uploads can be grouped by submitter, and approvers/reviewers can request contributor input from another person during an active task.
+- Contributor requests added from Queue. The requester can enter contributor name, email, due date, requested information, and whether approval should be blocked until the contributor submits.
+- Contributor uploads from Tracking. A requested contributor can upload a file, have it parsed through the same AI/OCR path, attach it to the task, and make extracted values visible to participants and later routing context.
 - Qwen/OpenRouter visual OCR path for PDFs rendered into page images, plus PDF.js decoder assets for scanner PDFs that require CMaps, standard fonts, and WASM decoders.
 - Extraction confidence and evidence display for parsed fields, with user corrections stored as workflow-specific extraction examples for future OCR prompts.
 - Condition cases with numbered display, optional nickname, approval-count rules, specific-reviewer rules, numeric rules, AND/OR joining, fallback route, and multiple outcome boxes.
@@ -93,6 +100,7 @@ Current areas that remain incomplete or need hardening:
 - Condition coverage warnings exist, but the condition editor still needs more plain-language guidance and test coverage for complex overlapping rule sets.
 - End-to-end tests are still needed for full request lifecycles.
 - External delivery channels such as email or Teams are not yet implemented.
+- Contributor request records currently persist inside the request task snapshot. A normalized collaborator/contribution table is a future hardening item for reporting, server-side filtering, and operational audit queries.
 
 ## 4.2 Current Architecture Snapshot
 
@@ -117,7 +125,8 @@ Current pure state and domain boundaries:
 - `src/lib/database-normalizer.ts` and related database helpers: normalized Supabase row conversion and restore behavior.
 - `src/lib/workspace-template-record-state.ts`: create/update/delete template record state.
 - `src/lib/workspace-admin-record-state.ts`: business directory and role assignment record state.
-- `src/lib/workspace-request-submission-state.ts`: submit-request decision state and successful task creation state.
+- `src/lib/workspace-request-submission-state.ts`: single and batch submit-request decision state and successful task creation state.
+- `src/lib/task-collaboration-state.ts`: contributor request and contributor upload state transitions for active requests.
 - `src/lib/upload-request-draft-state.ts`: upload request draft serialization, validation, autosave status summary, creator-owned saved draft helpers, and clear-state defaults.
 - `src/lib/upload-request-draft-api.ts`: client boundary for loading, saving, and deleting saved upload request drafts through `/api/upload-drafts`.
 - `src/lib/workspace-task-action-state.ts`: manual queue action state and workflow-runner action state.
@@ -221,8 +230,9 @@ Needs:
 The application contains these main tabs:
 
 - Queue: tasks currently actionable by the signed-in user.
-- Tracking: tasks visible to the user as originator, current actor, previous actor, participant, or FYI recipient.
+- Tracking: tasks visible to the user as originator, current actor, previous actor, contributor, participant, or FYI recipient.
 - Upload: request submission flow, document upload, parsing, extracted draft review, and task creation.
+- Drafts: current autosave and named saved request drafts owned by the signed-in user.
 - Workflow: canvas builder, template builder, and template library.
 - Admin: business directory, department management, inferred user directory, role assignment, and notifications.
 
@@ -242,6 +252,8 @@ Required content:
 - Action comment box.
 - Target email input for reassign and delegate.
 - Required current-node document upload controls when the active workflow box requires documents at that stage.
+- Contributor input request controls for asking another user to provide documents or information while the task owner remains unchanged.
+- Blocking contributor request option, so approval can be prevented until the contributor submits.
 - Action buttons that wrap cleanly on mobile.
 
 ### Tracking Tab
@@ -255,6 +267,7 @@ Required content:
 - Workflow path summary with completed, current, pending, FYI, returned, and cancelled states.
 - Audit trail with actor, timestamp, action, detail, and target email.
 - Attachments and extracted values.
+- Open contributor requests, submitted contributor uploads, and contributor-parsed fields.
 
 ### Upload Tab
 
@@ -304,7 +317,7 @@ Purpose: allow superusers to define and test workflow templates.
 Required content:
 
 - Full-width canvas.
-- Toolbar for adding approval, review, condition, FYI, return/reject, and end boxes.
+- Toolbar for adding submit request, approval, review, condition, FYI, return/reject, and end boxes.
 - Branch creation controls and visual connections.
 - Runtime task preview selector.
 - Template Builder for metadata only: name, business, department, create/update/publish.
@@ -546,6 +559,7 @@ Constraints:
 Supported box types:
 
 - Start
+- Submit Request
 - Approval
 - Review
 - For Information
@@ -594,6 +608,23 @@ Approval and review boxes can include:
 - Blocking flag.
 - Required/optional document requirements.
 - Fields to extract from documents attached to the box.
+
+### 10.2.1 Submit Request Box Fields
+
+Submit Request boxes define who must provide initial request information.
+
+Submit Request boxes can include:
+
+- Submitter name.
+- Submitter email.
+- Due hours.
+- Required/optional document requirements.
+- Manual form requirements transformed from sample forms.
+- Fields to extract from uploaded documents.
+- Shared fulfillment toggle, allowing other configured submitters to satisfy another submitter's required document or information requirements when enabled.
+- Shared fulfillment confirmation toggle, requiring submitters to explicitly confirm when they are fulfilling another person's requirement.
+
+Design rule: the Start node stays structural. User-facing document upload and form-entry requirements belong on Submit Request boxes so one workflow can support one submitter, multiple named submitters, or shared fulfillment.
 
 ### 10.3 For Information Box Fields
 
@@ -801,6 +832,35 @@ Behavior:
 - Uploaded documents must be attached to the task with document ID, document type, format, workflow node ID, uploader, timestamp, storage path, and file name.
 - Extracted fields from mid-workflow uploads should become available to later condition nodes when numeric/currency fields are configured.
 
+### 12.7 Collaborative Submission
+
+The product supports two collaborative submission modes.
+
+Template-defined collaboration:
+
+- A workflow template can include multiple Submit Request boxes.
+- Each Submit Request box can be assigned to a person by name and email.
+- Each Submit Request box can define its own document upload requirements, manual form requirements, and extraction fields.
+- Downstream reviewers, approvers, and FYI recipients can see which upstream submitters have completed or not completed their required submission.
+- When shared fulfillment is enabled on a submit box, another configured submitter can fulfill that box's upload or information requirement.
+- When shared fulfillment confirmation is enabled, the UI must make the submitter explicitly confirm that they are fulfilling someone else's requirement.
+
+Active-request collaboration:
+
+- A reviewer or approver can request input from another contributor during an active task.
+- The request includes contributor name, contributor email, due date, requested information, and whether the workflow should block approval until submitted.
+- The contributor becomes a participant and can see the request in Tracking.
+- The contributor can upload supporting files from Tracking.
+- Contributor uploads are stored as task attachments and parsed through the same AI/OCR extraction path used by Upload.
+- Parsed contributor values are added to the task extracted fields with contributor context, so participants and later workflow logic can see the submitted data.
+- A blocking contributor request prevents approval actions until the contributor request is submitted.
+
+Collaborative submission audit requirements:
+
+- Creating a contributor request appends a `contribution_requested` audit event.
+- Submitting contributor input appends a `contribution_submitted` audit event.
+- Audit detail should identify the requester, contributor, requested information, uploaded file, and parsed fields where available.
+
 ## 13. Queue and Tracking
 
 ### 13.1 Queue
@@ -843,6 +903,7 @@ Participants include:
 - Reassigned/delegated users.
 - Escalation users.
 - FYI users.
+- Contributor-request users.
 - Other participants added through workflow routing.
 
 Tracking should allow participants to see:
@@ -856,6 +917,7 @@ Tracking should allow participants to see:
 - Extracted values.
 - Whether they have already acted.
 - Whether a later approver rejected a request after their approval.
+- Whether contributor input is still pending, submitted, or blocking approval.
 
 ## 14. Action Behavior
 
@@ -981,6 +1043,8 @@ Audit events include:
 - Amended.
 - Resubmitted.
 - Cancelled.
+- Contribution requested.
+- Contribution submitted.
 
 Each audit event includes:
 
@@ -1011,8 +1075,10 @@ Notifications should be generated for:
 - Originator.
 - Participants/FYI users.
 - Escalated/overdue tasks.
+- Contributor-request users.
+- Participants when contributor input is requested or submitted.
 
-Future delivery channels may include email, Teams, or push notifications.
+Future delivery channels may include Teams or push notifications. Email delivery should use a production provider configuration and must avoid sending secrets to the client.
 
 ## 18. Template Versioning
 
@@ -1075,6 +1141,7 @@ Workspace state includes:
 - User role assignments.
 - Template admin audit events.
 - Upload request saved drafts, scoped to the creating user.
+- Task collaboration requests and submitted contributor upload state, stored inside approval task snapshots.
 
 Workspace state is serialized to localStorage and saved to Supabase.
 
@@ -1098,6 +1165,7 @@ Remote persistence includes:
 
 - Normalized tables for workflow templates, requests, events, attachments, businesses, and departments.
 - Creator-owned upload request drafts in `upload_request_drafts`, separated by `draft_kind = current` for automatic current autosave and `draft_kind = named` for explicit saved drafts.
+- Collaboration request state currently serialized inside `approval_requests.task_snapshot`; future production hardening should add a normalized contributor request table if reporting, filtering, or server-side workflow execution needs direct SQL access.
 - Snapshot fallback in workspace_snapshots.
 - Supabase storage for uploaded approval documents.
 
@@ -1146,6 +1214,7 @@ Supabase RLS must enforce:
 - Admins can create/update business units, departments, and templates through the current normalized workspace save path.
 - Admins can soft-deactivate business units, departments, and workflow template versions through the dedicated workspace admin mutation path; DELETE grants are intentionally absent.
 - Request participants can read relevant approval requests.
+- Contributor-request users can read relevant approval requests where they are listed as participants.
 - Originators and current owners can update requests where allowed.
 - Participants can read events and attachments for requests they are allowed to see.
 - Users can read and update their own workspace snapshots.

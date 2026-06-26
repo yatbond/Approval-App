@@ -86,6 +86,180 @@ test("selects the requested template and derives upload document state", () => {
   assert.deepEqual(state.missingRequiredDocuments, []);
 });
 
+test("shows only the active submitter assigned documents when shared fulfillment is off", () => {
+  const siteReportDocument = {
+    id: "site-report",
+    documentType: "Site report",
+    format: "pdf",
+    required: true,
+    fields: [],
+  };
+  const qsAssessmentDocument = {
+    id: "qs-assessment",
+    documentType: "QS assessment",
+    format: "pdf",
+    required: true,
+    fields: [],
+  };
+  const state = getUploadViewState({
+    workflowTemplates: [
+      {
+        ...templateA,
+        documents: [siteReportDocument, qsAssessmentDocument],
+        graph: {
+          nodes: [
+            { id: "start", kind: "start", label: "Start", x: 0, y: 80 },
+            {
+              id: "submit-site",
+              kind: "submit_request",
+              label: "Site submission",
+              x: 220,
+              y: 40,
+              assigneeEmail: "site@example.com",
+              documentIds: ["site-report"],
+            },
+            {
+              id: "submit-qs",
+              kind: "submit_request",
+              label: "QS submission",
+              x: 220,
+              y: 120,
+              assigneeEmail: "qs@example.com",
+              documentIds: ["qs-assessment"],
+            },
+          ],
+          edges: [],
+        },
+      },
+    ],
+    selectedTemplateId: "template-a",
+    uploadedAttachments: [],
+    activeUserEmail: "site@example.com",
+  });
+
+  assert.deepEqual(
+    state.assignedUploadDocuments.map((document) => document.id),
+    ["site-report"],
+  );
+  assert.deepEqual(state.sharedUploadDocuments, []);
+  assert.deepEqual(
+    state.uploadDocuments.map((document) => document.id),
+    ["site-report"],
+  );
+});
+
+test("shows other submit boxes as shared upload options when enabled", () => {
+  const invoiceDocument = {
+    id: "invoice-pdf",
+    documentType: "Invoice PDF",
+    format: "pdf",
+    required: true,
+    fields: [],
+  };
+  const deliveryDocument = {
+    id: "delivery-note",
+    documentType: "Delivery note",
+    format: "image",
+    required: true,
+    fields: [],
+  };
+  const state = getUploadViewState({
+    workflowTemplates: [
+      {
+        ...templateA,
+        documents: [invoiceDocument, deliveryDocument],
+        graph: {
+          nodes: [
+            { id: "start", kind: "start", label: "Start", x: 0, y: 80 },
+            {
+              id: "submit-contractor",
+              kind: "submit_request",
+              label: "Contractor submission",
+              x: 220,
+              y: 40,
+              assigneeEmail: "contractor@example.com",
+              documentIds: ["invoice-pdf"],
+              allowSharedFulfillment: true,
+              requireSharedFulfillmentConfirmation: true,
+            },
+            {
+              id: "submit-site",
+              kind: "submit_request",
+              label: "Site team submission",
+              x: 220,
+              y: 120,
+              assigneeEmail: "site@example.com",
+              documentIds: ["delivery-note"],
+            },
+          ],
+          edges: [],
+        },
+      },
+    ],
+    selectedTemplateId: "template-a",
+    uploadedAttachments: [],
+    activeUserEmail: "contractor@example.com",
+  });
+
+  assert.equal(state.sharedFulfillmentEnabled, true);
+  assert.deepEqual(
+    state.assignedUploadDocuments.map((document) => document.id),
+    ["invoice-pdf"],
+  );
+  assert.deepEqual(
+    state.sharedUploadDocuments.map((document) => document.id),
+    ["delivery-note"],
+  );
+  assert.deepEqual(
+    state.uploadDocuments.map((document) => document.id),
+    ["invoice-pdf", "delivery-note"],
+  );
+});
+
+test("separates manual form requirements from upload document requirements", () => {
+  const manualFormDocument = {
+    id: "leave-form",
+    documentType: "Leave request form",
+    format: "text",
+    inputMode: "manual_form",
+    required: true,
+    fields: [
+      {
+        name: "leave_reason",
+        label: "Leave reason",
+        type: "text",
+        required: true,
+        source: "manual",
+        instructions: "Requester enters the leave reason.",
+        documentId: "leave-form",
+      },
+    ],
+  };
+  const state = getUploadViewState({
+    workflowTemplates: [
+      {
+        ...templateA,
+        documents: [invoiceDocument, manualFormDocument],
+      },
+    ],
+    selectedTemplateId: "template-a",
+    uploadedAttachments: [],
+  });
+
+  assert.deepEqual(
+    state.uploadDocuments.map((document) => document.id),
+    ["invoice-doc"],
+  );
+  assert.deepEqual(
+    state.manualFormDocuments.map((document) => document.id),
+    ["leave-form"],
+  );
+  assert.deepEqual(
+    state.missingRequiredDocuments.map((document) => document.id),
+    ["invoice-doc"],
+  );
+});
+
 test("excludes draft templates from new request upload options", () => {
   const state = getUploadViewState({
     workflowTemplates: [templateB, templateA],

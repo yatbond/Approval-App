@@ -31,7 +31,10 @@ type AddBranchInput = {
 
 type AddDocumentInput = Omit<WorkflowDocumentRequirement, "id">;
 type UpdateDocumentInput = Partial<
-  Pick<WorkflowDocumentRequirement, "documentType" | "format" | "required">
+  Pick<
+    WorkflowDocumentRequirement,
+    "documentType" | "format" | "inputMode" | "required"
+  >
 >;
 type UpdateConditionCaseInput = Partial<
   Pick<
@@ -58,6 +61,21 @@ export type WorkflowRouteSimulation = {
   notifiedNodes: WorkflowGraphNode[];
   requiredDocuments: WorkflowDocumentRequirement[];
   issues: WorkflowValidationIssue[];
+};
+
+export type InitialWorkflowRoute = {
+  currentNode?: WorkflowGraphNode;
+  currentNodes: WorkflowGraphNode[];
+  notifiedNodes: WorkflowGraphNode[];
+  routeNodes: WorkflowGraphNode[];
+  terminalNode?: WorkflowGraphNode;
+  activeBranchId?: string;
+};
+
+type InitialRouteOptions = {
+  extractedFields?: Record<string, string>;
+  nodeDecisions?: Record<string, "approved" | "rejected">;
+  allowAmbiguousCondition?: boolean;
 };
 
 export type ConditionCoverageWarning = {
@@ -117,7 +135,7 @@ export function createWorkflowGraphFromTemplate(
     {
       id: "start",
       kind: "start",
-      label: "Submit request",
+      label: "Start",
       x: 40,
       y: 120,
       blocking: true,
@@ -424,12 +442,19 @@ export function analyzeConditionCoverage(
     : undefined;
 }
 
-export function findInitialWorkflowRoute(graph: WorkflowGraph) {
-  const route = traceInitialWorkflowRoute(graph);
+export function findInitialWorkflowRoute(
+  graph: WorkflowGraph,
+  options: InitialRouteOptions = {},
+) {
+  const route = traceInitialWorkflowRoute(graph, options);
 
   return {
     currentNode: route.currentNode,
+    currentNodes: route.currentNodes,
     notifiedNodes: route.notifiedNodes,
+    routeNodes: route.routeNodes,
+    terminalNode: route.terminalNode,
+    activeBranchId: route.activeBranchId,
   };
 }
 
@@ -509,7 +534,9 @@ export function validateWorkflowTemplate(
     });
   });
 
-  const route = traceInitialWorkflowRoute(graph);
+  const route = traceInitialWorkflowRoute(graph, {
+    allowAmbiguousCondition: true,
+  });
   if (!route.currentNode) {
     issues.push({
       severity: "error",
@@ -855,7 +882,9 @@ export function simulateWorkflowTemplate(
   template: WorkflowTemplate,
 ): WorkflowRouteSimulation {
   const graph = createWorkflowGraphFromTemplate(template);
-  const route = traceInitialWorkflowRoute(graph);
+  const route = traceInitialWorkflowRoute(graph, {
+    allowAmbiguousCondition: true,
+  });
   const routeDocumentIds = new Set<string>();
 
   route.routeNodes.forEach((node) => {
@@ -875,7 +904,10 @@ export function simulateWorkflowTemplate(
   };
 }
 
-function traceInitialWorkflowRoute(graph: WorkflowGraph) {
+function traceInitialWorkflowRoute(
+  graph: WorkflowGraph,
+  options: InitialRouteOptions = {},
+): InitialWorkflowRoute {
   const notifiedNodes = graph.edges
     .filter((edge) => edge.sourceId === "start" && edge.branchType === "for_information")
     .map((edge) => graph.nodes.find((node) => node.id === edge.targetId))
@@ -884,6 +916,7 @@ function traceInitialWorkflowRoute(graph: WorkflowGraph) {
   let currentId = graph.edges.find(
     (edge) => edge.sourceId === "start" && edge.branchType !== "for_information",
   )?.targetId;
+  let activeBranchId: string | undefined;
   const visited = new Set<string>();
 
   while (currentId && !visited.has(currentId)) {
@@ -900,8 +933,10 @@ function traceInitialWorkflowRoute(graph: WorkflowGraph) {
     ) {
       return {
         currentNode: node,
+        currentNodes: [node],
         notifiedNodes,
         routeNodes,
+        activeBranchId,
       };
     }
 
@@ -914,16 +949,284 @@ function traceInitialWorkflowRoute(graph: WorkflowGraph) {
         }
       });
 
-    currentId = graph.edges.find(
+    if (node.kind === "return_reject") {
+      return {
+        currentNode: node,
+        currentNodes: [node],
+        notifiedNodes,
+        routeNodes,
+        terminalNode: node,
+        activeBranchId,
+      };
+    }
+
+    if (node.kind === "end") {
+      return {
+        currentNode: undefined,
+        currentNodes: [],
+        notifiedNodes,
+        routeNodes,
+        terminalNode: node,
+        activeBranchId,
+      };
+    }
+
+    if (node.kind === "condition" && node.conditionCases?.length) {
+      const conditionTarget = chooseInitialConditionCaseTarget(
+        graph,
+        node,
+        options,
+        notifiedNodes,
+      );
+      activeBranchId = conditionTarget?.caseId || activeBranchId;
+      if (conditionTarget?.currentNodes.length) {
+        return {
+          currentNode: conditionTarget.currentNodes[0],
+          currentNodes: conditionTarget.currentNodes,
+          notifiedNodes,
+          routeNodes: [
+            ...routeNodes,
+            ...conditionTarget.currentNodes.filter(
+              (targetNode) =>
+                !routeNodes.some((routeNode) => routeNode.id === targetNode.id),
+            ),
+          ],
+          activeBranchId,
+        };
+      }
+      currentId = conditionTarget?.targetNodeId;
+      continue;
+    }
+
+    const outgoingActionNodes = getOutgoingActionableNodes(graph, node.id);
+    if (outgoingActionNodes.length > 1) {
+      return {
+        currentNode: outgoingActionNodes[0],
+        currentNodes: outgoingActionNodes,
+        notifiedNodes,
+        routeNodes: [
+          ...routeNodes,
+          ...outgoingActionNodes.filter(
+            (targetNode) =>
+              !routeNodes.some((routeNode) => routeNode.id === targetNode.id),
+          ),
+        ],
+        activeBranchId,
+      };
+    }
+
+    const nextEdge = graph.edges.find(
       (edge) => edge.sourceId === node.id && edge.branchType !== "for_information",
-    )?.targetId;
+    );
+    activeBranchId = nextEdge?.id || activeBranchId;
+    currentId = nextEdge?.targetId;
   }
 
   return {
     currentNode: undefined,
+    currentNodes: [],
     notifiedNodes,
     routeNodes,
+    activeBranchId,
   };
+}
+
+function chooseInitialConditionCaseTarget(
+  graph: WorkflowGraph,
+  conditionNode: WorkflowGraphNode,
+  options: InitialRouteOptions,
+  notifiedNodes: WorkflowGraphNode[],
+) {
+  const conditionCases = orderConditionCases(conditionNode.conditionCases || []);
+  const specifiedCases = conditionCases.filter(
+    (conditionCase) => !conditionCase.isFallback,
+  );
+  const fallbackCase = conditionCases.find((conditionCase) => conditionCase.isFallback);
+  const extractedFields = options.extractedFields || {};
+  const nodeDecisions = options.nodeDecisions || {};
+  const hasEvaluationInput = Boolean(options.extractedFields || options.nodeDecisions);
+  const evaluatedCase = hasEvaluationInput
+    ? specifiedCases.find((conditionCase) =>
+        doesConditionCaseMatch(conditionCase, extractedFields, nodeDecisions),
+      ) ||
+      (fallbackCase &&
+      canFallbackConditionRoute(specifiedCases, extractedFields, nodeDecisions)
+        ? fallbackCase
+        : undefined)
+    : undefined;
+  const matchedCase =
+    evaluatedCase ||
+    (options.allowAmbiguousCondition
+      ? specifiedCases.find((conditionCase) => conditionCase.targetNodeIds.length) ||
+        fallbackCase
+      : undefined);
+
+  if (!matchedCase) {
+    return undefined;
+  }
+
+  const targetNodes = matchedCase.targetNodeIds
+    .map((targetNodeId) => graph.nodes.find((node) => node.id === targetNodeId))
+    .filter((node): node is WorkflowGraphNode => Boolean(node));
+
+  targetNodes.forEach((targetNode) => {
+    if (
+      targetNode.kind === "for_information" &&
+      !notifiedNodes.some((node) => node.id === targetNode.id)
+    ) {
+      notifiedNodes.push(targetNode);
+    }
+  });
+
+  const currentNodes = targetNodes.filter(isActionableRouteNode);
+  const terminalNode = targetNodes.find(
+    (targetNode) => targetNode.kind === "return_reject" || targetNode.kind === "end",
+  );
+
+  return {
+    caseId: matchedCase.id,
+    targetNodeId: currentNodes[0]?.id || terminalNode?.id,
+    currentNodes,
+  };
+}
+
+function getOutgoingActionableNodes(graph: WorkflowGraph, sourceId: string) {
+  return graph.edges
+    .filter((edge) => edge.sourceId === sourceId && edge.branchType !== "for_information")
+    .map((edge) => graph.nodes.find((node) => node.id === edge.targetId))
+    .filter((node): node is WorkflowGraphNode => Boolean(node))
+    .filter(isActionableRouteNode);
+}
+
+function isActionableRouteNode(node: WorkflowGraphNode) {
+  return (
+    (node.kind === "approval" || node.kind === "review") &&
+    Boolean(node.assigneeEmail?.trim())
+  );
+}
+
+function canFallbackConditionRoute(
+  specifiedCases: WorkflowConditionCase[],
+  extractedFields: Record<string, string>,
+  nodeDecisions: Record<string, "approved" | "rejected">,
+) {
+  return !specifiedCases.some((conditionCase) =>
+    canApprovalConditionStillMatch(conditionCase, extractedFields, nodeDecisions),
+  );
+}
+
+function canApprovalConditionStillMatch(
+  conditionCase: WorkflowConditionCase,
+  extractedFields: Record<string, string>,
+  nodeDecisions: Record<string, "approved" | "rejected">,
+) {
+  if (!conditionCase.approvalRule) {
+    return false;
+  }
+
+  const numericMatches = conditionCase.numericRule
+    ? doesConditionNumericRuleMatch(conditionCase.numericRule, extractedFields)
+    : undefined;
+
+  if (conditionCase.numericRule && conditionCase.join === "and" && !numericMatches) {
+    return false;
+  }
+
+  const { upstreamNodeIds, minimumApproved, mode } = conditionCase.approvalRule;
+  const approvedCount = upstreamNodeIds.filter(
+    (nodeId) => nodeDecisions[nodeId] === "approved",
+  ).length;
+  const decidedCount = upstreamNodeIds.filter((nodeId) =>
+    Boolean(nodeDecisions[nodeId]),
+  ).length;
+  const remainingCount = Math.max(upstreamNodeIds.length - decidedCount, 0);
+
+  if (mode === "exactly") {
+    return approvedCount <= minimumApproved && minimumApproved <= approvedCount + remainingCount;
+  }
+
+  return approvedCount + remainingCount >= minimumApproved;
+}
+
+function doesConditionCaseMatch(
+  conditionCase: WorkflowConditionCase,
+  extractedFields: Record<string, string>,
+  nodeDecisions: Record<string, "approved" | "rejected">,
+) {
+  if (conditionCase.isFallback) {
+    return true;
+  }
+
+  const approvalMatches = conditionCase.approvalRule
+    ? doesApprovalConditionRuleMatch(conditionCase.approvalRule, nodeDecisions)
+    : undefined;
+  const numericMatches = conditionCase.numericRule
+    ? doesConditionNumericRuleMatch(conditionCase.numericRule, extractedFields)
+    : undefined;
+
+  if (approvalMatches === undefined) {
+    return Boolean(numericMatches);
+  }
+
+  if (numericMatches === undefined) {
+    return approvalMatches;
+  }
+
+  return conditionCase.join === "or"
+    ? approvalMatches || numericMatches
+    : approvalMatches && numericMatches;
+}
+
+function doesApprovalConditionRuleMatch(
+  approvalRule: NonNullable<WorkflowConditionCase["approvalRule"]>,
+  nodeDecisions: Record<string, "approved" | "rejected">,
+) {
+  const approvedCount = approvalRule.upstreamNodeIds.filter(
+    (nodeId) => nodeDecisions[nodeId] === "approved",
+  ).length;
+  const decidedCount = approvalRule.upstreamNodeIds.filter((nodeId) =>
+    Boolean(nodeDecisions[nodeId]),
+  ).length;
+
+  if (approvalRule.mode === "exactly") {
+    return (
+      decidedCount === approvalRule.upstreamNodeIds.length &&
+      approvedCount === approvalRule.minimumApproved
+    );
+  }
+
+  return approvedCount >= approvalRule.minimumApproved;
+}
+
+function doesConditionNumericRuleMatch(
+  rule: NonNullable<WorkflowConditionCase["numericRule"]>,
+  extractedFields: Record<string, string>,
+) {
+  const rawFieldValue = extractedFields[rule.field] || "";
+  const fieldValue = normalizeComparableValue(rawFieldValue);
+  const ruleValue = normalizeComparableValue(rule.value);
+
+  if (rule.operator === "contains") {
+    return rawFieldValue.toLowerCase().includes(rule.value.toLowerCase());
+  }
+
+  if (typeof fieldValue === "number" && typeof ruleValue === "number") {
+    if (rule.operator === "=") return fieldValue === ruleValue;
+    if (rule.operator === "!=") return fieldValue !== ruleValue;
+    if (rule.operator === ">") return fieldValue > ruleValue;
+    if (rule.operator === ">=") return fieldValue >= ruleValue;
+    if (rule.operator === "<") return fieldValue < ruleValue;
+    if (rule.operator === "<=") return fieldValue <= ruleValue;
+  }
+
+  if (rule.operator === "=") return rawFieldValue === rule.value;
+  if (rule.operator === "!=") return rawFieldValue !== rule.value;
+  return false;
+}
+
+function normalizeComparableValue(value: string) {
+  const number = Number(value.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(number) && value.trim() ? number : value;
 }
 
 export function addWorkflowDocumentToNode(
@@ -1003,6 +1306,9 @@ function dedupeEdges(edges: WorkflowGraphEdge[]) {
 }
 
 function defaultNodeLabel(kind: WorkflowNodeKind, count: number) {
+  if (kind === "submit_request") {
+    return `Submit Request ${count}`;
+  }
   if (kind === "approval") {
     return `Approval ${count}`;
   }

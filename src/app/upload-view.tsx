@@ -57,7 +57,16 @@ import type {
   WorkflowTemplate,
 } from "@/lib/types";
 
+type UploadRequestDraftRowView = {
+  id: string;
+  fileName: string;
+  parseResult: ParsedWorkspaceFilePayload | null;
+  editedFields: Record<string, string>;
+  uploadedAttachments: ApprovalAttachment[];
+};
+
 export function UploadView({
+  activeUserEmail,
   fileName,
   parseResult,
   editedFields,
@@ -89,7 +98,12 @@ export function UploadView({
   setSelectedTemplateId,
   submissionMessage,
   onSubmitRequest,
+  requestDrafts,
+  selectedRequestDraftId,
+  onSelectRequestDraft,
+  onSubmitAllRequests,
 }: {
+  activeUserEmail: string;
   fileName: string;
   parseResult: ParsedWorkspaceFilePayload | null;
   editedFields: Record<string, string>;
@@ -132,6 +146,10 @@ export function UploadView({
   setSelectedTemplateId: (id: string) => void;
   submissionMessage: string;
   onSubmitRequest: () => void;
+  requestDrafts: UploadRequestDraftRowView[];
+  selectedRequestDraftId: string;
+  onSelectRequestDraft: (rowId: string) => void;
+  onSubmitAllRequests: () => void;
 }) {
   const [selectedPreviewPageId, setSelectedPreviewPageId] = useState("");
   const [selectionStart, setSelectionStart] = useState<Point | null>(null);
@@ -172,12 +190,19 @@ export function UploadView({
     requestTemplates,
     selectedTemplate,
     uploadDocuments,
+    manualFormDocuments,
+    assignedUploadDocuments,
+    sharedUploadDocuments,
+    assignedManualFormDocuments,
+    sharedManualFormDocuments,
+    sharedFulfillmentEnabled,
     uploadedDocumentIds,
     missingRequiredDocuments,
   } = getUploadViewState({
     workflowTemplates,
     selectedTemplateId,
     uploadedAttachments,
+    activeUserEmail,
   });
   const selectedPreviewPage =
     documentPreviewPages.find((page) => page.id === selectedPreviewPageId) ||
@@ -228,6 +253,12 @@ export function UploadView({
     }))
     .filter((item) => !dismissedSuggestionKeys.includes(item.suggestionKey));
   const submissionMessageTone = getUploadSubmissionMessageTone(submissionMessage);
+  const hasManualFormDocuments = manualFormDocuments.length > 0;
+  const hasSubmissionDraft = Boolean(parseResult) || hasManualFormDocuments;
+  const hasBatchDrafts = requestDrafts.length > 1;
+  const assignedUploadsHeading = sharedFulfillmentEnabled
+    ? "Your assigned uploads"
+    : "Required uploads";
 
   useEffect(() => {
     if (selectedTemplate && selectedTemplate.id !== selectedTemplateId) {
@@ -473,6 +504,48 @@ export function UploadView({
     }
   }
 
+  function renderUploadDocumentRequirement(
+    document: WorkflowDocumentRequirement,
+    helperText?: string,
+  ) {
+    return (
+      <label
+        key={document.id}
+        className="block cursor-pointer rounded-md border border-white/10 bg-[#121518] p-3 transition hover:border-emerald-400/60"
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="break-words text-sm font-medium">
+              {document.documentType}
+            </p>
+            <p className="mt-1 text-xs text-neutral-500">
+              {formatDocumentFormat(document.format)} -{" "}
+              {document.required ? "Required" : "Optional"} -{" "}
+              {document.fields.length} field(s)
+            </p>
+            {helperText && (
+              <p className="mt-1 text-xs text-sky-200/75">{helperText}</p>
+            )}
+          </div>
+          <span className="self-start rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-400">
+            {uploadedDocumentIds.has(document.id) ? "Attached" : "Upload"}
+          </span>
+        </div>
+        <input
+          type="file"
+          className="sr-only"
+          accept={acceptForDocumentFormat(document.format)}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) {
+              parseFile(file, document);
+            }
+          }}
+        />
+      </label>
+    );
+  }
+
   return (
     <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
       <section className="rounded-md border border-white/10 bg-white/[0.03] p-5">
@@ -513,42 +586,62 @@ export function UploadView({
 
         {selectedTemplate && (
           <div className="mt-4 space-y-3">
-            {uploadDocuments.map((document) => (
-              <label
-                key={document.id}
-                className="block cursor-pointer rounded-md border border-white/10 bg-[#121518] p-3 transition hover:border-emerald-400/60"
-              >
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="break-words text-sm font-medium">
-                      {document.documentType}
-                    </p>
-                    <p className="mt-1 text-xs text-neutral-500">
-                      {formatDocumentFormat(document.format)} -{" "}
-                      {document.required ? "Required" : "Optional"} -{" "}
-                      {document.fields.length} field(s)
-                    </p>
-                  </div>
-                  <span className="self-start rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-400">
-                    {uploadedDocumentIds.has(document.id) ? "Attached" : "Upload"}
-                  </span>
+            {assignedUploadDocuments.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-neutral-200">
+                  {assignedUploadsHeading}
+                </p>
+                {assignedUploadDocuments.map((document) =>
+                  renderUploadDocumentRequirement(document),
+                )}
+              </div>
+            )}
+            {sharedUploadDocuments.length > 0 && (
+              <div className="space-y-2 rounded-md border border-sky-500/25 bg-sky-500/10 p-3">
+                <div>
+                  <p className="text-sm font-semibold text-sky-100">
+                    Other required uploads you may help fulfill
+                  </p>
+                  <p className="mt-1 text-xs text-sky-100/70">
+                    Uploading here records you as the uploader while keeping the
+                    original submit box visible in tracking.
+                  </p>
                 </div>
-                <input
-                  type="file"
-                  className="sr-only"
-                  accept={acceptForDocumentFormat(document.format)}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) {
-                      parseFile(file, document);
-                    }
-                  }}
-                />
-              </label>
-            ))}
-            {!uploadDocuments.length && (
+                {sharedUploadDocuments.map((document) =>
+                  renderUploadDocumentRequirement(
+                    document,
+                    "Shared fulfillment for another submitter's requirement.",
+                  ),
+                )}
+              </div>
+            )}
+            {!uploadDocuments.length && !manualFormDocuments.length && (
               <div className="rounded-md border border-white/10 bg-[#121518] p-3 text-sm text-neutral-400">
                 No document requirements are attached to the starting route.
+              </div>
+            )}
+            {(assignedManualFormDocuments.length > 0 ||
+              sharedManualFormDocuments.length > 0) && (
+              <div className="rounded-md border border-sky-500/25 bg-sky-500/10 p-3">
+                <p className="text-sm font-semibold text-sky-100">
+                  Manual digital form
+                </p>
+                <p className="mt-1 text-xs text-sky-100/70">
+                  Fill these fields on the right. No paper form upload is required.
+                </p>
+                <div className="mt-2 space-y-1 text-xs text-sky-100/80">
+                  {assignedManualFormDocuments.map((document) => (
+                    <p key={document.id}>
+                      {document.documentType} - {document.fields.length} field(s)
+                    </p>
+                  ))}
+                  {sharedManualFormDocuments.map((document) => (
+                    <p key={document.id}>
+                      {document.documentType} - {document.fields.length} field(s)
+                      {" "}available for shared fulfillment
+                    </p>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -577,6 +670,49 @@ export function UploadView({
                   )}
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {requestDrafts.length > 0 && (
+          <div className="mt-4 rounded-md border border-white/10 bg-[#121518] p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-neutral-200">
+                  Request drafts
+                </p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Each uploaded document will submit as a separate request.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-400">
+                {requestDrafts.length}
+              </span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {requestDrafts.map((draft, index) => {
+                const fieldCount = Object.keys(draft.editedFields).length;
+                const isSelected = draft.id === selectedRequestDraftId;
+                return (
+                  <button
+                    key={draft.id}
+                    type="button"
+                    onClick={() => onSelectRequestDraft(draft.id)}
+                    className={`w-full rounded-md border p-2 text-left text-xs transition ${
+                      isSelected
+                        ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50"
+                        : "border-white/10 bg-[#101214] text-neutral-300 hover:border-white/20"
+                    }`}
+                  >
+                    <span className="block truncate font-medium">
+                      Request {index + 1}: {draft.fileName}
+                    </span>
+                    <span className="mt-1 block text-neutral-500">
+                      {fieldCount} field(s), {draft.uploadedAttachments.length} attachment(s)
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1115,7 +1251,76 @@ export function UploadView({
             </div>
           )}
 
-          {!parseResult && !isParsing && (
+          {manualFormDocuments.length > 0 && (
+            <div className="mb-4 rounded-md border border-sky-500/25 bg-sky-500/10 p-4">
+              <h3 className="text-sm font-semibold text-sky-100">
+                Manual form fields
+              </h3>
+              <p className="mt-1 text-xs text-sky-100/70">
+                Enter these values directly. They will be routed and validated like OCR fields.
+              </p>
+              <div className="mt-3 space-y-4">
+                {manualFormDocuments.map((document) => (
+                  <div
+                    key={document.id}
+                    className="rounded-md border border-white/10 bg-[#101214] p-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-neutral-100">
+                        {document.documentType}
+                      </p>
+                      <span className="rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-400">
+                        {document.required ? "Required" : "Optional"}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      {document.fields.map((field) => {
+                        const value =
+                          editedFields[field.label] ?? editedFields[field.name] ?? "";
+
+                        return (
+                          <label key={field.name} className="block">
+                            <span className="mb-1 flex items-center gap-2 text-xs text-neutral-400">
+                              <span>{field.label}</span>
+                              {field.required && (
+                                <span className="rounded-sm border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-amber-100">
+                                  Required
+                                </span>
+                              )}
+                            </span>
+                            <textarea
+                              value={value}
+                              onChange={(event) =>
+                                setEditedFields({
+                                  ...editedFields,
+                                  [field.label]: event.target.value,
+                                })
+                              }
+                              placeholder={field.instructions || "Enter value"}
+                              rows={2}
+                              className="min-h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
+                            />
+                            {field.instructions && (
+                              <p className="mt-1 text-xs text-neutral-500">
+                                {field.instructions}
+                              </p>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {!document.fields.length && (
+                      <p className="mt-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-xs text-neutral-500">
+                        This manual form has no fields yet. Add fields in the workflow template.
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!parseResult && !isParsing && !hasManualFormDocuments && (
             <div className="grid min-h-72 place-items-center rounded-md border border-white/10 bg-[#121518] text-center text-sm text-neutral-500">
               <div>
                 <div className="mb-3 flex justify-center gap-2">
@@ -1223,6 +1428,11 @@ export function UploadView({
                 </div>
               )}
 
+            </div>
+          )}
+
+          {hasSubmissionDraft && (
+            <div className="grid gap-2 sm:grid-cols-2">
               <button
                 type="button"
                 onClick={onSubmitRequest}
@@ -1230,8 +1440,19 @@ export function UploadView({
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <Send size={16} />
-                Submit request
+                Submit current
               </button>
+              {hasBatchDrafts && (
+                <button
+                  type="button"
+                  onClick={onSubmitAllRequests}
+                  disabled={isParsing}
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-sky-500/40 bg-sky-500/10 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Send size={16} />
+                  Submit all ({requestDrafts.length})
+                </button>
+              )}
             </div>
           )}
 

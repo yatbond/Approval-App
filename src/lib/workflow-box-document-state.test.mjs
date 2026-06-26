@@ -36,6 +36,7 @@ test("adds a document requirement to the selected workflow box", () => {
   assert.deepEqual(result.resetForm, {
     documentType: "Supporting document",
     format: "pdf",
+    inputMode: "upload",
     required: true,
   });
 
@@ -56,6 +57,70 @@ test("adds a document requirement to the selected workflow box", () => {
     result.template.graph?.nodes
       .find((node) => node.id === "review-1")
       ?.documentIds?.includes(document.id),
+  );
+});
+
+test("adds a document requirement to a submit request box", () => {
+  const result = getWorkflowAddBoxDocumentState({
+    template: {
+      ...template,
+      graph: {
+        nodes: [
+          { id: "start", label: "Start", kind: "start", x: 0, y: 0, blocking: true },
+          {
+            id: "submit-1",
+            label: "Submit request",
+            kind: "submit_request",
+            x: 180,
+            y: 0,
+            blocking: true,
+          },
+        ],
+        edges: [],
+      },
+    },
+    selectedNodeId: "submit-1",
+    selectedNodeLabel: "Submit request",
+    documentType: "Invoice",
+    format: "pdf",
+    required: true,
+  });
+
+  assert.equal(result.didUpdate, true);
+  assert.equal(result.label, "Added document to Submit request");
+  assert.ok(
+    result.template.graph?.nodes
+      .find((node) => node.id === "submit-1")
+      ?.documentIds?.includes(result.template.documents[0].id),
+  );
+});
+
+test("adds a manual form requirement to a submit request box", () => {
+  const result = getWorkflowAddBoxDocumentState({
+    template,
+    selectedNodeId: "review-1",
+    selectedNodeLabel: "Review 1",
+    documentType: "Leave request form",
+    format: "text",
+    inputMode: "manual_form",
+    required: true,
+  });
+
+  assert.equal(result.didUpdate, true);
+  assert.deepEqual(result.resetForm, {
+    documentType: "Supporting document",
+    format: "pdf",
+    inputMode: "upload",
+    required: true,
+  });
+
+  const document = result.template.documents[0];
+  assert.equal(document.inputMode, "manual_form");
+  assert.equal(document.format, "text");
+  assert.equal(document.fields[0].source, "manual");
+  assert.equal(
+    document.fields[0].instructions,
+    "Describe what the requester should enter for this form field.",
   );
 });
 

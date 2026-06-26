@@ -565,7 +565,7 @@ test("builds resume items with template names for current and saved drafts", () 
         updatedAt: "2026-06-23T00:01:00.000Z",
         accessLabel: "Private autosave",
         canResume: true,
-        canDelete: false,
+        canDelete: true,
       },
       {
         id: "saved-hr-draft",

@@ -19,6 +19,7 @@ export function UploadDraftsView({
   activeUserEmail,
   activeUserId,
   onResumeSavedDraft,
+  onClearCurrentDraft,
   onDeleteRequestDraft,
 }: {
   currentDraft: UploadRequestDraft | null;
@@ -29,6 +30,7 @@ export function UploadDraftsView({
   activeUserEmail: string;
   activeUserId?: string;
   onResumeSavedDraft: (draft: SavedUploadRequestDraft) => void;
+  onClearCurrentDraft: () => void;
   onDeleteRequestDraft: (draftId: string) => void;
 }) {
   const resumeItems = getUploadDraftResumeItems({
@@ -112,13 +114,24 @@ export function UploadDraftsView({
 
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                   {item.type === "current" ? (
-                    <Link
-                      href="/?tab=upload"
-                      className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20"
-                    >
-                      <RotateCcw size={15} />
-                      Resume autosave
-                    </Link>
+                    <>
+                      <Link
+                        href="/?tab=upload"
+                        className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20"
+                      >
+                        <RotateCcw size={15} />
+                        Resume autosave
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={onClearCurrentDraft}
+                        disabled={!item.canDelete}
+                        className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500 sm:flex-none"
+                      >
+                        <Trash2 size={15} />
+                        Clear autosave
+                      </button>
+                    </>
                   ) : (
                     <button
                       type="button"

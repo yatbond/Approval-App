@@ -2,6 +2,7 @@ import { createWorkflowGraphFromTemplate } from "./workflow-graph.ts";
 import type {
   ApprovalAttachment,
   DocumentFormat,
+  WorkflowDocumentInputMode,
   WorkflowDocumentRequirement,
   WorkflowField,
   WorkflowTemplate,
@@ -12,6 +13,14 @@ export const documentFormatOptions: { value: DocumentFormat; label: string }[] =
   { value: "pdf", label: "PDF" },
   { value: "image", label: "Image" },
   { value: "excel_csv", label: "Excel/CSV" },
+];
+
+export const documentInputModeOptions: {
+  value: WorkflowDocumentInputMode;
+  label: string;
+}[] = [
+  { value: "upload", label: "Document upload with OCR" },
+  { value: "manual_form", label: "Manual digital form" },
 ];
 
 export type CreateAttachmentRecordInput = {
@@ -29,6 +38,25 @@ export function formatDocumentFormat(format: DocumentFormat | string) {
   return (
     documentFormatOptions.find((option) => option.value === format)?.label ||
     "Document"
+  );
+}
+
+export function getDocumentInputMode(
+  documentRequirement: Pick<WorkflowDocumentRequirement, "inputMode">,
+): WorkflowDocumentInputMode {
+  return documentRequirement.inputMode || "upload";
+}
+
+export function isManualFormRequirement(
+  documentRequirement: Pick<WorkflowDocumentRequirement, "inputMode">,
+) {
+  return getDocumentInputMode(documentRequirement) === "manual_form";
+}
+
+export function formatDocumentInputMode(inputMode: WorkflowDocumentInputMode) {
+  return (
+    documentInputModeOptions.find((option) => option.value === inputMode)?.label ||
+    "Document upload with OCR"
   );
 }
 

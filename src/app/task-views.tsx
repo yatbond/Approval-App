@@ -7,6 +7,7 @@ import {
   MessageSquare,
   RotateCcw,
   Send,
+  Upload,
   UserPlus,
   X,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import {
 import type {
   ApprovalAction,
   ApprovalTask,
+  TaskCollaborationRequest,
   WorkflowDocumentRequirement,
   WorkflowTemplate,
 } from "@/lib/types";
@@ -86,6 +88,18 @@ export function QueueView({
   setComment,
   targetEmail,
   setTargetEmail,
+  contributorName,
+  setContributorName,
+  contributorEmail,
+  setContributorEmail,
+  contributorRequestNote,
+  setContributorRequestNote,
+  contributorDueAt,
+  setContributorDueAt,
+  contributorBlocksApproval,
+  setContributorBlocksApproval,
+  contributorRequestError,
+  onRequestContributor,
   recordAction,
   activeUserEmail,
   userDirectory,
@@ -101,6 +115,18 @@ export function QueueView({
   setComment: (value: string) => void;
   targetEmail: string;
   setTargetEmail: (value: string) => void;
+  contributorName: string;
+  setContributorName: (value: string) => void;
+  contributorEmail: string;
+  setContributorEmail: (value: string) => void;
+  contributorRequestNote: string;
+  setContributorRequestNote: (value: string) => void;
+  contributorDueAt: string;
+  setContributorDueAt: (value: string) => void;
+  contributorBlocksApproval: boolean;
+  setContributorBlocksApproval: (value: boolean) => void;
+  contributorRequestError: string;
+  onRequestContributor: () => void;
   recordAction: (action: ApprovalAction) => void;
   activeUserEmail: string;
   userDirectory: UserDirectoryEntry[];
@@ -255,6 +281,99 @@ export function QueueView({
                 <UserDirectoryDatalist id="queue-user-directory" users={userDirectory} />
               </label>
             )}
+            {!originatorAction && (
+              <div className="mt-3 rounded-md border border-sky-500/25 bg-sky-500/10 p-3">
+                <p className="text-sm font-semibold text-sky-100">
+                  Request contributor input
+                </p>
+                <p className="mt-1 text-xs text-sky-100/70">
+                  Ask another person to upload documents or provide information
+                  without changing the current owner.
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-sky-100/80">
+                      Contributor name
+                    </span>
+                    <input
+                      value={contributorName}
+                      onChange={(event) => setContributorName(event.target.value)}
+                      placeholder="Optional"
+                      className="h-10 w-full rounded-md border border-sky-300/20 bg-[#121518] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-sky-300/60"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-sky-100/80">
+                      Contributor email
+                    </span>
+                    <input
+                      type="email"
+                      list="queue-user-directory"
+                      value={contributorEmail}
+                      onChange={(event) => setContributorEmail(event.target.value)}
+                      placeholder="person@example.com"
+                      className="h-10 w-full rounded-md border border-sky-300/20 bg-[#121518] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-sky-300/60"
+                    />
+                  </label>
+                </div>
+                <label className="mt-2 block">
+                  <span className="mb-1 block text-xs text-sky-100/80">Due date</span>
+                  <input
+                    type="datetime-local"
+                    value={contributorDueAt}
+                    onChange={(event) => setContributorDueAt(event.target.value)}
+                    className="h-10 w-full rounded-md border border-sky-300/20 bg-[#121518] px-3 text-sm outline-none transition focus:border-sky-300/60"
+                  />
+                </label>
+                <label className="mt-2 block">
+                  <span className="mb-1 block text-xs text-sky-100/80">
+                    Requested information
+                  </span>
+                  <textarea
+                    value={contributorRequestNote}
+                    onChange={(event) =>
+                      setContributorRequestNote(event.target.value)
+                    }
+                    placeholder="Tell the contributor what documents or information are needed."
+                    className="h-20 w-full resize-none rounded-md border border-sky-300/20 bg-[#121518] p-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-sky-300/60"
+                  />
+                </label>
+                <label className="mt-2 flex items-start gap-2 text-xs text-sky-50">
+                  <input
+                    type="checkbox"
+                    checked={contributorBlocksApproval}
+                    onChange={(event) =>
+                      setContributorBlocksApproval(event.target.checked)
+                    }
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Block approval until this contributor submits the requested
+                    information.
+                  </span>
+                </label>
+                {contributorRequestError && (
+                  <div className="mt-2 rounded-md border border-rose-400/30 bg-rose-400/10 p-2 text-xs text-rose-100">
+                    {contributorRequestError}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={onRequestContributor}
+                  className="mt-3 flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-3 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20"
+                >
+                  <UserPlus size={15} />
+                  Request input
+                </button>
+              </div>
+            )}
+            {selectedTask.collaborationRequests?.length ? (
+              <ContributorRequestList
+                taskId={selectedTask.id}
+                requests={selectedTask.collaborationRequests}
+                activeUserEmail={activeUserEmail}
+              />
+            ) : null}
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {availableActions.map((action) => {
                 const Icon = actionConfig[action].icon;
@@ -299,6 +418,7 @@ export function TrackingView({
   workflowTemplates,
   activeUserEmail,
   userDirectory,
+  onSubmitContributorUpload,
 }: {
   tasks: ApprovalTask[];
   selectedTaskId: string;
@@ -306,6 +426,12 @@ export function TrackingView({
   workflowTemplates: WorkflowTemplate[];
   activeUserEmail: string;
   userDirectory: UserDirectoryEntry[];
+  onSubmitContributorUpload: (input: {
+    taskId: string;
+    collaborationRequestId: string;
+    requestNote: string;
+    file: File;
+  }) => void;
 }) {
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) || tasks[0];
   const selectedTemplate = selectedTask
@@ -454,6 +580,14 @@ export function TrackingView({
                   )}
                 </div>
               </div>
+              {selectedTask.collaborationRequests?.length ? (
+                <ContributorRequestList
+                  taskId={selectedTask.id}
+                  requests={selectedTask.collaborationRequests}
+                  activeUserEmail={activeUserEmail}
+                  onSubmitContributorUpload={onSubmitContributorUpload}
+                />
+              ) : null}
             </div>
             {selectedTemplate && (
               <TaskPathSummary task={selectedTask} template={selectedTemplate} />
@@ -521,6 +655,122 @@ function TaskPathSummary({
                 <p className="mt-2 text-xs text-neutral-500">
                   {node.documentIds.length} document requirement(s)
                 </p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ContributorRequestList({
+  taskId,
+  requests,
+  activeUserEmail,
+  onSubmitContributorUpload,
+}: {
+  taskId?: string;
+  requests: TaskCollaborationRequest[];
+  activeUserEmail?: string;
+  onSubmitContributorUpload?: (input: {
+    taskId: string;
+    collaborationRequestId: string;
+    requestNote: string;
+    file: File;
+  }) => void;
+}) {
+  return (
+    <div className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
+      <p className="text-xs font-semibold text-neutral-300">
+        Contributor requests
+      </p>
+      <div className="mt-2 space-y-2">
+        {requests.map((request) => {
+          const canSubmitUpload =
+            taskId &&
+            onSubmitContributorUpload &&
+            request.status === "requested" &&
+            request.contributorEmail === activeUserEmail;
+          const extractedFieldEntries = Object.entries(
+            request.extractedFields || {},
+          );
+
+          return (
+            <div
+              key={request.id}
+              className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs"
+            >
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="break-words font-medium text-neutral-200">
+                    {request.contributorName || request.contributorEmail}
+                  </p>
+                  <p className="mt-1 break-words text-neutral-500">
+                    {request.contributorEmail}
+                  </p>
+                </div>
+                <span className="self-start rounded-md border border-sky-400/30 bg-sky-400/10 px-2 py-1 text-sky-100">
+                  {request.status}
+                </span>
+              </div>
+              <p className="mt-2 break-words text-neutral-300">
+                {request.requestNote}
+              </p>
+              <p className="mt-2 break-words text-neutral-500">
+                Requested by {request.requestedByEmail}
+                {request.dueAt ? ` - due ${request.dueAt}` : ""}
+              </p>
+              {request.blocksApproval !== false &&
+              request.status === "requested" ? (
+                <p className="mt-2 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-amber-100">
+                  Blocks approval until submitted
+                </p>
+              ) : null}
+              {request.submittedAt ? (
+                <p className="mt-2 break-words text-emerald-200">
+                  Submitted {request.submittedAt}
+                </p>
+              ) : null}
+              {extractedFieldEntries.length ? (
+                <div className="mt-2 space-y-1 rounded-md border border-white/10 bg-[#121518] p-2">
+                  {extractedFieldEntries.map(([field, value]) => (
+                    <div
+                      key={field}
+                      className="grid gap-1 sm:grid-cols-[120px_1fr]"
+                    >
+                      <span className="break-words text-neutral-500">
+                        {field}
+                      </span>
+                      <span className="break-words text-neutral-200">
+                        {value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {canSubmitUpload ? (
+                <label className="mt-2 flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/10 px-3 py-2 text-emerald-100 transition hover:bg-emerald-400/20">
+                  <Upload size={14} />
+                  Submit upload
+                  <input
+                    type="file"
+                    className="sr-only"
+                    accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.csv,.txt,.md"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file && taskId && onSubmitContributorUpload) {
+                        onSubmitContributorUpload({
+                          taskId,
+                          collaborationRequestId: request.id,
+                          requestNote: request.requestNote,
+                          file,
+                        });
+                      }
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                </label>
               ) : null}
             </div>
           );

@@ -7,6 +7,7 @@ import type {
 } from "./types.ts";
 
 export const workflowNodeOptions: { kind: WorkflowNodeKind; label: string }[] = [
+  { kind: "submit_request", label: "Submit Request" },
   { kind: "approval", label: "Approval" },
   { kind: "review", label: "Review" },
   { kind: "for_information", label: "For Information" },

@@ -803,6 +803,76 @@ test("condition case can route a 2 of 3 approval count through FYI and review in
   assert.ok(completed.completedNodeIds.includes("extra-review"));
 });
 
+test("condition case routes multiple actionable outcome boxes in parallel", () => {
+  const template = makeAllNodeKindsTemplate([
+    {
+      id: "case-2-of-3",
+      name: "At least two approve",
+      approvalRule: {
+        upstreamNodeIds: ["approval-1", "review-1", "approval-2"],
+        minimumApproved: 2,
+        mode: "at_least",
+      },
+      join: "and",
+      targetNodeIds: ["fyi-1", "extra-review", "legal-review"],
+    },
+  ]);
+  template.graph.nodes.push({
+    id: "legal-review",
+    kind: "review",
+    label: "Legal review",
+    x: 720,
+    y: 220,
+    assigneeName: "Legal Reviewer",
+    assigneeEmail: "legal@example.com",
+  });
+  template.graph.edges.push({
+    id: "edge-legal-end",
+    sourceId: "legal-review",
+    targetId: "end",
+    label: "Approved",
+    branchType: "approved",
+  });
+  const task = makeCreatedTask(template, { invoice_total: "HKD 12,000" });
+
+  const first = applyTaskAction(task, {
+    action: "approve",
+    actor: { name: "Approver 1", email: "approver1@example.com" },
+    template,
+  });
+  const second = applyTaskAction(first, {
+    action: "approve",
+    actor: { name: "Reviewer 1", email: "reviewer1@example.com" },
+    template,
+  });
+
+  assert.equal(second.status, "pending");
+  assert.equal(second.currentNodeId, "extra-review");
+  assert.deepEqual(second.pendingNodeIds, ["extra-review", "legal-review"]);
+  assert.deepEqual(second.pendingOwners, ["extra@example.com", "legal@example.com"]);
+  assert.ok(second.notifiedNodeIds.includes("fyi-1"));
+  assert.equal(second.activeBranchId, "case-2-of-3");
+
+  const extraDone = applyTaskAction(second, {
+    action: "approve",
+    actor: { name: "Extra Reviewer", email: "extra@example.com" },
+    template,
+  });
+  assert.equal(extraDone.status, "pending");
+  assert.deepEqual(extraDone.pendingNodeIds, ["legal-review"]);
+  assert.equal(extraDone.currentOwner, "legal@example.com");
+
+  const completed = applyTaskAction(extraDone, {
+    action: "approve",
+    actor: { name: "Legal Reviewer", email: "legal@example.com" },
+    template,
+  });
+  assert.equal(completed.status, "approved");
+  assert.equal(completed.currentOwner, "");
+  assert.ok(completed.completedNodeIds.includes("extra-review"));
+  assert.ok(completed.completedNodeIds.includes("legal-review"));
+});
+
 test("fallback approval-count condition waits while unresolved upstream boxes could still match a specified case", () => {
   const template = makeAllNodeKindsTemplate([
     {

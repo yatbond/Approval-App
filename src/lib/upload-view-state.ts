@@ -2,11 +2,14 @@ import {
   getMissingRequiredSubmissionDocuments,
   getSubmissionDocumentRequirements,
 } from "./request-builder.ts";
+import { isManualFormRequirement } from "./workflow-documents.ts";
 import type { NormalizedRect } from "./document-preview.ts";
 import type {
   ApprovalAttachment,
   ExtractedFieldSuggestion,
+  WorkflowDocumentRequirement,
   WorkflowField,
+  WorkflowGraphNode,
   WorkflowTemplate,
 } from "./types.ts";
 
@@ -40,10 +43,12 @@ export function getUploadViewState({
   workflowTemplates,
   selectedTemplateId,
   uploadedAttachments,
+  activeUserEmail,
 }: {
   workflowTemplates: WorkflowTemplate[];
   selectedTemplateId: string;
   uploadedAttachments: ApprovalAttachment[];
+  activeUserEmail?: string;
 }) {
   const requestTemplates = workflowTemplates.filter(
     (template) => template.isDraft !== true && template.isArchived !== true,
@@ -51,9 +56,28 @@ export function getUploadViewState({
   const selectedTemplate =
     requestTemplates.find((template) => template.id === selectedTemplateId) ||
     requestTemplates[0];
-  const uploadDocuments = selectedTemplate
-    ? getSubmissionDocumentRequirements(selectedTemplate)
-    : [];
+  const collaborativeRequirements = selectedTemplate
+    ? getCollaborativeSubmissionRequirements({
+        template: selectedTemplate,
+        activeUserEmail,
+      })
+    : emptyCollaborativeSubmissionRequirements();
+  const uploadDocuments =
+    collaborativeRequirements.assignedUploadDocuments.length ||
+    collaborativeRequirements.sharedUploadDocuments.length
+      ? [
+          ...collaborativeRequirements.assignedUploadDocuments,
+          ...collaborativeRequirements.sharedUploadDocuments,
+        ]
+      : [];
+  const manualFormDocuments =
+    collaborativeRequirements.assignedManualFormDocuments.length ||
+    collaborativeRequirements.sharedManualFormDocuments.length
+      ? [
+          ...collaborativeRequirements.assignedManualFormDocuments,
+          ...collaborativeRequirements.sharedManualFormDocuments,
+        ]
+      : [];
   const uploadedDocumentIds = new Set(
     uploadedAttachments
       .map((attachment) => attachment.documentId)
@@ -67,9 +91,131 @@ export function getUploadViewState({
     requestTemplates,
     selectedTemplate,
     uploadDocuments,
+    manualFormDocuments,
+    assignedUploadDocuments: collaborativeRequirements.assignedUploadDocuments,
+    sharedUploadDocuments: collaborativeRequirements.sharedUploadDocuments,
+    assignedManualFormDocuments:
+      collaborativeRequirements.assignedManualFormDocuments,
+    sharedManualFormDocuments: collaborativeRequirements.sharedManualFormDocuments,
+    sharedFulfillmentEnabled: collaborativeRequirements.sharedFulfillmentEnabled,
     uploadedDocumentIds,
     missingRequiredDocuments,
   };
+}
+
+function getCollaborativeSubmissionRequirements({
+  template,
+  activeUserEmail,
+}: {
+  template: WorkflowTemplate;
+  activeUserEmail?: string;
+}) {
+  const defaultRequirements = getSubmissionDocumentRequirements(template);
+  const submitNodes = (template.graph?.nodes || []).filter(
+    (node) => node.kind === "submit_request",
+  );
+  const normalizedActiveEmail = normalizeEmail(activeUserEmail);
+  const assignedSubmitNodes = normalizedActiveEmail
+    ? submitNodes.filter(
+        (node) => normalizeEmail(node.assigneeEmail) === normalizedActiveEmail,
+      )
+    : [];
+
+  if (!assignedSubmitNodes.length) {
+    return splitSubmissionRequirements({
+      assignedDocuments: defaultRequirements,
+      sharedDocuments: [],
+      sharedFulfillmentEnabled: false,
+    });
+  }
+
+  const sharedFulfillmentEnabled = assignedSubmitNodes.some(
+    (node) => node.allowSharedFulfillment === true,
+  );
+  const assignedDocumentIds = documentIdsForNodes(assignedSubmitNodes);
+  const assignedDocuments = documentsForIds(template.documents, assignedDocumentIds);
+  const sharedDocuments = sharedFulfillmentEnabled
+    ? getSharedSubmitBoxDocuments({
+        documents: template.documents,
+        submitNodes,
+        assignedNodes: assignedSubmitNodes,
+      })
+    : [];
+
+  return splitSubmissionRequirements({
+    assignedDocuments,
+    sharedDocuments,
+    sharedFulfillmentEnabled,
+  });
+}
+
+function splitSubmissionRequirements({
+  assignedDocuments,
+  sharedDocuments,
+  sharedFulfillmentEnabled,
+}: {
+  assignedDocuments: WorkflowDocumentRequirement[];
+  sharedDocuments: WorkflowDocumentRequirement[];
+  sharedFulfillmentEnabled: boolean;
+}) {
+  return {
+    assignedUploadDocuments: assignedDocuments.filter(
+      (document) => !isManualFormRequirement(document),
+    ),
+    sharedUploadDocuments: sharedDocuments.filter(
+      (document) => !isManualFormRequirement(document),
+    ),
+    assignedManualFormDocuments: assignedDocuments.filter(isManualFormRequirement),
+    sharedManualFormDocuments: sharedDocuments.filter(isManualFormRequirement),
+    sharedFulfillmentEnabled,
+  };
+}
+
+function emptyCollaborativeSubmissionRequirements() {
+  return splitSubmissionRequirements({
+    assignedDocuments: [],
+    sharedDocuments: [],
+    sharedFulfillmentEnabled: false,
+  });
+}
+
+function getSharedSubmitBoxDocuments({
+  documents,
+  submitNodes,
+  assignedNodes,
+}: {
+  documents: WorkflowDocumentRequirement[];
+  submitNodes: WorkflowGraphNode[];
+  assignedNodes: WorkflowGraphNode[];
+}) {
+  const assignedNodeIds = new Set(assignedNodes.map((node) => node.id));
+  const assignedDocumentIds = documentIdsForNodes(assignedNodes);
+  const otherDocumentIds = documentIdsForNodes(
+    submitNodes.filter((node) => !assignedNodeIds.has(node.id)),
+  );
+  const sharedDocumentIds = otherDocumentIds.filter(
+    (documentId) => !assignedDocumentIds.includes(documentId),
+  );
+
+  return documentsForIds(documents, sharedDocumentIds);
+}
+
+function documentIdsForNodes(nodes: WorkflowGraphNode[]) {
+  return Array.from(
+    new Set(nodes.flatMap((node) => node.documentIds || []).filter(Boolean)),
+  );
+}
+
+function documentsForIds(
+  documents: WorkflowDocumentRequirement[],
+  documentIds: string[],
+) {
+  const idSet = new Set(documentIds);
+  return documents.filter((document) => idSet.has(document.id));
+}
+
+function normalizeEmail(email?: string) {
+  return email?.trim().toLowerCase() || "";
 }
 
 export function createAdHocFieldDraft(index: number): AdHocFieldDraft {

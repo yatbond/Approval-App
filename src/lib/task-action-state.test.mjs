@@ -50,6 +50,34 @@ test("blocks approval when current-node required documents are missing", () => {
   );
 });
 
+test("blocks approval when blocking contributor requests are still pending", () => {
+  const state = getTaskActionPreflightState({
+    action: "approve",
+    targetEmail: "",
+    missingCurrentDocuments: [],
+    pendingBlockingContributorRequests: [
+      {
+        id: "collab-1",
+        contributorName: "Site Team",
+        contributorEmail: "site@example.com",
+        requestedByName: "Reviewer",
+        requestedByEmail: "reviewer@example.com",
+        requestNote: "Upload site report.",
+        dueAt: "",
+        blocksApproval: true,
+        status: "requested",
+        createdAt: "2026-06-26 10:15",
+      },
+    ],
+  });
+
+  assert.equal(state.canProceed, false);
+  assert.equal(
+    state.errorMessage,
+    "Resolve contributor request(s) before approving: site@example.com.",
+  );
+});
+
 test("allows non-approval actions without document checks", () => {
   const state = getTaskActionPreflightState({
     action: "reject",

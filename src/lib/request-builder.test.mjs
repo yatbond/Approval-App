@@ -6,6 +6,7 @@ import {
   getMissingRequiredSubmissionDocuments,
   getSubmissionDocumentRequirements,
 } from "./request-builder.ts";
+import { validateWorkflowTemplate } from "./workflow-graph.ts";
 
 const template = {
   id: "finance-invoice",
@@ -289,6 +290,337 @@ test("lists document requirements attached to starting workflow route", () => {
     requirements.map((document) => document.id),
     ["invoice-pdf"],
   );
+});
+
+test("uses submit request box documents as submission requirements before routing onward", () => {
+  const taskTemplate = {
+    ...template,
+    documents: [
+      {
+        id: "request-invoice",
+        documentType: "Invoice",
+        format: "pdf",
+        required: true,
+        fields: [],
+      },
+      {
+        id: "review-support",
+        documentType: "Review support",
+        format: "pdf",
+        required: true,
+        fields: [],
+      },
+    ],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 80 },
+        {
+          id: "submit-1",
+          kind: "submit_request",
+          label: "Submit request",
+          x: 220,
+          y: 80,
+          documentIds: ["request-invoice"],
+          blocking: true,
+        },
+        {
+          id: "review-1",
+          kind: "review",
+          label: "Initial review",
+          x: 440,
+          y: 80,
+          assigneeEmail: "reviewer@example.com",
+          documentIds: ["review-support"],
+        },
+      ],
+      edges: [
+        {
+          id: "edge-start-submit",
+          sourceId: "start",
+          targetId: "submit-1",
+          label: "Begin",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-review",
+          sourceId: "submit-1",
+          targetId: "review-1",
+          label: "Submit",
+          branchType: "main",
+        },
+      ],
+    },
+  };
+
+  const requirements = getSubmissionDocumentRequirements(taskTemplate);
+  const task = createApprovalTaskFromTemplate({
+    id: "APR-SUBMIT",
+    now: new Date("2026-06-18T10:00:00+08:00"),
+    requester: { name: "Mandy", email: "mandy@example.com" },
+    template: taskTemplate,
+    extractedFields: {},
+  });
+
+  assert.deepEqual(
+    requirements.map((document) => document.id),
+    ["request-invoice"],
+  );
+  assert.equal(task.currentNodeId, "review-1");
+  assert.equal(task.currentOwner, "reviewer@example.com");
+  assert.deepEqual(task.completedNodeIds, ["start", "submit-1"]);
+});
+
+test("routes submit request fields through immediate condition outcomes", () => {
+  const taskTemplate = {
+    ...template,
+    steps: [],
+    documents: [
+      {
+        id: "request-invoice",
+        documentType: "Invoice",
+        format: "pdf",
+        required: true,
+        fields: [
+          {
+            name: "invoice_total",
+            instructions: "Extract the invoice total.",
+            documentId: "request-invoice",
+          },
+        ],
+      },
+    ],
+    fields: [
+      {
+        name: "invoice_total",
+        instructions: "Extract the invoice total.",
+        documentId: "request-invoice",
+      },
+    ],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 80 },
+        {
+          id: "submit-1",
+          kind: "submit_request",
+          label: "Submit request",
+          x: 220,
+          y: 80,
+          documentIds: ["request-invoice"],
+          blocking: true,
+        },
+        {
+          id: "condition-1",
+          kind: "condition",
+          label: "Amount routing",
+          x: 440,
+          y: 80,
+          conditionCases: [
+            {
+              id: "case-high",
+              name: "High value",
+              numericRule: { field: "invoice_total", operator: ">", value: "5000" },
+              join: "and",
+              targetNodeIds: ["fyi-1", "review-1"],
+            },
+            {
+              id: "case-zero",
+              name: "No amount",
+              numericRule: { field: "invoice_total", operator: "=", value: "0" },
+              join: "and",
+              targetNodeIds: ["return-1"],
+            },
+            {
+              id: "case-fallback",
+              name: "All other amounts",
+              isFallback: true,
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+          ],
+        },
+        {
+          id: "fyi-1",
+          kind: "for_information",
+          label: "Finance FYI",
+          x: 660,
+          y: 0,
+          assigneeEmail: "finance.fyi@example.com",
+        },
+        {
+          id: "review-1",
+          kind: "review",
+          label: "High value review",
+          x: 660,
+          y: 80,
+          assigneeEmail: "reviewer@example.com",
+        },
+        {
+          id: "return-1",
+          kind: "return_reject",
+          label: "Return to requester",
+          x: 660,
+          y: 160,
+        },
+        { id: "end", kind: "end", label: "End", x: 880, y: 80 },
+      ],
+      edges: [
+        {
+          id: "edge-start-submit",
+          sourceId: "start",
+          targetId: "submit-1",
+          label: "Begin",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-condition",
+          sourceId: "submit-1",
+          targetId: "condition-1",
+          label: "Evaluate amount",
+          branchType: "main",
+        },
+      ],
+    },
+  };
+
+  assert.deepEqual(
+    validateWorkflowTemplate(taskTemplate).filter((issue) => issue.severity === "error"),
+    [],
+  );
+
+  const high = createApprovalTaskFromTemplate({
+    id: "APR-HIGH",
+    now: new Date("2026-06-18T10:00:00+08:00"),
+    requester: { name: "Mandy", email: "mandy@example.com" },
+    template: taskTemplate,
+    extractedFields: { invoice_total: "HKD 8,400" },
+  });
+  assert.equal(high.status, "pending");
+  assert.equal(high.currentNodeId, "review-1");
+  assert.equal(high.currentOwner, "reviewer@example.com");
+  assert.deepEqual(high.completedNodeIds, ["start", "submit-1", "condition-1"]);
+  assert.deepEqual(high.notifiedNodeIds, ["fyi-1"]);
+  assert.ok(high.participants.includes("finance.fyi@example.com"));
+  assert.equal(high.activeBranchId, "case-high");
+
+  const zero = createApprovalTaskFromTemplate({
+    id: "APR-ZERO",
+    now: new Date("2026-06-18T10:00:00+08:00"),
+    requester: { name: "Mandy", email: "mandy@example.com" },
+    template: taskTemplate,
+    extractedFields: { invoice_total: "0" },
+  });
+  assert.equal(zero.status, "returned");
+  assert.equal(zero.currentNodeId, "return-1");
+  assert.equal(zero.currentOwner, "mandy@example.com");
+  assert.equal(zero.currentStep, "Originator action required");
+  assert.equal(zero.activeBranchId, "case-zero");
+
+  const normal = createApprovalTaskFromTemplate({
+    id: "APR-NORMAL",
+    now: new Date("2026-06-18T10:00:00+08:00"),
+    requester: { name: "Mandy", email: "mandy@example.com" },
+    template: taskTemplate,
+    extractedFields: { invoice_total: "HKD 3,000" },
+  });
+  assert.equal(normal.status, "approved");
+  assert.equal(normal.currentNodeId, undefined);
+  assert.equal(normal.currentOwner, "");
+  assert.equal(normal.activeBranchId, "case-fallback");
+});
+
+test("starts parallel approval and review boxes after a submit request box", () => {
+  const taskTemplate = {
+    ...template,
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 80 },
+        {
+          id: "submit-1",
+          kind: "submit_request",
+          label: "Submit request",
+          x: 220,
+          y: 80,
+          blocking: true,
+        },
+        {
+          id: "approval-1",
+          kind: "approval",
+          label: "Department approval",
+          x: 440,
+          y: 20,
+          assigneeEmail: "approver@example.com",
+        },
+        {
+          id: "review-1",
+          kind: "review",
+          label: "Manager review",
+          x: 440,
+          y: 140,
+          assigneeEmail: "reviewer@example.com",
+        },
+        { id: "end", kind: "end", label: "End", x: 660, y: 80 },
+      ],
+      edges: [
+        {
+          id: "edge-start-submit",
+          sourceId: "start",
+          targetId: "submit-1",
+          label: "Begin",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-approval",
+          sourceId: "submit-1",
+          targetId: "approval-1",
+          label: "Approval path",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-review",
+          sourceId: "submit-1",
+          targetId: "review-1",
+          label: "Review path",
+          branchType: "main",
+        },
+        {
+          id: "edge-approval-end",
+          sourceId: "approval-1",
+          targetId: "end",
+          label: "Approved",
+          branchType: "approved",
+        },
+        {
+          id: "edge-review-end",
+          sourceId: "review-1",
+          targetId: "end",
+          label: "Reviewed",
+          branchType: "approved",
+        },
+      ],
+    },
+  };
+
+  const task = createApprovalTaskFromTemplate({
+    id: "APR-SPLIT-SUBMIT",
+    now: new Date("2026-06-18T10:00:00+08:00"),
+    requester: { name: "Mandy", email: "mandy@example.com" },
+    template: taskTemplate,
+    extractedFields: {},
+  });
+
+  assert.deepEqual(
+    validateWorkflowTemplate(taskTemplate).filter((issue) => issue.severity === "error"),
+    [],
+  );
+  assert.equal(task.status, "pending");
+  assert.equal(task.currentNodeId, "approval-1");
+  assert.deepEqual(task.pendingNodeIds, ["approval-1", "review-1"]);
+  assert.deepEqual(task.pendingOwners, [
+    "approver@example.com",
+    "reviewer@example.com",
+  ]);
+  assert.deepEqual(task.completedNodeIds, ["start", "submit-1"]);
 });
 
 test("finds missing required submission documents from uploaded attachments", () => {

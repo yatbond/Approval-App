@@ -84,6 +84,16 @@ test("creates nonblocking for-information and end boxes with the expected defaul
   assert.equal(end.graph.nodes.at(-1)?.assigneeEmail, undefined);
 });
 
+test("creates a blocking submit request box without a fixed owner", () => {
+  const result = getWorkflowCreateNodeState({ graph, kind: "submit_request" });
+  const created = result.graph.nodes.at(-1);
+
+  assert.equal(result.label, "Added Submit Request box");
+  assert.equal(created?.blocking, true);
+  assert.equal(created?.assigneeName, undefined);
+  assert.equal(created?.assigneeEmail, undefined);
+});
+
 test("connects different boxes and selects the created edge", () => {
   const result = getWorkflowConnectNodesState({
     graph,

@@ -316,24 +316,26 @@ function routeAfterRejection(task: ApprovalTask, template?: WorkflowTemplate) {
     };
   }
 
+  const currentNodes = route.currentNodes.length ? route.currentNodes : [route.currentNode];
+  const currentOwners = uniqueNodeEmails(currentNodes);
   const nextDue = dueForNode(route.currentNode);
   return {
     task: {
       ...task,
       status: "pending" as const,
-      currentOwner: route.currentNode.assigneeEmail || task.requesterEmail,
+      currentOwner: currentOwners[0] || route.currentNode.assigneeEmail || task.requesterEmail,
       currentStep: route.currentNode.label,
       currentNodeId: route.currentNode.id,
-      pendingNodeIds: [route.currentNode.id],
-      pendingOwners: uniqueNodeEmails([route.currentNode]),
+      pendingNodeIds: currentNodes.map((node) => node.id),
+      pendingOwners: currentOwners,
       due: nextDue.label,
       dueAt: nextDue.iso,
       completedNodeIds,
       notifiedNodeIds,
       nodeDecisions,
       participants: addParticipants(task.participants, [
-        route.currentNode.assigneeEmail,
-        route.currentNode.escalationEmail,
+        ...currentOwners,
+        ...currentNodes.map((node) => node.escalationEmail),
         ...notifiedEmails,
       ]),
       activeBranchId: route.activeBranchId || rejectedEdge.id,
@@ -438,24 +440,26 @@ function routeAfterApproval(task: ApprovalTask, template?: WorkflowTemplate) {
     };
   }
 
+  const currentNodes = route.currentNodes.length ? route.currentNodes : [route.currentNode];
+  const currentOwners = uniqueNodeEmails(currentNodes);
   const nextDue = dueForNode(route.currentNode);
   return {
     task: {
       ...task,
       status: "pending" as const,
-      currentOwner: route.currentNode.assigneeEmail || task.requesterEmail,
+      currentOwner: currentOwners[0] || route.currentNode.assigneeEmail || task.requesterEmail,
       currentStep: route.currentNode.label,
       currentNodeId: route.currentNode.id,
-      pendingNodeIds: [route.currentNode.id],
-      pendingOwners: uniqueNodeEmails([route.currentNode]),
+      pendingNodeIds: currentNodes.map((node) => node.id),
+      pendingOwners: currentOwners,
       due: nextDue.label,
       dueAt: nextDue.iso,
       completedNodeIds,
       notifiedNodeIds,
       nodeDecisions,
       participants: addParticipants(task.participants, [
-        route.currentNode.assigneeEmail,
-        route.currentNode.escalationEmail,
+        ...currentOwners,
+        ...currentNodes.map((node) => node.escalationEmail),
         ...notifiedEmails,
       ]),
       activeBranchId: route.activeBranchId,
@@ -547,6 +551,7 @@ function findNextActionableRoute(
     if (node.kind === "return_reject") {
       return {
         currentNode: node,
+        currentNodes: [node],
         notifiedNodes,
         activeBranchId,
       };
@@ -558,6 +563,7 @@ function findNextActionableRoute(
     ) {
       return {
         currentNode: node,
+        currentNodes: [node],
         notifiedNodes,
         activeBranchId,
       };
@@ -576,6 +582,14 @@ function findNextActionableRoute(
         notifiedNodes,
       );
       activeBranchId = conditionTarget?.caseId || activeBranchId;
+      if (conditionTarget?.currentNodes.length) {
+        return {
+          currentNode: conditionTarget.currentNodes[0],
+          currentNodes: conditionTarget.currentNodes,
+          notifiedNodes,
+          activeBranchId,
+        };
+      }
       currentId = conditionTarget?.targetNodeId;
       continue;
     }
@@ -587,6 +601,7 @@ function findNextActionableRoute(
 
   return {
     currentNode: undefined,
+    currentNodes: [],
     notifiedNodes,
     activeBranchId,
   };
@@ -627,14 +642,18 @@ function chooseConditionCaseTarget(
     }
   });
 
-  const targetNodeId = matchedCase.targetNodeIds.find((candidateId) => {
-    const targetNode = graph.nodes.find((node) => node.id === candidateId);
-    return targetNode?.kind !== "for_information";
-  });
+  const targetNodes = matchedCase.targetNodeIds
+    .map((targetNodeId) => graph.nodes.find((node) => node.id === targetNodeId))
+    .filter((node): node is WorkflowGraphNode => Boolean(node));
+  const currentNodes = targetNodes.filter(isActionableRouteNode);
+  const terminalNode = targetNodes.find(
+    (targetNode) => targetNode.kind !== "for_information",
+  );
 
   return {
     caseId: matchedCase.id,
-    targetNodeId,
+    targetNodeId: currentNodes[0]?.id || terminalNode?.id,
+    currentNodes,
   };
 }
 
@@ -883,6 +902,13 @@ function uniqueNodeEmails(nodes: WorkflowGraphNode[]) {
   return addParticipants(
     [],
     nodes.map((node) => node.assigneeEmail),
+  );
+}
+
+function isActionableRouteNode(node: WorkflowGraphNode) {
+  return (
+    (node.kind === "approval" || node.kind === "review") &&
+    Boolean(node.assigneeEmail?.trim())
   );
 }
 

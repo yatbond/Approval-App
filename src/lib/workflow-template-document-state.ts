@@ -5,7 +5,10 @@ import type {
 import { updateWorkflowDocumentRequirement } from "./workflow-graph.ts";
 
 type UpdateDocumentRequirementInput = Partial<
-  Pick<WorkflowDocumentRequirement, "documentType" | "format" | "required">
+  Pick<
+    WorkflowDocumentRequirement,
+    "documentType" | "format" | "inputMode" | "required"
+  >
 >;
 
 export function getWorkflowTemplateDocumentState({

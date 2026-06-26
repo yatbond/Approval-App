@@ -42,6 +42,7 @@ type WorkflowCanvasProps = {
 };
 
 const workflowNodeOptions: { kind: WorkflowNodeKind; label: string }[] = [
+  { kind: "submit_request", label: "Submit Request" },
   { kind: "approval", label: "Approval" },
   { kind: "review", label: "Review" },
   { kind: "for_information", label: "For Information" },
@@ -286,6 +287,7 @@ function getWorkflowNodeStyle(
 ): React.CSSProperties {
   const palette: Record<WorkflowNodeKind, { bg: string; border: string; color: string }> = {
     start: { bg: "#0f172a", border: "#64748b", color: "#f8fafc" },
+    submit_request: { bg: "#1e3a8a", border: "#60a5fa", color: "#dbeafe" },
     approval: { bg: "#064e3b", border: "#34d399", color: "#d1fae5" },
     review: { bg: "#312e81", border: "#a5b4fc", color: "#e0e7ff" },
     for_information: { bg: "#164e63", border: "#38bdf8", color: "#cffafe" },

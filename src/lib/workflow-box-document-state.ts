@@ -1,5 +1,6 @@
 import type {
   DocumentFormat,
+  WorkflowDocumentInputMode,
   WorkflowTemplate,
 } from "./types.ts";
 import { addWorkflowDocumentToNode } from "./workflow-graph.ts";
@@ -11,6 +12,7 @@ type WorkflowAddBoxDocumentStateInput = {
   selectedNodeLabel: string;
   documentType: string;
   format: DocumentFormat;
+  inputMode?: WorkflowDocumentInputMode;
   required: boolean;
 };
 
@@ -20,6 +22,7 @@ export function getWorkflowAddBoxDocumentState({
   selectedNodeLabel,
   documentType,
   format,
+  inputMode = "upload",
   required,
 }: WorkflowAddBoxDocumentStateInput) {
   const trimmedDocumentType = documentType.trim();
@@ -32,11 +35,14 @@ export function getWorkflowAddBoxDocumentState({
     };
   }
 
+  const isManualForm = inputMode === "manual_form";
+
   return {
     didUpdate: true,
     template: addWorkflowDocumentToNode(template, selectedNodeId, {
       documentType: trimmedDocumentType,
       format,
+      inputMode,
       required,
       fields: [
         {
@@ -44,8 +50,10 @@ export function getWorkflowAddBoxDocumentState({
           label: "New field",
           type: "text",
           required: false,
-          source: fieldSourceForDocumentFormat(format),
-          instructions: "Describe what should be extracted from this document.",
+          source: isManualForm ? "manual" : fieldSourceForDocumentFormat(format),
+          instructions: isManualForm
+            ? "Describe what the requester should enter for this form field."
+            : "Describe what should be extracted from this document.",
         },
       ],
     }),
@@ -53,6 +61,7 @@ export function getWorkflowAddBoxDocumentState({
     resetForm: {
       documentType: "Supporting document",
       format: "pdf" as DocumentFormat,
+      inputMode: "upload" as WorkflowDocumentInputMode,
       required: true,
     },
   };

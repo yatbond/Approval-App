@@ -87,7 +87,7 @@ export function WorkflowTemplateBuilder({
           )}
         </label>
         <div className="rounded-md border border-sky-400/30 bg-sky-400/10 p-3 text-sm text-sky-100">
-          Add approval, review, and for-information boxes on the Canvas tab.
+          Add submit request, approval, review, and for-information boxes on the Canvas tab.
           Select a box to set people, due hours, escalation, and document uploads.
         </div>
         <button

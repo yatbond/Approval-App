@@ -87,10 +87,15 @@ import {
   getUpdatedRoleAssignmentRecordState,
 } from "@/lib/workspace-admin-record-state";
 import {
+  getWorkspaceBatchRequestSubmissionState,
   getWorkspaceRequestSubmissionPersistenceMessage,
   getWorkspaceRequestSubmissionState,
 } from "@/lib/workspace-request-submission-state";
 import { getApprovalWorkspaceTaskState } from "@/lib/approval-workspace-task-state";
+import {
+  getTaskContributorRequestState,
+  getTaskContributorUploadState,
+} from "@/lib/task-collaboration-state";
 import { attachDocumentToTaskState } from "@/lib/task-document-attachment-state";
 import {
   getWorkspaceRecordTaskActionState,
@@ -109,6 +114,15 @@ import type {
 } from "@/lib/types";
 
 type Tab = WorkspaceTab;
+type UploadRequestDraftRow = {
+  id: string;
+  fileName: string;
+  parseResult: ParsedWorkspaceFilePayload | null;
+  editedFields: Record<string, string>;
+  uploadedAttachments: ApprovalAttachment[];
+  parsedDocumentId?: string;
+  documentPreviewPages: DocumentPreviewPage[];
+};
 
 const uploadRequestDraftStoragePrefix = "approval-upload-request-draft-v1";
 const uploadRequestDraftListStoragePrefix = "approval-upload-request-drafts-v1";
@@ -185,6 +199,12 @@ function ApprovalWorkspaceBody({
   );
   const [comment, setComment] = useState("");
   const [targetEmail, setTargetEmail] = useState("");
+  const [contributorName, setContributorName] = useState("");
+  const [contributorEmail, setContributorEmail] = useState("");
+  const [contributorRequestNote, setContributorRequestNote] = useState("");
+  const [contributorDueAt, setContributorDueAt] = useState("");
+  const [contributorBlocksApproval, setContributorBlocksApproval] = useState(true);
+  const [contributorRequestError, setContributorRequestError] = useState("");
   const [fileName, setFileName] = useState("");
   const [parseResult, setParseResult] = useState<ParsedWorkspaceFilePayload | null>(null);
   const [editedFields, setEditedFields] = useState<Record<string, string>>({});
@@ -199,6 +219,11 @@ function ApprovalWorkspaceBody({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [uploadedAttachments, setUploadedAttachments] = useState<ApprovalAttachment[]>([]);
   const [parsedDocumentId, setParsedDocumentId] = useState<string | undefined>();
+  const [uploadRequestDraftRows, setUploadRequestDraftRows] = useState<
+    UploadRequestDraftRow[]
+  >([]);
+  const [selectedUploadRequestDraftRowId, setSelectedUploadRequestDraftRowId] =
+    useState("");
   const [uploadHighlightGroups, setUploadHighlightGroups] = useState<HighlightFieldGroup[]>([]);
   const [uploadActiveHighlightGroupId, setUploadActiveHighlightGroupId] = useState("");
   const [uploadHighlightBoxCounter, setUploadHighlightBoxCounter] = useState(1);
@@ -294,6 +319,25 @@ function ApprovalWorkspaceBody({
       setEditedFields(draft.editedFields);
       setUploadedAttachments(draft.uploadedAttachments);
       setParsedDocumentId(draft.parsedDocumentId);
+      const restoredRowId = draft.fileName || draft.parsedDocumentId
+        ? `restored-${draft.savedAt}`
+        : "";
+      setUploadRequestDraftRows(
+        restoredRowId
+          ? [
+              {
+                id: restoredRowId,
+                fileName: draft.fileName,
+                parseResult: draft.parseResult,
+                editedFields: draft.editedFields,
+                uploadedAttachments: draft.uploadedAttachments,
+                parsedDocumentId: draft.parsedDocumentId,
+                documentPreviewPages: [],
+              },
+            ]
+          : [],
+      );
+      setSelectedUploadRequestDraftRowId(restoredRowId);
       setUploadHighlightGroups(draft.highlightGroups);
       setUploadActiveHighlightGroupId(draft.activeHighlightGroupId);
       setUploadHighlightBoxCounter(draft.highlightBoxCounter);
@@ -509,6 +553,8 @@ function ApprovalWorkspaceBody({
     setEditedFields(cleared.editedFields);
     setUploadedAttachments(cleared.uploadedAttachments);
     setParsedDocumentId(cleared.parsedDocumentId);
+    setUploadRequestDraftRows([]);
+    setSelectedUploadRequestDraftRowId("");
     setDocumentPreviewPages([]);
     setUploadHighlightGroups(cleared.highlightGroups);
     setUploadActiveHighlightGroupId(cleared.activeHighlightGroupId);
@@ -660,6 +706,37 @@ function ApprovalWorkspaceBody({
     [],
   );
 
+  function updateCurrentEditedFields(fields: Record<string, string>) {
+    setEditedFields(fields);
+    if (!selectedUploadRequestDraftRowId) {
+      return;
+    }
+    setUploadRequestDraftRows((rows) =>
+      rows.map((row) =>
+        row.id === selectedUploadRequestDraftRowId
+          ? { ...row, editedFields: fields }
+          : row,
+      ),
+    );
+  }
+
+  function selectUploadRequestDraftRow(rowId: string) {
+    const row = uploadRequestDraftRows.find((item) => item.id === rowId);
+    if (!row) {
+      return;
+    }
+
+    setSelectedUploadRequestDraftRowId(row.id);
+    setFileName(row.fileName);
+    setParseResult(row.parseResult);
+    setEditedFields(row.editedFields);
+    setUploadedAttachments(row.uploadedAttachments);
+    setParsedDocumentId(row.parsedDocumentId);
+    setDocumentPreviewPages(row.documentPreviewPages);
+    setParseError("");
+    setSubmissionMessage("");
+  }
+
   function recordAction(action: ApprovalAction) {
     const nextState = getWorkspaceRecordTaskActionState({
       tasks,
@@ -691,6 +768,118 @@ function ApprovalWorkspaceBody({
       setTargetEmail("");
     }
     setActionError(nextState.actionError);
+  }
+
+  function requestTaskContributor() {
+    if (!selectedTask) {
+      return;
+    }
+
+    const result = getTaskContributorRequestState({
+      task: selectedTask,
+      actor: activeUser,
+      contributorName,
+      contributorEmail,
+      requestNote: contributorRequestNote,
+      dueAt: contributorDueAt,
+      blocksApproval: contributorBlocksApproval,
+    });
+    if (!result.didApply) {
+      setContributorRequestError(result.errorMessage);
+      return;
+    }
+
+    const nextTasks = tasks.map((task) =>
+      task.id === selectedTask.id ? result.task : task,
+    );
+    setTasks(nextTasks);
+    void sendWorkflowEmailNotifications(result.task);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
+    );
+    setContributorName("");
+    setContributorEmail("");
+    setContributorRequestNote("");
+    setContributorDueAt("");
+    setContributorBlocksApproval(true);
+    setContributorRequestError("");
+  }
+
+  async function submitContributorRequestUpload({
+    taskId,
+    collaborationRequestId,
+    requestNote,
+    file,
+  }: {
+    taskId: string;
+    collaborationRequestId: string;
+    requestNote: string;
+    file: File;
+  }) {
+    try {
+      const storage = await uploadWorkspaceAttachmentFile({ file });
+      const pageImages = shouldRenderPdfForVision(file)
+        ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
+        : [];
+      const payload = await parseWorkspaceFile({
+        file,
+        pageImages,
+        adHocFields: [
+          {
+            name: "contributor_response",
+            label: "Contributor response",
+            type: "text",
+            required: false,
+            source: "ai",
+            instructions:
+              requestNote ||
+              "Extract the key submitted information from this contributor document.",
+          },
+        ],
+      });
+      const attachment: ApprovalAttachment = {
+        id: `contributor-${Date.now()}-${file.name}`,
+        fileName: file.name,
+        documentType: "Contributor upload",
+        format: "ad_hoc",
+        storagePath: storage.storagePath,
+        publicUrl: storage.publicUrl,
+        uploadedBy: activeUser.email,
+        uploadedAt: new Date().toISOString(),
+      };
+      const task = tasks.find((item) => item.id === taskId);
+      if (!task) {
+        setActionError("Task was not found.");
+        return;
+      }
+      const result = getTaskContributorUploadState({
+        task,
+        collaborationRequestId,
+        actor: activeUser,
+        attachment,
+        extractedFields: payload.fields || {},
+      });
+      if (!result.didApply) {
+        setActionError(result.errorMessage);
+        return;
+      }
+
+      const nextTasks = tasks.map((item) =>
+        item.id === taskId ? result.task : item,
+      );
+      setTasks(nextTasks);
+      void sendWorkflowEmailNotifications(result.task);
+      void persistWorkspaceSnapshot(
+        buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
+      );
+      setActionError("");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit contributor upload.",
+      );
+    }
   }
 
   async function attachTaskDocument(
@@ -778,17 +967,19 @@ function ApprovalWorkspaceBody({
       return;
     }
 
-    setUploadedAttachments((items) =>
-      getWorkspaceParseFileStoredAttachmentState({
-        uploadedAttachments: items,
-        selectedTemplate,
-        file,
-        documentRequirement,
-        activeUser,
-        storagePath: storage?.storagePath,
-        publicUrl: storage?.publicUrl,
-      }).uploadedAttachments,
-    );
+    const storedAttachmentState = getWorkspaceParseFileStoredAttachmentState({
+      uploadedAttachments: [],
+      selectedTemplate,
+      file,
+      documentRequirement,
+      activeUser,
+      storagePath: storage?.storagePath,
+      publicUrl: storage?.publicUrl,
+    });
+    const storedAttachment = storedAttachmentState.uploadedAttachments[0];
+    if (storedAttachment) {
+      setUploadedAttachments((items) => [...items, storedAttachment]);
+    }
 
     try {
       const pdfPreviewImages = isPdfFile(file)
@@ -797,11 +988,13 @@ function ApprovalWorkspaceBody({
       const pageImages = shouldRenderPdfForVision(file)
         ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
         : [];
+      let nextDocumentPreviewPages: DocumentPreviewPage[] = [];
       if (pdfPreviewImages.length) {
-        setDocumentPreviewPages(buildPreviewPagesFromPdfImages(pdfPreviewImages));
+        nextDocumentPreviewPages = buildPreviewPagesFromPdfImages(pdfPreviewImages);
       } else if (file.type.startsWith("image/")) {
-        setDocumentPreviewPages([await readImageFileAsPreviewPage(file)]);
+        nextDocumentPreviewPages = [await readImageFileAsPreviewPage(file)];
       }
+      setDocumentPreviewPages(nextDocumentPreviewPages);
       const payload = await parseWorkspaceFile({
         file,
         documentRequirement,
@@ -816,6 +1009,17 @@ function ApprovalWorkspaceBody({
       setParseResult(successState.parseResult);
       setEditedFields(successState.editedFields);
       setIsParsing(successState.isParsing);
+      const nextRow: UploadRequestDraftRow = {
+        id: crypto.randomUUID(),
+        fileName: file.name,
+        parseResult: successState.parseResult,
+        editedFields: successState.editedFields,
+        uploadedAttachments: storedAttachment ? [storedAttachment] : [],
+        parsedDocumentId: documentRequirement?.id,
+        documentPreviewPages: nextDocumentPreviewPages,
+      };
+      setUploadRequestDraftRows((rows) => [...rows, nextRow]);
+      setSelectedUploadRequestDraftRowId(nextRow.id);
     } catch (error) {
       setParseError(error instanceof Error ? error.message : "Unable to parse file.");
     } finally {
@@ -835,11 +1039,13 @@ function ApprovalWorkspaceBody({
         adHocFields: [field],
         extractionExamples: selectedTemplate?.extractionExamples || [],
       });
-      setParseResult((current) => ({
+      const payloadFields = payload.fields || {};
+      setParseResult((current) => {
+        const nextParseResult = {
         ...(current || payload),
         fields: {
           ...(current?.fields || {}),
-          ...(payload.fields || {}),
+          ...payloadFields,
         },
         confidence: {
           ...(current?.confidence || {}),
@@ -854,11 +1060,37 @@ function ApprovalWorkspaceBody({
           ...(current?.notes || []),
           ...(payload.notes || []),
         ],
-      }));
+        };
+        if (selectedUploadRequestDraftRowId) {
+          setUploadRequestDraftRows((rows) =>
+            rows.map((row) =>
+              row.id === selectedUploadRequestDraftRowId
+                ? { ...row, parseResult: nextParseResult }
+                : row,
+            ),
+          );
+        }
+        return nextParseResult;
+      });
       setEditedFields((current) => ({
         ...current,
-        ...(payload.fields || {}),
+        ...payloadFields,
       }));
+      if (selectedUploadRequestDraftRowId) {
+        setUploadRequestDraftRows((rows) =>
+          rows.map((row) =>
+            row.id === selectedUploadRequestDraftRowId
+              ? {
+                  ...row,
+                  editedFields: {
+                    ...row.editedFields,
+                    ...payloadFields,
+                  },
+                }
+              : row,
+          ),
+        );
+      }
       return payload;
     } catch (error) {
       setParseError(
@@ -919,6 +1151,90 @@ function ApprovalWorkspaceBody({
     if (submittedTask) {
       void sendWorkflowEmailNotifications(submittedTask);
     }
+    if (nextTemplates !== templates) {
+      setTemplates(nextTemplates);
+    }
+    setSelectedTaskId(nextState.selectedTaskId);
+    if (nextState.shouldClearUploadedAttachments) {
+      resetUploadRequestDraftState();
+    }
+    if (selectedUploadDraftId) {
+      void deleteUploadRequestDraft(selectedUploadDraftId);
+    }
+    localStorage.removeItem(uploadRequestDraftStorageKey);
+    const syncResult = await persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({
+        approvalTasks: nextState.tasks,
+        workflowTemplates: nextTemplates,
+      }),
+    );
+    setSubmissionMessage(
+      getWorkspaceRequestSubmissionPersistenceMessage({
+        submissionMessage: nextState.submissionMessage,
+        syncMode: syncResult.mode,
+        syncReason: syncResult.mode === "local" ? syncResult.reason : undefined,
+      }),
+    );
+  }
+
+  async function submitAllParsedRequests() {
+    if (uploadRequestDraftRows.length < 2) {
+      await submitParsedRequest();
+      return;
+    }
+
+    const nextState = getWorkspaceBatchRequestSubmissionState({
+      selectedTemplate,
+      activeUser,
+      drafts: uploadRequestDraftRows.map((row) => ({
+        id: row.id,
+        fileName: row.fileName,
+        parseResult: row.parseResult,
+        editedFields: row.editedFields,
+        uploadedAttachments: row.uploadedAttachments,
+      })),
+      tasks,
+      taskIdPrefix: `APR-BATCH-${Math.floor(Date.now() / 1000)}`,
+    });
+
+    if (!nextState.didSubmit) {
+      setSubmissionMessage(nextState.submissionMessage);
+      return;
+    }
+
+    const extractionExamples = selectedTemplate
+      ? uploadRequestDraftRows.flatMap((row) =>
+          buildExtractionTrainingExamples({
+            template: selectedTemplate,
+            documentId: row.parsedDocumentId,
+            parseFields: row.parseResult?.fields || {},
+            correctedFields: row.editedFields,
+            evidence: row.parseResult?.evidence || {},
+            sourceFileName: row.fileName,
+            actorEmail: activeUser.email,
+          }),
+        )
+      : [];
+    const nextTemplates =
+      selectedTemplate && extractionExamples.length
+        ? templates.map((template) =>
+            template.id === selectedTemplate.id
+              ? appendExtractionExamplesToTemplate({
+                  template,
+                  examples: extractionExamples,
+                })
+              : template,
+          )
+        : templates;
+    const previousTaskIds = new Set(tasks.map((task) => task.id));
+    const submittedTasks = nextState.tasks.filter(
+      (task) => !previousTaskIds.has(task.id),
+    );
+
+    setTasks(nextState.tasks);
+    submittedTasks.forEach((task) => {
+      void sendWorkflowEmailNotifications(task);
+    });
     if (nextTemplates !== templates) {
       setTemplates(nextTemplates);
     }
@@ -1215,6 +1531,18 @@ function ApprovalWorkspaceBody({
                 setComment={setComment}
                 targetEmail={targetEmail}
                 setTargetEmail={setTargetEmail}
+                contributorName={contributorName}
+                setContributorName={setContributorName}
+                contributorEmail={contributorEmail}
+                setContributorEmail={setContributorEmail}
+                contributorRequestNote={contributorRequestNote}
+                setContributorRequestNote={setContributorRequestNote}
+                contributorDueAt={contributorDueAt}
+                setContributorDueAt={setContributorDueAt}
+                contributorBlocksApproval={contributorBlocksApproval}
+                setContributorBlocksApproval={setContributorBlocksApproval}
+                contributorRequestError={contributorRequestError}
+                onRequestContributor={requestTaskContributor}
                 recordAction={recordAction}
                 activeUserEmail={activeUser.email}
                 userDirectory={userDirectory}
@@ -1235,31 +1563,33 @@ function ApprovalWorkspaceBody({
                 workflowTemplates={templates}
                 activeUserEmail={activeUser.email}
                 userDirectory={userDirectory}
+                onSubmitContributorUpload={submitContributorRequestUpload}
               />
             )}
 
             {activeTab === "upload" && (
               <UploadView
+                activeUserEmail={activeUser.email}
                 fileName={fileName}
                 parseResult={parseResult}
                 editedFields={editedFields}
-                setEditedFields={setEditedFields}
+                setEditedFields={updateCurrentEditedFields}
                 isParsing={isParsing}
                 parseError={parseError}
                 parseFile={parseFile}
                 documentPreviewPages={documentPreviewPages}
                 onExtractHighlightedRegion={extractHighlightedRegion}
                 uploadedAttachments={uploadedAttachments}
-          uploadDraftStatus={uploadDraftStatus}
-          savedUploadDrafts={savedUploadDrafts}
-          selectedUploadDraftId={selectedUploadDraftId}
-          uploadDraftTitle={uploadDraftTitle}
-          setUploadDraftTitle={setUploadDraftTitle}
-          uploadDraftMessage={uploadDraftMessage}
-          onSaveRequestDraft={saveCurrentUploadRequestDraft}
-          onLoadRequestDraft={loadUploadRequestDraft}
-          onDeleteRequestDraft={deleteUploadRequestDraft}
-          uploadDraftRestoreToken={uploadDraftRestoreToken}
+                uploadDraftStatus={uploadDraftStatus}
+                savedUploadDrafts={savedUploadDrafts}
+                selectedUploadDraftId={selectedUploadDraftId}
+                uploadDraftTitle={uploadDraftTitle}
+                setUploadDraftTitle={setUploadDraftTitle}
+                uploadDraftMessage={uploadDraftMessage}
+                onSaveRequestDraft={saveCurrentUploadRequestDraft}
+                onLoadRequestDraft={loadUploadRequestDraft}
+                onDeleteRequestDraft={deleteUploadRequestDraft}
+                uploadDraftRestoreToken={uploadDraftRestoreToken}
                 uploadDraftResetToken={uploadDraftResetToken}
                 restoredHighlightGroups={uploadHighlightGroups}
                 restoredActiveHighlightGroupId={uploadActiveHighlightGroupId}
@@ -1271,6 +1601,10 @@ function ApprovalWorkspaceBody({
                 setSelectedTemplateId={selectTemplateRecord}
                 submissionMessage={submissionMessage}
                 onSubmitRequest={submitParsedRequest}
+                requestDrafts={uploadRequestDraftRows}
+                selectedRequestDraftId={selectedUploadRequestDraftRowId}
+                onSelectRequestDraft={selectUploadRequestDraftRow}
+                onSubmitAllRequests={submitAllParsedRequests}
               />
             )}
 
@@ -1283,6 +1617,7 @@ function ApprovalWorkspaceBody({
                 selectedUploadDraftId={selectedUploadDraftId}
                 activeUserEmail={activeUser.email}
                 onResumeSavedDraft={resumeUploadRequestDraft}
+                onClearCurrentDraft={clearUploadRequestDraftFromUi}
                 onDeleteRequestDraft={deleteUploadRequestDraft}
               />
             )}
