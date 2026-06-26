@@ -49,7 +49,12 @@ export type AuditEvent = {
     | "resubmitted"
     | "cancelled"
     | "contribution_requested"
-    | "contribution_submitted";
+    | "contribution_submitted"
+    | "shared_fulfillment_submitted"
+    | "shared_fulfillment_confirmed"
+    | "shared_fulfillment_rejected"
+    | "correction_requested"
+    | "correction_submitted";
   actor: string;
   actorEmail: string;
   timestamp: string;
@@ -121,6 +126,50 @@ export type TaskCollaborationRequest = {
   submittedAt?: string;
   attachmentIds?: string[];
   extractedFields?: Record<string, string>;
+};
+
+export type TaskSharedFulfillmentStatus =
+  | "pending_confirmation"
+  | "confirmed"
+  | "rejected"
+  | "superseded";
+
+export type TaskSharedFulfillment = {
+  id: string;
+  taskId: string;
+  requirementNodeId: string;
+  documentId: string;
+  documentType: string;
+  assignedSubmitterEmail: string;
+  assignedSubmitterName: string;
+  uploaderEmail: string;
+  uploaderName: string;
+  attachmentId: string;
+  required: boolean;
+  status: TaskSharedFulfillmentStatus;
+  submittedAt: string;
+  decidedAt?: string;
+  decidedByEmail?: string;
+  decidedByName?: string;
+  decisionRole?: "current_actor" | "assigned_submitter";
+  decisionNote?: string;
+  correctionRequestId?: string;
+};
+
+export type TaskCorrectionRequest = {
+  id: string;
+  taskId: string;
+  sharedFulfillmentId: string;
+  requestedByEmail: string;
+  requestedByName: string;
+  assignedSubmitterEmail: string;
+  uploaderEmail: string;
+  rejectionNote: string;
+  status: "requested" | "submitted" | "cancelled";
+  blocksApproval: boolean;
+  createdAt: string;
+  submittedAt?: string;
+  resolvedByFulfillmentId?: string;
 };
 
 export type WorkflowStep = {
@@ -305,6 +354,8 @@ export type ApprovalTask = {
   extractedFields: Record<string, string>;
   attachments?: ApprovalAttachment[];
   collaborationRequests?: TaskCollaborationRequest[];
+  sharedFulfillments?: TaskSharedFulfillment[];
+  correctionRequests?: TaskCorrectionRequest[];
   auditTrail: AuditEvent[];
 };
 
