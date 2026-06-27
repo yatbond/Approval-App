@@ -32,6 +32,7 @@ import {
   shouldShowQueueContributorRequest,
   shouldShowQueueReassignActions,
 } from "@/lib/queue-advanced-actions-state";
+import { getTrackingHandoffPanelState } from "@/lib/tracking-handoff-panel-state";
 import { getCollaborationStatusPanelState } from "@/lib/collaboration-status-panel-state";
 import type {
   ApprovalAction,
@@ -505,6 +506,7 @@ export function TrackingView({
     ? findTemplateForTask(selectedTask, workflowTemplates)
     : undefined;
   const userByEmail = new Map(userDirectory.map((user) => [user.email, user]));
+  const [handoffPanelExpanded, setHandoffPanelExpanded] = useState(false);
 
   return (
     <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
@@ -593,33 +595,14 @@ export function TrackingView({
                   </div>
                 </div>
               ) : null}
-              <HandoffSummary
+              <HandoffVisibilityPanel
                 task={selectedTask}
                 template={selectedTemplate}
+                userByEmail={userByEmail}
+                isExpanded={handoffPanelExpanded}
+                onToggle={() => setHandoffPanelExpanded((isExpanded) => !isExpanded)}
                 className="mt-3"
               />
-              <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                <div className="rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
-                  <p className="text-xs text-neutral-500">Visible to</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {selectedTask.participants.map((participant) => (
-                      <span
-                        key={participant}
-                        className={`rounded-md border px-2 py-1 text-xs ${
-                          participant === activeUserEmail
-                            ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
-                            : "border-white/10 bg-[#101214] text-neutral-300"
-                        }`}
-                      >
-                        {participant}
-                        {userByEmail.get(participant)?.role
-                          ? ` - ${userByEmail.get(participant)?.role}`
-                          : ""}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
               {selectedTask.collaborationRequests?.length ? (
                 <ContributorRequestList
                   taskId={selectedTask.id}
@@ -642,6 +625,85 @@ export function TrackingView({
           <div className="p-5 text-sm text-neutral-400">No tracked requests.</div>
         )}
       </section>
+    </div>
+  );
+}
+
+function HandoffVisibilityPanel({
+  task,
+  template,
+  userByEmail,
+  isExpanded,
+  onToggle,
+  className = "",
+}: {
+  task: ApprovalTask;
+  template?: WorkflowTemplate;
+  userByEmail: Map<string, UserDirectoryEntry>;
+  isExpanded: boolean;
+  onToggle: () => void;
+  className?: string;
+}) {
+  const handoff = buildTaskHandoffView({ task, template });
+  const panelState = getTrackingHandoffPanelState({
+    isExpanded,
+    participantCount: task.participants.length,
+    hiddenFieldCount: handoff.hiddenFieldCount,
+    hiddenAttachmentCount: handoff.hiddenAttachmentCount,
+  });
+
+  return (
+    <div
+      className={`${className} rounded-md border border-white/10 bg-[#121518] p-3 text-sm`}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-neutral-200">
+              Handoff & visibility
+            </h3>
+            <InfoTip label={`${handoff.nodeLabel} - ${handoff.policyLabel}`} />
+          </div>
+          <p className="mt-1 break-words text-xs text-neutral-500">
+            {panelState.summary}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 self-start sm:self-center">
+          <span className="rounded-md border border-white/10 bg-[#101214] px-2 py-1 text-xs text-neutral-300">
+            {formatStatusText(handoff.layout)}
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={panelState.isVisible}
+            aria-label={panelState.ariaLabel}
+            onClick={onToggle}
+            className={`flex min-h-9 items-center gap-2 rounded-md border px-2 py-1 text-xs transition ${
+              panelState.isVisible
+                ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-100"
+                : "border-white/10 bg-[#101214] text-neutral-300 hover:bg-white/[0.04]"
+            }`}
+          >
+            <span
+              className={`flex h-5 w-9 items-center rounded-full border p-0.5 transition ${
+                panelState.isVisible
+                  ? "justify-end border-emerald-400/40 bg-emerald-400/20"
+                  : "justify-start border-white/10 bg-black/20"
+              }`}
+            >
+              <span className="size-3 rounded-full bg-current" />
+            </span>
+            {panelState.toggleLabel}
+          </button>
+        </div>
+      </div>
+
+      {panelState.isVisible ? (
+        <div className="mt-3 border-t border-white/10 pt-3">
+          <VisibilityChips task={task} userByEmail={userByEmail} />
+          <HandoffDetailSections handoff={handoff} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -672,7 +734,18 @@ function HandoffSummary({
           {formatStatusText(handoff.layout)}
         </span>
       </div>
+      <HandoffDetailSections handoff={handoff} />
+    </div>
+  );
+}
 
+function HandoffDetailSections({
+  handoff,
+}: {
+  handoff: ReturnType<typeof buildTaskHandoffView>;
+}) {
+  return (
+    <>
       <div className="mt-3 space-y-2">
         <p className="text-xs font-semibold text-neutral-400">Values</p>
         {handoff.fields.length ? (
@@ -775,6 +848,33 @@ function HandoffSummary({
           {handoff.hiddenAttachmentCount} document(s).
         </p>
       ) : null}
+    </>
+  );
+}
+
+function VisibilityChips({
+  task,
+  userByEmail,
+}: {
+  task: ApprovalTask;
+  userByEmail: Map<string, UserDirectoryEntry>;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-neutral-400">Visible to</p>
+      <div className="flex flex-wrap gap-2">
+        {task.participants.map((participant) => (
+          <span
+            key={participant}
+            className="rounded-md border border-white/10 bg-[#101214] px-2 py-1 text-xs text-neutral-300"
+          >
+            {participant}
+            {userByEmail.get(participant)?.role
+              ? ` - ${userByEmail.get(participant)?.role}`
+              : ""}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
