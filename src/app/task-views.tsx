@@ -241,7 +241,7 @@ export function QueueView({
             <textarea
               value={comment}
               onChange={(event) => setComment(event.target.value)}
-              placeholder="Comment for approval, rejection, reassignment, or delegation"
+              placeholder="Comment"
               className="h-32 w-full resize-none rounded-md border border-white/10 bg-[#121518] p-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
             />
             {missingCurrentDocuments.length > 0 && (
@@ -793,7 +793,7 @@ function TaskPathSummary({
 
   return (
     <div className="border-b border-white/10 p-4">
-      <h3 className="mb-3 text-sm font-semibold text-neutral-300">Workflow path</h3>
+      <h3 className="mb-3 text-sm font-semibold text-neutral-300">Path</h3>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         {nodes.map((node) => {
           const state = getPathNodeState(task, node);
@@ -1100,7 +1100,7 @@ function ContributorRequestList({
   return (
     <div className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
       <p className="text-xs font-semibold text-neutral-300">
-        Contributor requests
+        Contributors
       </p>
       <div className="mt-2 space-y-2">
         {requests.map((request) => {

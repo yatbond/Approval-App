@@ -134,16 +134,16 @@ const WorkflowCanvas = dynamic(() => import("@/app/workflow-canvas"), {
 });
 
 const handoffFieldVisibilityOptions = [
-  { value: "all", label: "Show all values" },
-  { value: "selected", label: "Show selected values" },
-  { value: "hidden", label: "Hide selected values" },
+  { value: "all", label: "All values" },
+  { value: "selected", label: "Selected values" },
+  { value: "hidden", label: "Hide selected" },
 ] as const;
 
 const handoffDocumentVisibilityOptions = [
-  { value: "all", label: "Show all documents" },
-  { value: "required_for_node", label: "Show documents required by this box" },
-  { value: "selected", label: "Show selected documents" },
-  { value: "none", label: "Show no documents" },
+  { value: "all", label: "All documents" },
+  { value: "required_for_node", label: "Required here" },
+  { value: "selected", label: "Selected documents" },
+  { value: "none", label: "No documents" },
 ] as const;
 
 const handoffLayoutOptions = [
@@ -929,14 +929,14 @@ export function WorkflowView({
       <section className="rounded-md border border-white/10 bg-white/[0.03]">
         <div className="border-b border-white/10 p-4">
           <h2 className="font-semibold">
-            {workflow ? workflow.name : "No workflow templates yet"}
+            {workflow ? workflow.name : "No templates"}
           </h2>
           {workflow ? (
             <p className="text-sm text-neutral-400">
               {workflow.business} - {workflow.department}
             </p>
           ) : (
-            <p className="text-sm text-neutral-400">Create one in Builder.</p>
+            <p className="text-sm text-neutral-400">Use Builder.</p>
           )}
           {workflow && (
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
@@ -1360,7 +1360,7 @@ export function WorkflowView({
                             <InfoTip label="Default is all values and documents in a standard summary." />
                           </div>
                           <p className="mt-2 rounded-md border border-amber-400/25 bg-amber-400/10 px-2 py-1 text-xs text-amber-100">
-                            Display control only. Sensitive data still needs server-side access rules.
+                            Display only. Access still needs server rules.
                           </p>
                         </div>
                         <datalist id="workflow-handoff-field-names">

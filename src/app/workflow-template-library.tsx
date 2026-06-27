@@ -161,8 +161,8 @@ export function WorkflowTemplateLibrary({
         {!templateItems.length && (
           <div className="rounded-md border border-white/10 bg-[#121518] p-4 text-sm text-neutral-400 lg:col-span-2">
             {isArchive
-              ? "No archived templates."
-              : "No active templates."}
+              ? "No archived."
+              : "No active."}
           </div>
         )}
       </div>

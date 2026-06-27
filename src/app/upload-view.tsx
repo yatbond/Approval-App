@@ -429,7 +429,7 @@ export function UploadView({
       return;
     }
     if (!group.boxes.length) {
-      setHighlightError("Add at least one value box for this field.");
+      setHighlightError("Add a value box first.");
       return;
     }
 
@@ -563,7 +563,7 @@ export function UploadView({
             className="min-h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
           >
             {requestTemplates.length === 0 && (
-              <option value="">No published templates</option>
+              <option value="">No templates</option>
             )}
             {requestTemplates.map((template) => (
               <option key={template.id} value={template.id}>
@@ -1044,7 +1044,7 @@ export function UploadView({
                   </div>
                 ) : (
                   <p className="mt-3 rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-xs text-neutral-400">
-                    No suggestions yet. Use boxed or manual fields if needed.
+                    No suggestions.
                   </p>
                 )}
                   </>
@@ -1063,8 +1063,8 @@ export function UploadView({
                     <InfoTip
                       label={
                         fieldInputMode === "boxed"
-                          ? "Create a field, draw one or more value boxes, then extract only those highlighted areas."
-                          : "Create a field and type or paste the value directly when the parser and boxing are not enough."
+                          ? "Create a field, draw boxes, then extract only those areas."
+                          : "Create a field and type or paste the value directly."
                       }
                     />
                   </div>
@@ -1076,7 +1076,7 @@ export function UploadView({
                         className="flex h-9 items-center justify-center gap-2 rounded-md border border-sky-500/40 bg-sky-500/10 px-3 text-xs font-medium text-sky-100 transition hover:bg-sky-500/20"
                       >
                         <Plus size={14} />
-                        Add box to {activeHighlightGroup.fieldLabel.trim() || "active field"}
+                        Add to {activeHighlightGroup.fieldLabel.trim() || "active field"}
                       </button>
                     ) : fieldInputMode === "boxed" ? (
                       <span className="flex min-h-9 items-center rounded-md border border-white/10 px-3 text-xs text-neutral-500">
@@ -1320,7 +1320,7 @@ export function UploadView({
                   <FileText size={22} />
                   <FileSpreadsheet size={22} />
                 </div>
-                Upload a document to start.
+                Upload to start.
               </div>
             </div>
           )}
@@ -1565,7 +1565,7 @@ function UploadDraftPanel({
         </p>
         {savedUploadDrafts.length === 0 ? (
           <p className="mt-2 rounded-md border border-dashed border-white/10 bg-[#101214] px-3 py-2 text-xs text-neutral-500">
-            No saved drafts.
+            No drafts.
           </p>
         ) : (
           <div className="mt-2 space-y-2">

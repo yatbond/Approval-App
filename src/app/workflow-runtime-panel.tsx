@@ -81,7 +81,7 @@ export function WorkflowRuntimePanel({
             title={
               workflowUndoStack.length
                 ? `Undo ${workflowUndoStack.at(-1)?.label}. Keyboard: Ctrl+Z.`
-                : "No workflow edit to undo."
+                : "Nothing to undo."
             }
             className="flex min-h-9 items-center justify-center gap-1 rounded-md border border-white/10 bg-[#121518] px-2 text-xs text-neutral-200 transition hover:border-emerald-400/50 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-white/10"
           >
@@ -95,7 +95,7 @@ export function WorkflowRuntimePanel({
             title={
               workflowRedoStack.length
                 ? `Redo ${workflowRedoStack.at(-1)?.label}. Keyboard: Ctrl+Shift+Z or Ctrl+Y.`
-                : "No workflow edit to redo."
+                : "Nothing to redo."
             }
             className="flex min-h-9 items-center justify-center gap-1 rounded-md border border-white/10 bg-[#121518] px-2 text-xs text-neutral-200 transition hover:border-emerald-400/50 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-white/10"
           >
@@ -263,7 +263,7 @@ export function WorkflowRuntimePanel({
                   </div>
                 ) : (
                   <p className="mt-3 text-xs text-neutral-500">
-                    Submit a request first.
+                    Submit first.
                   </p>
                 )}
               </div>
@@ -286,7 +286,7 @@ export function WorkflowRuntimePanel({
             </div>
             {runtimeMissingDocuments.length > 0 && (
               <p className="mt-3 rounded-md border border-amber-400/30 bg-amber-400/10 p-2 text-xs text-amber-100">
-                Current node requires:{" "}
+                Requires:{" "}
                 {runtimeMissingDocuments
                   .map((document) => document.documentType)
                   .join(", ")}

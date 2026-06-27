@@ -129,7 +129,7 @@ export function ConditionBoxDetails({
             </div>
           ) : (
             <p className="mt-2 text-xs text-neutral-500">
-              No numeric fields upstream.
+              No numbers upstream.
             </p>
           )}
         </div>
@@ -528,14 +528,14 @@ export function ConditionBoxDetails({
                   }
                   className="h-9 w-full rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none focus:border-emerald-400/60"
                 >
-                  <option value="and">Approval and number both match</option>
-                  <option value="or">Approval or number can match</option>
+                  <option value="and">Both match</option>
+                  <option value="or">Either matches</option>
                 </select>
                 )}
 
                 {conditionCase.isFallback && (
                   <div className="rounded-md border border-sky-400/30 bg-sky-400/10 p-2 text-xs text-sky-100">
-                    Used when nothing above matches.
+                    Else route.
                   </div>
                 )}
 
@@ -554,7 +554,7 @@ export function ConditionBoxDetails({
                           : "border-sky-400/40 bg-sky-400/12 text-sky-100 hover:bg-sky-400/20"
                       }`}
                     >
-                      Pick on canvas
+                      Pick
                     </button>
                   </div>
                   {conditionCase.targetNodeIds.length > 0 && (

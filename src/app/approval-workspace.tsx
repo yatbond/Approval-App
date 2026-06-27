@@ -624,8 +624,8 @@ function ApprovalWorkspaceBody({
       } catch (error) {
         setUploadDraftMessage(
           error instanceof Error
-            ? `Current request is saved locally. Supabase autosave failed: ${error.message}`
-            : "Current request is saved locally. Supabase autosave failed.",
+            ? `Saved locally. Supabase autosave failed: ${error.message}`
+            : "Saved locally. Supabase autosave failed.",
         );
       }
     }, remoteUploadAutosaveDelayMs);
@@ -672,7 +672,7 @@ function ApprovalWorkspaceBody({
   function clearUploadRequestDraftFromUi() {
     resetUploadRequestDraftState();
     setParseError("");
-    setSubmissionMessage("Request draft cleared.");
+    setSubmissionMessage("Draft cleared.");
   }
 
   function persistSavedUploadDraftList(nextDrafts: SavedUploadRequestDraft[]) {
@@ -693,7 +693,7 @@ function ApprovalWorkspaceBody({
   async function saveCurrentUploadRequestDraft() {
     const nextStatus = createEmptyUploadRequestDraftStatus(currentUploadRequestDraft);
     if (!nextStatus.hasDraft) {
-      setUploadDraftMessage("Upload a document or enter a field before saving a draft.");
+      setUploadDraftMessage("Add document/field first.");
       return;
     }
 
@@ -777,7 +777,7 @@ function ApprovalWorkspaceBody({
       localStorage.removeItem(uploadRequestActiveDraftIdStorageKey);
     }
     setUploadDraftMessage(
-      target ? `Deleted saved draft "${target.title}".` : "Deleted saved draft.",
+      target ? `Deleted draft "${target.title}".` : "Deleted draft.",
     );
 
     try {

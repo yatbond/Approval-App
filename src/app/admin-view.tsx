@@ -437,7 +437,7 @@ export function AdminView({
             <InfoTip label="Send a test email before routing workflow tasks to real inboxes." />
           </div>
           <p className="mt-2 rounded-md border border-yellow-400/20 bg-yellow-400/10 p-2 text-xs text-yellow-100">
-            Resend test mode: verify a domain before sending to real approvers.
+            Verify a Resend domain before live sends.
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
             <input
@@ -510,7 +510,7 @@ export function AdminView({
               ))}
               {!emailOutboxEntries.length && (
                 <p className="rounded-md border border-white/10 bg-[#121518] p-3 text-xs text-neutral-500">
-                  No email attempts yet.
+                  No emails yet.
                 </p>
               )}
             </div>
@@ -572,7 +572,7 @@ export function AdminView({
             ))}
             {!adminAuditEvents.length && (
               <p className="rounded-md border border-white/10 bg-[#121518] p-3 text-sm text-neutral-500">
-                No audit events yet.
+                No audit yet.
               </p>
             )}
           </div>
