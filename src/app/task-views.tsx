@@ -82,7 +82,7 @@ const actionConfig: Record<
     tone: "border-sky-500/40 bg-sky-500/10 text-sky-100 hover:bg-sky-500/20",
   },
   cancel: {
-    label: "Cancel request",
+    label: "Cancel",
     icon: X,
     tone: "border-neutral-500/40 bg-neutral-500/10 text-neutral-100 hover:bg-neutral-500/20",
   },
@@ -367,7 +367,7 @@ export function QueueView({
                     </label>
                     </div>
                     <label className="mt-2 block">
-                      <span className="mb-1 block text-xs text-neutral-400">Due date</span>
+                      <span className="mb-1 block text-xs text-neutral-400">Due</span>
                       <input
                         type="datetime-local"
                         value={contributorDueAt}

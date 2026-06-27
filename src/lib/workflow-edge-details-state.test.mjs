@@ -38,7 +38,7 @@ test("disables blocking and shows guidance for for-information edges", () => {
   const state = getWorkflowEdgeDetailsState({
     edge: {
       ...baseEdge,
-      label: "For information",
+      label: "FYI",
       branchType: "for_information",
       blocking: false,
     },

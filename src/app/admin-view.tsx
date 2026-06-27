@@ -199,7 +199,7 @@ export function AdminView({
             <input
               value={newBusinessName}
               onChange={(event) => setNewBusinessName(event.target.value)}
-              placeholder="New business"
+              placeholder="New"
               className="min-h-11 min-w-0 rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
             />
             <button
@@ -289,7 +289,7 @@ export function AdminView({
               <input
                 value={newDepartmentName}
                 onChange={(event) => setNewDepartmentName(event.target.value)}
-                placeholder="New department"
+                placeholder="New"
                 className="min-h-11 min-w-0 rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
               />
               <button
@@ -437,7 +437,7 @@ export function AdminView({
             <InfoTip label="Send a test email before routing workflow tasks to real inboxes." />
           </div>
           <p className="mt-2 rounded-md border border-yellow-400/20 bg-yellow-400/10 p-2 text-xs text-yellow-100">
-            Verify a Resend domain before live sends.
+            Verify Resend domain before live sends.
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
             <input
@@ -582,7 +582,7 @@ export function AdminView({
           <h2 className="font-semibold">Delegation</h2>
           <div className="mt-3 space-y-3">
             <label className="block">
-              <span className="mb-1 block text-xs text-neutral-400">Delegate to</span>
+              <span className="mb-1 block text-xs text-neutral-400">To</span>
               <input
                 defaultValue="Alex Ho"
                 className="min-h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"

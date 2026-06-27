@@ -95,7 +95,7 @@ test("builds a default handoff packet with all fields and attachments", () => {
 
   assert.equal(view.nodeLabel, "Finance review");
   assert.equal(view.layout, "standard");
-  assert.equal(view.policyLabel, "Default pass-through");
+  assert.equal(view.policyLabel, "Default");
   assert.deepEqual(
     view.fields.map((field) => field.label),
     ["Amount", "PO Amount", "Supplier", "Internal Budget Code"],
@@ -145,7 +145,7 @@ test("filters handoff fields and documents from the current node visibility poli
   );
   assert.equal(view.hiddenFieldCount, 2);
   assert.equal(view.hiddenAttachmentCount, 1);
-  assert.equal(view.policyLabel, "Custom handoff view");
+  assert.equal(view.policyLabel, "Custom");
 });
 
 test("evaluates simple comparison process blocks for handoff packets", () => {

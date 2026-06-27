@@ -5,14 +5,14 @@ import {
   workflowEditorTabs,
 } from "./workflow-editor-tabs-state.ts";
 
-test("puts Template Builder before Canvas in the workflow editor tabs", () => {
+test("puts Builder before Canvas in the workflow editor tabs", () => {
   assert.deepEqual(
     workflowEditorTabs.map((tab) => tab.id),
     ["builder", "canvas", "library"],
   );
 });
 
-test("opens Template Builder first when entering workflow editing", () => {
+test("opens Builder first when entering workflow editing", () => {
   assert.equal(defaultWorkflowEditorTab, "builder");
 });
 

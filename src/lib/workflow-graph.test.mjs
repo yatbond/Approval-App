@@ -129,7 +129,7 @@ test("adds a non-blocking for-information node and branch", () => {
     sourceId: "step-1",
     targetId: infoNode.id,
     branchType: "for_information",
-    label: "For information",
+    label: "FYI",
     blocking: false,
   });
 
@@ -922,7 +922,7 @@ test("adds new condition cases before the fallback case", () => {
           conditionCases: [
             {
               id: "fallback",
-              name: "All other conditions",
+              name: "Fallback",
               isFallback: true,
               join: "and",
               targetNodeIds: ["end"],
@@ -1190,7 +1190,7 @@ test("fallback condition suppresses missing approval coverage warning", () => {
           },
           {
             id: "case-fallback",
-            name: "All other conditions",
+            name: "Fallback",
             isFallback: true,
             join: "and",
             targetNodeIds: ["return-1"],

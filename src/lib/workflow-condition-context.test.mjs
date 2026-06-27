@@ -223,15 +223,15 @@ test("uses all document numeric fields when there are no upstream document ids",
 
 test("formats workflow node kind labels", () => {
   assert.deepEqual(workflowNodeOptions, [
-    { kind: "submit_request", label: "Submit Request" },
+    { kind: "submit_request", label: "Submit" },
     { kind: "approval", label: "Approval" },
     { kind: "review", label: "Review" },
-    { kind: "for_information", label: "For Information" },
+    { kind: "for_information", label: "FYI" },
     { kind: "condition", label: "Condition" },
     { kind: "return_reject", label: "Return/Reject" },
     { kind: "end", label: "End" },
   ]);
-  assert.equal(formatNodeKind("submit_request"), "Submit Request");
+  assert.equal(formatNodeKind("submit_request"), "Submit");
   assert.equal(formatNodeKind("review"), "Review");
   assert.equal(formatNodeKind("start"), "Start");
 });

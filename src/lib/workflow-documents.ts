@@ -9,7 +9,7 @@ import type {
 } from "./types.ts";
 
 export const documentFormatOptions: { value: DocumentFormat; label: string }[] = [
-  { value: "text", label: "Text file" },
+  { value: "text", label: "Text" },
   { value: "pdf", label: "PDF" },
   { value: "image", label: "Image" },
   { value: "excel_csv", label: "Excel/CSV" },
@@ -19,8 +19,8 @@ export const documentInputModeOptions: {
   value: WorkflowDocumentInputMode;
   label: string;
 }[] = [
-  { value: "upload", label: "Document upload with OCR" },
-  { value: "manual_form", label: "Manual digital form" },
+  { value: "upload", label: "OCR upload" },
+  { value: "manual_form", label: "Manual form" },
 ];
 
 export type CreateAttachmentRecordInput = {
@@ -56,7 +56,7 @@ export function isManualFormRequirement(
 export function formatDocumentInputMode(inputMode: WorkflowDocumentInputMode) {
   return (
     documentInputModeOptions.find((option) => option.value === inputMode)?.label ||
-    "Document upload with OCR"
+    "OCR upload"
   );
 }
 

@@ -62,7 +62,7 @@ test("for-information edge updates are nonblocking and get a default label", () 
   const edge = result.graph.edges.find((item) => item.id === "edge-1");
   assert.equal(edge?.branchType, "for_information");
   assert.equal(edge?.blocking, false);
-  assert.equal(edge?.label, "For information");
+  assert.equal(edge?.label, "FYI");
 });
 
 test("updates one rule field while preserving or defaulting the rest", () => {

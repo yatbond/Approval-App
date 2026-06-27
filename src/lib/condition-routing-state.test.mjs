@@ -29,7 +29,7 @@ const graph = {
 test("orders numbered condition cases before fallback and numbers display names", () => {
   const fallback = {
     id: "fallback",
-    name: "All other conditions",
+    name: "Fallback",
     isFallback: true,
     join: "and",
     targetNodeIds: ["return"],
@@ -58,7 +58,7 @@ test("orders numbered condition cases before fallback and numbers display names"
   assert.equal(getConditionDisplayName(state.conditionCases, first), "Condition 1");
   assert.equal(
     getConditionDisplayName(state.conditionCases, fallback),
-    "All other conditions",
+    "Fallback",
   );
 });
 
@@ -144,14 +144,14 @@ test("describes fallback and empty numbered conditions", () => {
     describeConditionCase({
       conditionCase: {
         id: "fallback",
-        name: "All other conditions",
+        name: "Fallback",
         isFallback: true,
         join: "and",
         targetNodeIds: ["return"],
       },
       context,
     }),
-    "Routes every request that does not match a numbered condition.",
+    "Else route.",
   );
 
   assert.equal(
@@ -164,7 +164,7 @@ test("describes fallback and empty numbered conditions", () => {
       },
       context,
     }),
-    "No rule configured yet.",
+    "No rule yet.",
   );
 });
 

@@ -48,12 +48,12 @@ test("adds one fallback case and leaves existing fallback unchanged", () => {
   });
 
   assert.equal(added.didUpdate, true);
-  assert.equal(added.label, "Added all other outcome");
+  assert.equal(added.label, "Added fallback");
   const conditionCases = added.graph.nodes.find((node) => node.id === "condition-1")
     ?.conditionCases;
   assert.deepEqual(conditionCases?.[0], {
     id: "fallback-1",
-    name: "All other conditions",
+    name: "Fallback",
     isFallback: true,
     join: "and",
     targetNodeIds: [],

@@ -378,19 +378,19 @@ export function TemplateDocumentRecognitionPanel({
             <input
               value={fieldLabel}
               onChange={(event) => setFieldLabel(event.target.value)}
-              placeholder="Field name, e.g. Invoice total"
+              placeholder="Field, e.g. Invoice total"
               className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
             />
             <input
               value={fieldInstructions}
               onChange={(event) => setFieldInstructions(event.target.value)}
-              placeholder="Instruction, optional"
+              placeholder="Instruction"
               className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
             />
             <input
               value={fieldValue}
               onChange={(event) => setFieldValue(event.target.value)}
-              placeholder="Sample value, optional"
+              placeholder="Sample value"
               className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
             />
             <div className="grid gap-2 sm:grid-cols-2">

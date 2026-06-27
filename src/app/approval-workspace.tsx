@@ -502,7 +502,7 @@ function ApprovalWorkspaceBody({
       })
       .catch(() => {
         if (!didCancel) {
-          setUploadDraftMessage("Using local saved drafts. Supabase draft sync is unavailable.");
+          setUploadDraftMessage("Using local drafts. Supabase sync unavailable.");
         }
       });
 
@@ -734,8 +734,8 @@ function ApprovalWorkspaceBody({
     } catch (error) {
       setUploadDraftMessage(
         error instanceof Error
-          ? `Saved locally. Supabase draft sync failed: ${error.message}`
-          : "Saved locally. Supabase draft sync failed.",
+          ? `Saved locally. Draft sync failed: ${error.message}`
+          : "Saved locally. Draft sync failed.",
       );
     }
   }
@@ -785,8 +785,8 @@ function ApprovalWorkspaceBody({
     } catch (error) {
       setUploadDraftMessage(
         error instanceof Error
-          ? `Deleted locally. Supabase draft delete failed: ${error.message}`
-          : "Deleted locally. Supabase draft delete failed.",
+          ? `Deleted locally. Draft delete failed: ${error.message}`
+          : "Deleted locally. Draft delete failed.",
       );
       persistSavedUploadDraftList(nextDrafts);
     }
@@ -980,7 +980,7 @@ function ApprovalWorkspaceBody({
         adHocFields: [
           {
             name: "contributor_response",
-            label: "Contributor response",
+            label: "Contributor",
             type: "text",
             required: false,
             source: "ai",
@@ -1139,7 +1139,7 @@ function ApprovalWorkspaceBody({
         adHocFields: [
           {
             name: "correction_response",
-            label: "Correction response",
+            label: "Correction",
             type: "text",
             required: false,
             source: "ai",

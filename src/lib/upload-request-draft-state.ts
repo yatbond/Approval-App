@@ -107,11 +107,11 @@ export function buildSavedUploadRequestDraft({
 }): SavedUploadRequestDraft {
   const cleanTitle =
     draftKind === "current"
-      ? "Current autosave"
+      ? "Autosave"
       : title.trim() ||
         draft.fileName.trim() ||
         Object.keys(draft.editedFields)[0] ||
-        "Untitled request draft";
+        "Untitled draft";
 
   return {
     id,
@@ -270,7 +270,7 @@ export function getSavedUploadRequestDraftAccess({
     canView: isCreator,
     canLoad: isCreator,
     canDelete: isCreator,
-    label: isCreator ? "Created by you" : "Creator only",
+    label: isCreator ? "Mine" : "Creator",
   };
 }
 
@@ -292,7 +292,7 @@ export function getUploadWorkInProgressItems({
       ? [
           {
             id: "current-autosave",
-            title: "Current autosave",
+            title: "Autosave",
             detail: currentDraftStatus.label,
             type: "current" as const,
           },
@@ -340,13 +340,13 @@ export function getUploadDraftResumeItems({
       ? [
           {
             id: "current-autosave",
-            title: "Current autosave",
+            title: "Autosave",
             detail: currentDraftStatus.label,
-            fileName: currentDraft.fileName || "No file attached",
+            fileName: currentDraft.fileName || "No file",
             templateName: formatTemplateName(currentDraft.selectedTemplateId),
             type: "current" as const,
             updatedAt: currentDraft.savedAt,
-            accessLabel: "Private autosave",
+            accessLabel: "Private",
             canResume: true,
             canDelete: true,
           },
@@ -358,7 +358,7 @@ export function getUploadDraftResumeItems({
           ? {
               canLoad: true,
               canDelete: true,
-              label: "Created by you",
+              label: "Mine",
             }
           : getSavedUploadRequestDraftAccess({
               draft,
@@ -372,7 +372,7 @@ export function getUploadDraftResumeItems({
         detail: `${draft.draft.uploadedAttachments.length} attachment(s), ${
           Object.keys(draft.draft.editedFields).length
         } field(s)`,
-        fileName: draft.draft.fileName || "No file attached",
+        fileName: draft.draft.fileName || "No file",
         templateName: formatTemplateName(draft.draft.selectedTemplateId),
         type: "saved" as const,
         updatedAt: draft.savedAt,
@@ -423,7 +423,7 @@ export function createEmptyUploadRequestDraftStatus(
   if (!draft || !hasRecoverableDraftWork(draft)) {
     return {
       hasDraft: false,
-      label: "No request draft",
+      label: "No draft",
     };
   }
 

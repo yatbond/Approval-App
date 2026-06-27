@@ -66,7 +66,7 @@ test("rebuilds documentTypes and flattened fields from updated documents", () =>
     result.template.fields.map((field) => field.name),
     ["amount", "merchant"],
   );
-  assert.equal(result.label, "Updated document requirements");
+  assert.equal(result.label, "Updated docs");
 });
 
 test("preserves other template properties", () => {
@@ -93,7 +93,7 @@ test("updates one document requirement and returns the document update label", (
     },
   });
 
-  assert.equal(result.label, "Updated document requirement");
+  assert.equal(result.label, "Updated doc");
   assert.equal(result.template.documents[0].documentType, "Supplier invoice");
   assert.equal(result.template.documents[0].format, "image");
   assert.equal(result.template.documents[0].required, false);

@@ -23,7 +23,7 @@ export function getConditionDisplayName(
   conditionCase: WorkflowConditionCase,
 ) {
   if (conditionCase.isFallback) {
-    return "All other conditions";
+    return "Fallback";
   }
 
   const explicitConditionCases = conditionCases.filter(
@@ -51,7 +51,7 @@ export function describeConditionCase({
   context: ConditionRoutingContext;
 }) {
   if (conditionCase.isFallback) {
-    return "Routes every request that does not match a numbered condition.";
+    return "Else route.";
   }
 
   const upstreamNodeLabelById = new Map(
@@ -87,7 +87,7 @@ export function describeConditionCase({
   }
 
   if (!parts.length) {
-    return "No rule configured yet.";
+    return "No rule yet.";
   }
 
   return parts.join(conditionCase.join === "or" ? " OR " : " AND ");

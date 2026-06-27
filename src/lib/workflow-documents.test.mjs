@@ -56,7 +56,7 @@ const template = {
 
 test("lists document formats in the UI order", () => {
   assert.deepEqual(documentFormatOptions, [
-    { value: "text", label: "Text file" },
+    { value: "text", label: "Text" },
     { value: "pdf", label: "PDF" },
     { value: "image", label: "Image" },
     { value: "excel_csv", label: "Excel/CSV" },
@@ -65,18 +65,18 @@ test("lists document formats in the UI order", () => {
 
 test("lists and normalizes document input modes", () => {
   assert.deepEqual(documentInputModeOptions, [
-    { value: "upload", label: "Document upload with OCR" },
-    { value: "manual_form", label: "Manual digital form" },
+    { value: "upload", label: "OCR upload" },
+    { value: "manual_form", label: "Manual form" },
   ]);
   assert.equal(getDocumentInputMode({}), "upload");
   assert.equal(getDocumentInputMode({ inputMode: "manual_form" }), "manual_form");
   assert.equal(isManualFormRequirement({ inputMode: "manual_form" }), true);
   assert.equal(isManualFormRequirement({ inputMode: "upload" }), false);
-  assert.equal(formatDocumentInputMode("manual_form"), "Manual digital form");
+  assert.equal(formatDocumentInputMode("manual_form"), "Manual form");
 });
 
 test("formats document labels and accepted upload extensions", () => {
-  assert.equal(formatDocumentFormat("text"), "Text file");
+  assert.equal(formatDocumentFormat("text"), "Text");
   assert.equal(formatDocumentFormat("pdf"), "PDF");
   assert.equal(formatDocumentFormat("image"), "Image");
   assert.equal(formatDocumentFormat("excel_csv"), "Excel/CSV");

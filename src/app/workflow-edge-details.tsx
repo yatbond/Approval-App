@@ -8,7 +8,7 @@ import type {
 } from "@/lib/types";
 
 const branchTypeOptions: { value: WorkflowBranchType; label: string }[] = [
-  { value: "main", label: "Main path" },
+  { value: "main", label: "Main" },
   { value: "approved", label: "Approved" },
   { value: "rejected", label: "Rejected" },
   { value: "condition", label: "Condition" },

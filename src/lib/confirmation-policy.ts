@@ -56,9 +56,9 @@ export function getApprovalActionConfirmation({
 
   if (action === "cancel") {
     return {
-      title: "Cancel request?",
+      title: "Cancel?",
       message: `This will close ${requestName}. The request will remain trackable, but it will no longer continue through approval.`,
-      confirmLabel: "Cancel request",
+      confirmLabel: "Cancel",
       tone: "danger",
     };
   }

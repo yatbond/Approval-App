@@ -122,7 +122,7 @@ export function getWorkflowConnectNodesState({
   return {
     didUpdate: true,
     graph: nextGraph,
-    label: "Connected workflow boxes",
+    label: "Connected boxes",
     connectFromNodeId: null,
     selectedNodeId: null,
     selectedEdgeId: createdEdge?.id || null,

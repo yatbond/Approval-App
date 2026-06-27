@@ -578,7 +578,7 @@ test("condition routes to fallback when no specified condition matches", () => {
                 },
                 {
                   id: "case-fallback",
-                  name: "All other conditions",
+                  name: "Fallback",
                   isFallback: true,
                   join: "and",
                   targetNodeIds: ["end"],

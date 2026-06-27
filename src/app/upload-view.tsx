@@ -258,8 +258,8 @@ export function UploadView({
   const hasSubmissionDraft = Boolean(parseResult) || hasManualFormDocuments;
   const hasBatchDrafts = requestDrafts.length > 1;
   const assignedUploadsHeading = sharedFulfillmentEnabled
-    ? "Your assigned uploads"
-    : "Required uploads";
+    ? "Assigned"
+    : "Required";
 
   useEffect(() => {
     if (selectedTemplate && selectedTemplate.id !== selectedTemplateId) {
@@ -551,7 +551,7 @@ export function UploadView({
     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
       <section className="min-w-0 rounded-md border border-white/10 bg-white/[0.03] p-4 sm:p-5">
         <div className="flex items-center gap-2">
-          <h2 className="font-semibold">New request</h2>
+          <h2 className="font-semibold">Request</h2>
           <InfoTip label="Choose a template, then upload each required or optional document." />
         </div>
 
@@ -661,7 +661,7 @@ export function UploadView({
                   </p>
                   {attachment.storagePath && (
                     <p className="mt-1 break-words text-emerald-200">
-                      Stored in Supabase: {attachment.storagePath}
+                      Stored: {attachment.storagePath}
                     </p>
                   )}
                 </div>
@@ -713,7 +713,7 @@ export function UploadView({
 
         {missingRequiredDocuments.length > 0 && (
           <div className="mt-4 rounded-md border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
-            Missing required upload(s):{" "}
+            Missing uploads:{" "}
             {missingRequiredDocuments
               .map((document) => document.documentType)
               .join(", ")}
@@ -727,7 +727,7 @@ export function UploadView({
             <Upload className="mb-3 text-neutral-300" size={28} />
           )}
           <span className="text-sm font-medium">
-            {isParsing ? "Parsing document" : "Choose a file"}
+            {isParsing ? "Parsing" : "Choose file"}
           </span>
           <span className="mt-1 text-xs text-neutral-500">PDF, image, Excel, or CSV</span>
           <input
@@ -807,8 +807,8 @@ export function UploadView({
                     }
                     className="h-9 w-full rounded-md border border-white/10 bg-[#0d1012] px-3 text-xs text-neutral-100 outline-none focus:border-emerald-400/60"
                   >
-                    <option value="black-text">Black text</option>
-                    <option value="enhanced">Enhanced grey</option>
+                    <option value="black-text">Black</option>
+                    <option value="enhanced">Enhanced</option>
                     <option value="original">Original</option>
                   </select>
                 </label>
@@ -953,9 +953,9 @@ export function UploadView({
               <div className="mt-3 rounded-md border border-sky-500/25 bg-sky-500/10 p-3">
                 <div className="mb-3 flex flex-wrap gap-2">
                   {[
-                    ["suggested", "Suggested fields"],
-                    ["boxed", "Box from preview"],
-                    ["manual", "Manual values"],
+                    ["suggested", "Suggested"],
+                    ["boxed", "Boxed"],
+                    ["manual", "Manual"],
                   ].map(([mode, label]) => (
                     <button
                       key={mode}
@@ -1150,7 +1150,7 @@ export function UploadView({
                                   [fieldLabel]: event.target.value,
                                 });
                               }}
-                              placeholder="One value per line"
+                              placeholder="One per line"
                               rows={Math.max(2, Math.min(5, group.boxes.length || 2))}
                               className="min-h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-sm outline-none transition focus:border-emerald-400/60"
                             />
@@ -1533,7 +1533,7 @@ function UploadDraftPanel({
         {uploadDraftStatus.hasDraft && (
           <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
             <label className="block">
-              <span className="mb-1 block text-xs text-neutral-400">Draft name</span>
+              <span className="mb-1 block text-xs text-neutral-400">Name</span>
               <input
                 value={uploadDraftTitle}
                 onChange={(event) => setUploadDraftTitle(event.target.value)}

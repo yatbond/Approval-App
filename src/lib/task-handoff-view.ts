@@ -33,7 +33,7 @@ export type TaskHandoffViewModel = {
   nodeId?: string;
   nodeLabel: string;
   layout: "standard" | "compact" | "comparison";
-  policyLabel: "Default pass-through" | "Custom handoff view";
+  policyLabel: "Default" | "Custom";
   fields: TaskHandoffField[];
   attachments: TaskHandoffAttachment[];
   processes: TaskHandoffProcessResult[];
@@ -61,7 +61,7 @@ export function buildTaskHandoffView({
   const allAttachments = (task.attachments || []).map((attachment) => ({
     ...attachment,
     storageLabel: attachment.storagePath
-      ? `Stored in Supabase: ${attachment.storagePath}`
+      ? `Stored: ${attachment.storagePath}`
       : undefined,
   }));
   const fields = filterFields(allFields, policy?.fieldVisibility);
@@ -76,8 +76,8 @@ export function buildTaskHandoffView({
     nodeLabel: node?.label || task.currentStep,
     layout: policy?.layout || "standard",
     policyLabel: isCustomPolicy(policy)
-      ? "Custom handoff view"
-      : "Default pass-through",
+      ? "Custom"
+      : "Default",
     fields,
     attachments,
     processes: evaluateProcesses(policy?.processes || [], task.extractedFields || {}),

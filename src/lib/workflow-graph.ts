@@ -95,7 +95,7 @@ function conditionCaseDisplayName(
   conditionCase: WorkflowConditionCase,
 ) {
   if (conditionCase.isFallback) {
-    return "All other conditions";
+    return "Fallback";
   }
 
   const explicitCases = conditionCases.filter((item) => !item.isFallback);
@@ -1385,7 +1385,7 @@ function dedupeEdges(edges: WorkflowGraphEdge[]) {
 
 function defaultNodeLabel(kind: WorkflowNodeKind, count: number) {
   if (kind === "submit_request") {
-    return `Submit Request ${count}`;
+    return `Submit ${count}`;
   }
   if (kind === "approval") {
     return `Approval ${count}`;
@@ -1394,7 +1394,7 @@ function defaultNodeLabel(kind: WorkflowNodeKind, count: number) {
     return `Review ${count}`;
   }
   if (kind === "for_information") {
-    return `For information ${count}`;
+    return `FYI ${count}`;
   }
   if (kind === "condition") {
     return `Condition ${count}`;

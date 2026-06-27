@@ -255,7 +255,7 @@ export function WorkflowRuntimePanel({
                       </p>
                     </div>
                     <div className="rounded-md border border-white/10 bg-[#121518] p-2">
-                      <p className="text-neutral-500">Last event</p>
+                      <p className="text-neutral-500">Last</p>
                       <p className="mt-1 break-words text-neutral-200">
                         {runtimeTask.auditTrail.at(-1)?.detail || runtimeTask.lastAction}
                       </p>

@@ -79,14 +79,14 @@ export function getWorkflowAddFallbackConditionCaseState({
         ...existingCases,
         {
           id: fallbackCaseId ?? `case-${Date.now()}-fallback`,
-          name: "All other conditions",
+          name: "Fallback",
           isFallback: true,
           join: "and",
           targetNodeIds: [],
         },
       ],
     }),
-    label: "Added all other outcome",
+      label: "Added fallback",
   };
 }
 

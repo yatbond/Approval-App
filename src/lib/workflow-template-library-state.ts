@@ -37,8 +37,8 @@ export function getWorkflowTemplateLibraryItems({
       canOpen: !isArchived && canManage && template.isDraft !== false,
       canDuplicate: !isArchived,
       canDelete: !isArchived && canManage,
-      openActionLabel: "Open in Canvas",
-      duplicateActionLabel: "Duplicate as New Template",
+      openActionLabel: "Open",
+      duplicateActionLabel: "Duplicate",
       archiveActionLabel: isArchived ? "Archived" : "Delete",
     };
   });
@@ -82,10 +82,10 @@ function formatTemplateOwnership(
   activeUserRole: UserRole,
 ) {
   if (activeUserRole === "superuser") {
-    return "Superuser access";
+    return "Superuser";
   }
   if (template.createdByEmail && template.createdByEmail === activeUserEmail) {
-    return "Created by me";
+    return "Mine";
   }
   return "Cannot edit";
 }

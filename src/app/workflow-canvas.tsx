@@ -42,21 +42,21 @@ type WorkflowCanvasProps = {
 };
 
 const workflowNodeOptions: { kind: WorkflowNodeKind; label: string }[] = [
-  { kind: "submit_request", label: "Submit Request" },
+  { kind: "submit_request", label: "Submit" },
   { kind: "approval", label: "Approval" },
   { kind: "review", label: "Review" },
-  { kind: "for_information", label: "For Information" },
+  { kind: "for_information", label: "FYI" },
   { kind: "condition", label: "Condition" },
   { kind: "return_reject", label: "Return/Reject" },
   { kind: "end", label: "End" },
 ];
 
 const branchTypeOptions: { value: WorkflowBranchType; label: string }[] = [
-  { value: "main", label: "Main path" },
+  { value: "main", label: "Main" },
   { value: "approved", label: "Approved" },
   { value: "rejected", label: "Rejected" },
   { value: "condition", label: "Condition" },
-  { value: "for_information", label: "For information" },
+  { value: "for_information", label: "FYI" },
 ];
 
 export default function WorkflowCanvas({

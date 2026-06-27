@@ -26,7 +26,7 @@ export function getWorkflowUpdateSelectedEdgeState({
 
   const nextPatch =
     patch.branchType === "for_information"
-      ? { ...patch, blocking: false, label: patch.label || "For information" }
+      ? { ...patch, blocking: false, label: patch.label || "FYI" }
       : patch;
 
   return {

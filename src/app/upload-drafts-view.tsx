@@ -59,7 +59,7 @@ export function UploadDraftsView({
           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
         >
           <Plus size={16} />
-          New request
+          New
         </Link>
       </div>
 

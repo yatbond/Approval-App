@@ -127,7 +127,7 @@ import { InfoTip } from "./ui-hint";
 const WorkflowCanvas = dynamic(() => import("@/app/workflow-canvas"), {
   loading: () => (
     <div className="grid h-[68vh] min-h-[420px] place-items-center rounded-md border border-white/10 bg-[#0d1013] text-sm text-neutral-500 lg:h-[calc(100vh-250px)] lg:min-h-[640px]">
-      Loading workflow canvas...
+      Loading canvas...
     </div>
   ),
   ssr: false,
@@ -147,9 +147,9 @@ const handoffDocumentVisibilityOptions = [
 ] as const;
 
 const handoffLayoutOptions = [
-  { value: "standard", label: "Standard summary" },
-  { value: "compact", label: "Compact card" },
-  { value: "comparison", label: "Comparison table" },
+  { value: "standard", label: "Standard" },
+  { value: "compact", label: "Compact" },
+  { value: "comparison", label: "Compare" },
 ] as const;
 
 const handoffComparisonOperators: WorkflowRuleOperator[] = [
@@ -163,13 +163,13 @@ const handoffComparisonOperators: WorkflowRuleOperator[] = [
 ];
 
 const handoffProcessTypeOptions = [
-  { value: "comparison", label: "Comparison check" },
-  { value: "calculation", label: "Calculated value" },
+  { value: "comparison", label: "Compare" },
+  { value: "calculation", label: "Calculate" },
 ] as const;
 
 const handoffCalculationOptions = [
   { value: "difference", label: "Difference" },
-  { value: "percentage_difference", label: "Percentage difference" },
+  { value: "percentage_difference", label: "% difference" },
 ] as const;
 
 type HandoffProcessPatch = {
@@ -601,7 +601,7 @@ export function WorkflowView({
         {
           id: nextHandoffProcessId(processes),
           type: "comparison",
-          label: "New comparison check",
+          label: "Compare",
           leftField: fieldNames[0] || "",
           operator: "=",
           rightField: fieldNames[1] || fieldNames[0] || "",
@@ -1135,7 +1135,7 @@ export function WorkflowView({
                   {selectedGraphNode && (
                 <div className="mt-4 space-y-3">
                   <label className="block">
-                    <span className="mb-1 block text-xs text-neutral-400">Box type</span>
+                    <span className="mb-1 block text-xs text-neutral-400">Type</span>
                     <select
                       value={selectedGraphNode.kind}
                       title="Choose what this box does in the workflow: submit request, approval, review, FYI, condition, return/reject, or end."
@@ -1159,7 +1159,7 @@ export function WorkflowView({
                     </select>
                   </label>
                   <label className="block">
-                    <span className="mb-1 block text-xs text-neutral-400">Box name</span>
+                    <span className="mb-1 block text-xs text-neutral-400">Name</span>
                     <input
                       value={selectedGraphNode.label}
                       title="Display name shown inside this workflow box on the canvas."
@@ -1770,8 +1770,8 @@ export function WorkflowView({
                                       <label className="block">
                                         <span className="mb-1 block text-xs text-neutral-500">
                                           {isManualForm
-                                            ? "Sample form format"
-                                            : "Document format"}
+                                            ? "Sample format"
+                                            : "Format"}
                                         </span>
                                         <select
                                           value={document.format}
@@ -1890,7 +1890,7 @@ export function WorkflowView({
                                             { instructions: event.target.value },
                                           )
                                         }
-                                        placeholder="Extraction instruction"
+                                        placeholder="Instruction"
                                         className="h-9 w-full rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
                                       />
                                       <label className="flex items-center gap-2 text-xs text-neutral-400">
@@ -1941,7 +1941,7 @@ export function WorkflowView({
                             value={boxDocumentType}
                             title="Name the new document requirement to add to this box."
                             onChange={(event) => setBoxDocumentType(event.target.value)}
-                            placeholder="Document type, e.g. Doctor slip"
+                            placeholder="Type, e.g. Doctor slip"
                             className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
                           />
                           <select

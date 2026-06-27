@@ -147,7 +147,7 @@ test("rejects malformed or obsolete upload request drafts", () => {
 test("reports whether a draft contains recoverable request work", () => {
   assert.deepEqual(createEmptyUploadRequestDraftStatus(null), {
     hasDraft: false,
-    label: "No request draft",
+    label: "No draft",
   });
 
   const draft = buildUploadRequestDraft({
@@ -268,7 +268,7 @@ test("separates private current autosave drafts from named saved drafts", () => 
     draftKind: "named",
   });
 
-  assert.equal(currentAutosave.title, "Current autosave");
+  assert.equal(currentAutosave.title, "Autosave");
   assert.equal(currentAutosave.draftKind, "current");
   assert.deepEqual(getNamedSavedUploadRequestDrafts([currentAutosave, namedDraft]), [
     namedDraft,
@@ -445,7 +445,7 @@ test("denies saved upload draft access to non-creators including superusers", ()
       canView: true,
       canLoad: true,
       canDelete: true,
-      label: "Created by you",
+      label: "Mine",
     },
   );
 
@@ -459,7 +459,7 @@ test("denies saved upload draft access to non-creators including superusers", ()
       canView: false,
       canLoad: false,
       canDelete: false,
-      label: "Creator only",
+      label: "Creator",
     },
   );
 });
@@ -495,7 +495,7 @@ test("builds work-in-progress items from current autosave and saved drafts", () 
     [
       {
         id: "current-autosave",
-        title: "Current autosave",
+        title: "Autosave",
         detail: "Autosaved 1 attachment, 1 field",
         type: "current",
       },
@@ -628,13 +628,13 @@ test("builds resume items with template names for current and saved drafts", () 
     [
       {
         id: "current-autosave",
-        title: "Current autosave",
+        title: "Autosave",
         detail: "Autosaved 1 attachment, 1 field",
         fileName: "current.pdf",
         templateName: "Finance invoice approval",
         type: "current",
         updatedAt: "2026-06-23T00:01:00.000Z",
-        accessLabel: "Private autosave",
+        accessLabel: "Private",
         canResume: true,
         canDelete: true,
       },
@@ -646,7 +646,7 @@ test("builds resume items with template names for current and saved drafts", () 
         templateName: "HR annual leave",
         type: "saved",
         updatedAt: "2026-06-23T00:04:00.000Z",
-        accessLabel: "Created by you",
+        accessLabel: "Mine",
         canResume: true,
         canDelete: true,
       },
@@ -717,7 +717,7 @@ test("marks non-creator saved drafts as inaccessible in resume items", () => {
       currentDraft: null,
       currentDraftStatus: {
         hasDraft: false,
-        label: "No request draft",
+        label: "No draft",
       },
       savedDrafts: [savedDraft],
       templates: [{ id: "template-hr", name: "HR annual leave" }],
@@ -728,7 +728,7 @@ test("marks non-creator saved drafts as inaccessible in resume items", () => {
     })),
     [
       {
-        accessLabel: "Creator only",
+        accessLabel: "Creator",
         canDelete: false,
         canResume: false,
       },

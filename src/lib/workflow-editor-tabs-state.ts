@@ -5,9 +5,9 @@ export const workflowEditorTabs: {
   label: string;
   mobileDisabled?: boolean;
 }[] = [
-  { id: "builder", label: "Template Builder" },
+  { id: "builder", label: "Builder" },
   { id: "canvas", label: "Canvas", mobileDisabled: true },
-  { id: "library", label: "Template Library" },
+  { id: "library", label: "Library" },
 ];
 
 export const defaultWorkflowEditorTab: WorkflowEditorTab = "builder";

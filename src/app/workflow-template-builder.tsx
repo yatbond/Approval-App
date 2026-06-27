@@ -41,7 +41,7 @@ export function WorkflowTemplateBuilder({
       </div>
       <div className="mt-4 space-y-3">
         <label className="block">
-          <span className="mb-1 block text-xs text-neutral-400">Template name</span>
+          <span className="mb-1 block text-xs text-neutral-400">Name</span>
           <input
             value={templateName}
             onChange={(event) => setTemplateName(event.target.value)}
@@ -85,7 +85,7 @@ export function WorkflowTemplateBuilder({
             <input
               value={departmentName}
               onChange={(event) => setDepartmentName(event.target.value)}
-              placeholder="Add department name"
+              placeholder="Add department"
               className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
             />
           )}

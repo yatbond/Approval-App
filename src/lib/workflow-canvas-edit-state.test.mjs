@@ -88,7 +88,7 @@ test("creates a blocking submit request box without a fixed owner", () => {
   const result = getWorkflowCreateNodeState({ graph, kind: "submit_request" });
   const created = result.graph.nodes.at(-1);
 
-  assert.equal(result.label, "Added Submit Request box");
+  assert.equal(result.label, "Added Submit box");
   assert.equal(created?.blocking, true);
   assert.equal(created?.assigneeName, undefined);
   assert.equal(created?.assigneeEmail, undefined);
@@ -102,7 +102,7 @@ test("connects different boxes and selects the created edge", () => {
   });
 
   assert.equal(result.didUpdate, true);
-  assert.equal(result.label, "Connected workflow boxes");
+  assert.equal(result.label, "Connected boxes");
   assert.equal(result.connectFromNodeId, null);
   assert.equal(result.selectedNodeId, null);
   assert.equal(result.selectedEdgeId, result.graph.edges.at(-1)?.id);

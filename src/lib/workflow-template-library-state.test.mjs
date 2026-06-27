@@ -45,8 +45,8 @@ test("summarizes template library cards with counts and active state", () => {
       canOpen: false,
       canDuplicate: true,
       canDelete: false,
-      openActionLabel: "Open in Canvas",
-      duplicateActionLabel: "Duplicate as New Template",
+      openActionLabel: "Open",
+      duplicateActionLabel: "Duplicate",
       archiveActionLabel: "Delete",
     },
     {
@@ -60,8 +60,8 @@ test("summarizes template library cards with counts and active state", () => {
       canOpen: false,
       canDuplicate: true,
       canDelete: false,
-      openActionLabel: "Open in Canvas",
-      duplicateActionLabel: "Duplicate as New Template",
+      openActionLabel: "Open",
+      duplicateActionLabel: "Duplicate",
       archiveActionLabel: "Delete",
     },
   ]);
@@ -129,7 +129,7 @@ test("labels template status, ownership, and available actions", () => {
       {
         id: "own-draft",
         statusLabel: "Draft",
-        ownershipLabel: "Created by me",
+        ownershipLabel: "Mine",
         canOpen: true,
         canDuplicate: true,
         canDelete: true,

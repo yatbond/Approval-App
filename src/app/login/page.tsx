@@ -36,7 +36,7 @@ export default async function LoginPage({
 
         {setupMode && (
           <label className="block">
-            <span className="mb-1 block text-xs text-neutral-400">Full name</span>
+            <span className="mb-1 block text-xs text-neutral-400">Name</span>
             <input
               name="fullName"
               autoComplete="name"

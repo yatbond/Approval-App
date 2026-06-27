@@ -43,7 +43,7 @@ test("keeps approval actions one-click while confirming risky decisions", () => 
     action: "cancel",
     taskTitle: "Invoice",
   });
-  assert.equal(cancellation?.confirmLabel, "Cancel request");
+  assert.equal(cancellation?.confirmLabel, "Cancel");
 });
 
 test("destructive records, drafts, templates, canvas edits, and email sends require confirmation", () => {

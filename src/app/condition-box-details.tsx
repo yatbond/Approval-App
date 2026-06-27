@@ -107,7 +107,7 @@ export function ConditionBoxDetails({
             </div>
           ) : (
             <p className="mt-2 text-xs text-neutral-500">
-              Connect outcome boxes first.
+              Connect outcomes first.
             </p>
           )}
         </div>
@@ -542,7 +542,7 @@ export function ConditionBoxDetails({
                 <div className="rounded-md border border-white/10 bg-[#121518] p-2">
                   <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-xs font-semibold text-neutral-400">
-                      Then route to
+                      Route to
                     </p>
                     <button
                       type="button"

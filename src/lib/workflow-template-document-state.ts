@@ -25,7 +25,7 @@ export function getWorkflowTemplateDocumentState({
       documents,
       fields: documents.flatMap((document) => document.fields),
     },
-    label: "Updated document requirements",
+      label: "Updated docs",
   };
 }
 
@@ -40,6 +40,6 @@ export function getWorkflowUpdateDocumentRequirementState({
 }) {
   return {
     template: updateWorkflowDocumentRequirement(template, documentId, patch),
-    label: "Updated document requirement",
+    label: "Updated doc",
   };
 }
