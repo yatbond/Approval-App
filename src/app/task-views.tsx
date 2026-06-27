@@ -279,10 +279,14 @@ export function QueueView({
             )}
             {!originatorAction && (
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <label className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200">
-                  <span className="min-w-0">Reassign options</span>
+                <label
+                  className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
+                  title="Show reassign and delegate actions."
+                >
+                  <span className="min-w-0 font-medium">Reassign</span>
                   <input
                     type="checkbox"
+                    aria-label="Show reassign options"
                     checked={reassignActionsExpanded}
                     onChange={(event) =>
                       setReassignActionsExpanded(event.target.checked)
@@ -290,10 +294,14 @@ export function QueueView({
                     className="size-4 shrink-0"
                   />
                 </label>
-                <label className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200">
-                  <span className="min-w-0">Contributor request</span>
+                <label
+                  className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
+                  title="Ask another person for supporting input."
+                >
+                  <span className="min-w-0 font-medium">Contributor</span>
                   <input
                     type="checkbox"
+                    aria-label="Show contributor request options"
                     checked={contributorRequestExpanded}
                     onChange={(event) =>
                       setContributorRequestExpanded(event.target.checked)
@@ -308,7 +316,7 @@ export function QueueView({
                 {showReassignActions && (
                   <div className="rounded-md border border-white/10 bg-[#121518] p-3">
                     <p className="text-xs font-semibold text-neutral-300">
-                      Reassign or delegate
+                      Reassign
                     </p>
                     <label className="mt-2 block">
                       <span className="mb-1 block text-xs text-neutral-400">
@@ -329,7 +337,7 @@ export function QueueView({
                 {showContributorRequest && (
                   <div className="rounded-md border border-white/10 bg-[#121518] p-3">
                     <p className="text-xs font-semibold text-neutral-300">
-                      Request contributor input
+                      Contributor
                     </p>
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     <label className="block">
