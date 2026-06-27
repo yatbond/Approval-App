@@ -221,6 +221,36 @@ export function getCurrentAutosaveUploadRequestDraft(
     .sort((a, b) => b.savedAt.localeCompare(a.savedAt))[0];
 }
 
+export function getUploadAutosaveIdentity({
+  selectedUploadDraftId,
+  remoteUploadAutosaveId,
+  storedUploadAutosaveId,
+  createUploadAutosaveId,
+}: {
+  selectedUploadDraftId: string;
+  remoteUploadAutosaveId: string;
+  storedUploadAutosaveId: string;
+  createUploadAutosaveId: () => string;
+}) {
+  const activeSavedDraftId = selectedUploadDraftId.trim();
+  if (activeSavedDraftId) {
+    return {
+      id: activeSavedDraftId,
+      draftKind: "named" as const,
+      isCurrentAutosave: false,
+    };
+  }
+
+  return {
+    id:
+      remoteUploadAutosaveId.trim() ||
+      storedUploadAutosaveId.trim() ||
+      createUploadAutosaveId(),
+    draftKind: "current" as const,
+    isCurrentAutosave: true,
+  };
+}
+
 export function getSavedUploadRequestDraftAccess({
   draft,
   activeUserEmail,
@@ -245,14 +275,20 @@ export function getSavedUploadRequestDraftAccess({
 }
 
 export function getUploadWorkInProgressItems({
+  activeDraftId = "",
   currentDraftStatus,
   savedDrafts,
 }: {
+  activeDraftId?: string;
   currentDraftStatus: UploadRequestDraftStatus;
   savedDrafts: SavedUploadRequestDraft[];
 }) {
+  const currentDraftIsActiveSavedDraft = Boolean(
+    activeDraftId && savedDrafts.some((draft) => draft.id === activeDraftId),
+  );
+
   return [
-    ...(currentDraftStatus.hasDraft
+    ...(currentDraftStatus.hasDraft && !currentDraftIsActiveSavedDraft
       ? [
           {
             id: "current-autosave",
@@ -276,6 +312,7 @@ export function getUploadWorkInProgressItems({
 export function getUploadDraftResumeItems({
   activeUserEmail,
   activeUserId,
+  activeDraftId = "",
   currentDraft,
   currentDraftStatus,
   savedDrafts,
@@ -283,6 +320,7 @@ export function getUploadDraftResumeItems({
 }: {
   activeUserEmail?: string;
   activeUserId?: string;
+  activeDraftId?: string;
   currentDraft: UploadRequestDraft | null;
   currentDraftStatus: UploadRequestDraftStatus;
   savedDrafts: SavedUploadRequestDraft[];
@@ -293,9 +331,12 @@ export function getUploadDraftResumeItems({
   );
   const formatTemplateName = (templateId: string) =>
     templateNameById.get(templateId) || "Template unavailable";
+  const currentDraftIsActiveSavedDraft = Boolean(
+    activeDraftId && savedDrafts.some((draft) => draft.id === activeDraftId),
+  );
 
   return [
-    ...(currentDraftStatus.hasDraft && currentDraft
+    ...(currentDraftStatus.hasDraft && currentDraft && !currentDraftIsActiveSavedDraft
       ? [
           {
             id: "current-autosave",

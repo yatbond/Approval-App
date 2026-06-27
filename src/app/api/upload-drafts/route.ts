@@ -91,6 +91,7 @@ export async function POST(request: NextRequest) {
     title: parsedDraft.title,
     createdByEmail: user.email,
     createdByUserId: user.id,
+    draftKind: parsedDraft.draftKind,
     savedAt: new Date().toISOString(),
   });
   const { data, error } = await supabase

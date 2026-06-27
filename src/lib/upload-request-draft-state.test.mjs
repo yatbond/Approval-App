@@ -10,6 +10,7 @@ import {
   getNextSavedUploadRequestDrafts,
   getNamedSavedUploadRequestDrafts,
   getSavedUploadRequestDraftAccess,
+  getUploadAutosaveIdentity,
   getUploadDraftResumeItems,
   getUploadWorkInProgressItems,
   parseUploadRequestDraft,
@@ -508,6 +509,76 @@ test("builds work-in-progress items from current autosave and saved drafts", () 
   );
 });
 
+test("reuses the loaded saved draft identity for autosave", () => {
+  assert.deepEqual(
+    getUploadAutosaveIdentity({
+      selectedUploadDraftId: "saved-draft",
+      remoteUploadAutosaveId: "current-autosave",
+      storedUploadAutosaveId: "stored-autosave",
+      createUploadAutosaveId: () => "new-autosave",
+    }),
+    {
+      id: "saved-draft",
+      draftKind: "named",
+      isCurrentAutosave: false,
+    },
+  );
+
+  assert.deepEqual(
+    getUploadAutosaveIdentity({
+      selectedUploadDraftId: "",
+      remoteUploadAutosaveId: "",
+      storedUploadAutosaveId: "stored-autosave",
+      createUploadAutosaveId: () => "new-autosave",
+    }),
+    {
+      id: "stored-autosave",
+      draftKind: "current",
+      isCurrentAutosave: true,
+    },
+  );
+});
+
+test("hides current autosave when it represents the active saved draft", () => {
+  const draft = buildSavedUploadRequestDraft({
+    draft: buildUploadRequestDraft({
+      selectedTemplateId: "template-finance",
+      fileName: "invoice.pdf",
+      parseResult,
+      editedFields: { Amount: "500,000.00" },
+      uploadedAttachments: [attachment],
+      parsedDocumentId: "invoice-doc",
+      highlightGroups,
+      activeHighlightGroupId: "highlight-field-1",
+      highlightBoxCounter: 2,
+      savedAt: "2026-06-23T00:01:00.000Z",
+    }),
+    id: "saved-draft",
+    title: "Named saved draft",
+    createdByEmail: "dpang@chunwo.com",
+    savedAt: "2026-06-23T00:03:00.000Z",
+  });
+
+  assert.deepEqual(
+    getUploadWorkInProgressItems({
+      activeDraftId: "saved-draft",
+      currentDraftStatus: {
+        hasDraft: true,
+        label: "Autosaved 1 attachment, 1 field",
+      },
+      savedDrafts: [draft],
+    }),
+    [
+      {
+        id: "saved-draft",
+        title: "Named saved draft",
+        detail: "1 attachment(s), 1 field(s)",
+        type: "saved",
+      },
+    ],
+  );
+});
+
 test("builds resume items with template names for current and saved drafts", () => {
   const currentDraft = buildUploadRequestDraft({
     selectedTemplateId: "template-finance",
@@ -580,6 +651,43 @@ test("builds resume items with template names for current and saved drafts", () 
         canDelete: true,
       },
     ],
+  );
+});
+
+test("hides current resume item when editing an active saved draft", () => {
+  const currentDraft = buildUploadRequestDraft({
+    selectedTemplateId: "template-finance",
+    fileName: "invoice.pdf",
+    parseResult,
+    editedFields: { Amount: "500,000.00" },
+    uploadedAttachments: [attachment],
+    parsedDocumentId: "invoice-doc",
+    highlightGroups,
+    activeHighlightGroupId: "highlight-field-1",
+    highlightBoxCounter: 2,
+    savedAt: "2026-06-23T00:01:00.000Z",
+  });
+  const savedDraft = buildSavedUploadRequestDraft({
+    draft: currentDraft,
+    id: "saved-draft",
+    title: "Named saved draft",
+    createdByEmail: "dpang@chunwo.com",
+    savedAt: "2026-06-23T00:04:00.000Z",
+  });
+
+  assert.deepEqual(
+    getUploadDraftResumeItems({
+      activeUserEmail: "dpang@chunwo.com",
+      activeDraftId: "saved-draft",
+      currentDraft,
+      currentDraftStatus: {
+        hasDraft: true,
+        label: "Autosaved 1 attachment, 1 field",
+      },
+      savedDrafts: [savedDraft],
+      templates: [{ id: "template-finance", name: "Finance invoice approval" }],
+    }).map((item) => item.id),
+    ["saved-draft"],
   );
 });
 

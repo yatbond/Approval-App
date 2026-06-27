@@ -37,6 +37,7 @@ import {
   createEmptyUploadRequestDraftStatus,
   getCurrentAutosaveUploadRequestDraft,
   getCreatorVisibleUploadRequestDrafts,
+  getUploadAutosaveIdentity,
   getNamedSavedUploadRequestDrafts,
   getNextSavedUploadRequestDrafts,
   parseUploadRequestDraft,
@@ -145,6 +146,8 @@ const uploadRequestDraftStoragePrefix = "approval-upload-request-draft-v1";
 const uploadRequestDraftListStoragePrefix = "approval-upload-request-drafts-v1";
 const uploadRequestCurrentAutosaveIdStoragePrefix =
   "approval-upload-current-autosave-id-v1";
+const uploadRequestActiveDraftIdStoragePrefix =
+  "approval-upload-active-draft-id-v1";
 const remoteUploadAutosaveDelayMs = 12_000;
 
 export type ApprovalWorkspaceProps = {
@@ -291,6 +294,10 @@ function ApprovalWorkspaceBody({
     () => `${uploadRequestCurrentAutosaveIdStoragePrefix}:${activeUser.email}`,
     [activeUser.email],
   );
+  const uploadRequestActiveDraftIdStorageKey = useMemo(
+    () => `${uploadRequestActiveDraftIdStoragePrefix}:${activeUser.email}`,
+    [activeUser.email],
+  );
   const currentUploadRequestDraft = useMemo(
     () =>
       buildUploadRequestDraft({
@@ -397,6 +404,9 @@ function ApprovalWorkspaceBody({
       setRemoteUploadAutosaveId(
         localStorage.getItem(uploadRequestCurrentAutosaveIdStorageKey) || "",
       );
+      setSelectedUploadDraftId(
+        localStorage.getItem(uploadRequestActiveDraftIdStorageKey) || "",
+      );
       uploadDraftStorageReady.current = true;
     });
 
@@ -406,6 +416,7 @@ function ApprovalWorkspaceBody({
   }, [
     restoreUploadRequestDraft,
     uploadRequestCurrentAutosaveIdStorageKey,
+    uploadRequestActiveDraftIdStorageKey,
     uploadRequestDraftStorageKey,
   ]);
 
@@ -470,6 +481,19 @@ function ApprovalWorkspaceBody({
             activeUserId: "",
           }),
         );
+        const activeUploadDraftId =
+          localStorage.getItem(uploadRequestActiveDraftIdStorageKey) || "";
+        const activeUploadDraft = merged.find(
+          (draft) => draft.id === activeUploadDraftId,
+        );
+        if (activeUploadDraft) {
+          setSelectedUploadDraftId(activeUploadDraft.id);
+          setUploadDraftTitle(activeUploadDraft.title);
+        } else if (activeUploadDraftId) {
+          setSelectedUploadDraftId("");
+          setUploadDraftTitle("");
+          localStorage.removeItem(uploadRequestActiveDraftIdStorageKey);
+        }
         setSavedUploadDrafts(merged);
         localStorage.setItem(
           uploadRequestDraftListStorageKey,
@@ -488,6 +512,7 @@ function ApprovalWorkspaceBody({
   }, [
     activeUser.email,
     restoreUploadRequestDraft,
+    uploadRequestActiveDraftIdStorageKey,
     uploadRequestCurrentAutosaveIdStorageKey,
     uploadRequestDraftListStorageKey,
     uploadRequestDraftStorageKey,
@@ -547,24 +572,54 @@ function ApprovalWorkspaceBody({
     }
 
     const timeoutId = window.setTimeout(async () => {
-      const draftId =
-        remoteUploadAutosaveId ||
-        localStorage.getItem(uploadRequestCurrentAutosaveIdStorageKey) ||
-        crypto.randomUUID();
-      localStorage.setItem(uploadRequestCurrentAutosaveIdStorageKey, draftId);
-      setRemoteUploadAutosaveId(draftId);
+      const autosaveIdentity = getUploadAutosaveIdentity({
+        selectedUploadDraftId,
+        remoteUploadAutosaveId,
+        storedUploadAutosaveId:
+          localStorage.getItem(uploadRequestCurrentAutosaveIdStorageKey) || "",
+        createUploadAutosaveId: () => crypto.randomUUID(),
+      });
+
+      if (autosaveIdentity.isCurrentAutosave) {
+        localStorage.setItem(
+          uploadRequestCurrentAutosaveIdStorageKey,
+          autosaveIdentity.id,
+        );
+        setRemoteUploadAutosaveId(autosaveIdentity.id);
+      }
 
       const savedDraft = buildSavedUploadRequestDraft({
         draft: nextDraft,
-        id: draftId,
-        title: "",
+        id: autosaveIdentity.id,
+        title: autosaveIdentity.isCurrentAutosave ? "" : uploadDraftTitle,
         createdByEmail: activeUser.email,
-        draftKind: "current",
+        draftKind: autosaveIdentity.draftKind,
         savedAt: nextDraft.savedAt,
       });
 
       try {
-        await saveSavedUploadRequestDraft({ draft: savedDraft });
+        const remoteDraft = await saveSavedUploadRequestDraft({ draft: savedDraft });
+        if (!autosaveIdentity.isCurrentAutosave && remoteDraft) {
+          setSavedUploadDrafts((currentDrafts) => {
+            const visibleDrafts = getCreatorVisibleUploadRequestDrafts({
+              drafts: getNextSavedUploadRequestDrafts({
+                drafts: currentDrafts,
+                action: "upsert",
+                draft: remoteDraft,
+                activeUserEmail: activeUser.email,
+                activeUserId: "",
+              }),
+              activeUserEmail: activeUser.email,
+              activeUserId: "",
+            });
+            const namedVisibleDrafts = getNamedSavedUploadRequestDrafts(visibleDrafts);
+            localStorage.setItem(
+              uploadRequestDraftListStorageKey,
+              serializeUploadRequestDraftList(namedVisibleDrafts),
+            );
+            return namedVisibleDrafts;
+          });
+        }
         lastRemoteUploadAutosavePayloadRef.current = serializedDraft;
       } catch (error) {
         setUploadDraftMessage(
@@ -580,7 +635,10 @@ function ApprovalWorkspaceBody({
     activeUser.email,
     currentUploadRequestDraft,
     remoteUploadAutosaveId,
+    selectedUploadDraftId,
+    uploadDraftTitle,
     uploadRequestCurrentAutosaveIdStorageKey,
+    uploadRequestDraftListStorageKey,
   ]);
 
   function resetUploadRequestDraftState() {
@@ -600,6 +658,7 @@ function ApprovalWorkspaceBody({
     setSelectedUploadDraftId("");
     setUploadDraftTitle("");
     localStorage.removeItem(uploadRequestDraftStorageKey);
+    localStorage.removeItem(uploadRequestActiveDraftIdStorageKey);
     if (remoteUploadAutosaveId) {
       void deleteSavedUploadRequestDraft({ draftId: remoteUploadAutosaveId }).catch(() => {
         // A failed cleanup should not block clearing the local draft.
@@ -656,6 +715,7 @@ function ApprovalWorkspaceBody({
     );
     setSelectedUploadDraftId(savedDraft.id);
     setUploadDraftTitle(savedDraft.title);
+    localStorage.setItem(uploadRequestActiveDraftIdStorageKey, savedDraft.id);
     setUploadDraftMessage(`Saved draft "${savedDraft.title}".`);
 
     try {
@@ -684,6 +744,7 @@ function ApprovalWorkspaceBody({
     restoreUploadRequestDraft(savedDraft.draft);
     setSelectedUploadDraftId(savedDraft.id);
     setUploadDraftTitle(savedDraft.title);
+    localStorage.setItem(uploadRequestActiveDraftIdStorageKey, savedDraft.id);
     setUploadDraftMessage(`Loaded draft "${savedDraft.title}".`);
   }
 
@@ -713,6 +774,7 @@ function ApprovalWorkspaceBody({
     if (selectedUploadDraftId === draftId) {
       setSelectedUploadDraftId("");
       setUploadDraftTitle("");
+      localStorage.removeItem(uploadRequestActiveDraftIdStorageKey);
     }
     setUploadDraftMessage(
       target ? `Deleted saved draft "${target.title}".` : "Deleted saved draft.",

@@ -36,6 +36,7 @@ export function UploadDraftsView({
   const resumeItems = getUploadDraftResumeItems({
     activeUserEmail,
     activeUserId,
+    activeDraftId: selectedUploadDraftId,
     currentDraft,
     currentDraftStatus: uploadDraftStatus,
     savedDrafts: savedUploadDrafts,

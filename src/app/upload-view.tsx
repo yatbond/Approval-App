@@ -1500,6 +1500,7 @@ function UploadDraftPanel({
   onClearRequestDraft: () => void;
 }) {
   const workInProgressItems = getUploadWorkInProgressItems({
+    activeDraftId: selectedUploadDraftId,
     currentDraftStatus: uploadDraftStatus,
     savedDrafts: savedUploadDrafts,
   });
