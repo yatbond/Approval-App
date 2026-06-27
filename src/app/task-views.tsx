@@ -298,10 +298,10 @@ export function QueueView({
                   className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
                   title="Ask another person for supporting input."
                 >
-                  <span className="min-w-0 font-medium">Contributor</span>
+                  <span className="min-w-0 font-medium">Add contributor</span>
                   <input
                     type="checkbox"
-                    aria-label="Show contributor request options"
+                    aria-label="Show additional contributor request options"
                     checked={contributorRequestExpanded}
                     onChange={(event) =>
                       setContributorRequestExpanded(event.target.checked)
