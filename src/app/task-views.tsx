@@ -25,6 +25,7 @@ import {
   formatTaskAccessRole,
   getPathNodeState,
 } from "@/lib/task-display";
+import { buildTaskHandoffView } from "@/lib/task-handoff-view";
 import { getCollaborationStatusPanelState } from "@/lib/collaboration-status-panel-state";
 import type {
   ApprovalAction,
@@ -105,6 +106,7 @@ export function QueueView({
   recordAction,
   activeUserEmail,
   userDirectory,
+  workflowTemplates,
   actionError,
   missingCurrentDocuments,
   onAttachTaskDocument,
@@ -132,6 +134,7 @@ export function QueueView({
   recordAction: (action: ApprovalAction) => void;
   activeUserEmail: string;
   userDirectory: UserDirectoryEntry[];
+  workflowTemplates: WorkflowTemplate[];
   actionError: string;
   missingCurrentDocuments: WorkflowDocumentRequirement[];
   onAttachTaskDocument: (
@@ -151,6 +154,7 @@ export function QueueView({
   }
 
   const originatorAction = selectedTask.status === "returned" && selectedTask.currentOwner === activeUserEmail;
+  const selectedTemplate = findTemplateForTask(selectedTask, workflowTemplates);
   const availableActions: ApprovalAction[] = originatorAction
     ? ["amend_resubmit", "cancel"]
     : ["approve", "approve_with_comment", "reject", "reject_with_comment", "reassign", "delegate"];
@@ -209,18 +213,7 @@ export function QueueView({
 
         <div className="grid gap-4 p-4 lg:grid-cols-2">
           <div>
-            <h3 className="mb-3 text-sm font-semibold text-neutral-300">Extracted draft</h3>
-            <div className="space-y-2">
-              {Object.entries(selectedTask.extractedFields).map(([label, value]) => (
-                <div
-                  key={label}
-                  className="grid min-h-12 grid-cols-1 gap-1 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm sm:grid-cols-[140px_1fr] sm:items-center sm:gap-3"
-                >
-                  <span className="text-neutral-400">{label}</span>
-                  <span className="min-w-0 break-words">{value}</span>
-                </div>
-              ))}
-            </div>
+            <HandoffSummary task={selectedTask} template={selectedTemplate} />
           </div>
 
           <div>
@@ -541,6 +534,11 @@ export function TrackingView({
                   </div>
                 </div>
               ) : null}
+              <HandoffSummary
+                task={selectedTask}
+                template={selectedTemplate}
+                className="mt-3"
+              />
               <div className="mt-3 grid gap-3 lg:grid-cols-2">
                 <div className="rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
                   <p className="text-xs text-neutral-500">People who can track this</p>
@@ -561,38 +559,6 @@ export function TrackingView({
                       </span>
                     ))}
                   </div>
-                </div>
-                <div className="rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
-                  <p className="text-xs text-neutral-500">Uploaded documents</p>
-                  {selectedTask.attachments?.length ? (
-                    <div className="mt-2 space-y-2">
-                      {selectedTask.attachments.map((attachment) => (
-                        <div
-                          key={attachment.id}
-                          className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs"
-                        >
-                          <p className="break-words text-neutral-200">
-                            {attachment.fileName}
-                          </p>
-                          <p className="mt-1 break-words text-neutral-500">
-                            {attachment.documentType}
-                            {attachment.workflowNodeId
-                              ? ` - used at ${attachment.workflowNodeId}`
-                              : ""}
-                          </p>
-                          {attachment.storagePath && (
-                            <p className="mt-1 break-words text-xs text-emerald-200">
-                              Stored in Supabase: {attachment.storagePath}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-xs text-neutral-500">
-                      No files have been attached to this request.
-                    </p>
-                  )}
                 </div>
               </div>
               {selectedTask.collaborationRequests?.length ? (
@@ -620,6 +586,135 @@ export function TrackingView({
           <div className="p-5 text-sm text-neutral-400">No tracked requests yet.</div>
         )}
       </section>
+    </div>
+  );
+}
+
+function HandoffSummary({
+  task,
+  template,
+  className = "",
+}: {
+  task: ApprovalTask;
+  template?: WorkflowTemplate;
+  className?: string;
+}) {
+  const handoff = buildTaskHandoffView({ task, template });
+
+  return (
+    <div
+      className={`${className} rounded-md border border-white/10 bg-[#121518] p-3 text-sm`}
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-neutral-200">Handoff packet</h3>
+          <p className="mt-1 break-words text-xs text-neutral-500">
+            {handoff.nodeLabel} - {handoff.policyLabel}
+          </p>
+        </div>
+        <span className="self-start rounded-md border border-white/10 bg-[#101214] px-2 py-1 text-xs text-neutral-300">
+          {formatStatusText(handoff.layout)}
+        </span>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        <p className="text-xs font-semibold text-neutral-400">Values</p>
+        {handoff.fields.length ? (
+          handoff.fields.map((field) => (
+            <div
+              key={field.label}
+              className="grid min-h-11 grid-cols-1 gap-1 rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-sm sm:grid-cols-[140px_1fr] sm:items-center sm:gap-3"
+            >
+              <span className="break-words text-neutral-400">{field.label}</span>
+              <span className="min-w-0 break-words text-neutral-100">
+                {field.value}
+              </span>
+            </div>
+          ))
+        ) : (
+          <p className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
+            No values are available in this handoff.
+          </p>
+        )}
+      </div>
+
+      {handoff.processes.length ? (
+        <div className="mt-3 space-y-2">
+          <p className="text-xs font-semibold text-neutral-400">Checks</p>
+          {handoff.processes.map((process) => (
+            <div
+              key={process.id}
+              className={`rounded-md border p-2 text-xs ${
+                process.tone === "pass"
+                  ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+                  : process.tone === "fail"
+                    ? "border-amber-400/30 bg-amber-400/10 text-amber-100"
+                    : "border-white/10 bg-[#101214] text-neutral-300"
+              }`}
+            >
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                <p className="break-words font-medium">{process.label}</p>
+                <span className="self-start rounded-md border border-current/20 px-2 py-1">
+                  {process.result}
+                </span>
+              </div>
+              <p className="mt-1 break-words opacity-80">{process.detail}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-3 space-y-2">
+        <p className="text-xs font-semibold text-neutral-400">Documents</p>
+        {handoff.attachments.length ? (
+          handoff.attachments.map((attachment) => (
+            <div
+              key={attachment.id}
+              className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs"
+            >
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="break-words text-neutral-200">
+                    {attachment.fileName}
+                  </p>
+                  <p className="mt-1 break-words text-neutral-500">
+                    {attachment.documentType}
+                    {attachment.workflowNodeId
+                      ? ` - used at ${attachment.workflowNodeId}`
+                      : ""}
+                  </p>
+                </div>
+                {attachment.publicUrl ? (
+                  <a
+                    href={attachment.publicUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="self-start rounded-md border border-sky-400/40 bg-sky-400/12 px-2 py-1 text-sky-100 transition hover:bg-sky-400/20"
+                  >
+                    Open
+                  </a>
+                ) : null}
+              </div>
+              {attachment.storageLabel && (
+                <p className="mt-1 break-words text-emerald-200">
+                  {attachment.storageLabel}
+                </p>
+              )}
+            </div>
+          ))
+        ) : (
+          <p className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
+            No documents are available in this handoff.
+          </p>
+        )}
+      </div>
+
+      {handoff.hiddenFieldCount || handoff.hiddenAttachmentCount ? (
+        <p className="mt-3 rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
+          Hidden by handoff policy: {handoff.hiddenFieldCount} value(s),{" "}
+          {handoff.hiddenAttachmentCount} document(s).
+        </p>
+      ) : null}
     </div>
   );
 }

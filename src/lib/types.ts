@@ -242,6 +242,34 @@ export type WorkflowBranchRule = {
   join?: "and" | "or";
 };
 
+export type WorkflowHandoffFieldVisibility = {
+  mode: "all" | "selected" | "hidden";
+  fieldNames?: string[];
+};
+
+export type WorkflowHandoffDocumentVisibility = {
+  mode: "all" | "selected" | "required_for_node" | "none";
+  documentIds?: string[];
+};
+
+export type WorkflowHandoffLayout = "standard" | "compact" | "comparison";
+
+export type WorkflowHandoffProcess = {
+  id: string;
+  type: "comparison";
+  label: string;
+  leftField: string;
+  operator: WorkflowRuleOperator;
+  rightField: string;
+};
+
+export type WorkflowHandoffView = {
+  fieldVisibility?: WorkflowHandoffFieldVisibility;
+  documentVisibility?: WorkflowHandoffDocumentVisibility;
+  layout?: WorkflowHandoffLayout;
+  processes?: WorkflowHandoffProcess[];
+};
+
 export type WorkflowGraphNode = {
   id: string;
   kind: WorkflowNodeKind;
@@ -259,6 +287,7 @@ export type WorkflowGraphNode = {
   blocking?: boolean;
   acknowledgementRequired?: boolean;
   conditionCases?: WorkflowConditionCase[];
+  handoffView?: WorkflowHandoffView;
 };
 
 export type WorkflowGraphEdge = {

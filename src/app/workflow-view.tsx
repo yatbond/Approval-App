@@ -114,7 +114,9 @@ import type {
   WorkflowGraph,
   WorkflowGraphEdge,
   WorkflowGraphNode,
+  WorkflowHandoffProcess,
   WorkflowNodeKind,
+  WorkflowRuleOperator,
   ExtractionTrainingExample,
   WorkflowField,
   WorkflowTemplate,
@@ -128,6 +130,35 @@ const WorkflowCanvas = dynamic(() => import("@/app/workflow-canvas"), {
   ),
   ssr: false,
 });
+
+const handoffFieldVisibilityOptions = [
+  { value: "all", label: "Show all values" },
+  { value: "selected", label: "Show selected values" },
+  { value: "hidden", label: "Hide selected values" },
+] as const;
+
+const handoffDocumentVisibilityOptions = [
+  { value: "all", label: "Show all documents" },
+  { value: "required_for_node", label: "Show documents required by this box" },
+  { value: "selected", label: "Show selected documents" },
+  { value: "none", label: "Show no documents" },
+] as const;
+
+const handoffLayoutOptions = [
+  { value: "standard", label: "Standard summary" },
+  { value: "compact", label: "Compact card" },
+  { value: "comparison", label: "Comparison table" },
+] as const;
+
+const handoffComparisonOperators: WorkflowRuleOperator[] = [
+  "=",
+  "!=",
+  ">",
+  ">=",
+  "<",
+  "<=",
+  "contains",
+];
 
 export function WorkflowView({
   businessDirectory,
@@ -227,6 +258,10 @@ export function WorkflowView({
       selectedNodeId,
       workflowGraph,
     ],
+  );
+  const handoffFieldNames = useMemo(
+    () => (workflow ? getWorkflowHandoffFieldNames(workflow) : []),
+    [workflow],
   );
   const [canvasViewResetNonce, setCanvasViewResetNonce] = useState(0);
   const canvasInstanceKey = useMemo(
@@ -519,6 +554,58 @@ export function WorkflowView({
     }
 
     saveWorkflowGraph(nextState.graph, nextState.label);
+  }
+
+  function updateSelectedNodeHandoffView(
+    patch: Partial<NonNullable<WorkflowGraphNode["handoffView"]>>,
+  ) {
+    updateSelectedNode({
+      handoffView: {
+        ...(selectedGraphNode?.handoffView || {}),
+        ...patch,
+      },
+    });
+  }
+
+  function addSelectedNodeHandoffProcess() {
+    if (!workflow || !selectedGraphNode) {
+      return;
+    }
+
+    const fieldNames = getWorkflowHandoffFieldNames(workflow);
+    const processes = selectedGraphNode.handoffView?.processes || [];
+    updateSelectedNodeHandoffView({
+      processes: [
+        ...processes,
+        {
+          id: nextHandoffProcessId(processes),
+          type: "comparison",
+          label: "New comparison check",
+          leftField: fieldNames[0] || "",
+          operator: "=",
+          rightField: fieldNames[1] || fieldNames[0] || "",
+        },
+      ],
+    });
+  }
+
+  function updateSelectedNodeHandoffProcess(
+    processId: string,
+    patch: Partial<WorkflowHandoffProcess>,
+  ) {
+    const processes = selectedGraphNode?.handoffView?.processes || [];
+    updateSelectedNodeHandoffView({
+      processes: processes.map((process) =>
+        process.id === processId ? { ...process, ...patch } : process,
+      ),
+    });
+  }
+
+  function removeSelectedNodeHandoffProcess(processId: string) {
+    const processes = selectedGraphNode?.handoffView?.processes || [];
+    updateSelectedNodeHandoffView({
+      processes: processes.filter((process) => process.id !== processId),
+    });
   }
 
   function addDocumentToSelectedBox() {
@@ -1239,6 +1326,270 @@ export function WorkflowView({
                     />
                     Blocking step
                   </label>
+                  {workflow &&
+                    ["approval", "review", "for_information"].includes(
+                      selectedGraphNode.kind,
+                    ) && (
+                      <div className="space-y-3 rounded-md border border-white/10 bg-[#101214] p-3">
+                        <div>
+                          <p className="text-xs font-semibold text-neutral-300">
+                            Handoff view
+                          </p>
+                          <p className="mt-1 text-xs text-neutral-500">
+                            Default is all values and documents in a standard summary.
+                          </p>
+                        </div>
+                        <datalist id="workflow-handoff-field-names">
+                          {handoffFieldNames.map((fieldName) => (
+                            <option key={fieldName} value={fieldName} />
+                          ))}
+                        </datalist>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="block">
+                            <span className="mb-1 block text-xs text-neutral-400">
+                              Values
+                            </span>
+                            <select
+                              value={
+                                selectedGraphNode.handoffView?.fieldVisibility
+                                  ?.mode || "all"
+                              }
+                              onChange={(event) =>
+                                updateSelectedNodeHandoffView({
+                                  fieldVisibility: {
+                                    mode: event.target
+                                      .value as NonNullable<
+                                      NonNullable<
+                                        WorkflowGraphNode["handoffView"]
+                                      >["fieldVisibility"]
+                                    >["mode"],
+                                    fieldNames:
+                                      selectedGraphNode.handoffView
+                                        ?.fieldVisibility?.fieldNames || [],
+                                  },
+                                })
+                              }
+                              className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+                            >
+                              {handoffFieldVisibilityOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block">
+                            <span className="mb-1 block text-xs text-neutral-400">
+                              Format
+                            </span>
+                            <select
+                              value={selectedGraphNode.handoffView?.layout || "standard"}
+                              onChange={(event) =>
+                                updateSelectedNodeHandoffView({
+                                  layout: event.target
+                                    .value as NonNullable<
+                                    WorkflowGraphNode["handoffView"]
+                                  >["layout"],
+                                })
+                              }
+                              className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+                            >
+                              {handoffLayoutOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        {selectedGraphNode.handoffView?.fieldVisibility?.mode &&
+                          selectedGraphNode.handoffView.fieldVisibility.mode !==
+                            "all" && (
+                            <label className="block">
+                              <span className="mb-1 block text-xs text-neutral-400">
+                                Value names
+                              </span>
+                              <input
+                                value={formatHandoffNameList(
+                                  selectedGraphNode.handoffView.fieldVisibility
+                                    .fieldNames,
+                                )}
+                                onChange={(event) =>
+                                  updateSelectedNodeHandoffView({
+                                    fieldVisibility: {
+                                      mode:
+                                        selectedGraphNode.handoffView
+                                          ?.fieldVisibility?.mode || "selected",
+                                      fieldNames: parseHandoffNameList(
+                                        event.target.value,
+                                      ),
+                                    },
+                                  })
+                                }
+                                list="workflow-handoff-field-names"
+                                placeholder="Amount, Supplier"
+                                className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
+                              />
+                            </label>
+                          )}
+                        <label className="block">
+                          <span className="mb-1 block text-xs text-neutral-400">
+                            Documents
+                          </span>
+                          <select
+                            value={
+                              selectedGraphNode.handoffView?.documentVisibility
+                                ?.mode || "all"
+                            }
+                            onChange={(event) =>
+                              updateSelectedNodeHandoffView({
+                                documentVisibility: {
+                                  mode: event.target
+                                    .value as NonNullable<
+                                    NonNullable<
+                                      WorkflowGraphNode["handoffView"]
+                                    >["documentVisibility"]
+                                  >["mode"],
+                                  documentIds:
+                                    selectedGraphNode.handoffView
+                                      ?.documentVisibility?.documentIds || [],
+                                },
+                              })
+                            }
+                            className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+                          >
+                            {handoffDocumentVisibilityOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {selectedGraphNode.handoffView?.documentVisibility
+                          ?.mode === "selected" && (
+                          <div className="space-y-2 rounded-md border border-white/10 bg-[#121518] p-2">
+                            {workflow.documents.map((document) => {
+                              const selectedDocumentIds =
+                                selectedGraphNode.handoffView
+                                  ?.documentVisibility?.documentIds || [];
+                              const isSelected = selectedDocumentIds.includes(
+                                document.id,
+                              );
+
+                              return (
+                                <label
+                                  key={document.id}
+                                  className="flex items-start gap-2 text-xs text-neutral-300"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={(event) =>
+                                      updateSelectedNodeHandoffView({
+                                        documentVisibility: {
+                                          mode: "selected",
+                                          documentIds: event.target.checked
+                                            ? [
+                                                ...selectedDocumentIds,
+                                                document.id,
+                                              ]
+                                            : selectedDocumentIds.filter(
+                                                (id) => id !== document.id,
+                                              ),
+                                        },
+                                      })
+                                    }
+                                    className="mt-0.5"
+                                  />
+                                  <span>{document.documentType}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <div className="space-y-2 border-t border-white/10 pt-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-semibold text-neutral-400">
+                              Comparison checks
+                            </p>
+                            <button
+                              type="button"
+                              onClick={addSelectedNodeHandoffProcess}
+                              className="flex min-h-8 items-center justify-center gap-1 rounded-md border border-emerald-400/40 bg-emerald-400/10 px-2 py-1 text-xs text-emerald-100 transition hover:bg-emerald-400/20"
+                            >
+                              <Plus size={13} />
+                              Add
+                            </button>
+                          </div>
+                          {(selectedGraphNode.handoffView?.processes || []).map(
+                            (process) => (
+                              <div
+                                key={process.id}
+                                className="space-y-2 rounded-md border border-white/10 bg-[#121518] p-2"
+                              >
+                                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                                  <input
+                                    value={process.label}
+                                    onChange={(event) =>
+                                      updateSelectedNodeHandoffProcess(process.id, {
+                                        label: event.target.value,
+                                      })
+                                    }
+                                    className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      removeSelectedNodeHandoffProcess(process.id)
+                                    }
+                                    className="flex h-9 items-center justify-center rounded-md border border-white/10 px-2 text-neutral-400 transition hover:border-rose-400/40 hover:text-rose-100"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                                <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr]">
+                                  <input
+                                    value={process.leftField}
+                                    list="workflow-handoff-field-names"
+                                    onChange={(event) =>
+                                      updateSelectedNodeHandoffProcess(process.id, {
+                                        leftField: event.target.value,
+                                      })
+                                    }
+                                    className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                                  />
+                                  <select
+                                    value={process.operator}
+                                    onChange={(event) =>
+                                      updateSelectedNodeHandoffProcess(process.id, {
+                                        operator: event.target.value as WorkflowRuleOperator,
+                                      })
+                                    }
+                                    className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                                  >
+                                    {handoffComparisonOperators.map((operator) => (
+                                      <option key={operator} value={operator}>
+                                        {operator}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    value={process.rightField}
+                                    list="workflow-handoff-field-names"
+                                    onChange={(event) =>
+                                      updateSelectedNodeHandoffProcess(process.id, {
+                                        rightField: event.target.value,
+                                      })
+                                    }
+                                    className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                                  />
+                                </div>
+                              </div>
+                            ),
+                          )}
+                        </div>
+                      </div>
+                    )}
                   <button
                     type="button"
                     onClick={() => {
@@ -1647,4 +1998,41 @@ export function WorkflowView({
       )}
     </div>
   );
+}
+
+function getWorkflowHandoffFieldNames(template: WorkflowTemplate) {
+  const fieldNames = [
+    ...template.fields.map((field) => field.label || field.name),
+    ...template.documents.flatMap((document) =>
+      document.fields.map((field) => field.label || field.name),
+    ),
+  ];
+
+  return Array.from(
+    new Set(fieldNames.map((fieldName) => fieldName.trim()).filter(Boolean)),
+  );
+}
+
+function parseHandoffNameList(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function formatHandoffNameList(value?: string[]) {
+  return (value || []).join(", ");
+}
+
+function nextHandoffProcessId(processes: WorkflowHandoffProcess[]) {
+  let index = processes.length + 1;
+  let id = `handoff-check-${index}`;
+  const existingIds = new Set(processes.map((process) => process.id));
+
+  while (existingIds.has(id)) {
+    index += 1;
+    id = `handoff-check-${index}`;
+  }
+
+  return id;
 }

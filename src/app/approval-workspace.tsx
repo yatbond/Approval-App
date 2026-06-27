@@ -1975,6 +1975,7 @@ function ApprovalWorkspaceBody({
                 recordAction={confirmRecordAction}
                 activeUserEmail={activeUser.email}
                 userDirectory={userDirectory}
+                workflowTemplates={templates}
                 actionError={actionError}
                 missingCurrentDocuments={selectedTaskMissingDocuments}
                 onAttachTaskDocument={(file, documentRequirement) =>
