@@ -553,18 +553,6 @@ export function UploadView({
         <p className="mt-1 text-sm text-neutral-400">
           Choose a template, then upload each required or optional document.
         </p>
-        <UploadDraftPanel
-          uploadDraftStatus={uploadDraftStatus}
-          savedUploadDrafts={savedUploadDrafts}
-          selectedUploadDraftId={selectedUploadDraftId}
-          uploadDraftTitle={uploadDraftTitle}
-          setUploadDraftTitle={setUploadDraftTitle}
-          uploadDraftMessage={uploadDraftMessage}
-          onSaveRequestDraft={onSaveRequestDraft}
-          onLoadRequestDraft={onLoadRequestDraft}
-          onDeleteRequestDraft={onDeleteRequestDraft}
-          onClearRequestDraft={onClearRequestDraft}
-        />
 
         <label className="mt-4 block">
           <span className="mb-1 block text-xs text-neutral-400">Workflow template</span>
@@ -583,6 +571,19 @@ export function UploadView({
             ))}
           </select>
         </label>
+
+        <UploadDraftPanel
+          uploadDraftStatus={uploadDraftStatus}
+          savedUploadDrafts={savedUploadDrafts}
+          selectedUploadDraftId={selectedUploadDraftId}
+          uploadDraftTitle={uploadDraftTitle}
+          setUploadDraftTitle={setUploadDraftTitle}
+          uploadDraftMessage={uploadDraftMessage}
+          onSaveRequestDraft={onSaveRequestDraft}
+          onLoadRequestDraft={onLoadRequestDraft}
+          onDeleteRequestDraft={onDeleteRequestDraft}
+          onClearRequestDraft={onClearRequestDraft}
+        />
 
         {selectedTemplate && (
           <div className="mt-4 space-y-3">
