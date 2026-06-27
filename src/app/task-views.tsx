@@ -26,6 +26,10 @@ import {
   getPathNodeState,
 } from "@/lib/task-display";
 import { buildTaskHandoffView } from "@/lib/task-handoff-view";
+import {
+  getQueueActionList,
+  shouldShowQueueAdvancedActions,
+} from "@/lib/queue-advanced-actions-state";
 import { getCollaborationStatusPanelState } from "@/lib/collaboration-status-panel-state";
 import type {
   ApprovalAction,
@@ -142,6 +146,8 @@ export function QueueView({
     documentRequirement: WorkflowDocumentRequirement,
   ) => void;
 }) {
+  const [advancedActionsExpanded, setAdvancedActionsExpanded] = useState(false);
+
   if (!selectedTask) {
     return (
       <section className="rounded-md border border-white/10 bg-white/[0.03] p-5">
@@ -155,9 +161,14 @@ export function QueueView({
 
   const originatorAction = selectedTask.status === "returned" && selectedTask.currentOwner === activeUserEmail;
   const selectedTemplate = findTemplateForTask(selectedTask, workflowTemplates);
-  const availableActions: ApprovalAction[] = originatorAction
-    ? ["amend_resubmit", "cancel"]
-    : ["approve", "approve_with_comment", "reject", "reject_with_comment", "reassign", "delegate"];
+  const showAdvancedActions = shouldShowQueueAdvancedActions({
+    isOriginatorAction: originatorAction,
+    isExpanded: advancedActionsExpanded,
+  });
+  const availableActions = getQueueActionList({
+    isOriginatorAction: originatorAction,
+    showAdvancedActions,
+  });
 
   return (
     <div className="grid gap-4 xl:grid-cols-[360px_1fr_320px]">
@@ -261,105 +272,121 @@ export function QueueView({
               </div>
             )}
             {!originatorAction && (
-              <label className="mt-3 block">
-                <span className="mb-1 block text-xs text-neutral-400">
-                  Target email for reassign or delegate
+              <label className="mt-3 flex min-h-11 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200">
+                <span className="min-w-0">
+                  Reassign and contributor options
                 </span>
                 <input
-                  type="email"
-                  list="queue-user-directory"
-                  value={targetEmail}
-                  onChange={(event) => setTargetEmail(event.target.value)}
-                  placeholder="colleague@example.com"
-                  className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
+                  type="checkbox"
+                  checked={advancedActionsExpanded}
+                  onChange={(event) =>
+                    setAdvancedActionsExpanded(event.target.checked)
+                  }
+                  className="size-4 shrink-0"
                 />
-                <UserDirectoryDatalist id="queue-user-directory" users={userDirectory} />
               </label>
             )}
-            {!originatorAction && (
-              <div className="mt-3 rounded-md border border-sky-500/25 bg-sky-500/10 p-3">
-                <p className="text-sm font-semibold text-sky-100">
-                  Request contributor input
-                </p>
-                <p className="mt-1 text-xs text-sky-100/70">
-                  Ask another person to upload documents or provide information
-                  without changing the current owner.
-                </p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="mb-1 block text-xs text-sky-100/80">
-                      Contributor name
-                    </span>
-                    <input
-                      value={contributorName}
-                      onChange={(event) => setContributorName(event.target.value)}
-                      placeholder="Optional"
-                      className="h-10 w-full rounded-md border border-sky-300/20 bg-[#121518] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-sky-300/60"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-xs text-sky-100/80">
-                      Contributor email
+            {showAdvancedActions && (
+              <div className="mt-3 space-y-3">
+                <div className="rounded-md border border-white/10 bg-[#121518] p-3">
+                  <p className="text-xs font-semibold text-neutral-300">
+                    Reassign or delegate
+                  </p>
+                  <label className="mt-2 block">
+                    <span className="mb-1 block text-xs text-neutral-400">
+                      Target email
                     </span>
                     <input
                       type="email"
                       list="queue-user-directory"
-                      value={contributorEmail}
-                      onChange={(event) => setContributorEmail(event.target.value)}
-                      placeholder="person@example.com"
-                      className="h-10 w-full rounded-md border border-sky-300/20 bg-[#121518] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-sky-300/60"
+                      value={targetEmail}
+                      onChange={(event) => setTargetEmail(event.target.value)}
+                      placeholder="colleague@example.com"
+                      className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
                     />
+                    <UserDirectoryDatalist id="queue-user-directory" users={userDirectory} />
                   </label>
                 </div>
-                <label className="mt-2 block">
-                  <span className="mb-1 block text-xs text-sky-100/80">Due date</span>
-                  <input
-                    type="datetime-local"
-                    value={contributorDueAt}
-                    onChange={(event) => setContributorDueAt(event.target.value)}
-                    className="h-10 w-full rounded-md border border-sky-300/20 bg-[#121518] px-3 text-sm outline-none transition focus:border-sky-300/60"
-                  />
-                </label>
-                <label className="mt-2 block">
-                  <span className="mb-1 block text-xs text-sky-100/80">
-                    Requested information
-                  </span>
-                  <textarea
-                    value={contributorRequestNote}
-                    onChange={(event) =>
-                      setContributorRequestNote(event.target.value)
-                    }
-                    placeholder="Tell the contributor what documents or information are needed."
-                    className="h-20 w-full resize-none rounded-md border border-sky-300/20 bg-[#121518] p-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-sky-300/60"
-                  />
-                </label>
-                <label className="mt-2 flex items-start gap-2 text-xs text-sky-50">
-                  <input
-                    type="checkbox"
-                    checked={contributorBlocksApproval}
-                    onChange={(event) =>
-                      setContributorBlocksApproval(event.target.checked)
-                    }
-                    className="mt-0.5"
-                  />
-                  <span>
-                    Block approval until this contributor submits the requested
-                    information.
-                  </span>
-                </label>
-                {contributorRequestError && (
-                  <div className="mt-2 rounded-md border border-rose-400/30 bg-rose-400/10 p-2 text-xs text-rose-100">
-                    {contributorRequestError}
+                <div className="rounded-md border border-white/10 bg-[#121518] p-3">
+                  <p className="text-xs font-semibold text-neutral-300">
+                    Request contributor input
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1 block text-xs text-neutral-400">
+                        Contributor name
+                      </span>
+                      <input
+                        value={contributorName}
+                        onChange={(event) => setContributorName(event.target.value)}
+                        placeholder="Optional"
+                        className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs text-neutral-400">
+                        Contributor email
+                      </span>
+                      <input
+                        type="email"
+                        list="queue-user-directory"
+                        value={contributorEmail}
+                        onChange={(event) => setContributorEmail(event.target.value)}
+                        placeholder="person@example.com"
+                        className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
+                      />
+                    </label>
                   </div>
-                )}
-                <button
-                  type="button"
-                  onClick={onRequestContributor}
-                  className="mt-3 flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-3 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20"
-                >
-                  <UserPlus size={15} />
-                  Request input
-                </button>
+                  <label className="mt-2 block">
+                    <span className="mb-1 block text-xs text-neutral-400">Due date</span>
+                    <input
+                      type="datetime-local"
+                      value={contributorDueAt}
+                      onChange={(event) => setContributorDueAt(event.target.value)}
+                      className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition focus:border-emerald-400/60"
+                    />
+                  </label>
+                  <label className="mt-2 block">
+                    <span className="mb-1 block text-xs text-neutral-400">
+                      Requested information
+                    </span>
+                    <textarea
+                      value={contributorRequestNote}
+                      onChange={(event) =>
+                        setContributorRequestNote(event.target.value)
+                      }
+                      placeholder="Tell the contributor what documents or information are needed."
+                      className="h-20 w-full resize-none rounded-md border border-white/10 bg-[#101214] p-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
+                    />
+                  </label>
+                  <label className="mt-2 flex items-start gap-2 text-xs text-neutral-300">
+                    <input
+                      type="checkbox"
+                      checked={contributorBlocksApproval}
+                      onChange={(event) =>
+                        setContributorBlocksApproval(event.target.checked)
+                      }
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Block approval until this contributor submits the requested
+                      information.
+                    </span>
+                  </label>
+                  {contributorRequestError && (
+                    <div className="mt-2 rounded-md border border-rose-400/30 bg-rose-400/10 p-2 text-xs text-rose-100">
+                      {contributorRequestError}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onRequestContributor}
+                    className="mt-3 flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-3 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20"
+                  >
+                    <UserPlus size={15} />
+                    Request input
+                  </button>
+                </div>
               </div>
             )}
             {selectedTask.collaborationRequests?.length ? (
