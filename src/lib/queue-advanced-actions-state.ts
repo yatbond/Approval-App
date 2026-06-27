@@ -20,18 +20,40 @@ export function shouldShowQueueAdvancedActions({
   return !isOriginatorAction && isExpanded;
 }
 
+export function shouldShowQueueReassignActions({
+  isOriginatorAction,
+  isExpanded,
+}: {
+  isOriginatorAction: boolean;
+  isExpanded: boolean;
+}) {
+  return !isOriginatorAction && isExpanded;
+}
+
+export function shouldShowQueueContributorRequest({
+  isOriginatorAction,
+  isExpanded,
+}: {
+  isOriginatorAction: boolean;
+  isExpanded: boolean;
+}) {
+  return !isOriginatorAction && isExpanded;
+}
+
 export function getQueueActionList({
   isOriginatorAction,
   showAdvancedActions,
+  showReassignActions,
 }: {
   isOriginatorAction: boolean;
-  showAdvancedActions: boolean;
+  showAdvancedActions?: boolean;
+  showReassignActions?: boolean;
 }) {
   if (isOriginatorAction) {
     return originatorQueueActions;
   }
 
-  return showAdvancedActions
+  return (showReassignActions ?? showAdvancedActions)
     ? [...defaultQueueActions, ...advancedQueueActions]
     : defaultQueueActions;
 }

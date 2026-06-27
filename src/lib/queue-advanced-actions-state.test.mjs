@@ -2,12 +2,20 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   getQueueActionList,
-  shouldShowQueueAdvancedActions,
+  shouldShowQueueContributorRequest,
+  shouldShowQueueReassignActions,
 } from "./queue-advanced-actions-state.ts";
 
-test("keeps advanced queue actions hidden until the reviewer expands them", () => {
+test("keeps reassign and contributor options hidden until expanded", () => {
   assert.equal(
-    shouldShowQueueAdvancedActions({
+    shouldShowQueueReassignActions({
+      isOriginatorAction: false,
+      isExpanded: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldShowQueueContributorRequest({
       isOriginatorAction: false,
       isExpanded: false,
     }),
@@ -16,24 +24,31 @@ test("keeps advanced queue actions hidden until the reviewer expands them", () =
   assert.deepEqual(
     getQueueActionList({
       isOriginatorAction: false,
-      showAdvancedActions: false,
+      showReassignActions: false,
     }),
     ["approve", "approve_with_comment", "reject", "reject_with_comment"],
   );
 });
 
-test("shows reassign, delegate, and contributor controls when expanded", () => {
+test("shows reassign and delegate actions independently from contributor controls", () => {
   assert.equal(
-    shouldShowQueueAdvancedActions({
+    shouldShowQueueReassignActions({
       isOriginatorAction: false,
       isExpanded: true,
     }),
     true,
   );
+  assert.equal(
+    shouldShowQueueContributorRequest({
+      isOriginatorAction: false,
+      isExpanded: false,
+    }),
+    false,
+  );
   assert.deepEqual(
     getQueueActionList({
       isOriginatorAction: false,
-      showAdvancedActions: true,
+      showReassignActions: true,
     }),
     [
       "approve",
@@ -46,9 +61,57 @@ test("shows reassign, delegate, and contributor controls when expanded", () => {
   );
 });
 
+test("shows contributor controls without showing reassign and delegate actions", () => {
+  assert.equal(
+    shouldShowQueueReassignActions({
+      isOriginatorAction: false,
+      isExpanded: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldShowQueueContributorRequest({
+      isOriginatorAction: false,
+      isExpanded: true,
+    }),
+    true,
+  );
+  assert.deepEqual(
+    getQueueActionList({
+      isOriginatorAction: false,
+      showReassignActions: false,
+    }),
+    ["approve", "approve_with_comment", "reject", "reject_with_comment"],
+  );
+});
+
+test("allows reassign and contributor options to be expanded together", () => {
+  assert.equal(
+    shouldShowQueueReassignActions({
+      isOriginatorAction: false,
+      isExpanded: true,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldShowQueueContributorRequest({
+      isOriginatorAction: false,
+      isExpanded: true,
+    }),
+    true,
+  );
+});
+
 test("keeps originator returned-task actions focused on amend or cancel", () => {
   assert.equal(
-    shouldShowQueueAdvancedActions({
+    shouldShowQueueReassignActions({
+      isOriginatorAction: true,
+      isExpanded: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldShowQueueContributorRequest({
       isOriginatorAction: true,
       isExpanded: true,
     }),
@@ -57,7 +120,7 @@ test("keeps originator returned-task actions focused on amend or cancel", () => 
   assert.deepEqual(
     getQueueActionList({
       isOriginatorAction: true,
-      showAdvancedActions: true,
+      showReassignActions: true,
     }),
     ["amend_resubmit", "cancel"],
   );
