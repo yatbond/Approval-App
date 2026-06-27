@@ -114,7 +114,7 @@ export function createApprovalTaskFromTemplate({
     : route.currentNode
       ? [route.currentNode]
       : [];
-  const currentNodes = startingNodes.length ? startingNodes : routedNodes;
+  const currentNodes = routedNodes.length ? routedNodes : startingNodes;
   const currentNode = currentNodes[0];
   const isReturnedAtSubmission = route.currentNode?.kind === "return_reject";
   const isApprovedAtSubmission = route.terminalNode?.kind === "end" && !currentNode;

@@ -912,10 +912,76 @@ function traceInitialWorkflowRoute(
     .filter((edge) => edge.sourceId === "start" && edge.branchType === "for_information")
     .map((edge) => graph.nodes.find((node) => node.id === edge.targetId))
     .filter((node): node is WorkflowGraphNode => Boolean(node));
-  const routeNodes: WorkflowGraphNode[] = [];
-  let currentId = graph.edges.find(
+  const startEdges = graph.edges.filter(
     (edge) => edge.sourceId === "start" && edge.branchType !== "for_information",
-  )?.targetId;
+  );
+
+  if (startEdges.length > 1) {
+    const branchRoutes = startEdges.map((edge) =>
+      traceInitialWorkflowBranch(graph, edge.targetId, options, notifiedNodes),
+    );
+    const currentNodes = uniqueNodes(
+      branchRoutes.flatMap((route) => route.currentNodes),
+    );
+    const routeNodes = uniqueNodes(
+      branchRoutes.flatMap((route) => route.routeNodes),
+    );
+    const terminalNode = branchRoutes.find(
+      (route) => route.terminalNode?.kind === "return_reject",
+    )?.terminalNode ||
+      branchRoutes.find((route) => route.terminalNode)?.terminalNode;
+
+    if (currentNodes.length) {
+      return {
+        currentNode: currentNodes[0],
+        currentNodes,
+        notifiedNodes,
+        routeNodes,
+        terminalNode,
+        activeBranchId: branchRoutes.find((route) => route.activeBranchId)
+          ?.activeBranchId,
+      };
+    }
+
+    if (terminalNode?.kind === "return_reject") {
+      return {
+        currentNode: terminalNode,
+        currentNodes: [terminalNode],
+        notifiedNodes,
+        routeNodes,
+        terminalNode,
+        activeBranchId: branchRoutes.find((route) => route.activeBranchId)
+          ?.activeBranchId,
+      };
+    }
+
+    return {
+      currentNode: undefined,
+      currentNodes: [],
+      notifiedNodes,
+      routeNodes,
+      terminalNode,
+      activeBranchId: branchRoutes.find((route) => route.activeBranchId)
+        ?.activeBranchId,
+    };
+  }
+
+  return traceInitialWorkflowBranch(
+    graph,
+    startEdges[0]?.targetId,
+    options,
+    notifiedNodes,
+  );
+}
+
+function traceInitialWorkflowBranch(
+  graph: WorkflowGraph,
+  startNodeId: string | undefined,
+  options: InitialRouteOptions,
+  notifiedNodes: WorkflowGraphNode[],
+): InitialWorkflowRoute {
+  const routeNodes: WorkflowGraphNode[] = [];
+  let currentId = startNodeId;
   let activeBranchId: string | undefined;
   const visited = new Set<string>();
 
@@ -1029,6 +1095,18 @@ function traceInitialWorkflowRoute(
     routeNodes,
     activeBranchId,
   };
+}
+
+function uniqueNodes(nodes: WorkflowGraphNode[]) {
+  const seen = new Set<string>();
+  return nodes.filter((node) => {
+    if (seen.has(node.id)) {
+      return false;
+    }
+
+    seen.add(node.id);
+    return true;
+  });
 }
 
 function chooseInitialConditionCaseTarget(

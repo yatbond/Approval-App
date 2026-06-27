@@ -1302,3 +1302,309 @@ test("originator can cancel a returned task and close it for everyone", () => {
   assert.equal(isVisibleToParticipant(result, actor.email), true);
   assert.match(result.lastAction, /Cancelled/);
 });
+
+test("amend and resubmit restores all parallel submit request routes", () => {
+  const template = {
+    ...makeGraphTemplate(),
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Submit request", x: 0, y: 0 },
+        {
+          id: "submit-site",
+          kind: "submit_request",
+          label: "Site submission",
+          x: 200,
+          y: 0,
+          assigneeEmail: "site@example.com",
+        },
+        {
+          id: "submit-qs",
+          kind: "submit_request",
+          label: "QS submission",
+          x: 200,
+          y: 140,
+          assigneeEmail: "qs@example.com",
+        },
+        {
+          id: "site-review",
+          kind: "review",
+          label: "Site review",
+          x: 440,
+          y: 0,
+          assigneeName: "Site Reviewer",
+          assigneeEmail: "site.reviewer@example.com",
+        },
+        {
+          id: "qs-review",
+          kind: "review",
+          label: "QS review",
+          x: 440,
+          y: 140,
+          assigneeName: "QS Reviewer",
+          assigneeEmail: "qs.reviewer@example.com",
+        },
+      ],
+      edges: [
+        {
+          id: "edge-start-submit-site",
+          sourceId: "start",
+          targetId: "submit-site",
+          label: "Site",
+          branchType: "main",
+        },
+        {
+          id: "edge-start-submit-qs",
+          sourceId: "start",
+          targetId: "submit-qs",
+          label: "QS",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-site-review",
+          sourceId: "submit-site",
+          targetId: "site-review",
+          label: "Review",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-qs-review",
+          sourceId: "submit-qs",
+          targetId: "qs-review",
+          label: "Review",
+          branchType: "main",
+        },
+      ],
+    },
+  };
+  const returnedTask = {
+    ...makeTask(),
+    status: "returned",
+    currentOwner: "mandy@example.com",
+    currentStep: "Originator action required",
+    currentNodeId: "return-1",
+    pendingNodeIds: [],
+    pendingOwners: [],
+    completedNodeIds: ["start", "old-review"],
+    nodeDecisions: { "old-review": "rejected" },
+  };
+
+  const result = applyTaskAction(returnedTask, {
+    action: "amend_resubmit",
+    actor: { name: "Mandy Chan", email: "mandy@example.com" },
+    template,
+  });
+
+  assert.equal(result.status, "pending");
+  assert.equal(result.currentOwner, "site.reviewer@example.com");
+  assert.equal(result.currentNodeId, "site-review");
+  assert.deepEqual(result.pendingNodeIds, ["site-review", "qs-review"]);
+  assert.deepEqual(result.pendingOwners, [
+    "site.reviewer@example.com",
+    "qs.reviewer@example.com",
+  ]);
+  assert.deepEqual(result.completedNodeIds, [
+    "start",
+    "submit-site",
+    "submit-qs",
+  ]);
+  assert.deepEqual(result.nodeDecisions, {});
+});
+
+test("parallel submit request approval outcomes route every decision combination", () => {
+  const template = {
+    ...makeGraphTemplate(),
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Submit request", x: 0, y: 0 },
+        {
+          id: "submit-a",
+          kind: "submit_request",
+          label: "Submission A",
+          x: 200,
+          y: 0,
+        },
+        {
+          id: "submit-b",
+          kind: "submit_request",
+          label: "Submission B",
+          x: 200,
+          y: 140,
+        },
+        {
+          id: "approval-a",
+          kind: "approval",
+          label: "Approval A",
+          x: 440,
+          y: 0,
+          assigneeName: "Approver A",
+          assigneeEmail: "a@example.com",
+        },
+        {
+          id: "approval-b",
+          kind: "approval",
+          label: "Approval B",
+          x: 440,
+          y: 140,
+          assigneeName: "Approver B",
+          assigneeEmail: "b@example.com",
+        },
+        {
+          id: "condition-1",
+          kind: "condition",
+          label: "Approval outcome",
+          x: 680,
+          y: 70,
+          conditionCases: [
+            {
+              id: "case-both-approved",
+              name: "Both approved",
+              approvalRule: {
+                upstreamNodeIds: ["approval-a", "approval-b"],
+                minimumApproved: 2,
+                mode: "exactly",
+              },
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+            {
+              id: "case-one-approved",
+              name: "One approved",
+              approvalRule: {
+                upstreamNodeIds: ["approval-a", "approval-b"],
+                minimumApproved: 1,
+                mode: "exactly",
+              },
+              join: "and",
+              targetNodeIds: ["return-1"],
+            },
+            {
+              id: "case-none-approved",
+              name: "None approved",
+              approvalRule: {
+                upstreamNodeIds: ["approval-a", "approval-b"],
+                minimumApproved: 0,
+                mode: "exactly",
+              },
+              join: "and",
+              targetNodeIds: ["return-1"],
+            },
+          ],
+        },
+        {
+          id: "return-1",
+          kind: "return_reject",
+          label: "Return to requester",
+          x: 920,
+          y: 140,
+        },
+        { id: "end", kind: "end", label: "End", x: 920, y: 0 },
+      ],
+      edges: [
+        {
+          id: "edge-start-submit-a",
+          sourceId: "start",
+          targetId: "submit-a",
+          label: "A",
+          branchType: "main",
+        },
+        {
+          id: "edge-start-submit-b",
+          sourceId: "start",
+          targetId: "submit-b",
+          label: "B",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-a-approval",
+          sourceId: "submit-a",
+          targetId: "approval-a",
+          label: "Approve A",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-b-approval",
+          sourceId: "submit-b",
+          targetId: "approval-b",
+          label: "Approve B",
+          branchType: "main",
+        },
+        {
+          id: "edge-approval-a-approved-condition",
+          sourceId: "approval-a",
+          targetId: "condition-1",
+          label: "Approved",
+          branchType: "approved",
+        },
+        {
+          id: "edge-approval-a-rejected-condition",
+          sourceId: "approval-a",
+          targetId: "condition-1",
+          label: "Rejected",
+          branchType: "rejected",
+        },
+        {
+          id: "edge-approval-b-approved-condition",
+          sourceId: "approval-b",
+          targetId: "condition-1",
+          label: "Approved",
+          branchType: "approved",
+        },
+        {
+          id: "edge-approval-b-rejected-condition",
+          sourceId: "approval-b",
+          targetId: "condition-1",
+          label: "Rejected",
+          branchType: "rejected",
+        },
+      ],
+    },
+  };
+  const expectations = [
+    {
+      decisions: ["approve", "approve"],
+      status: "approved",
+      owner: "",
+      branch: "case-both-approved",
+    },
+    {
+      decisions: ["approve", "reject"],
+      status: "returned",
+      owner: "mandy@example.com",
+      branch: "case-one-approved",
+    },
+    {
+      decisions: ["reject", "approve"],
+      status: "returned",
+      owner: "mandy@example.com",
+      branch: "case-one-approved",
+    },
+    {
+      decisions: ["reject", "reject"],
+      status: "returned",
+      owner: "mandy@example.com",
+      branch: "case-none-approved",
+    },
+  ];
+
+  expectations.forEach((expectation) => {
+    const created = makeCreatedTask(template);
+    const first = applyTaskAction(created, {
+      action: expectation.decisions[0],
+      actor: { name: "Approver A", email: "a@example.com" },
+      template,
+    });
+    const result = applyTaskAction(first, {
+      action: expectation.decisions[1],
+      actor: { name: "Approver B", email: "b@example.com" },
+      template,
+    });
+
+    assert.equal(result.status, expectation.status, expectation.decisions.join(","));
+    assert.equal(result.currentOwner, expectation.owner, expectation.decisions.join(","));
+    assert.equal(result.activeBranchId, expectation.branch, expectation.decisions.join(","));
+    assert.deepEqual(result.nodeDecisions, {
+      "approval-a": expectation.decisions[0] === "approve" ? "approved" : "rejected",
+      "approval-b": expectation.decisions[1] === "approve" ? "approved" : "rejected",
+    });
+  });
+});

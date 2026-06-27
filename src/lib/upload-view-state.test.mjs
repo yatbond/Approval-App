@@ -260,6 +260,142 @@ test("separates manual form requirements from upload document requirements", () 
   );
 });
 
+test("derives upload state for parallel submit request visibility combinations", () => {
+  const siteReport = {
+    id: "site-report",
+    documentType: "Site report",
+    format: "pdf",
+    required: true,
+    fields: [],
+  };
+  const qsAssessment = {
+    id: "qs-assessment",
+    documentType: "QS assessment",
+    format: "pdf",
+    required: false,
+    fields: [],
+  };
+  const directorForm = {
+    id: "director-form",
+    documentType: "Director form",
+    format: "text",
+    inputMode: "manual_form",
+    required: true,
+    fields: [],
+  };
+  const workflowTemplate = {
+    ...templateA,
+    documents: [siteReport, qsAssessment, directorForm],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 80 },
+        {
+          id: "submit-site",
+          kind: "submit_request",
+          label: "Site submission",
+          x: 220,
+          y: 0,
+          assigneeEmail: "site@example.com",
+          documentIds: ["site-report"],
+          allowSharedFulfillment: true,
+        },
+        {
+          id: "submit-qs",
+          kind: "submit_request",
+          label: "QS submission",
+          x: 220,
+          y: 120,
+          assigneeEmail: "qs@example.com",
+          documentIds: ["qs-assessment"],
+        },
+        {
+          id: "submit-director",
+          kind: "submit_request",
+          label: "Director submission",
+          x: 220,
+          y: 240,
+          assigneeEmail: "director@example.com",
+          documentIds: ["director-form"],
+        },
+      ],
+      edges: [
+        {
+          id: "edge-start-submit-site",
+          sourceId: "start",
+          targetId: "submit-site",
+          label: "Site",
+          branchType: "main",
+        },
+        {
+          id: "edge-start-submit-qs",
+          sourceId: "start",
+          targetId: "submit-qs",
+          label: "QS",
+          branchType: "main",
+        },
+        {
+          id: "edge-start-submit-director",
+          sourceId: "start",
+          targetId: "submit-director",
+          label: "Director",
+          branchType: "main",
+        },
+      ],
+    },
+  };
+
+  const allSubmitterState = getUploadViewState({
+    workflowTemplates: [workflowTemplate],
+    selectedTemplateId: "template-a",
+    uploadedAttachments: [],
+  });
+  assert.deepEqual(
+    allSubmitterState.uploadDocuments.map((document) => document.id),
+    ["site-report", "qs-assessment"],
+  );
+  assert.deepEqual(
+    allSubmitterState.manualFormDocuments.map((document) => document.id),
+    ["director-form"],
+  );
+  assert.deepEqual(
+    allSubmitterState.missingRequiredDocuments.map((document) => document.id),
+    ["site-report"],
+  );
+
+  const siteState = getUploadViewState({
+    workflowTemplates: [workflowTemplate],
+    selectedTemplateId: "template-a",
+    uploadedAttachments: [],
+    activeUserEmail: "site@example.com",
+  });
+  assert.equal(siteState.sharedFulfillmentEnabled, true);
+  assert.deepEqual(
+    siteState.assignedUploadDocuments.map((document) => document.id),
+    ["site-report"],
+  );
+  assert.deepEqual(
+    siteState.sharedUploadDocuments.map((document) => document.id),
+    ["qs-assessment"],
+  );
+  assert.deepEqual(
+    siteState.sharedManualFormDocuments.map((document) => document.id),
+    ["director-form"],
+  );
+
+  const qsState = getUploadViewState({
+    workflowTemplates: [workflowTemplate],
+    selectedTemplateId: "template-a",
+    uploadedAttachments: [],
+    activeUserEmail: "qs@example.com",
+  });
+  assert.equal(qsState.sharedFulfillmentEnabled, false);
+  assert.deepEqual(
+    qsState.assignedUploadDocuments.map((document) => document.id),
+    ["qs-assessment"],
+  );
+  assert.deepEqual(qsState.sharedUploadDocuments, []);
+});
+
 test("excludes draft templates from new request upload options", () => {
   const state = getUploadViewState({
     workflowTemplates: [templateB, templateA],

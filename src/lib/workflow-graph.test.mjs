@@ -263,6 +263,241 @@ test("finds initial route from the canvas graph", () => {
   assert.deepEqual(route.notifiedNodes.map((node) => node.id), ["info-1"]);
 });
 
+test("finds initial routes for supported parallel canvas combinations", () => {
+  const cases = [
+    {
+      name: "direct approval and review split",
+      nodes: [
+        {
+          id: "approval-1",
+          kind: "approval",
+          label: "Approval 1",
+          x: 200,
+          y: 0,
+          assigneeEmail: "approval1@example.com",
+        },
+        {
+          id: "review-1",
+          kind: "review",
+          label: "Review 1",
+          x: 200,
+          y: 140,
+          assigneeEmail: "review1@example.com",
+        },
+      ],
+      edges: [
+        ["start", "approval-1", "main"],
+        ["start", "review-1", "main"],
+      ],
+      fields: {},
+      expectedCurrentNodeIds: ["approval-1", "review-1"],
+      expectedNotifiedNodeIds: [],
+    },
+    {
+      name: "parallel submit boxes route to separate actors",
+      nodes: [
+        {
+          id: "submit-site",
+          kind: "submit_request",
+          label: "Site submission",
+          x: 200,
+          y: 0,
+        },
+        {
+          id: "submit-qs",
+          kind: "submit_request",
+          label: "QS submission",
+          x: 200,
+          y: 140,
+        },
+        {
+          id: "site-review",
+          kind: "review",
+          label: "Site review",
+          x: 440,
+          y: 0,
+          assigneeEmail: "site@example.com",
+        },
+        {
+          id: "qs-review",
+          kind: "review",
+          label: "QS review",
+          x: 440,
+          y: 140,
+          assigneeEmail: "qs@example.com",
+        },
+      ],
+      edges: [
+        ["start", "submit-site", "main"],
+        ["start", "submit-qs", "main"],
+        ["submit-site", "site-review", "main"],
+        ["submit-qs", "qs-review", "main"],
+      ],
+      fields: {},
+      expectedCurrentNodeIds: ["site-review", "qs-review"],
+      expectedNotifiedNodeIds: [],
+    },
+    {
+      name: "mixed direct and submit split",
+      nodes: [
+        {
+          id: "submit-qs",
+          kind: "submit_request",
+          label: "QS submission",
+          x: 200,
+          y: 0,
+        },
+        {
+          id: "qs-review",
+          kind: "review",
+          label: "QS review",
+          x: 440,
+          y: 0,
+          assigneeEmail: "qs@example.com",
+        },
+        {
+          id: "director-approval",
+          kind: "approval",
+          label: "Director approval",
+          x: 200,
+          y: 140,
+          assigneeEmail: "director@example.com",
+        },
+      ],
+      edges: [
+        ["start", "submit-qs", "main"],
+        ["start", "director-approval", "main"],
+        ["submit-qs", "qs-review", "main"],
+      ],
+      fields: {},
+      expectedCurrentNodeIds: ["qs-review", "director-approval"],
+      expectedNotifiedNodeIds: [],
+    },
+    {
+      name: "submit condition routes to FYI and review",
+      nodes: [
+        {
+          id: "submit-invoice",
+          kind: "submit_request",
+          label: "Invoice submission",
+          x: 200,
+          y: 0,
+        },
+        {
+          id: "condition-1",
+          kind: "condition",
+          label: "Amount routing",
+          x: 440,
+          y: 0,
+          conditionCases: [
+            {
+              id: "case-high",
+              name: "High amount",
+              numericRule: { field: "invoice_total", operator: ">", value: "5000" },
+              join: "and",
+              targetNodeIds: ["finance-fyi", "finance-review"],
+            },
+          ],
+        },
+        {
+          id: "finance-fyi",
+          kind: "for_information",
+          label: "Finance FYI",
+          x: 680,
+          y: -80,
+          assigneeEmail: "finance@example.com",
+        },
+        {
+          id: "finance-review",
+          kind: "review",
+          label: "Finance review",
+          x: 680,
+          y: 80,
+          assigneeEmail: "review@example.com",
+        },
+      ],
+      edges: [
+        ["start", "submit-invoice", "main"],
+        ["submit-invoice", "condition-1", "main"],
+      ],
+      fields: { invoice_total: "HKD 8,400" },
+      expectedCurrentNodeIds: ["finance-review"],
+      expectedNotifiedNodeIds: ["finance-fyi"],
+    },
+    {
+      name: "parallel submit boxes join to one shared actor",
+      nodes: [
+        {
+          id: "submit-site",
+          kind: "submit_request",
+          label: "Site submission",
+          x: 200,
+          y: 0,
+        },
+        {
+          id: "submit-qs",
+          kind: "submit_request",
+          label: "QS submission",
+          x: 200,
+          y: 140,
+        },
+        {
+          id: "joint-review",
+          kind: "review",
+          label: "Joint review",
+          x: 440,
+          y: 70,
+          assigneeEmail: "joint@example.com",
+        },
+      ],
+      edges: [
+        ["start", "submit-site", "main"],
+        ["start", "submit-qs", "main"],
+        ["submit-site", "joint-review", "main"],
+        ["submit-qs", "joint-review", "main"],
+      ],
+      fields: {},
+      expectedCurrentNodeIds: ["joint-review"],
+      expectedNotifiedNodeIds: [],
+    },
+  ];
+
+  cases.forEach((routeCase) => {
+    const graph = createWorkflowGraphFromTemplate({
+      ...template,
+      steps: [],
+      graph: {
+        nodes: [
+          { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+          ...routeCase.nodes,
+        ],
+        edges: routeCase.edges.map(([sourceId, targetId, branchType]) => ({
+          id: `edge-${sourceId}-${targetId}`,
+          sourceId,
+          targetId,
+          label: "Next",
+          branchType,
+        })),
+      },
+    });
+
+    const route = findInitialWorkflowRoute(graph, {
+      extractedFields: routeCase.fields,
+    });
+
+    assert.deepEqual(
+      route.currentNodes.map((node) => node.id),
+      routeCase.expectedCurrentNodeIds,
+      routeCase.name,
+    );
+    assert.deepEqual(
+      route.notifiedNodes.map((node) => node.id),
+      routeCase.expectedNotifiedNodeIds,
+      routeCase.name,
+    );
+  });
+});
+
 test("validates missing first approver and document extraction fields", () => {
   const issues = validateWorkflowTemplate({
     ...template,

@@ -486,33 +486,46 @@ function routeFromStart(task: ApprovalTask, template?: WorkflowTemplate) {
 
   const graph = createWorkflowGraphFromTemplate(template);
   const route = findInitialWorkflowRoute(graph);
+  const currentNodes = route.currentNodes.length
+    ? route.currentNodes
+    : route.currentNode
+      ? [route.currentNode]
+      : [];
+  const currentNode = currentNodes[0];
+  const currentNodeIds = new Set(currentNodes.map((node) => node.id));
+  const completedRouteNodeIds = route.routeNodes
+    .filter((node) => !currentNodeIds.has(node.id))
+    .map((node) => node.id);
+  const currentOwners = uniqueNodeEmails(currentNodes);
   const notifiedEmails = route.notifiedNodes.map((node) => node.assigneeEmail);
-  const nextDue = dueForNode(route.currentNode);
+  const nextDue = dueForNode(currentNode);
 
   return {
     task: {
       ...task,
       status: "pending" as const,
-      currentOwner: route.currentNode?.assigneeEmail || task.requesterEmail,
-      currentStep: route.currentNode?.label || "Requester review",
-      currentNodeId: route.currentNode?.id,
-      pendingNodeIds: route.currentNode ? [route.currentNode.id] : [],
-      pendingOwners: uniqueNodeEmails(route.currentNode ? [route.currentNode] : []),
+      currentOwner: currentOwners[0] || task.requesterEmail,
+      currentStep: currentNode?.label || "Requester review",
+      currentNodeId: currentNode?.id,
+      pendingNodeIds: currentNodes.map((node) => node.id),
+      pendingOwners: currentOwners,
       due: nextDue.label,
       dueAt: nextDue.iso,
-      completedNodeIds: ["start"],
+      completedNodeIds: addUnique(["start"], ...completedRouteNodeIds),
       notifiedNodeIds: route.notifiedNodes.map((node) => node.id),
       nodeDecisions: {},
       participants: addParticipants(task.participants, [
-        route.currentNode?.assigneeEmail,
-        route.currentNode?.escalationEmail,
+        ...currentOwners,
+        ...currentNodes.map((node) => node.escalationEmail),
         ...notifiedEmails,
       ]),
-      activeBranchId: undefined,
+      activeBranchId: route.activeBranchId,
     },
     detail: "Amended and resubmitted for approval.",
-    assignedEvent: route.currentNode
-      ? `Assigned to ${route.currentNode.assigneeName || route.currentNode.assigneeEmail} for ${route.currentNode.label}.`
+    assignedEvent: currentNode
+      ? currentNodes.length > 1
+        ? `Assigned to ${currentNodes.length} parallel approver(s): ${currentOwners.join(", ")}.`
+        : `Assigned to ${currentNode.assigneeName || currentNode.assigneeEmail} for ${currentNode.label}.`
       : undefined,
   };
 }

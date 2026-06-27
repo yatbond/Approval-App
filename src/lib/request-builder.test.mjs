@@ -623,6 +623,173 @@ test("starts parallel approval and review boxes after a submit request box", () 
   assert.deepEqual(task.completedNodeIds, ["start", "submit-1"]);
 });
 
+test("routes all parallel submit request boxes from the canvas start", () => {
+  const taskTemplate = {
+    ...template,
+    steps: [],
+    documents: [
+      {
+        id: "site-report",
+        documentType: "Site report",
+        format: "pdf",
+        required: true,
+        fields: [],
+      },
+      {
+        id: "qs-assessment",
+        documentType: "QS assessment",
+        format: "pdf",
+        required: true,
+        fields: [],
+      },
+      {
+        id: "director-note",
+        documentType: "Director note",
+        format: "text",
+        inputMode: "manual_form",
+        required: true,
+        fields: [],
+      },
+    ],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 80 },
+        {
+          id: "submit-site",
+          kind: "submit_request",
+          label: "Site submission",
+          x: 220,
+          y: 0,
+          assigneeEmail: "site@example.com",
+          documentIds: ["site-report"],
+        },
+        {
+          id: "submit-qs",
+          kind: "submit_request",
+          label: "QS submission",
+          x: 220,
+          y: 120,
+          assigneeEmail: "qs@example.com",
+          documentIds: ["qs-assessment"],
+        },
+        {
+          id: "submit-director",
+          kind: "submit_request",
+          label: "Director submission",
+          x: 220,
+          y: 240,
+          assigneeEmail: "director@example.com",
+          documentIds: ["director-note"],
+        },
+        {
+          id: "site-review",
+          kind: "review",
+          label: "Site review",
+          x: 480,
+          y: 0,
+          assigneeEmail: "site.reviewer@example.com",
+        },
+        {
+          id: "qs-review",
+          kind: "review",
+          label: "QS review",
+          x: 480,
+          y: 120,
+          assigneeEmail: "qs.reviewer@example.com",
+        },
+        {
+          id: "director-approval",
+          kind: "approval",
+          label: "Director approval",
+          x: 480,
+          y: 240,
+          assigneeEmail: "director.approver@example.com",
+        },
+      ],
+      edges: [
+        {
+          id: "edge-start-submit-site",
+          sourceId: "start",
+          targetId: "submit-site",
+          label: "Site",
+          branchType: "main",
+        },
+        {
+          id: "edge-start-submit-qs",
+          sourceId: "start",
+          targetId: "submit-qs",
+          label: "QS",
+          branchType: "main",
+        },
+        {
+          id: "edge-start-submit-director",
+          sourceId: "start",
+          targetId: "submit-director",
+          label: "Director",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-site-review",
+          sourceId: "submit-site",
+          targetId: "site-review",
+          label: "Review",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-qs-review",
+          sourceId: "submit-qs",
+          targetId: "qs-review",
+          label: "Review",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-director-approval",
+          sourceId: "submit-director",
+          targetId: "director-approval",
+          label: "Approve",
+          branchType: "main",
+        },
+      ],
+    },
+  };
+
+  const task = createApprovalTaskFromTemplate({
+    id: "APR-PARALLEL-SUBMITS",
+    now: new Date("2026-06-18T10:00:00+08:00"),
+    requester: { name: "Mandy", email: "mandy@example.com" },
+    template: taskTemplate,
+    extractedFields: {},
+  });
+
+  assert.deepEqual(
+    getSubmissionDocumentRequirements(taskTemplate).map((document) => document.id),
+    ["site-report", "qs-assessment", "director-note"],
+  );
+  assert.deepEqual(
+    getMissingRequiredSubmissionDocuments(taskTemplate, []).map(
+      (document) => document.id,
+    ),
+    ["site-report", "qs-assessment"],
+  );
+  assert.equal(task.status, "pending");
+  assert.deepEqual(task.completedNodeIds, [
+    "start",
+    "submit-site",
+    "submit-qs",
+    "submit-director",
+  ]);
+  assert.deepEqual(task.pendingNodeIds, [
+    "site-review",
+    "qs-review",
+    "director-approval",
+  ]);
+  assert.deepEqual(task.pendingOwners, [
+    "site.reviewer@example.com",
+    "qs.reviewer@example.com",
+    "director.approver@example.com",
+  ]);
+});
+
 test("finds missing required submission documents from uploaded attachments", () => {
   const taskTemplate = {
     ...template,
