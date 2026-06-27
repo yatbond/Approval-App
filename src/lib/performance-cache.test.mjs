@@ -45,3 +45,20 @@ test("shares one in-flight load between concurrent callers", async () => {
   assert.deepEqual(await second, ["shared"]);
   assert.equal(calls, 1);
 });
+
+test("clear drops cached values and forces a reload", async () => {
+  let calls = 0;
+  const cache = createTtlCache({
+    ttlMs: 10_000,
+    now: () => 1_000,
+    load: async () => {
+      calls += 1;
+      return [`value-${calls}`];
+    },
+  });
+
+  assert.deepEqual(await cache.get(), ["value-1"]);
+  cache.clear();
+  assert.deepEqual(await cache.get(), ["value-2"]);
+  assert.equal(calls, 2);
+});

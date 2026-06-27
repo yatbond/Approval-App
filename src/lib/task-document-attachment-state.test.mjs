@@ -119,3 +119,17 @@ test("leaves the task unchanged when no template can be resolved", () => {
 
   assert.equal(updated, task);
 });
+
+test("leaves non-matching tasks unchanged", () => {
+  const task = makeTask();
+  const [updated] = attachDocumentToTaskState({
+    tasks: [task],
+    templates: [template],
+    taskId: "other-task",
+    file: { name: "invoice.pdf" },
+    documentRequirement,
+    activeUser: { name: "Derrick Pang", email: "derrick@example.com" },
+  });
+
+  assert.equal(updated, task);
+});

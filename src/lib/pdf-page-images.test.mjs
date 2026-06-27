@@ -48,6 +48,133 @@ test("skips page image rendering outside a browser canvas environment", async ()
   );
 });
 
+test("renders bounded PDF pages to base64 PNG images with injected PDF.js runtime", async () => {
+  const renderCalls = [];
+  const canvases = [];
+  const file = new File(["pdf"], "scan.pdf", { type: "application/pdf" });
+  const fakePdfJs = {
+    GlobalWorkerOptions: { workerSrc: "" },
+    getDocument: (input) => {
+      assert.equal(input.cMapUrl, "/pdfjs/cmaps/");
+      assert.ok(input.data instanceof ArrayBuffer);
+      return {
+        promise: Promise.resolve({
+          numPages: 5,
+          getPage: async (pageNumber) => ({
+            getViewport: ({ scale }) => ({
+              width: pageNumber * 10 * scale,
+              height: pageNumber * 5 * scale,
+            }),
+            render: ({ canvas, canvasContext, viewport }) => {
+              renderCalls.push({
+                pageNumber,
+                width: canvas.width,
+                height: canvas.height,
+                fillStyle: canvasContext.fillStyle,
+                viewport,
+              });
+              return { promise: Promise.resolve() };
+            },
+          }),
+        }),
+      };
+    },
+  };
+
+  const pages = await renderPdfFileToPageImages(
+    file,
+    { pageLimit: 2, renderScale: 1.5 },
+    {
+      window: {},
+      document: {
+        createElement: (tagName) => {
+          assert.equal(tagName, "canvas");
+          const canvasNumber = canvases.length + 1;
+          const context = {
+            fillStyle: "",
+            fillRect: () => {},
+          };
+          const canvas = {
+            width: 0,
+            height: 0,
+            getContext: () => context,
+            toDataURL: () => `data:image/png;base64,page-${canvasNumber}`,
+          };
+          canvases.push(canvas);
+          return canvas;
+        },
+      },
+      importPdfJs: async () => fakePdfJs,
+      workerSrc: "fake-worker.js",
+    },
+  );
+
+  assert.equal(fakePdfJs.GlobalWorkerOptions.workerSrc, "fake-worker.js");
+  assert.deepEqual(
+    pages.map((page) => page.pageNumber),
+    [1, 2],
+  );
+  assert.deepEqual(
+    pages.map((page) => page.imageBase64),
+    ["page-1", "page-2"],
+  );
+  assert.deepEqual(
+    renderCalls.map((call) => [call.pageNumber, call.width, call.height, call.fillStyle]),
+    [
+      [1, 15, 8, "#ffffff"],
+      [2, 30, 15, "#ffffff"],
+    ],
+  );
+});
+
+test("uses the bundled PDF worker URL when no runtime worker is supplied", async () => {
+  const fakePdfJs = createFakePdfJs({
+    numPages: 1,
+    getContext: () => ({
+      fillStyle: "",
+      fillRect: () => {},
+    }),
+    dataUrl: "data:image/png;base64,page",
+  });
+
+  const pages = await renderPdfFileToPageImages(
+    new File(["pdf"], "scan.pdf", { type: "application/pdf" }),
+    { pageLimit: 1, renderScale: 1 },
+    {
+      window: {},
+      document: fakePdfJs.document,
+      importPdfJs: async () => fakePdfJs.pdfjs,
+    },
+  );
+
+  assert.equal(pages.length, 1);
+  assert.match(
+    fakePdfJs.pdfjs.GlobalWorkerOptions.workerSrc,
+    /pdf\.worker\.mjs/,
+  );
+});
+
+test("skips PDF pages when a canvas context is unavailable", async () => {
+  const fakePdfJs = createFakePdfJs({
+    numPages: 1,
+    getContext: () => null,
+    dataUrl: "data:image/png;base64,ignored",
+  });
+
+  assert.deepEqual(
+    await renderPdfFileToPageImages(
+      new File(["pdf"], "scan.pdf", { type: "application/pdf" }),
+      { pageLimit: 1, renderScale: 1 },
+      {
+        window: {},
+        document: fakePdfJs.document,
+        importPdfJs: async () => fakePdfJs.pdfjs,
+      },
+    ),
+    [],
+  );
+});
+
 test("only renders PDF files for vision when page image mode is enabled", () => {
   const originalMode = process.env.NEXT_PUBLIC_PDF_OCR_MODE;
   const pdf = new File([""], "scan.pdf", { type: "application/pdf" });
@@ -71,3 +198,31 @@ test("only renders PDF files for vision when page image mode is enabled", () => 
     }
   }
 });
+
+function createFakePdfJs({ numPages, getContext, dataUrl }) {
+  const pdfjs = {
+    GlobalWorkerOptions: { workerSrc: "" },
+    getDocument: () => ({
+      promise: Promise.resolve({
+        numPages,
+        getPage: async (pageNumber) => ({
+          getViewport: ({ scale }) => ({
+            width: pageNumber * 10 * scale,
+            height: pageNumber * 5 * scale,
+          }),
+          render: () => ({ promise: Promise.resolve() }),
+        }),
+      }),
+    }),
+  };
+  const document = {
+    createElement: () => ({
+      width: 0,
+      height: 0,
+      getContext,
+      toDataURL: () => dataUrl,
+    }),
+  };
+
+  return { pdfjs, document };
+}

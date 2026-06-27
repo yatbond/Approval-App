@@ -404,6 +404,117 @@ test("returns provider setup notes when API keys are missing", async () => {
   );
 });
 
+test("extracts image fields through the OpenAI responses API", async () => {
+  await withParserEnvironment(
+    {
+      OPENAI_API_KEY: "test-key",
+      OPENAI_MODEL: "gpt-test",
+    },
+    async () => {
+      let capturedBody = null;
+      globalThis.fetch = async (url, init) => {
+        assert.equal(String(url), "https://api.openai.com/v1/responses");
+        capturedBody = JSON.parse(String(init.body));
+        return Response.json({
+          id: "resp_1",
+          object: "response",
+          created_at: 1,
+          status: "completed",
+          model: "gpt-test",
+          output: [
+            {
+              id: "msg_1",
+              type: "message",
+              status: "completed",
+              role: "assistant",
+              content: [
+                {
+                  type: "output_text",
+                  text: JSON.stringify({
+                    fields: {
+                      Amount: {
+                        value: "HKD 8,400",
+                        confidence: "high",
+                        evidence: "Total HKD 8,400",
+                      },
+                    },
+                  }),
+                  annotations: [],
+                },
+              ],
+            },
+          ],
+        });
+      };
+
+      const result = await extractImageFieldsWithOpenAI({
+        imageBase64: "image",
+        mimeType: "image/png",
+        fields,
+        languageHint: "English",
+      });
+
+      assert.equal(capturedBody.model, "gpt-test");
+      assert.equal(capturedBody.input[0].content[1].type, "input_image");
+      assert.deepEqual(result.fields, { Amount: "HKD 8,400" });
+      assert.deepEqual(result.confidence, { Amount: "high" });
+      assert.deepEqual(result.evidence, { Amount: "Total HKD 8,400" });
+      assert.deepEqual(result.notes, ["Parsed with OpenAI model gpt-test."]);
+    },
+  );
+});
+
+test("reports unparseable OpenAI image extraction output", async () => {
+  await withParserEnvironment(
+    {
+      OPENAI_API_KEY: "test-key",
+      OPENAI_MODEL: "gpt-test",
+    },
+    async () => {
+      globalThis.fetch = async () =>
+        Response.json({
+          id: "resp_1",
+          object: "response",
+          created_at: 1,
+          status: "completed",
+          model: "gpt-test",
+          output: [
+            {
+              id: "msg_1",
+              type: "message",
+              status: "completed",
+              role: "assistant",
+              content: [
+                {
+                  type: "output_text",
+                  text: "not json",
+                  annotations: [],
+                },
+              ],
+            },
+          ],
+        });
+
+      assert.deepEqual(
+        await extractImageFieldsWithOpenAI({
+          imageBase64: "image",
+          mimeType: "image/png",
+          fields,
+          languageHint: "English",
+        }),
+        {
+          strategy: "image-ai",
+          fields: {},
+          confidence: {},
+          evidence: {},
+          suggestedFields: [],
+          notes: ["AI output could not be parsed as field JSON."],
+        },
+      );
+    },
+  );
+});
+
 test("returns a Qwen setup note when no rendered PDF page images are supplied", async () => {
   await withParserEnvironment({ OPENROUTER_API_KEY: "test-key" }, async () => {
     const result = await extractPdfFieldsWithQwenPageImages({

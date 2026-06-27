@@ -65,6 +65,16 @@ test("orders numbered condition cases before fallback and numbers display names"
 test("hides default condition names while preserving nicknames", () => {
   assert.equal(
     getConditionNickname({
+      id: "fallback",
+      name: "Fallback",
+      isFallback: true,
+      join: "and",
+      targetNodeIds: [],
+    }),
+    "",
+  );
+  assert.equal(
+    getConditionNickname({
       id: "case-1",
       name: "Condition 1",
       join: "and",
@@ -136,6 +146,43 @@ test("describes exact approval counts and OR numeric joins", () => {
   assert.equal(
     description,
     "Exactly 1 of 2 approve (Review 1, Review 2) OR Invoice total > 3000",
+  );
+});
+
+test("describes simple approval and numeric rules with fallback labels", () => {
+  assert.equal(
+    describeConditionCase({
+      conditionCase: {
+        id: "case-approval",
+        name: "Approval",
+        approvalRule: {
+          upstreamNodeIds: ["missing-review"],
+          minimumApproved: 1,
+          mode: "at_least",
+        },
+        join: "and",
+        targetNodeIds: [],
+      },
+      context,
+    }),
+    "missing-review must approve",
+  );
+  assert.equal(
+    describeConditionCase({
+      conditionCase: {
+        id: "case-numeric",
+        name: "Numeric",
+        numericRule: {
+          field: "missing_total",
+          operator: ">",
+          value: "",
+        },
+        join: "and",
+        targetNodeIds: [],
+      },
+      context,
+    }),
+    "missing_total > value",
   );
 });
 

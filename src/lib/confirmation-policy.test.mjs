@@ -25,11 +25,11 @@ test("keeps approval actions one-click while confirming risky decisions", () => 
   );
 
   const rejection = getApprovalActionConfirmation({
-    action: "reject",
-    taskTitle: "Invoice",
+    action: "reject_with_comment",
+    taskTitle: "",
   });
   assert.equal(rejection?.confirmLabel, "Reject request");
-  assert.match(rejection?.message || "", /Invoice/);
+  assert.match(rejection?.message || "", /this item/);
 
   const reassignment = getApprovalActionConfirmation({
     action: "reassign",
@@ -38,6 +38,13 @@ test("keeps approval actions one-click while confirming risky decisions", () => 
   });
   assert.equal(reassignment?.confirmLabel, "Reassign request");
   assert.match(reassignment?.message || "", /manager@example\.com/);
+
+  const delegation = getApprovalActionConfirmation({
+    action: "delegate",
+    taskTitle: "Invoice",
+  });
+  assert.equal(delegation?.confirmLabel, "Delegate request");
+  assert.match(delegation?.message || "", /entered target email/);
 
   const cancellation = getApprovalActionConfirmation({
     action: "cancel",
@@ -49,10 +56,17 @@ test("keeps approval actions one-click while confirming risky decisions", () => 
 test("destructive records, drafts, templates, canvas edits, and email sends require confirmation", () => {
   assert.equal(
     getAdminRecordDeleteConfirmation({
-      recordType: "business",
-      recordName: "Chun Wo Construction",
+      recordType: "department",
+      recordName: "",
     }).confirmLabel,
-    "Delete business",
+    "Delete department",
+  );
+  assert.equal(
+    getDraftDeleteConfirmation({
+      draftTitle: "",
+      action: "clear",
+    }).confirmLabel,
+    "Clear draft",
   );
   assert.match(
     getDraftDeleteConfirmation({
@@ -76,6 +90,10 @@ test("destructive records, drafts, templates, canvas edits, and email sends requ
     getLiveEmailConfirmation({ recipientEmail: "approver@example.com" })
       .confirmLabel,
     "Send test email",
+  );
+  assert.match(
+    getLiveEmailConfirmation({ recipientEmail: "" }).message,
+    /entered recipient/,
   );
 });
 

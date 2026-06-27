@@ -12,6 +12,23 @@ test("detects project-scoped Supabase auth cookies", () => {
   );
 });
 
+test("detects generic Supabase auth cookies without a valid project URL", () => {
+  assert.equal(
+    hasSupabaseAuthCookie(
+      [{ name: "sb-anything-auth-token" }],
+      "not a url",
+    ),
+    true,
+  );
+  assert.equal(
+    hasSupabaseAuthCookie(
+      [{ name: "sb-other-auth-token" }],
+      undefined,
+    ),
+    true,
+  );
+});
+
 test("ignores requests without Supabase auth cookies", () => {
   assert.equal(
     hasSupabaseAuthCookie(

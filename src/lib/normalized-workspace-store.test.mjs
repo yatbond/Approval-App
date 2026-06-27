@@ -167,6 +167,100 @@ test("does not write normalized rows when the workspace snapshot is empty", asyn
   assert.deepEqual(supabase.operations, []);
 });
 
+test("skips department writes when business upsert returns no database ids", async () => {
+  const supabase = new FakeSupabase({}, { emptyUpsertTables: ["business_units"] });
+
+  await saveNormalizedWorkspaceState(
+    supabase,
+    createSnapshot({
+      workflowTemplates: [],
+      approvalTasks: [],
+    }),
+    user,
+  );
+
+  assert.deepEqual(
+    supabase.operations.map((operation) => ({
+      type: operation.type,
+      table: operation.table,
+    })),
+    [{ type: "upsert", table: "business_units" }],
+  );
+});
+
+test("saves approval request audit events and attachments to child tables", async () => {
+  const supabase = new FakeSupabase();
+  const snapshot = createSnapshot({
+    approvalTasks: [
+      {
+        ...createSnapshot().approvalTasks[0],
+        auditTrail: [
+          {
+            id: "APR-1-event-1",
+            action: "submitted",
+            actor: "Mandy Chan",
+            actorEmail: "mandy@example.com",
+            timestamp: "2026-06-27T08:00:00.000Z",
+            detail: "Request submitted.",
+            targetEmail: "reviewer@example.com",
+          },
+        ],
+        attachments: [
+          {
+            id: "attachment-1",
+            fileName: "invoice.pdf",
+            documentId: "invoice-doc",
+            documentType: "Invoice PDF",
+            format: "pdf",
+            workflowNodeId: "review-1",
+            storagePath: "requests/APR-1/invoice.pdf",
+            uploadedBy: "mandy@example.com",
+            uploadedAt: "2026-06-27T08:01:00.000Z",
+          },
+        ],
+      },
+    ],
+  });
+
+  await saveNormalizedWorkspaceState(supabase, snapshot, user);
+
+  const eventUpsert = supabase.operations.find(
+    (operation) => operation.table === "approval_request_events",
+  );
+  const attachmentUpsert = supabase.operations.find(
+    (operation) => operation.table === "approval_request_attachments",
+  );
+
+  assert.deepEqual(eventUpsert.payload, [
+    {
+      approval_request_id: "request-1",
+      event_key: "APR-1-event-1",
+      action: "submitted",
+      actor_name: "Mandy Chan",
+      actor_id: "user-1",
+      actor_email: "mandy@example.com",
+      detail: "Request submitted.",
+      target_email: "reviewer@example.com",
+      created_at: "2026-06-27T08:00:00.000Z",
+    },
+  ]);
+  assert.deepEqual(attachmentUpsert.payload, [
+    {
+      approval_request_id: "request-1",
+      attachment_key: "attachment-1",
+      file_name: "invoice.pdf",
+      document_id: "invoice-doc",
+      document_type: "Invoice PDF",
+      document_format: "pdf",
+      workflow_node_id: "review-1",
+      storage_path: "requests/APR-1/invoice.pdf",
+      uploaded_by: "user-1",
+      uploaded_by_email: "mandy@example.com",
+      created_at: "2026-06-27T08:01:00.000Z",
+    },
+  ]);
+});
+
 test("uses the same archived template key for historical requests and template FKs", async () => {
   const archivedSnapshot = {
     ...template,
@@ -618,7 +712,7 @@ test("hydrates collaboration state from mirror tables during normalized load", a
 });
 
 class FakeSupabase {
-  constructor(seed = {}) {
+  constructor(seed = {}, options = {}) {
     this.rows = {
       business_units: [],
       business_departments: [],
@@ -628,6 +722,7 @@ class FakeSupabase {
       approval_request_attachments: [],
       ...seed,
     };
+    this.options = options;
     this.operations = [];
     this.nextIds = new Map();
   }
@@ -650,6 +745,9 @@ class FakeSupabase {
   upsert(table, payload, options) {
     const rows = Array.isArray(payload) ? payload : [payload];
     this.operations.push({ type: "upsert", table, payload: rows, options });
+    if (this.options.emptyUpsertTables?.includes(table)) {
+      return [];
+    }
     return rows.map((row) => this.upsertRow(table, row));
   }
 

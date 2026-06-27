@@ -10,6 +10,32 @@ export type PdfPageRenderOptions = {
   renderScale: number;
 };
 
+type PdfJsPage = {
+  getViewport(input: { scale: number }): { width: number; height: number };
+  render(input: {
+    canvas: HTMLCanvasElement;
+    canvasContext: CanvasRenderingContext2D;
+    viewport: { width: number; height: number };
+  }): { promise: Promise<unknown> };
+};
+
+type PdfJsDocument = {
+  numPages: number;
+  getPage(pageNumber: number): Promise<PdfJsPage>;
+};
+
+type PdfJsRuntime = {
+  GlobalWorkerOptions: { workerSrc: string };
+  getDocument(input: Record<string, unknown>): { promise: Promise<PdfJsDocument> };
+};
+
+type PdfPageRenderRuntime = {
+  window?: unknown;
+  document?: Pick<Document, "createElement">;
+  importPdfJs?: () => Promise<PdfJsRuntime>;
+  workerSrc?: string;
+};
+
 export function getPdfJsDocumentAssetOptions() {
   return {
     cMapPacked: true,
@@ -43,16 +69,26 @@ export async function renderPdfFileToPageImages(
     pageLimit?: number;
     renderScale?: number;
   } = {},
+  runtime: PdfPageRenderRuntime = {},
 ): Promise<PdfPageImageInput[]> {
-  if (typeof window === "undefined" || typeof document === "undefined") {
+  const browserWindow =
+    runtime.window ?? (typeof window === "undefined" ? undefined : window);
+  const browserDocument =
+    runtime.document ?? (typeof document === "undefined" ? undefined : document);
+
+  if (!browserWindow || !browserDocument) {
     return [];
   }
 
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/legacy/build/pdf.worker.mjs",
-    import.meta.url,
-  ).toString();
+  const pdfjs: PdfJsRuntime = runtime.importPdfJs
+    ? await runtime.importPdfJs()
+    : ((await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as PdfJsRuntime);
+  pdfjs.GlobalWorkerOptions.workerSrc =
+    runtime.workerSrc ||
+    new URL(
+      "pdfjs-dist/legacy/build/pdf.worker.mjs",
+      import.meta.url,
+    ).toString();
 
   const pdf = await pdfjs.getDocument({
     data: await file.arrayBuffer(),
@@ -64,7 +100,7 @@ export async function renderPdfFileToPageImages(
   for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const viewport = page.getViewport({ scale: renderScale });
-    const canvas = document.createElement("canvas");
+    const canvas = browserDocument.createElement("canvas");
     const context = canvas.getContext("2d");
 
     if (!context) {

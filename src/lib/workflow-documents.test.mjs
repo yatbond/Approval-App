@@ -73,6 +73,7 @@ test("lists and normalizes document input modes", () => {
   assert.equal(isManualFormRequirement({ inputMode: "manual_form" }), true);
   assert.equal(isManualFormRequirement({ inputMode: "upload" }), false);
   assert.equal(formatDocumentInputMode("manual_form"), "Manual form");
+  assert.equal(formatDocumentInputMode("unknown"), "OCR upload");
 });
 
 test("formats document labels and accepted upload extensions", () => {

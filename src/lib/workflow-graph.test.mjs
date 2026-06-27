@@ -149,6 +149,36 @@ test("adds a return-reject node", () => {
   assert.equal(rejectNode.blocking, false);
 });
 
+test("creates default labels for every workflow box kind", () => {
+  const graph = {
+    nodes: [{ id: "start", kind: "start", label: "Start", x: 0, y: 0 }],
+    edges: [],
+  };
+  const kinds = [
+    "submit_request",
+    "approval",
+    "review",
+    "for_information",
+    "condition",
+    "return_reject",
+    "end",
+    "start",
+  ];
+
+  const labels = kinds.map((kind) => addWorkflowNode(graph, kind).nodes.at(-1).label);
+
+  assert.deepEqual(labels, [
+    "Submit 1",
+    "Approval 1",
+    "Review 1",
+    "FYI 1",
+    "Condition 1",
+    "Return/Reject 1",
+    "End 1",
+    "Start",
+  ]);
+});
+
 test("adds a document requirement to a workflow box", () => {
   const updated = addWorkflowDocumentToNode(template, "step-1", {
     documentType: "Doctor slip",
@@ -662,6 +692,97 @@ test("warns when condition outcomes can both match the same numeric field", () =
   );
 });
 
+test("validates missing edge endpoints, FYI owners, documents, and empty conditions", () => {
+  const issues = validateWorkflowTemplate({
+    ...template,
+    documents: [],
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Submit", x: 0, y: 0 },
+        {
+          id: "fyi-1",
+          kind: "for_information",
+          label: "FYI",
+          x: 160,
+          y: -100,
+          assigneeEmail: "",
+        },
+        {
+          id: "approval-1",
+          kind: "approval",
+          label: "Approval",
+          x: 160,
+          y: 0,
+          assigneeEmail: "approver@example.com",
+          documentIds: ["missing-document"],
+        },
+        {
+          id: "condition-empty",
+          kind: "condition",
+          label: "Empty condition",
+          x: 320,
+          y: 0,
+        },
+        {
+          id: "condition-rule",
+          kind: "condition",
+          label: "Rule condition",
+          x: 320,
+          y: 160,
+        },
+        {
+          id: "approval-2",
+          kind: "approval",
+          label: "Second approval",
+          x: 520,
+          y: 160,
+          assigneeEmail: "second@example.com",
+        },
+      ],
+      edges: [
+        {
+          id: "edge-missing-source",
+          sourceId: "missing-source",
+          targetId: "approval-1",
+          label: "Missing source",
+          branchType: "main",
+        },
+        {
+          id: "edge-missing-target",
+          sourceId: "start",
+          targetId: "missing-target",
+          label: "Missing target",
+          branchType: "main",
+        },
+        {
+          id: "edge-start-approval",
+          sourceId: "start",
+          targetId: "approval-1",
+          label: "Submit",
+          branchType: "main",
+        },
+        {
+          id: "edge-rule",
+          sourceId: "condition-rule",
+          targetId: "approval-2",
+          label: "Empty amount",
+          branchType: "condition",
+          rule: { field: "missing_amount", operator: ">=", value: "" },
+        },
+      ],
+    },
+  });
+
+  assert.ok(issues.some((issue) => issue.message.includes("starts from a missing box")));
+  assert.ok(issues.some((issue) => issue.message.includes("points to a missing box")));
+  assert.ok(issues.some((issue) => issue.message.includes("FYI recipient email is missing")));
+  assert.ok(issues.some((issue) => issue.message.includes("missing-document")));
+  assert.ok(issues.some((issue) => issue.message.includes("No conditions are configured")));
+  assert.ok(issues.some((issue) => issue.message.includes("not extracted by any document")));
+  assert.ok(issues.some((issue) => issue.message.includes("has an empty numeric value")));
+});
+
 test("warns when connected boxes cannot be reached from start", () => {
   const issues = validateWorkflowTemplate({
     ...template,
@@ -898,6 +1019,18 @@ test("adds and updates named condition cases with multiple outcome boxes", () =>
   );
 });
 
+test("leaves non-condition boxes unchanged for condition case edits", () => {
+  const graph = createWorkflowGraphFromTemplate(template);
+
+  assert.equal(addWorkflowConditionCase(graph, "step-1"), graph);
+  assert.equal(
+    updateWorkflowConditionCase(graph, "step-1", "case-1", { name: "Ignored" }),
+    graph,
+  );
+  assert.equal(deleteWorkflowConditionCase(graph, "step-1", "case-1"), graph);
+  assert.equal(analyzeConditionCoverage(graph, "step-1"), undefined);
+});
+
 test("adds new condition cases before the fallback case", () => {
   const graph = createWorkflowGraphFromTemplate({
     ...template,
@@ -1104,6 +1237,162 @@ test("warns when approval condition cases can both match", () => {
     issues.some((issue) =>
       issue.message.includes(
         "Approval routing: Condition 1 - Reviews 1 and 2 and Condition 2 - Two of two can both match the same request.",
+      ),
+    ),
+  );
+});
+
+test("checks condition case exclusivity across incomplete and numeric rule variants", () => {
+  const issues = validateWorkflowTemplate({
+    ...template,
+    fields: [
+      {
+        name: "amount",
+        label: "Amount",
+        type: "currency",
+        required: false,
+        source: "ocr",
+        instructions: "Extract amount.",
+      },
+      {
+        name: "quantity",
+        label: "Quantity",
+        type: "number",
+        required: false,
+        source: "ocr",
+        instructions: "Extract quantity.",
+      },
+    ],
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Submit", x: 0, y: 0 },
+        {
+          id: "review-1",
+          kind: "review",
+          label: "Review 1",
+          x: 160,
+          y: 0,
+          assigneeEmail: "review1@example.com",
+        },
+        {
+          id: "condition-1",
+          kind: "condition",
+          label: "Complex condition",
+          x: 360,
+          y: 0,
+          conditionCases: [
+            {
+              id: "case-no-rule",
+              name: "No rule",
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+            {
+              id: "case-empty-upstream",
+              name: "No upstream",
+              approvalRule: {
+                upstreamNodeIds: [],
+                minimumApproved: 1,
+                mode: "at_least",
+              },
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+            {
+              id: "case-valid-upstream",
+              name: "Valid upstream",
+              approvalRule: {
+                upstreamNodeIds: ["review-1"],
+                minimumApproved: 1,
+                mode: "at_least",
+              },
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+            {
+              id: "case-non-numeric",
+              name: "Non numeric",
+              numericRule: { field: "amount", operator: ">", value: "abc" },
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+            {
+              id: "case-less-than",
+              name: "Less than",
+              numericRule: { field: "amount", operator: "<", value: "10" },
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+            {
+              id: "case-less-equal",
+              name: "Less equal",
+              numericRule: { field: "amount", operator: "<=", value: "5" },
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+            {
+              id: "case-equal",
+              name: "Equal",
+              numericRule: { field: "amount", operator: "=", value: "3" },
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+            {
+              id: "case-not-equal",
+              name: "Not equal",
+              numericRule: { field: "amount", operator: "!=", value: "4" },
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+            {
+              id: "case-other-field",
+              name: "Other field",
+              numericRule: { field: "quantity", operator: ">", value: "1" },
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+          ],
+        },
+        { id: "end", kind: "end", label: "End", x: 560, y: 0 },
+      ],
+      edges: [
+        {
+          id: "edge-start-review",
+          sourceId: "start",
+          targetId: "review-1",
+          label: "Start",
+          branchType: "main",
+        },
+        {
+          id: "edge-review-condition",
+          sourceId: "review-1",
+          targetId: "condition-1",
+          label: "Done",
+          branchType: "main",
+        },
+      ],
+    },
+  });
+
+  assert.ok(
+    issues.some((issue) =>
+      issue.message.includes(
+        "Condition 5 - Less than and Condition 6 - Less equal can both match",
+      ),
+    ),
+  );
+  assert.ok(
+    issues.some((issue) =>
+      issue.message.includes(
+        "Condition 7 - Equal and Condition 8 - Not equal can both match",
+      ),
+    ),
+  );
+  assert.ok(
+    issues.some((issue) =>
+      issue.message.includes(
+        "Condition 8 - Not equal and Condition 9 - Other field can both match",
       ),
     ),
   );
@@ -1399,6 +1688,452 @@ test("simulates the starting workflow route", () => {
   assert.equal(simulated.issues.filter((issue) => issue.severity === "error").length, 0);
 });
 
+test("routes FYI branches after submit boxes and stops when conditions do not match", () => {
+  const graph = createWorkflowGraphFromTemplate({
+    ...template,
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+        {
+          id: "submit-1",
+          kind: "submit_request",
+          label: "Submit invoice",
+          x: 180,
+          y: 0,
+        },
+        {
+          id: "fyi-1",
+          kind: "for_information",
+          label: "Notify finance",
+          x: 360,
+          y: -120,
+          assigneeEmail: "finance@example.com",
+        },
+        {
+          id: "condition-1",
+          kind: "condition",
+          label: "Amount route",
+          x: 360,
+          y: 0,
+          conditionCases: [
+            {
+              id: "case-high",
+              name: "High",
+              numericRule: { field: "amount", operator: ">", value: "10000" },
+              join: "and",
+              targetNodeIds: ["approval-1"],
+            },
+          ],
+        },
+        {
+          id: "approval-1",
+          kind: "approval",
+          label: "Approval",
+          x: 560,
+          y: 0,
+          assigneeEmail: "approver@example.com",
+        },
+      ],
+      edges: [
+        {
+          id: "edge-start-submit",
+          sourceId: "start",
+          targetId: "submit-1",
+          label: "Submit",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-fyi",
+          sourceId: "submit-1",
+          targetId: "fyi-1",
+          label: "FYI",
+          branchType: "for_information",
+        },
+        {
+          id: "edge-submit-condition",
+          sourceId: "submit-1",
+          targetId: "condition-1",
+          label: "Evaluate",
+          branchType: "main",
+        },
+      ],
+    },
+  });
+
+  const route = findInitialWorkflowRoute(graph, {
+    extractedFields: { amount: "5000" },
+  });
+
+  assert.deepEqual(route.notifiedNodes.map((node) => node.id), ["fyi-1"]);
+  assert.equal(route.currentNode, undefined);
+  assert.deepEqual(
+    route.routeNodes.map((node) => node.id),
+    ["submit-1", "condition-1"],
+  );
+});
+
+test("routes condition cases with contains, fallback, and terminal outcomes", () => {
+  const graph = createWorkflowGraphFromTemplate({
+    ...template,
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+        {
+          id: "condition-1",
+          kind: "condition",
+          label: "Vendor route",
+          x: 180,
+          y: 0,
+          conditionCases: [
+            {
+              id: "case-vendor",
+              name: "Vendor contains north",
+              numericRule: { field: "vendor", operator: "contains", value: "north" },
+              join: "and",
+              targetNodeIds: ["approval-1"],
+            },
+            {
+              id: "case-fallback",
+              name: "Fallback",
+              isFallback: true,
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+          ],
+        },
+        {
+          id: "approval-1",
+          kind: "approval",
+          label: "Approval",
+          x: 380,
+          y: -80,
+          assigneeEmail: "approver@example.com",
+        },
+        { id: "end", kind: "end", label: "End", x: 380, y: 80 },
+      ],
+      edges: [
+        {
+          id: "edge-start-condition",
+          sourceId: "start",
+          targetId: "condition-1",
+          label: "Start",
+          branchType: "main",
+        },
+      ],
+    },
+  });
+
+  const vendorRoute = findInitialWorkflowRoute(graph, {
+    extractedFields: { vendor: "Northstar Cloud" },
+  });
+  const fallbackRoute = findInitialWorkflowRoute(graph, {
+    extractedFields: { vendor: "Other Vendor" },
+  });
+
+  assert.equal(vendorRoute.currentNode?.id, "approval-1");
+  assert.equal(vendorRoute.activeBranchId, "case-vendor");
+  assert.equal(fallbackRoute.currentNode, undefined);
+  assert.equal(fallbackRoute.terminalNode?.id, "end");
+  assert.equal(fallbackRoute.activeBranchId, "case-fallback");
+});
+
+test("routes condition cases with approval rules, numeric operators, and joins", () => {
+  const cases = [
+    {
+      name: "numeric greater or equal",
+      conditionCase: {
+        id: "case-ge",
+        name: "GE",
+        numericRule: { field: "amount", operator: ">=", value: "5" },
+        join: "and",
+        targetNodeIds: ["approval-1"],
+      },
+      options: { extractedFields: { amount: "5" } },
+      expectedCurrentNodeId: "approval-1",
+    },
+    {
+      name: "numeric less than",
+      conditionCase: {
+        id: "case-lt",
+        name: "LT",
+        numericRule: { field: "amount", operator: "<", value: "5" },
+        join: "and",
+        targetNodeIds: ["approval-1"],
+      },
+      options: { extractedFields: { amount: "4" } },
+      expectedCurrentNodeId: "approval-1",
+    },
+    {
+      name: "numeric less or equal",
+      conditionCase: {
+        id: "case-le",
+        name: "LE",
+        numericRule: { field: "amount", operator: "<=", value: "5" },
+        join: "and",
+        targetNodeIds: ["approval-1"],
+      },
+      options: { extractedFields: { amount: "5" } },
+      expectedCurrentNodeId: "approval-1",
+    },
+    {
+      name: "string equal",
+      conditionCase: {
+        id: "case-string-eq",
+        name: "String equal",
+        numericRule: { field: "status", operator: "=", value: "approved" },
+        join: "and",
+        targetNodeIds: ["approval-1"],
+      },
+      options: { extractedFields: { status: "approved" } },
+      expectedCurrentNodeId: "approval-1",
+    },
+    {
+      name: "missing string not equal",
+      conditionCase: {
+        id: "case-string-ne",
+        name: "Missing string not equal",
+        numericRule: { field: "status", operator: "!=", value: "rejected" },
+        join: "and",
+        targetNodeIds: ["approval-1"],
+      },
+      options: { extractedFields: {} },
+      expectedCurrentNodeId: "approval-1",
+    },
+    {
+      name: "approval at least",
+      conditionCase: {
+        id: "case-at-least",
+        name: "At least",
+        approvalRule: {
+          upstreamNodeIds: ["review-1", "review-2"],
+          minimumApproved: 1,
+          mode: "at_least",
+        },
+        join: "and",
+        targetNodeIds: ["approval-1"],
+      },
+      options: { nodeDecisions: { "review-1": "approved" } },
+      expectedCurrentNodeId: "approval-1",
+    },
+    {
+      name: "approval exactly",
+      conditionCase: {
+        id: "case-exactly",
+        name: "Exactly",
+        approvalRule: {
+          upstreamNodeIds: ["review-1", "review-2"],
+          minimumApproved: 1,
+          mode: "exactly",
+        },
+        join: "and",
+        targetNodeIds: ["approval-1"],
+      },
+      options: {
+        nodeDecisions: {
+          "review-1": "approved",
+          "review-2": "rejected",
+        },
+      },
+      expectedCurrentNodeId: "approval-1",
+    },
+    {
+      name: "approval or numeric",
+      conditionCase: {
+        id: "case-or",
+        name: "Or",
+        approvalRule: {
+          upstreamNodeIds: ["review-1"],
+          minimumApproved: 1,
+          mode: "at_least",
+        },
+        numericRule: { field: "amount", operator: ">", value: "100" },
+        join: "or",
+        targetNodeIds: ["approval-1"],
+      },
+      options: {
+        extractedFields: { amount: "150" },
+        nodeDecisions: { "review-1": "rejected" },
+      },
+      expectedCurrentNodeId: "approval-1",
+    },
+    {
+      name: "approval and numeric does not match",
+      conditionCase: {
+        id: "case-and",
+        name: "And",
+        approvalRule: {
+          upstreamNodeIds: ["review-1"],
+          minimumApproved: 1,
+          mode: "at_least",
+        },
+        numericRule: { field: "amount", operator: ">", value: "100" },
+        join: "and",
+        targetNodeIds: ["approval-1"],
+      },
+      options: {
+        extractedFields: { amount: "50" },
+        nodeDecisions: { "review-1": "approved" },
+      },
+      expectedCurrentNodeId: undefined,
+    },
+  ];
+
+  cases.forEach((routeCase) => {
+    const graph = graphWithSingleCondition(routeCase.conditionCase);
+    const route = findInitialWorkflowRoute(graph, routeCase.options);
+    assert.equal(route.currentNode?.id, routeCase.expectedCurrentNodeId, routeCase.name);
+  });
+});
+
+test("waits on fallback while approval cases can still match", () => {
+  const graph = graphWithSingleCondition(
+    {
+      id: "case-exactly-two",
+      name: "Exactly two",
+      approvalRule: {
+        upstreamNodeIds: ["review-1", "review-2"],
+        minimumApproved: 2,
+        mode: "exactly",
+      },
+      join: "and",
+      targetNodeIds: ["approval-1"],
+    },
+    {
+      id: "case-fallback",
+      name: "Fallback",
+      isFallback: true,
+      join: "and",
+      targetNodeIds: ["end"],
+    },
+  );
+
+  const waitingRoute = findInitialWorkflowRoute(graph, {
+    nodeDecisions: { "review-1": "approved" },
+  });
+  const fallbackRoute = findInitialWorkflowRoute(
+    graphWithSingleCondition(
+      {
+        id: "case-high-and-approved",
+        name: "High and approved",
+        approvalRule: {
+          upstreamNodeIds: ["review-1"],
+          minimumApproved: 1,
+          mode: "at_least",
+        },
+        numericRule: { field: "amount", operator: ">", value: "10000" },
+        join: "and",
+        targetNodeIds: ["approval-1"],
+      },
+      {
+        id: "case-fallback",
+        name: "Fallback",
+        isFallback: true,
+        join: "and",
+        targetNodeIds: ["end"],
+      },
+    ),
+    {
+      extractedFields: { amount: "5000" },
+      nodeDecisions: { "review-1": "approved" },
+    },
+  );
+
+  assert.equal(waitingRoute.currentNode, undefined);
+  assert.equal(waitingRoute.terminalNode, undefined);
+  assert.equal(fallbackRoute.terminalNode?.id, "end");
+  assert.equal(fallbackRoute.activeBranchId, "case-fallback");
+});
+
+test("keeps fallback pending while at-least approval rules can still match", () => {
+  const route = findInitialWorkflowRoute(
+    graphWithSingleCondition(
+      {
+        id: "case-one-approval",
+        name: "One approval",
+        approvalRule: {
+          upstreamNodeIds: ["review-1", "review-2"],
+          minimumApproved: 2,
+          mode: "at_least",
+        },
+        join: "and",
+        targetNodeIds: ["approval-1"],
+      },
+      {
+        id: "case-fallback",
+        name: "Fallback",
+        isFallback: true,
+        join: "and",
+        targetNodeIds: ["end"],
+      },
+    ),
+    {
+      nodeDecisions: { "review-1": "approved" },
+    },
+  );
+
+  assert.equal(route.currentNode, undefined);
+  assert.equal(route.terminalNode, undefined);
+});
+
+test("does not route unsupported numeric operators", () => {
+  const route = findInitialWorkflowRoute(
+    graphWithSingleCondition({
+      id: "case-unsupported",
+      name: "Unsupported",
+      numericRule: { field: "amount", operator: "between", value: "100" },
+      join: "and",
+      targetNodeIds: ["approval-1"],
+    }),
+    {
+      extractedFields: { amount: "100" },
+    },
+  );
+
+  assert.equal(route.currentNode, undefined);
+});
+
+test("simulates ambiguous fallback-only conditions", () => {
+  const simulated = simulateWorkflowTemplate({
+    ...template,
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+        {
+          id: "condition-1",
+          kind: "condition",
+          label: "Fallback condition",
+          x: 180,
+          y: 0,
+          conditionCases: [
+            {
+              id: "case-fallback",
+              name: "Fallback",
+              isFallback: true,
+              join: "and",
+              targetNodeIds: ["end"],
+            },
+          ],
+        },
+        { id: "end", kind: "end", label: "End", x: 380, y: 0 },
+      ],
+      edges: [
+        {
+          id: "edge-start-condition",
+          sourceId: "start",
+          targetId: "condition-1",
+          label: "Start",
+          branchType: "main",
+        },
+      ],
+    },
+  });
+
+  assert.equal(simulated.currentNode, undefined);
+});
+
 test("collapses saved document boxes into the next approval box", () => {
   const graph = createWorkflowGraphFromTemplate({
     ...template,
@@ -1456,3 +2191,100 @@ test("collapses saved document boxes into the next approval box", () => {
     "invoice",
   ]);
 });
+
+test("dedupes direct branches when legacy document boxes collapse", () => {
+  const graph = createWorkflowGraphFromTemplate({
+    ...template,
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Submit", x: 0, y: 0 },
+        {
+          id: "document-invoice",
+          kind: "document",
+          label: "Invoice",
+          x: 180,
+          y: 0,
+          documentIds: ["invoice"],
+        },
+        {
+          id: "approval-1",
+          kind: "approval",
+          label: "Approval",
+          x: 360,
+          y: 0,
+          assigneeEmail: "approver@example.com",
+        },
+      ],
+      edges: [
+        {
+          id: "edge-direct",
+          sourceId: "start",
+          targetId: "approval-1",
+          label: "Submit",
+          branchType: "main",
+        },
+        {
+          id: "edge-start-document",
+          sourceId: "start",
+          targetId: "document-invoice",
+          label: "Submit",
+          branchType: "main",
+        },
+        {
+          id: "edge-document-approval",
+          sourceId: "document-invoice",
+          targetId: "approval-1",
+          label: "Submit",
+          branchType: "main",
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    graph.edges.map((edge) => [edge.sourceId, edge.targetId, edge.label]),
+    [["start", "approval-1", "Submit"]],
+  );
+  assert.deepEqual(graph.nodes.find((node) => node.id === "approval-1")?.documentIds, [
+    "invoice",
+  ]);
+});
+
+function graphWithSingleCondition(...conditionCases) {
+  return createWorkflowGraphFromTemplate({
+    ...template,
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+        {
+          id: "condition-1",
+          kind: "condition",
+          label: "Condition",
+          x: 180,
+          y: 0,
+          conditionCases,
+        },
+        {
+          id: "approval-1",
+          kind: "approval",
+          label: "Approval",
+          x: 380,
+          y: -80,
+          assigneeEmail: "approver@example.com",
+        },
+        { id: "end", kind: "end", label: "End", x: 380, y: 80 },
+      ],
+      edges: [
+        {
+          id: "edge-start-condition",
+          sourceId: "start",
+          targetId: "condition-1",
+          label: "Start",
+          branchType: "main",
+        },
+      ],
+    },
+  });
+}
