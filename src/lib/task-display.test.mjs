@@ -6,6 +6,7 @@ import {
   formatTaskAccessRole,
   findTemplateForTask,
   getPathNodeHistoryEvents,
+  getPathNodeProgressTone,
   getPathNodeState,
 } from "./task-display.ts";
 
@@ -87,7 +88,16 @@ test("formats path node state labels", () => {
   assert.equal(formatPathNodeState("rejected"), "Rejected");
   assert.equal(formatPathNodeState("completed"), "Done");
   assert.equal(formatPathNodeState("notified"), "FYI");
-  assert.equal(formatPathNodeState("waiting"), "Waiting");
+  assert.equal(formatPathNodeState("waiting"), "Not reached");
+});
+
+test("groups path node states into tracking progress tones", () => {
+  assert.equal(getPathNodeProgressTone("approved"), "done");
+  assert.equal(getPathNodeProgressTone("completed"), "done");
+  assert.equal(getPathNodeProgressTone("notified"), "done");
+  assert.equal(getPathNodeProgressTone("current"), "current");
+  assert.equal(getPathNodeProgressTone("rejected"), "rejected");
+  assert.equal(getPathNodeProgressTone("waiting"), "not-reached");
 });
 
 test("groups workflow path cards into numbered stages with parallel suffixes", () => {

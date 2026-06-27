@@ -14,6 +14,12 @@ export type PathNodeState =
   | "notified"
   | "waiting";
 
+export type PathNodeProgressTone =
+  | "done"
+  | "current"
+  | "rejected"
+  | "not-reached";
+
 export type WorkflowPathStageNode = WorkflowGraphNode & {
   stageNumber: number;
   pathLabel: string;
@@ -133,7 +139,16 @@ export function formatPathNodeState(state: PathNodeState | string) {
   if (state === "rejected") return "Rejected";
   if (state === "completed") return "Done";
   if (state === "notified") return "FYI";
-  return "Waiting";
+  return "Not reached";
+}
+
+export function getPathNodeProgressTone(
+  state: PathNodeState,
+): PathNodeProgressTone {
+  if (state === "current") return "current";
+  if (state === "rejected") return "rejected";
+  if (state === "waiting") return "not-reached";
+  return "done";
 }
 
 export function formatTaskAccessRole(task: ApprovalTask, activeUserEmail: string) {

@@ -25,6 +25,7 @@ import {
   formatPathNodeState,
   formatTaskAccessRole,
   getPathNodeHistoryEvents,
+  getPathNodeProgressTone,
   getPathNodeState,
 } from "@/lib/task-display";
 import { buildTaskHandoffView } from "@/lib/task-handoff-view";
@@ -953,23 +954,28 @@ function PathStageCard({
   isFirstPathNode: boolean;
 }) {
   const state = getPathNodeState(task, node);
+  const tone = getPathNodeProgressTone(state);
   const historyEvents = getPathNodeHistoryEvents(task, node, { isFirstPathNode });
+  const toneClassName =
+    tone === "current"
+      ? "border-yellow-400/45 bg-yellow-400/10"
+      : tone === "done"
+        ? "border-emerald-400/35 bg-emerald-400/10"
+        : tone === "rejected"
+          ? "border-rose-400/35 bg-rose-400/10"
+          : "border-white/10 bg-[#121518] opacity-75";
+  const badgeClassName =
+    tone === "current"
+      ? "border-yellow-400/30 bg-yellow-400/10 text-yellow-100"
+      : tone === "done"
+        ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+        : tone === "rejected"
+          ? "border-rose-400/30 bg-rose-400/10 text-rose-100"
+          : "border-white/10 bg-black/15 text-neutral-500";
 
   return (
     <div
-      className={`rounded-md border p-3 ${
-        state === "current"
-          ? "border-yellow-400/40 bg-yellow-400/10"
-          : state === "approved"
-            ? "border-emerald-400/30 bg-emerald-400/10"
-            : state === "rejected"
-              ? "border-rose-400/30 bg-rose-400/10"
-              : state === "completed"
-                ? "border-emerald-400/30 bg-emerald-400/10"
-                : state === "notified"
-                  ? "border-sky-400/30 bg-sky-400/10"
-                  : "border-white/10 bg-[#121518]"
-      }`}
+      className={`rounded-md border p-3 ${toneClassName}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 gap-3">
@@ -983,7 +989,7 @@ function PathStageCard({
             <p className="mt-1 text-xs text-neutral-500">{formatNodeKind(node.kind)}</p>
           </div>
         </div>
-        <span className="shrink-0 rounded border border-white/10 px-2 py-1 text-xs text-neutral-300">
+        <span className={`shrink-0 rounded border px-2 py-1 text-xs ${badgeClassName}`}>
           {formatPathNodeState(state)}
         </span>
       </div>
@@ -1012,7 +1018,7 @@ function PathStageCard({
             ))}
           </ol>
         ) : (
-          <p className="mt-2 text-xs text-neutral-600">No activity yet.</p>
+          <p className="mt-2 text-xs text-neutral-600">No history for this step yet.</p>
         )}
       </div>
     </div>
