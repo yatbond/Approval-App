@@ -5,6 +5,7 @@ import {
   formatPathNodeState,
   formatTaskAccessRole,
   findTemplateForTask,
+  getPathNodeHistoryEvents,
   getPathNodeState,
 } from "./task-display.ts";
 
@@ -142,6 +143,69 @@ test("groups workflow path cards into numbered stages with parallel suffixes", (
         pathLabels: ["3"],
       },
     ],
+  );
+});
+
+test("assigns audit history to the matching workflow path box", () => {
+  const firstNode = {
+    id: "department-review",
+    kind: "approval",
+    label: "Department review",
+    x: 0,
+    y: 0,
+    assigneeEmail: "approver@example.com",
+  };
+  const laterNode = {
+    id: "cfo",
+    kind: "approval",
+    label: "CFO approval",
+    x: 200,
+    y: 0,
+    assigneeEmail: "cfo@example.com",
+  };
+  const task = {
+    ...baseTask,
+    auditTrail: [
+      {
+        id: "submitted",
+        actor: "Mandy Chan",
+        actorEmail: "mandy@example.com",
+        action: "submitted",
+        detail: "Request submitted.",
+        timestamp: "2026-06-21 08:00",
+      },
+      {
+        id: "assigned-department",
+        actor: "System",
+        actorEmail: "system@example.com",
+        action: "assigned",
+        detail: "Assigned to Derrick Pang for department review.",
+        timestamp: "2026-06-21 08:01",
+        targetEmail: "approver@example.com",
+      },
+      {
+        id: "assigned-cfo",
+        actor: "System",
+        actorEmail: "system@example.com",
+        action: "assigned",
+        detail: "Assigned to CFO for approval.",
+        timestamp: "2026-06-21 09:00",
+        targetEmail: "cfo@example.com",
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    getPathNodeHistoryEvents(task, firstNode, { isFirstPathNode: true }).map(
+      (event) => event.id,
+    ),
+    ["submitted", "assigned-department"],
+  );
+  assert.deepEqual(
+    getPathNodeHistoryEvents(task, laterNode, { isFirstPathNode: false }).map(
+      (event) => event.id,
+    ),
+    ["assigned-cfo"],
   );
 });
 

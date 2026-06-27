@@ -1,4 +1,5 @@
 import type {
+  AuditEvent,
   ApprovalTask,
   WorkflowGraph,
   WorkflowGraphNode,
@@ -116,6 +117,16 @@ export function getPathNodeState(
   return "waiting";
 }
 
+export function getPathNodeHistoryEvents(
+  task: ApprovalTask,
+  node: WorkflowGraphNode,
+  { isFirstPathNode = false }: { isFirstPathNode?: boolean } = {},
+): AuditEvent[] {
+  return task.auditTrail.filter((event) =>
+    isPathNodeHistoryEvent(event, node, isFirstPathNode),
+  );
+}
+
 export function formatPathNodeState(state: PathNodeState | string) {
   if (state === "current") return "Current";
   if (state === "approved") return "Approved";
@@ -157,6 +168,41 @@ export function findTemplateForTask(
 
 function compareWorkflowPathNodes(a: WorkflowGraphNode, b: WorkflowGraphNode) {
   return a.y - b.y || a.x - b.x || a.label.localeCompare(b.label) || a.id.localeCompare(b.id);
+}
+
+function isPathNodeHistoryEvent(
+  event: AuditEvent,
+  node: WorkflowGraphNode,
+  isFirstPathNode: boolean,
+) {
+  if (
+    isFirstPathNode &&
+    ["submitted", "resubmitted", "amended"].includes(event.action)
+  ) {
+    return true;
+  }
+
+  const eventText = normalizeSearchText(`${event.detail} ${event.action}`);
+  const nodeLabel = normalizeSearchText(node.label);
+  const nodeId = normalizeSearchText(node.id);
+
+  if (nodeLabel && eventText.includes(nodeLabel)) {
+    return true;
+  }
+
+  if (nodeId && eventText.includes(nodeId)) {
+    return true;
+  }
+
+  if (node.assigneeEmail && event.targetEmail === node.assigneeEmail) {
+    return true;
+  }
+
+  return false;
+}
+
+function normalizeSearchText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function formatParallelSuffix(index: number) {

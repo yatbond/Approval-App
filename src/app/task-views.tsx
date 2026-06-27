@@ -24,6 +24,7 @@ import {
   findTemplateForTask,
   formatPathNodeState,
   formatTaskAccessRole,
+  getPathNodeHistoryEvents,
   getPathNodeState,
 } from "@/lib/task-display";
 import { buildTaskHandoffView } from "@/lib/task-handoff-view";
@@ -889,13 +890,14 @@ function TaskPathAndHistory({
   const stages = template
     ? buildWorkflowPathStages(createWorkflowGraphFromTemplate(template))
     : [];
+  const firstPathNodeId = stages[0]?.nodes[0]?.id;
 
   return (
     <div className="border-t border-white/10 p-4">
       <div className="mb-4">
         <h3 className="text-sm font-semibold text-neutral-300">Path and history</h3>
         <p className="mt-1 text-xs text-neutral-500">
-          Numbered stages show workflow order. Lettered cards run in parallel.
+          Each box shows its workflow status and related history.
         </p>
       </div>
 
@@ -921,7 +923,12 @@ function TaskPathAndHistory({
                 }
               >
                 {stage.nodes.map((node) => (
-                  <PathStageCard key={node.id} task={task} node={node} />
+                  <PathStageCard
+                    key={node.id}
+                    task={task}
+                    node={node}
+                    isFirstPathNode={node.id === firstPathNodeId}
+                  />
                 ))}
               </div>
             </div>
@@ -932,11 +939,6 @@ function TaskPathAndHistory({
           No workflow path.
         </p>
       )}
-
-      <div className="mt-5 border-t border-white/10 pt-4">
-        <h4 className="mb-3 text-sm font-semibold text-neutral-300">History</h4>
-        <AuditTrail task={task} padded={false} />
-      </div>
     </div>
   );
 }
@@ -944,11 +946,14 @@ function TaskPathAndHistory({
 function PathStageCard({
   task,
   node,
+  isFirstPathNode,
 }: {
   task: ApprovalTask;
   node: ReturnType<typeof buildWorkflowPathStages>[number]["nodes"][number];
+  isFirstPathNode: boolean;
 }) {
   const state = getPathNodeState(task, node);
+  const historyEvents = getPathNodeHistoryEvents(task, node, { isFirstPathNode });
 
   return (
     <div
@@ -992,6 +997,24 @@ function PathStageCard({
           {node.documentIds.length} document requirement(s)
         </p>
       ) : null}
+      <div className="mt-3 border-t border-white/10 pt-3 pl-10">
+        <p className="text-xs font-semibold text-neutral-500">History</p>
+        {historyEvents.length ? (
+          <ol className="mt-2 space-y-2">
+            {historyEvents.map((event) => (
+              <li key={event.id} className="text-xs">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
+                  <span className="font-medium text-neutral-300">{event.actor}</span>
+                  <span className="text-neutral-600">{event.timestamp}</span>
+                </div>
+                <p className="mt-1 break-words text-neutral-400">{event.detail}</p>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="mt-2 text-xs text-neutral-600">No activity yet.</p>
+        )}
+      </div>
     </div>
   );
 }
