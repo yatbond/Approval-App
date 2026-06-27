@@ -150,6 +150,23 @@ test("does not mutate normalized tables when request template preflight fails", 
   assert.deepEqual(supabase.operations, []);
 });
 
+test("does not write normalized rows when the workspace snapshot is empty", async () => {
+  const supabase = new FakeSupabase();
+
+  await saveNormalizedWorkspaceState(
+    supabase,
+    createSnapshot({
+      selectedTemplateId: "",
+      businessDirectory: [],
+      workflowTemplates: [],
+      approvalTasks: [],
+    }),
+    user,
+  );
+
+  assert.deepEqual(supabase.operations, []);
+});
+
 test("uses the same archived template key for historical requests and template FKs", async () => {
   const archivedSnapshot = {
     ...template,
@@ -338,6 +355,10 @@ test("rejects template deactivation when no template version row is updated", as
   );
 });
 
+test("returns null when normalized load has no templates or requests", async () => {
+  assert.equal(await loadNormalizedWorkspaceState(new FakeSupabase()), null);
+});
+
 test("restores template version numbers from normalized template rows", async () => {
   const supabase = new FakeSupabase({
     workflow_template_versions: [
@@ -360,6 +381,121 @@ test("restores template version numbers from normalized template rows", async ()
   const snapshot = await loadNormalizedWorkspaceState(supabase, "template-finance");
 
   assert.equal(snapshot.workflowTemplates[0].version, 3);
+});
+
+test("restores directory rows, event targets, and attachment metadata from normalized rows", async () => {
+  const task = createSnapshot().approvalTasks[0];
+  const supabase = new FakeSupabase({
+    business_units: [
+      { id: "business-aai-db", name: "Asia Allied Infrastructure", is_active: true },
+    ],
+    business_departments: [
+      {
+        id: "dept-finance-db",
+        business_unit_id: "business-aai-db",
+        name: "Finance",
+        is_active: true,
+      },
+    ],
+    workflow_template_versions: [
+      {
+        id: "template-finance-db",
+        template_key: "template-finance",
+        version_number: 2,
+        name: "Finance invoice approval",
+        graph: template.graph,
+        document_requirements: [],
+        supported_languages: ["English", "Chinese"],
+        template_snapshot: {
+          ...template,
+          business: "",
+          department: "",
+          fields: [{ name: "Total", instructions: "Extract total" }],
+        },
+        business_units: { name: "Asia Allied Infrastructure" },
+        business_departments: { name: "Finance" },
+        is_active: true,
+      },
+    ],
+    approval_requests: [
+      {
+        id: "request-1",
+        request_no: "APR-1",
+        requester_name: task.requester,
+        requester_email: task.requesterEmail,
+        title: task.title,
+        workflow_name: task.workflow,
+        department_name: task.department,
+        status: task.status,
+        due_label: task.due,
+        due_at: "2026-06-27T10:00:00.000Z",
+        value_label: task.value,
+        current_step: task.currentStep,
+        current_node_id: "review-1",
+        current_owner_email: task.currentOwner,
+        pending_node_ids: ["review-1"],
+        pending_owner_emails: ["reviewer@example.com"],
+        completed_node_ids: ["start"],
+        notified_node_ids: ["fyi-1"],
+        node_decisions: { "review-1": "approved" },
+        active_branch_id: "case-high",
+        extracted_fields: { Total: "HKD 8,400" },
+        participants: task.participants,
+        last_action: task.lastAction,
+        task_snapshot: {
+          ...task,
+          currentNodeId: "",
+          pendingNodeIds: [],
+          attachments: [],
+          auditTrail: [],
+        },
+        workflow_template_versions: {
+          template_key: "template-finance",
+          version_number: 2,
+        },
+      },
+    ],
+    approval_request_events: [
+      {
+        approval_request_id: "request-1",
+        event_key: "APR-1-event-1",
+        action: "assigned",
+        actor_name: "System",
+        actor_email: "system@example.com",
+        detail: "Assigned to reviewer.",
+        target_email: "reviewer@example.com",
+        created_at: "2026-06-27T09:00:00.000Z",
+      },
+    ],
+    approval_request_attachments: [
+      {
+        approval_request_id: "request-1",
+        attachment_key: "attachment-1",
+        file_name: "invoice.pdf",
+        document_id: "invoice-doc",
+        document_type: "Invoice PDF",
+        document_format: "pdf",
+        workflow_node_id: "review-1",
+        storage_path: "requests/APR-1/invoice.pdf",
+        uploaded_by_email: "mandy@example.com",
+        created_at: "2026-06-27T08:55:00.000Z",
+      },
+    ],
+  });
+
+  const snapshot = await loadNormalizedWorkspaceState(supabase, "template-finance");
+
+  assert.deepEqual(snapshot.businessDirectory, [
+    {
+      id: "business-aai-db",
+      name: "Asia Allied Infrastructure",
+      departments: ["Finance"],
+    },
+  ]);
+  assert.equal(snapshot.workflowTemplates[0].version, 2);
+  assert.equal(snapshot.approvalTasks[0].auditTrail[0].targetEmail, "reviewer@example.com");
+  assert.equal(snapshot.approvalTasks[0].attachments[0].workflowNodeId, "review-1");
+  assert.equal(snapshot.approvalTasks[0].attachments[0].storagePath, "requests/APR-1/invoice.pdf");
 });
 
 test("hydrates collaboration state from mirror tables during normalized load", async () => {
@@ -409,6 +545,14 @@ test("hydrates collaboration state from mirror tables during normalized load", a
       },
     ],
     workflow_collaboration_requests: [
+      {
+        approval_request_no: "APR-1",
+        payload: null,
+      },
+      {
+        approval_request_no: "APR-1",
+        payload: ["not", "an", "object"],
+      },
       {
         approval_request_no: "APR-1",
         payload: {

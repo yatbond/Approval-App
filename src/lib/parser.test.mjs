@@ -3,8 +3,13 @@ import test from "node:test";
 import {
   buildExtractionPrompt,
   chooseParserStrategy,
+  extractImageFields,
+  extractImageFieldsWithOpenAI,
+  extractImageFieldsWithOpenRouter,
+  extractPdfFields,
   extractPdfFieldsWithQwenPageImages,
   extractPdfFieldsWithOpenRouter,
+  normalizeUserCorrections,
 } from "./parser.ts";
 
 const fields = [
@@ -24,6 +29,35 @@ test("detects a PDF by filename when upload MIME type is generic", () => {
   });
 
   assert.equal(chooseParserStrategy(file), "pdf-ocr");
+});
+
+test("detects spreadsheet and image parser strategies", () => {
+  assert.equal(
+    chooseParserStrategy(
+      new File([""], "schedule.xlsx", {
+        type: "application/octet-stream",
+      }),
+    ),
+    "excel-table",
+  );
+  assert.equal(
+    chooseParserStrategy(
+      new File([""], "site-photo.png", {
+        type: "image/png",
+      }),
+    ),
+    "image-ai",
+  );
+});
+
+test("keeps only changed user corrections", () => {
+  assert.deepEqual(
+    normalizeUserCorrections(
+      { Amount: "HKD 8,400", Vendor: "Northstar" },
+      { Amount: "HKD 8,400", Vendor: "Northstar Cloud Limited" },
+    ),
+    { Vendor: "Northstar Cloud Limited" },
+  );
 });
 
 test("extracts PDF fields through OpenRouter file input", async () => {
@@ -87,6 +121,163 @@ test("extracts PDF fields through OpenRouter file input", async () => {
     }
     globalThis.fetch = previousFetch;
   }
+});
+
+test("extracts image fields through OpenRouter image input", async () => {
+  await withParserEnvironment(
+    {
+      OPENROUTER_API_KEY: "test-key",
+      OPENROUTER_MODEL: "openai/gpt-4o-mini",
+    },
+    async () => {
+      let capturedBody = null;
+      globalThis.fetch = async (_url, init) => {
+        capturedBody = JSON.parse(String(init.body));
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: [
+                  "```json",
+                  JSON.stringify({
+                    fields: {
+                      Amount: {
+                        value: "HKD 8,400",
+                        confidence: "high",
+                        evidence: "Total HKD 8,400",
+                      },
+                      Vendor: {
+                        value: "Northstar",
+                        confidence: "high",
+                      },
+                      Blank: {
+                        value: "",
+                        confidence: "high",
+                        evidence: "Blank field",
+                      },
+                      ignored: ["not", "a", "record"],
+                    },
+                    suggestedFields: [
+                      {
+                        label: "PO no.",
+                        value: "PO-1",
+                        confidence: "high",
+                        evidence: "PO-1",
+                        instructions: "Capture PO number.",
+                      },
+                      {
+                        label: "空白",
+                        value: "visible",
+                        confidence: "unknown",
+                      },
+                      {
+                        label: "No value",
+                        value: "",
+                      },
+                    ],
+                  }),
+                  "```",
+                ].join("\n"),
+              },
+            },
+          ],
+        });
+      };
+
+      const result = await extractImageFieldsWithOpenRouter({
+        imageBase64: "image",
+        mimeType: "image/png",
+        fields,
+        languageHint: "English",
+      });
+
+      assert.equal(capturedBody.model, "openai/gpt-4o-mini");
+      assert.equal(
+        capturedBody.messages[0].content[1].image_url.url,
+        "data:image/png;base64,image",
+      );
+      assert.deepEqual(result.fields, {
+        Amount: "HKD 8,400",
+        Vendor: "Northstar",
+        Blank: "",
+      });
+      assert.deepEqual(result.confidence, {
+        Amount: "high",
+        Vendor: "medium",
+        Blank: "low",
+      });
+      assert.deepEqual(result.evidence, {
+        Amount: "Total HKD 8,400",
+        Blank: "Blank field",
+      });
+      assert.deepEqual(result.suggestedFields, [
+        {
+          name: "suggested_po_no",
+          label: "PO no.",
+          value: "PO-1",
+          confidence: "high",
+          evidence: "PO-1",
+          instructions: "Capture PO number.",
+        },
+        {
+          name: "suggested_field_2",
+          label: "空白",
+          value: "visible",
+          confidence: "medium",
+          evidence: "",
+          instructions: "Extract 空白.",
+        },
+      ]);
+    },
+  );
+});
+
+test("routes image extraction to OpenRouter unless OpenAI provider is selected", async () => {
+  await withParserEnvironment(
+    {
+      AI_PROVIDER: undefined,
+      OPENROUTER_API_KEY: "test-key",
+    },
+    async () => {
+      globalThis.fetch = async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({ Amount: "HKD 8,400" }),
+              },
+            },
+          ],
+        });
+
+      assert.deepEqual(
+        (await extractImageFields({
+          imageBase64: "image",
+          mimeType: "image/png",
+          fields,
+          languageHint: "English",
+        })).fields,
+        { Amount: "HKD 8,400" },
+      );
+    },
+  );
+});
+
+test("treats valid JSON arrays as unparseable extraction output", async () => {
+  await withParserEnvironment({ OPENROUTER_API_KEY: "test-key" }, async () => {
+    globalThis.fetch = async () =>
+      Response.json({ choices: [{ message: { content: "[]" } }] });
+
+    assert.deepEqual(
+      (await extractImageFieldsWithOpenRouter({
+        imageBase64: "image",
+        mimeType: "image/png",
+        fields,
+        languageHint: "English",
+      })).notes,
+      ["OpenRouter output could not be parsed as field JSON."],
+    );
+  });
 });
 
 test("extracts PDF fields from rendered page images through OpenRouter Qwen", async () => {
@@ -155,6 +346,154 @@ test("extracts PDF fields from rendered page images through OpenRouter Qwen", as
     }
     globalThis.fetch = previousFetch;
   }
+});
+
+test("returns provider setup notes when API keys are missing", async () => {
+  await withParserEnvironment(
+    {
+      AI_PROVIDER: "openai",
+      OPENAI_API_KEY: undefined,
+      OPENROUTER_API_KEY: undefined,
+    },
+    async () => {
+      assert.deepEqual(
+        (await extractImageFields({
+          imageBase64: "image",
+          mimeType: "image/png",
+          fields,
+          languageHint: "English",
+        })).notes,
+        ["OPENAI_API_KEY is not configured yet."],
+      );
+      assert.deepEqual(
+        (await extractImageFieldsWithOpenAI({
+          imageBase64: "image",
+          mimeType: "image/png",
+          fields,
+          languageHint: "English",
+        })).notes,
+        ["OPENAI_API_KEY is not configured yet."],
+      );
+      assert.deepEqual(
+        (await extractImageFieldsWithOpenRouter({
+          imageBase64: "image",
+          mimeType: "image/png",
+          fields,
+          languageHint: "English",
+        })).notes,
+        ["OPENROUTER_API_KEY is not configured yet."],
+      );
+      assert.deepEqual(
+        (await extractPdfFields({
+          pdfBase64: "pdf",
+          fileName: "invoice.pdf",
+          fields,
+          languageHint: "English",
+        })).notes,
+        ["OPENROUTER_API_KEY is not configured yet."],
+      );
+      assert.deepEqual(
+        (await extractPdfFieldsWithQwenPageImages({
+          pageImages: [],
+          fields,
+          languageHint: "English",
+        })).notes,
+        ["OPENROUTER_API_KEY is not configured yet."],
+      );
+    },
+  );
+});
+
+test("returns a Qwen setup note when no rendered PDF page images are supplied", async () => {
+  await withParserEnvironment({ OPENROUTER_API_KEY: "test-key" }, async () => {
+    const result = await extractPdfFieldsWithQwenPageImages({
+      pageImages: [],
+      fields,
+      languageHint: "English",
+    });
+
+    assert.deepEqual(result.fields, {});
+    assert.deepEqual(result.notes, [
+      "No rendered PDF page images were supplied for Qwen visual OCR.",
+    ]);
+  });
+});
+
+test("reports OpenRouter errors and unparseable outputs", async () => {
+  await withParserEnvironment({ OPENROUTER_API_KEY: "test-key" }, async () => {
+    globalThis.fetch = async () =>
+      Response.json({ error: { message: "quota exceeded" } }, { status: 429 });
+
+    assert.deepEqual(
+      (await extractImageFieldsWithOpenRouter({
+        imageBase64: "image",
+        mimeType: "image/png",
+        fields,
+        languageHint: "English",
+      })).notes,
+      ["quota exceeded"],
+    );
+
+    globalThis.fetch = async () =>
+      Response.json({ choices: [{ message: { content: "not json" } }] });
+
+    assert.deepEqual(
+      await extractPdfFieldsWithOpenRouter({
+        pdfBase64: "pdf",
+        fileName: "",
+        fields,
+        languageHint: "English",
+      }),
+      {
+        strategy: "pdf-ocr",
+        fields: {},
+        confidence: {},
+        evidence: {},
+        suggestedFields: [],
+        notes: ["OpenRouter PDF output could not be parsed as field JSON."],
+      },
+    );
+
+    assert.deepEqual(
+      await extractPdfFieldsWithQwenPageImages({
+        pageImages: [{ pageNumber: 1, mimeType: "image/png", imageBase64: "page" }],
+        fields,
+        languageHint: "English",
+      }),
+      {
+        strategy: "pdf-ocr",
+        fields: {},
+        confidence: {},
+        evidence: {},
+        suggestedFields: [],
+        notes: ["OpenRouter Qwen page-image output could not be parsed as field JSON."],
+      },
+    );
+  });
+});
+
+test("reports default OpenRouter failure messages when response errors have no message", async () => {
+  await withParserEnvironment({ OPENROUTER_API_KEY: "test-key" }, async () => {
+    globalThis.fetch = async () => Response.json({}, { status: 500 });
+
+    assert.deepEqual(
+      (await extractPdfFieldsWithOpenRouter({
+        pdfBase64: "pdf",
+        fileName: "",
+        fields,
+        languageHint: "English",
+      })).notes,
+      ["OpenRouter request failed with status 500."],
+    );
+    assert.deepEqual(
+      (await extractPdfFieldsWithQwenPageImages({
+        pageImages: [{ pageNumber: 1, mimeType: "image/png", imageBase64: "page" }],
+        fields,
+        languageHint: "English",
+      })).notes,
+      ["OpenRouter request failed with status 500."],
+    );
+  });
 });
 
 test("keeps suggested fields separate from requested extracted fields", async () => {
@@ -246,3 +585,40 @@ test("includes corrected extraction examples in the parser prompt", () => {
   assert.match(prompt, /HKD 8,000/);
   assert.match(prompt, /Total HKD 8,000/);
 });
+
+async function withParserEnvironment(env, callback) {
+  const keys = [
+    "AI_PROVIDER",
+    "OPENAI_API_KEY",
+    "OPENAI_MODEL",
+    "OPENROUTER_API_KEY",
+    "OPENROUTER_MODEL",
+    "OPENROUTER_PDF_ENGINE",
+    "OPENROUTER_SITE_URL",
+    "OPENROUTER_APP_TITLE",
+    "OPENROUTER_VISION_OCR_MODEL",
+  ];
+  const previousEnv = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  const previousFetch = globalThis.fetch;
+
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+
+  try {
+    await callback();
+  } finally {
+    for (const key of keys) {
+      if (previousEnv[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = previousEnv[key];
+      }
+    }
+    globalThis.fetch = previousFetch;
+  }
+}

@@ -76,6 +76,19 @@ test("creates a routed approval task from a selected template", () => {
   assert.equal(task.workflowTemplateSnapshot?.id, "finance-invoice");
 });
 
+test("generates a request id from the submission timestamp when none is supplied", () => {
+  const task = createApprovalTaskFromTemplate({
+    now: new Date("2026-06-18T10:00:00+08:00"),
+    requester: { name: "Derrick", email: "derrick@example.com" },
+    template,
+    extractedFields: {},
+  });
+
+  assert.equal(task.id, "APR-1781748000");
+  assert.equal(task.auditTrail[0].id, "APR-1781748000-event-1");
+  assert.equal(task.auditTrail[1].id, "APR-1781748000-event-2");
+});
+
 test("routes a request from the workflow canvas graph", () => {
   const task = createApprovalTaskFromTemplate({
     id: "APR-GRAPH",

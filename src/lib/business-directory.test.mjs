@@ -82,6 +82,33 @@ test("adds, updates, and deletes businesses without mutating original state", ()
   assert.equal(deleted.some((business) => business.id === newBusiness.id), false);
 });
 
+test("ignores blank business and department edits", () => {
+  assert.equal(addBusiness(seededBusinessDirectory, "   "), seededBusinessDirectory);
+  assert.equal(
+    updateBusiness(seededBusinessDirectory, seededBusinessDirectory[0].id, " "),
+    seededBusinessDirectory,
+  );
+  assert.equal(
+    addDepartment(seededBusinessDirectory, seededBusinessDirectory[0].id, "\t"),
+    seededBusinessDirectory,
+  );
+  assert.equal(
+    updateDepartment(seededBusinessDirectory, seededBusinessDirectory[0].id, 0, ""),
+    seededBusinessDirectory,
+  );
+});
+
+test("generates unique business ids for duplicate names and empty slugs", () => {
+  const duplicate = addBusiness(seededBusinessDirectory, "AMAIN");
+  assert.equal(duplicate.at(-1)?.id, "amain-2");
+
+  const repeated = addBusiness(duplicate, "AMAIN");
+  assert.equal(repeated.at(-1)?.id, "amain-3");
+
+  const fallback = addBusiness(repeated, "!!!");
+  assert.equal(fallback.at(-1)?.id, "business");
+});
+
 test("adds, updates, and deletes departments for a business", () => {
   const businessId = seededBusinessDirectory[1].id;
   const added = addDepartment(seededBusinessDirectory, businessId, "Accounting");

@@ -102,6 +102,96 @@ test("stamps template ownership and audit event when creating a template", () =>
   });
 });
 
+test("keeps existing creator metadata while stamping publish audit details", () => {
+  const state = getCreatedTemplateRecordState({
+    templates: [],
+    template: {
+      ...template("published-template", "Published Template"),
+      version: 3,
+      createdByEmail: "original@example.com",
+      createdByName: "Original Creator",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    },
+    actor: {
+      name: "Derrick Pang",
+      email: "dpang@chunwo.com",
+      role: "superuser",
+    },
+    now: new Date("2026-06-21T08:00:00.000Z"),
+    action: "template_published",
+  });
+
+  assert.equal(state.templates[0].createdByEmail, "original@example.com");
+  assert.equal(state.templates[0].createdByName, "Original Creator");
+  assert.equal(state.templates[0].createdAt, "2026-06-01T00:00:00.000Z");
+  assert.equal(state.templates[0].updatedByEmail, "dpang@chunwo.com");
+  assert.deepEqual(state.auditEvent, {
+    id: "template-published-template-1782028800000-published",
+    action: "template_published",
+    actor: "Derrick Pang",
+    actorEmail: "dpang@chunwo.com",
+    timestamp: "2026-06-21T08:00:00.000Z",
+    detail: "Published template Published Template.",
+    templateId: "published-template",
+    templateName: "Published Template",
+    templateVersion: 3,
+  });
+});
+
+test("stamps updated templates and records duplicated audit details", () => {
+  const state = getUpdatedTemplateRecordState({
+    templates: [template("a"), template("copy", "Copy")],
+    template: { ...template("copy", "Copied Template"), version: 2 },
+    actor: {
+      name: "Derrick Pang",
+      email: "dpang@chunwo.com",
+      role: "superuser",
+    },
+    now: new Date("2026-06-21T08:30:00.000Z"),
+    action: "template_duplicated",
+  });
+
+  assert.equal(state.templates[1].updatedByEmail, "dpang@chunwo.com");
+  assert.equal(state.templates[1].updatedAt, "2026-06-21T08:30:00.000Z");
+  assert.deepEqual(state.auditEvent, {
+    id: "template-copy-1782030600000-duplicated",
+    action: "template_duplicated",
+    actor: "Derrick Pang",
+    actorEmail: "dpang@chunwo.com",
+    timestamp: "2026-06-21T08:30:00.000Z",
+    detail: "Duplicated template Copied Template.",
+    templateId: "copy",
+    templateName: "Copied Template",
+    templateVersion: 2,
+  });
+});
+
+test("stamps updated templates with default update audit details", () => {
+  const state = getUpdatedTemplateRecordState({
+    templates: [template("a", "Original Template")],
+    template: { ...template("a", "Updated Template"), version: 4 },
+    actor: {
+      name: "Derrick Pang",
+      email: "dpang@chunwo.com",
+      role: "superuser",
+    },
+    now: new Date("2026-06-21T08:45:00.000Z"),
+  });
+
+  assert.equal(state.templates[0].updatedByEmail, "dpang@chunwo.com");
+  assert.deepEqual(state.auditEvent, {
+    id: "template-a-1782031500000-updated",
+    action: "template_updated",
+    actor: "Derrick Pang",
+    actorEmail: "dpang@chunwo.com",
+    timestamp: "2026-06-21T08:45:00.000Z",
+    detail: "Updated template Updated Template.",
+    templateId: "a",
+    templateName: "Updated Template",
+    templateVersion: 4,
+  });
+});
+
 test("archives a template with actor metadata instead of dropping it", () => {
   const state = getDeletedTemplateRecordState({
     templates: [template("a"), template("b")],
@@ -128,4 +218,25 @@ test("archives a template with actor metadata instead of dropping it", () => {
   );
   assert.equal(state.selectedTemplateId, "a");
   assert.equal(state.auditEvent.action, "template_archived");
+});
+
+test("does not create archive audit event when actor delete target is missing", () => {
+  const state = getDeletedTemplateRecordState({
+    templates: [template("a")],
+    selectedTemplateId: "a",
+    templateId: "missing",
+    actor: {
+      name: "Derrick Pang",
+      email: "dpang@chunwo.com",
+      role: "superuser",
+    },
+    now: new Date("2026-06-21T09:00:00.000Z"),
+  });
+
+  assert.deepEqual(
+    state.templates.map((item) => item.id),
+    ["a"],
+  );
+  assert.equal(state.selectedTemplateId, "a");
+  assert.equal(state.auditEvent, undefined);
 });

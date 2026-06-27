@@ -146,6 +146,35 @@ test("groups workflow path cards into numbered stages with parallel suffixes", (
   );
 });
 
+test("ignores workflow path edges that cannot advance from a reachable source", () => {
+  const graph = {
+    nodes: [
+      { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+      { id: "review", kind: "review", label: "Review", x: 200, y: 0 },
+      { id: "orphan", kind: "approval", label: "Orphan", x: 400, y: 0 },
+    ],
+    edges: [
+      { id: "edge-valid", sourceId: "start", targetId: "review", label: "Review", branchType: "main" },
+      { id: "edge-missing-source", sourceId: "missing", targetId: "orphan", label: "Missing", branchType: "main" },
+      { id: "edge-missing-target", sourceId: "start", targetId: "missing", label: "Missing", branchType: "main" },
+      { id: "edge-back-to-start", sourceId: "review", targetId: "start", label: "Back", branchType: "main" },
+    ],
+  };
+
+  const stages = buildWorkflowPathStages(graph);
+
+  assert.deepEqual(
+    stages.map((stage) => ({
+      stageNumber: stage.stageNumber,
+      nodeLabels: stage.nodes.map((node) => node.label),
+    })),
+    [
+      { stageNumber: 1, nodeLabels: ["Review"] },
+      { stageNumber: 2, nodeLabels: ["Orphan"] },
+    ],
+  );
+});
+
 test("assigns audit history to the matching workflow path box", () => {
   const firstNode = {
     id: "department-review",
@@ -206,6 +235,36 @@ test("assigns audit history to the matching workflow path box", () => {
       (event) => event.id,
     ),
     ["assigned-cfo"],
+  );
+});
+
+test("assigns audit history by target email when text does not name the path box", () => {
+  const node = {
+    id: "legal-review",
+    kind: "review",
+    label: "Legal review",
+    x: 0,
+    y: 0,
+    assigneeEmail: "legal@example.com",
+  };
+  const task = {
+    ...baseTask,
+    auditTrail: [
+      {
+        id: "target-only",
+        actor: "System",
+        actorEmail: "system@example.com",
+        action: "assigned",
+        detail: "Assigned to the next owner.",
+        timestamp: "2026-06-21 10:00",
+        targetEmail: "legal@example.com",
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    getPathNodeHistoryEvents(task, node).map((event) => event.id),
+    ["target-only"],
   );
 });
 

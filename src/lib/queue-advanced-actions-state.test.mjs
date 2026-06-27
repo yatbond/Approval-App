@@ -2,9 +2,34 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   getQueueActionList,
+  shouldShowQueueAdvancedActions,
   shouldShowQueueContributorRequest,
   shouldShowQueueReassignActions,
 } from "./queue-advanced-actions-state.ts";
+
+test("keeps the combined advanced queue toggle hidden for originator actions", () => {
+  assert.equal(
+    shouldShowQueueAdvancedActions({
+      isOriginatorAction: true,
+      isExpanded: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldShowQueueAdvancedActions({
+      isOriginatorAction: false,
+      isExpanded: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldShowQueueAdvancedActions({
+      isOriginatorAction: false,
+      isExpanded: true,
+    }),
+    true,
+  );
+});
 
 test("keeps reassign and contributor options hidden until expanded", () => {
   assert.equal(
