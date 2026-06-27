@@ -1,4 +1,9 @@
-import type { ApprovalTask, WorkflowGraphNode, WorkflowTemplate } from "./types.ts";
+import type {
+  ApprovalTask,
+  WorkflowGraph,
+  WorkflowGraphNode,
+  WorkflowTemplate,
+} from "./types.ts";
 
 export type PathNodeState =
   | "approved"
@@ -7,6 +12,78 @@ export type PathNodeState =
   | "completed"
   | "notified"
   | "waiting";
+
+export type WorkflowPathStageNode = WorkflowGraphNode & {
+  stageNumber: number;
+  pathLabel: string;
+  parallelIndex: number;
+  parallelTotal: number;
+};
+
+export type WorkflowPathStage = {
+  stageNumber: number;
+  isParallel: boolean;
+  nodes: WorkflowPathStageNode[];
+};
+
+export function buildWorkflowPathStages(graph: WorkflowGraph): WorkflowPathStage[] {
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const rawStageByNodeId = new Map<string, number>([["start", 0]]);
+
+  for (let index = 0; index < graph.nodes.length; index += 1) {
+    graph.edges.forEach((edge) => {
+      const sourceStage = rawStageByNodeId.get(edge.sourceId);
+      const targetNode = nodeById.get(edge.targetId);
+
+      if (sourceStage === undefined || !targetNode || targetNode.kind === "start") {
+        return;
+      }
+
+      const targetStage = sourceStage + 1;
+      const existingStage = rawStageByNodeId.get(edge.targetId);
+      if (existingStage === undefined || targetStage > existingStage) {
+        rawStageByNodeId.set(edge.targetId, targetStage);
+      }
+    });
+  }
+
+  const displayNodes = graph.nodes.filter((node) => node.kind !== "start");
+  const maxReachableStage = Math.max(
+    0,
+    ...Array.from(rawStageByNodeId.entries())
+      .filter(([nodeId]) => nodeId !== "start")
+      .map(([, stage]) => stage),
+  );
+  const rawStages = new Map<number, WorkflowGraphNode[]>();
+
+  displayNodes.forEach((node) => {
+    const rawStage = rawStageByNodeId.get(node.id) ?? maxReachableStage + 1;
+    const nodes = rawStages.get(rawStage) || [];
+    rawStages.set(rawStage, [...nodes, node]);
+  });
+
+  return Array.from(rawStages.entries())
+    .sort(([stageA], [stageB]) => stageA - stageB)
+    .map(([, nodes], stageIndex) => {
+      const stageNumber = stageIndex + 1;
+      const sortedNodes = [...nodes].sort(compareWorkflowPathNodes);
+      const isParallel = sortedNodes.length > 1;
+
+      return {
+        stageNumber,
+        isParallel,
+        nodes: sortedNodes.map((node, nodeIndex) => ({
+          ...node,
+          stageNumber,
+          pathLabel: isParallel
+            ? `${stageNumber}${formatParallelSuffix(nodeIndex)}`
+            : String(stageNumber),
+          parallelIndex: nodeIndex + 1,
+          parallelTotal: sortedNodes.length,
+        })),
+      };
+    });
+}
 
 export function getPathNodeState(
   task: ApprovalTask,
@@ -76,4 +153,21 @@ export function findTemplateForTask(
     (template) =>
       template.id === task.workflowTemplateId || template.name === task.workflow,
   );
+}
+
+function compareWorkflowPathNodes(a: WorkflowGraphNode, b: WorkflowGraphNode) {
+  return a.y - b.y || a.x - b.x || a.label.localeCompare(b.label) || a.id.localeCompare(b.id);
+}
+
+function formatParallelSuffix(index: number) {
+  let value = index + 1;
+  let suffix = "";
+
+  while (value > 0) {
+    value -= 1;
+    suffix = String.fromCharCode(65 + (value % 26)) + suffix;
+    value = Math.floor(value / 26);
+  }
+
+  return suffix;
 }

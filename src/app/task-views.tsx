@@ -20,6 +20,7 @@ import {
 import { createWorkflowGraphFromTemplate } from "@/lib/workflow-graph";
 import { formatNodeKind } from "@/lib/workflow-condition-context";
 import {
+  buildWorkflowPathStages,
   findTemplateForTask,
   formatPathNodeState,
   formatTaskAccessRole,
@@ -635,10 +636,7 @@ export function TrackingView({
                 onSubmitCorrectionUpload={onSubmitCorrectionUpload}
               />
             </div>
-            {selectedTemplate && (
-              <TaskPathSummary task={selectedTask} template={selectedTemplate} />
-            )}
-            <AuditTrail task={selectedTask} />
+            <TaskPathAndHistory task={selectedTask} template={selectedTemplate} />
           </>
         ) : (
           <div className="p-5 text-sm text-neutral-400">No tracked requests.</div>
@@ -781,64 +779,119 @@ function HandoffSummary({
   );
 }
 
-function TaskPathSummary({
+function TaskPathAndHistory({
   task,
   template,
 }: {
   task: ApprovalTask;
-  template: WorkflowTemplate;
+  template?: WorkflowTemplate;
 }) {
-  const graph = createWorkflowGraphFromTemplate(template);
-  const nodes = graph.nodes.filter((node) => node.kind !== "start");
+  const stages = template
+    ? buildWorkflowPathStages(createWorkflowGraphFromTemplate(template))
+    : [];
 
   return (
-    <div className="border-b border-white/10 p-4">
-      <h3 className="mb-3 text-sm font-semibold text-neutral-300">Path</h3>
-      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {nodes.map((node) => {
-          const state = getPathNodeState(task, node);
-          return (
-            <div
-              key={node.id}
-              className={`rounded-md border p-3 ${
-                state === "current"
-                  ? "border-yellow-400/40 bg-yellow-400/10"
-                  : state === "approved"
-                    ? "border-emerald-400/30 bg-emerald-400/10"
-                    : state === "rejected"
-                      ? "border-rose-400/30 bg-rose-400/10"
-                      : state === "completed"
-                        ? "border-emerald-400/30 bg-emerald-400/10"
-                        : state === "notified"
-                          ? "border-sky-400/30 bg-sky-400/10"
-                          : "border-white/10 bg-[#121518]"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="break-words text-sm font-medium text-neutral-100">
-                    {node.label}
-                  </p>
-                  <p className="mt-1 text-xs text-neutral-500">{formatNodeKind(node.kind)}</p>
-                </div>
-                <span className="rounded border border-white/10 px-2 py-1 text-xs text-neutral-300">
-                  {formatPathNodeState(state)}
-                </span>
-              </div>
-              {node.assigneeEmail && (
-                <p className="mt-2 break-words text-xs text-neutral-400">
-                  {node.assigneeEmail}
-                </p>
-              )}
-              {node.documentIds?.length ? (
-                <p className="mt-2 text-xs text-neutral-500">
-                  {node.documentIds.length} document requirement(s)
-                </p>
-              ) : null}
-            </div>
-          );
-        })}
+    <div className="border-t border-white/10 p-4">
+      <div className="mb-4">
+        <h3 className="text-sm font-semibold text-neutral-300">Path and history</h3>
+        <p className="mt-1 text-xs text-neutral-500">
+          Numbered stages show workflow order. Lettered cards run in parallel.
+        </p>
       </div>
+
+      {stages.length ? (
+        <div className="space-y-4">
+          {stages.map((stage) => (
+            <div key={stage.stageNumber} className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-semibold uppercase tracking-wide text-neutral-400">
+                  Step {stage.stageNumber}
+                </span>
+                {stage.isParallel && (
+                  <span className="rounded border border-sky-400/25 bg-sky-400/10 px-2 py-1 text-sky-100">
+                    Parallel
+                  </span>
+                )}
+              </div>
+              <div
+                className={
+                  stage.isParallel
+                    ? "grid gap-2 md:grid-cols-2 xl:grid-cols-3"
+                    : "grid gap-2"
+                }
+              >
+                {stage.nodes.map((node) => (
+                  <PathStageCard key={node.id} task={task} node={node} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-md border border-white/10 bg-[#121518] p-3 text-sm text-neutral-500">
+          No workflow path.
+        </p>
+      )}
+
+      <div className="mt-5 border-t border-white/10 pt-4">
+        <h4 className="mb-3 text-sm font-semibold text-neutral-300">History</h4>
+        <AuditTrail task={task} padded={false} />
+      </div>
+    </div>
+  );
+}
+
+function PathStageCard({
+  task,
+  node,
+}: {
+  task: ApprovalTask;
+  node: ReturnType<typeof buildWorkflowPathStages>[number]["nodes"][number];
+}) {
+  const state = getPathNodeState(task, node);
+
+  return (
+    <div
+      className={`rounded-md border p-3 ${
+        state === "current"
+          ? "border-yellow-400/40 bg-yellow-400/10"
+          : state === "approved"
+            ? "border-emerald-400/30 bg-emerald-400/10"
+            : state === "rejected"
+              ? "border-rose-400/30 bg-rose-400/10"
+              : state === "completed"
+                ? "border-emerald-400/30 bg-emerald-400/10"
+                : state === "notified"
+                  ? "border-sky-400/30 bg-sky-400/10"
+                  : "border-white/10 bg-[#121518]"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 gap-3">
+          <span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-black/20 px-2 text-xs font-semibold text-neutral-200">
+            {node.pathLabel}
+          </span>
+          <div className="min-w-0">
+            <p className="break-words text-sm font-medium text-neutral-100">
+              {node.label}
+            </p>
+            <p className="mt-1 text-xs text-neutral-500">{formatNodeKind(node.kind)}</p>
+          </div>
+        </div>
+        <span className="shrink-0 rounded border border-white/10 px-2 py-1 text-xs text-neutral-300">
+          {formatPathNodeState(state)}
+        </span>
+      </div>
+      {node.assigneeEmail && (
+        <p className="mt-2 break-words pl-10 text-xs text-neutral-400">
+          {node.assigneeEmail}
+        </p>
+      )}
+      {node.documentIds?.length ? (
+        <p className="mt-2 pl-10 text-xs text-neutral-500">
+          {node.documentIds.length} document requirement(s)
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1215,9 +1268,9 @@ export function UserDirectoryDatalist({
   );
 }
 
-function AuditTrail({ task }: { task: ApprovalTask }) {
+function AuditTrail({ task, padded = true }: { task: ApprovalTask; padded?: boolean }) {
   return (
-    <ol className="space-y-3 p-4">
+    <ol className={`space-y-3 ${padded ? "p-4" : ""}`}>
       {task.auditTrail.map((event) => (
         <li key={event.id} className="flex gap-3 text-sm">
           <span className="mt-1 size-2 shrink-0 rounded-full bg-emerald-300" />
