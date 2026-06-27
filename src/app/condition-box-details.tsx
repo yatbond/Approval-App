@@ -63,13 +63,13 @@ export function ConditionBoxDetails({
   return (
     <div className="rounded-md border border-amber-400/30 bg-amber-400/10 p-3">
       <p className="text-xs font-semibold text-amber-100">Condition rules</p>
-      <p className="mt-1 text-[11px] text-amber-100/80">
+      <p className="mt-1 text-xs text-amber-100/80">
         Build each rule as: if this approval or numeric result is true, route to these
         outcome boxes.
       </p>
       <div className="mt-3 space-y-3">
         <div className="rounded-md border border-white/10 bg-[#101214] p-2">
-          <p className="text-[11px] font-semibold text-neutral-400">
+          <p className="text-xs font-semibold text-neutral-400">
             Upstream approvals
           </p>
           {context.upstreamNodes.length ? (
@@ -91,7 +91,7 @@ export function ConditionBoxDetails({
         </div>
 
         <div className="rounded-md border border-white/10 bg-[#101214] p-2">
-          <p className="text-[11px] font-semibold text-neutral-400">
+          <p className="text-xs font-semibold text-neutral-400">
             Downstream outcome boxes
           </p>
           {context.downstreamNodes.length ? (
@@ -113,7 +113,7 @@ export function ConditionBoxDetails({
         </div>
 
         <div className="rounded-md border border-white/10 bg-[#101214] p-2">
-          <p className="text-[11px] font-semibold text-neutral-400">
+          <p className="text-xs font-semibold text-neutral-400">
             Parsed numeric values
           </p>
           {context.numericFields.length ? (
@@ -136,7 +136,7 @@ export function ConditionBoxDetails({
 
         <div className="space-y-2">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-[11px] font-semibold text-neutral-400">
+            <p className="text-xs font-semibold text-neutral-400">
               Conditions
             </p>
             <div className="flex flex-wrap gap-2">
@@ -200,12 +200,12 @@ export function ConditionBoxDetails({
                         className="mt-2 h-8 w-full rounded-md border border-white/10 bg-[#121518] px-2 text-xs text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
                       />
                     )}
-                    <p className="text-[11px] text-neutral-500">
+                    <p className="text-xs text-neutral-500">
                       {conditionCase.isFallback
                         ? "Catches every request not matched above"
                         : `Outcome: ${conditionCase.targetNodeIds.length} box(es)`}
                     </p>
-                    <p className="mt-1 break-words text-[11px] text-neutral-400">
+                    <p className="mt-1 break-words text-xs text-neutral-400">
                       {describeConditionCase({ conditionCase, context })}
                     </p>
                   </div>
@@ -221,7 +221,7 @@ export function ConditionBoxDetails({
 
                 {!conditionCase.isFallback && context.upstreamNodes.length > 0 && (
                   <label className="block">
-                    <span className="mb-1 block text-[11px] font-semibold text-neutral-400">
+                    <span className="mb-1 block text-xs font-semibold text-neutral-400">
                       Approval rule
                     </span>
                     <select
@@ -290,7 +290,7 @@ export function ConditionBoxDetails({
                     {conditionCase.isApprovalCount ? (
                       <div className="space-y-3">
                         <div>
-                          <p className="mb-2 text-[11px] font-semibold text-neutral-400">
+                          <p className="mb-2 text-xs font-semibold text-neutral-400">
                             Count approvals from
                           </p>
                           <div className="space-y-1">
@@ -395,7 +395,7 @@ export function ConditionBoxDetails({
                       </div>
                     ) : (
                       <>
-                        <p className="mb-2 text-[11px] font-semibold text-neutral-400">
+                        <p className="mb-2 text-xs font-semibold text-neutral-400">
                           Required approvals
                         </p>
                         <div className="space-y-1">
@@ -434,7 +434,7 @@ export function ConditionBoxDetails({
                             );
                           })}
                         </div>
-                        <p className="mt-2 text-[11px] text-neutral-500">
+                        <p className="mt-2 text-xs text-neutral-500">
                           Select multiple boxes when all selected reviewers must approve.
                         </p>
                       </>
@@ -444,7 +444,7 @@ export function ConditionBoxDetails({
 
                 {!conditionCase.isFallback && (
                 <div>
-                  <p className="mb-1 text-[11px] font-semibold text-neutral-400">
+                  <p className="mb-1 text-xs font-semibold text-neutral-400">
                     Numeric rule
                   </p>
                 <div className="grid gap-2 sm:grid-cols-3">
@@ -541,7 +541,7 @@ export function ConditionBoxDetails({
 
                 <div className="rounded-md border border-white/10 bg-[#121518] p-2">
                   <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-[11px] font-semibold text-neutral-400">
+                    <p className="text-xs font-semibold text-neutral-400">
                       Then route to
                     </p>
                     <button
@@ -566,7 +566,7 @@ export function ConditionBoxDetails({
                         return (
                           <span
                             key={targetNodeId}
-                            className="rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[11px] text-emerald-100"
+                            className="rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-xs text-emerald-100"
                           >
                             {targetNode?.label || targetNodeId}
                           </span>

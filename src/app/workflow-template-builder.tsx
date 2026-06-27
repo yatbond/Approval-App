@@ -41,7 +41,7 @@ export function WorkflowTemplateBuilder({
           <input
             value={templateName}
             onChange={(event) => setTemplateName(event.target.value)}
-            className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+            className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
           />
         </label>
         <label className="block">
@@ -54,7 +54,7 @@ export function WorkflowTemplateBuilder({
                 getDepartmentForBusiness(businessDirectory, event.target.value),
               );
             }}
-            className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+            className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
           >
             {businessDirectory.map((business) => (
               <option key={business.id} value={business.id}>
@@ -69,7 +69,7 @@ export function WorkflowTemplateBuilder({
             <select
               value={departmentName}
               onChange={(event) => setDepartmentName(event.target.value)}
-              className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+              className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
             >
               {departmentOptions.map((department) => (
                 <option key={department} value={department}>
@@ -82,7 +82,7 @@ export function WorkflowTemplateBuilder({
               value={departmentName}
               onChange={(event) => setDepartmentName(event.target.value)}
               placeholder="Add department name"
-              className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
+              className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
             />
           )}
         </label>
@@ -93,7 +93,7 @@ export function WorkflowTemplateBuilder({
         <button
           type="button"
           onClick={onCreateTemplate}
-          className="flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 py-2 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
+          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 py-2 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
         >
           <Plus size={16} />
           Create template

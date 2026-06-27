@@ -48,11 +48,11 @@ export function WorkflowTemplateLibrary({
         <h3 className="text-sm font-semibold text-neutral-300">
           {isArchive ? "Template archive" : "Template library"}
         </h3>
-        <div className="grid grid-cols-2 gap-2 rounded-md border border-white/10 bg-[#101214] p-1 text-xs sm:w-auto">
+        <div className="grid grid-cols-2 gap-2 rounded-md border border-white/10 bg-[#101214] p-1 text-sm sm:w-auto">
           <button
             type="button"
             onClick={() => setSection("library")}
-            className={`min-h-8 rounded px-3 transition ${
+            className={`min-h-11 rounded px-3 transition ${
               section === "library"
                 ? "bg-emerald-400/15 text-emerald-100"
                 : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
@@ -63,7 +63,7 @@ export function WorkflowTemplateLibrary({
           <button
             type="button"
             onClick={() => setSection("archive")}
-            className={`min-h-8 rounded px-3 transition ${
+            className={`min-h-11 rounded px-3 transition ${
               section === "archive"
                 ? "bg-amber-400/15 text-amber-100"
                 : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
@@ -107,7 +107,7 @@ export function WorkflowTemplateLibrary({
               <p className="mt-2 text-xs text-neutral-500">
                 {item.countsLabel}
               </p>
-              <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+              <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-neutral-300">
                   {item.statusLabel}
                 </span>
@@ -126,9 +126,9 @@ export function WorkflowTemplateLibrary({
                     ? "Open this editable draft in the canvas."
                     : "Only editable, non-archived templates can be opened directly."
                 }
-                className="flex min-h-8 items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 py-1 text-xs text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-45"
+                className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-3 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                <RotateCcw size={13} />
+                <RotateCcw size={15} />
                 {item.openActionLabel}
               </button>
               <button
@@ -136,9 +136,9 @@ export function WorkflowTemplateLibrary({
                 onClick={() => onDuplicateTemplate(item.template)}
                 disabled={!item.canDuplicate}
                 title="Create a new editable draft from this workflow."
-                className="flex min-h-8 items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 py-1 text-xs text-emerald-100 transition hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-45"
+                className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 py-2 text-sm text-emerald-100 transition hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                <Copy size={13} />
+                <Copy size={15} />
                 {item.duplicateActionLabel}
               </button>
               <button
@@ -150,9 +150,9 @@ export function WorkflowTemplateLibrary({
                     ? "Archive this template so it cannot be used for new requests."
                     : "Only superusers or template creators can archive editable templates."
                 }
-                className="flex min-h-8 items-center justify-center gap-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-45"
+                className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                <X size={13} />
+                <X size={15} />
                 {item.archiveActionLabel}
               </button>
             </div>

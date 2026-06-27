@@ -80,8 +80,17 @@ import {
   WorkspaceShell,
 } from "@/app/workspace-shell";
 import { UploadDraftsView } from "@/app/upload-drafts-view";
+import { ConfirmationModal } from "@/app/confirmation-modal";
 import type { WorkspaceTab } from "@/lib/workspace-tabs-state";
 import { getWorkspaceShellState } from "@/lib/workspace-shell-state";
+import {
+  getAdminRecordDeleteConfirmation,
+  getApprovalActionConfirmation,
+  getDraftDeleteConfirmation,
+  getLiveEmailConfirmation,
+  getWorkflowTemplateArchiveConfirmation,
+  type ConfirmationRequest,
+} from "@/lib/confirmation-policy";
 import {
   getCreatedTemplateRecordState,
   getDeletedTemplateRecordState,
@@ -223,6 +232,11 @@ function ApprovalWorkspaceBody({
   const [emailDeliveryMessage, setEmailDeliveryMessage] = useState("");
   const [emailOutboxEntries, setEmailOutboxEntries] = useState<EmailOutboxEntry[]>([]);
   const [adminRecordError, setAdminRecordError] = useState("");
+  const [confirmationRequest, setConfirmationRequest] =
+    useState<ConfirmationRequest | null>(null);
+  const confirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(
+    null,
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [uploadedAttachments, setUploadedAttachments] = useState<ApprovalAttachment[]>([]);
   const [parsedDocumentId, setParsedDocumentId] = useState<string | undefined>();
@@ -241,6 +255,21 @@ function ApprovalWorkspaceBody({
   const [uploadDraftTitle, setUploadDraftTitle] = useState("");
   const [uploadDraftMessage, setUploadDraftMessage] = useState("");
   const [remoteUploadAutosaveId, setRemoteUploadAutosaveId] = useState("");
+
+  const requestConfirmation = useCallback((request: ConfirmationRequest) => {
+    confirmationResolverRef.current?.(false);
+    setConfirmationRequest(request);
+    return new Promise<boolean>((resolve) => {
+      confirmationResolverRef.current = resolve;
+    });
+  }, []);
+
+  const resolveConfirmation = useCallback((confirmed: boolean) => {
+    const resolver = confirmationResolverRef.current;
+    confirmationResolverRef.current = null;
+    setConfirmationRequest(null);
+    resolver?.(confirmed);
+  }, []);
   const uploadDraftStorageReady = useRef(false);
   const lastRemoteUploadAutosavePayloadRef = useRef("");
   const selectedTemplate = useMemo(
@@ -700,6 +729,35 @@ function ApprovalWorkspaceBody({
     }
   }
 
+  async function confirmClearUploadRequestDraftFromUi() {
+    const confirmed = await requestConfirmation(
+      getDraftDeleteConfirmation({
+        draftTitle: uploadDraftStatus.label || "current autosave",
+        action: "clear",
+      }),
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    clearUploadRequestDraftFromUi();
+  }
+
+  async function confirmDeleteUploadRequestDraft(draftId: string) {
+    const target = savedUploadDrafts.find((draft) => draft.id === draftId);
+    const confirmed = await requestConfirmation(
+      getDraftDeleteConfirmation({
+        draftTitle: target?.title || "saved draft",
+        action: "delete",
+      }),
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    await deleteUploadRequestDraft(draftId);
+  }
+
   const updateUploadHighlightDraft = useCallback(
     (draft: {
       highlightGroups: HighlightFieldGroup[];
@@ -775,6 +833,19 @@ function ApprovalWorkspaceBody({
       setTargetEmail("");
     }
     setActionError(nextState.actionError);
+  }
+
+  async function confirmRecordAction(action: ApprovalAction) {
+    const confirmation = getApprovalActionConfirmation({
+      action,
+      taskTitle: selectedTask?.title || "this request",
+      targetEmail,
+    });
+    if (confirmation && !(await requestConfirmation(confirmation))) {
+      return;
+    }
+
+    recordAction(action);
   }
 
   async function requestTaskContributor() {
@@ -1531,6 +1602,13 @@ function ApprovalWorkspaceBody({
   }
 
   async function sendTestEmail(to: string) {
+    const confirmed = await requestConfirmation(
+      getLiveEmailConfirmation({ recipientEmail: to }),
+    );
+    if (!confirmed) {
+      return;
+    }
+
     const testNotification = {
       id: `test-email-${Date.now()}`,
       title: "Test email",
@@ -1667,6 +1745,20 @@ function ApprovalWorkspaceBody({
     );
   }
 
+  async function confirmDeleteTemplateRecord(templateId: string) {
+    const template = templates.find((item) => item.id === templateId);
+    const confirmed = await requestConfirmation(
+      getWorkflowTemplateArchiveConfirmation({
+        templateName: template?.name || "this workflow template",
+      }),
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    await deleteTemplateRecord(templateId);
+  }
+
   async function deactivateAdminRecord(
     record: Parameters<typeof deactivateRemoteWorkspaceAdminRecord>[0],
   ) {
@@ -1693,6 +1785,44 @@ function ApprovalWorkspaceBody({
 
     setAdminRecordError("");
     return true;
+  }
+
+  async function confirmDeactivateBusinessRecord(business: BusinessUnit) {
+    const confirmed = await requestConfirmation(
+      getAdminRecordDeleteConfirmation({
+        recordType: "business",
+        recordName: business.name,
+      }),
+    );
+    if (!confirmed) {
+      return false;
+    }
+
+    return deactivateAdminRecord({
+      type: "business",
+      businessId: business.id,
+    });
+  }
+
+  async function confirmDeactivateDepartmentRecord(
+    business: BusinessUnit,
+    departmentName: string,
+  ) {
+    const confirmed = await requestConfirmation(
+      getAdminRecordDeleteConfirmation({
+        recordType: "department",
+        recordName: departmentName,
+      }),
+    );
+    if (!confirmed) {
+      return false;
+    }
+
+    return deactivateAdminRecord({
+      type: "department",
+      businessId: business.id,
+      departmentName,
+    });
   }
 
   function latestTaskVersionForTemplate(templateId: string) {
@@ -1739,6 +1869,7 @@ function ApprovalWorkspaceBody({
   }
 
   return (
+    <>
     <WorkspaceShell
       activeTab={activeTab}
       sessionUser={sessionUser}
@@ -1770,7 +1901,7 @@ function ApprovalWorkspaceBody({
                 setContributorBlocksApproval={setContributorBlocksApproval}
                 contributorRequestError={contributorRequestError}
                 onRequestContributor={requestTaskContributor}
-                recordAction={recordAction}
+                recordAction={confirmRecordAction}
                 activeUserEmail={activeUser.email}
                 userDirectory={userDirectory}
                 actionError={actionError}
@@ -1817,14 +1948,14 @@ function ApprovalWorkspaceBody({
                 uploadDraftMessage={uploadDraftMessage}
                 onSaveRequestDraft={saveCurrentUploadRequestDraft}
                 onLoadRequestDraft={loadUploadRequestDraft}
-                onDeleteRequestDraft={deleteUploadRequestDraft}
+                onDeleteRequestDraft={confirmDeleteUploadRequestDraft}
                 uploadDraftRestoreToken={uploadDraftRestoreToken}
                 uploadDraftResetToken={uploadDraftResetToken}
                 restoredHighlightGroups={uploadHighlightGroups}
                 restoredActiveHighlightGroupId={uploadActiveHighlightGroupId}
                 restoredHighlightBoxCounter={uploadHighlightBoxCounter}
                 onHighlightDraftChange={updateUploadHighlightDraft}
-                onClearRequestDraft={clearUploadRequestDraftFromUi}
+                onClearRequestDraft={confirmClearUploadRequestDraftFromUi}
                 workflowTemplates={templates}
                 selectedTemplateId={selectedTemplate?.id || ""}
                 setSelectedTemplateId={selectTemplateRecord}
@@ -1846,8 +1977,8 @@ function ApprovalWorkspaceBody({
                 selectedUploadDraftId={selectedUploadDraftId}
                 activeUserEmail={activeUser.email}
                 onResumeSavedDraft={resumeUploadRequestDraft}
-                onClearCurrentDraft={clearUploadRequestDraftFromUi}
-                onDeleteRequestDraft={deleteUploadRequestDraft}
+                onClearCurrentDraft={confirmClearUploadRequestDraftFromUi}
+                onDeleteRequestDraft={confirmDeleteUploadRequestDraft}
               />
             )}
 
@@ -1858,7 +1989,8 @@ function ApprovalWorkspaceBody({
                 workflowTemplates={templates}
                 selectedTemplateId={selectedTemplate?.id || ""}
                 setSelectedTemplateId={selectTemplateRecord}
-                onDeleteTemplate={deleteTemplateRecord}
+                onDeleteTemplate={confirmDeleteTemplateRecord}
+                requestConfirmation={requestConfirmation}
                 adminRecordError={adminRecordError}
                 onCreateTemplate={createTemplateRecord}
                 onUpdateTemplate={updateTemplateRecord}
@@ -1873,19 +2005,8 @@ function ApprovalWorkspaceBody({
                 businessDirectory={businessDirectory}
                 adminRecordError={adminRecordError}
                 setBusinessDirectory={updateBusinessDirectoryRecords}
-                onDeactivateBusinessRecord={(business) =>
-                  deactivateAdminRecord({
-                    type: "business",
-                    businessId: business.id,
-                  })
-                }
-                onDeactivateDepartmentRecord={(business, departmentName) =>
-                  deactivateAdminRecord({
-                    type: "department",
-                    businessId: business.id,
-                    departmentName,
-                  })
-                }
+                onDeactivateBusinessRecord={confirmDeactivateBusinessRecord}
+                onDeactivateDepartmentRecord={confirmDeactivateDepartmentRecord}
                 legacyDepartments={departments}
                 userDirectory={userDirectory}
                 taskNotifications={taskNotifications}
@@ -1899,6 +2020,12 @@ function ApprovalWorkspaceBody({
               />
             )}
     </WorkspaceShell>
+    <ConfirmationModal
+      request={confirmationRequest}
+      onCancel={() => resolveConfirmation(false)}
+      onConfirm={() => resolveConfirmation(true)}
+    />
+    </>
   );
 }
 

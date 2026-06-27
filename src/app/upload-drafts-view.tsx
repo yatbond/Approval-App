@@ -54,7 +54,7 @@ export function UploadDraftsView({
         </div>
         <Link
           href="/?tab=upload"
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
         >
           <Plus size={16} />
           New request
@@ -74,7 +74,7 @@ export function UploadDraftsView({
           </div>
         </div>
       ) : (
-        <div className="grid gap-3 p-5 xl:grid-cols-2">
+        <div className="grid gap-3 p-4 sm:p-5 xl:grid-cols-2">
           {resumeItems.map((item) => {
             const savedDraft = savedDraftById.get(item.id);
             return (
@@ -117,7 +117,7 @@ export function UploadDraftsView({
                     <>
                       <Link
                         href="/?tab=upload"
-                        className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20"
+                        className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20"
                       >
                         <RotateCcw size={15} />
                         Resume autosave
@@ -126,7 +126,7 @@ export function UploadDraftsView({
                         type="button"
                         onClick={onClearCurrentDraft}
                         disabled={!item.canDelete}
-                        className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500 sm:flex-none"
+                        className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500 sm:flex-none"
                       >
                         <Trash2 size={15} />
                         Clear autosave
@@ -139,7 +139,7 @@ export function UploadDraftsView({
                         item.canResume && savedDraft && onResumeSavedDraft(savedDraft)
                       }
                       disabled={!item.canResume}
-                      className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500"
+                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500"
                     >
                       <RotateCcw size={15} />
                       Resume
@@ -150,7 +150,7 @@ export function UploadDraftsView({
                       type="button"
                       onClick={() => item.canDelete && onDeleteRequestDraft(item.id)}
                       disabled={!item.canDelete}
-                      className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500 sm:flex-none"
+                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500 sm:flex-none"
                     >
                       <Trash2 size={15} />
                       Delete

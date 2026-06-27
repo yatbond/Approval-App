@@ -243,7 +243,7 @@ export function QueueView({
                       <span className="text-xs">
                         {document.documentType} - {formatDocumentFormat(document.format)}
                       </span>
-                      <span className="text-[11px] text-amber-100/70">
+                      <span className="text-xs text-amber-100/70">
                         Upload this document before approving the current box.
                       </span>
                       <input
@@ -503,7 +503,7 @@ export function TrackingView({
                   </p>
                   <Link
                     href={`/?tab=tracking&request=${encodeURIComponent(selectedTask.id)}`}
-                    className="mt-2 inline-flex min-h-8 items-center rounded-md border border-sky-400/40 bg-sky-400/12 px-2 py-1 text-xs text-sky-100 transition hover:bg-sky-400/20"
+                    className="mt-2 inline-flex min-h-11 items-center rounded-md border border-sky-400/40 bg-sky-400/12 px-3 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20"
                   >
                     Open request detail page
                   </Link>
@@ -581,7 +581,7 @@ export function TrackingView({
                               : ""}
                           </p>
                           {attachment.storagePath && (
-                            <p className="mt-1 break-words text-[11px] text-emerald-200">
+                            <p className="mt-1 break-words text-xs text-emerald-200">
                               Stored in Supabase: {attachment.storagePath}
                             </p>
                           )}
@@ -664,7 +664,7 @@ function TaskPathSummary({
                   </p>
                   <p className="mt-1 text-xs text-neutral-500">{formatNodeKind(node.kind)}</p>
                 </div>
-                <span className="rounded border border-white/10 px-2 py-1 text-[11px] text-neutral-300">
+                <span className="rounded border border-white/10 px-2 py-1 text-xs text-neutral-300">
                   {formatPathNodeState(state)}
                 </span>
               </div>
@@ -914,7 +914,7 @@ function StatusPanelRow({
           <p className="mt-1 break-words text-neutral-500">Due {item.dueAt}</p>
         ) : null}
       </div>
-      <span className="self-start rounded-md border border-white/10 px-2 py-1 text-[11px] text-neutral-300">
+      <span className="self-start rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-300">
         {formatStatusText(item.status)}
       </span>
     </div>

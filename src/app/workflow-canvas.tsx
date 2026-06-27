@@ -170,7 +170,7 @@ function toFlowNodes(
               </span>
             )}
           </div>
-          <p className="mt-1 text-[11px] uppercase tracking-normal text-neutral-500">
+          <p className="mt-1 text-xs uppercase tracking-normal text-neutral-500">
             {formatNodeKind(node.kind)}
           </p>
           {node.assigneeEmail && (

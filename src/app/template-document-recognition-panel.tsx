@@ -228,7 +228,7 @@ export function TemplateDocumentRecognitionPanel({
           <p className="text-xs font-semibold text-neutral-300">
             Sample recognition
           </p>
-          <p className="mt-1 text-[11px] text-neutral-500">
+          <p className="mt-1 text-xs text-neutral-500">
             Upload a sample, accept suggested fields, or box a value to create template fields.
           </p>
         </div>
@@ -250,17 +250,17 @@ export function TemplateDocumentRecognitionPanel({
       </div>
 
       {fileName && (
-        <p className="mt-2 break-words text-[11px] text-neutral-500">{fileName}</p>
+        <p className="mt-2 break-words text-xs text-neutral-500">{fileName}</p>
       )}
       {parseError && (
-        <p className="mt-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-[11px] text-rose-100">
+        <p className="mt-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-xs text-rose-100">
           {parseError}
         </p>
       )}
 
       {parseResult?.suggestedFields?.length ? (
         <div className="mt-3 rounded-md border border-sky-500/25 bg-sky-500/10 p-2">
-          <p className="text-[11px] font-semibold text-sky-100">
+          <p className="text-xs font-semibold text-sky-100">
             Step 1: Suggested fields
           </p>
           <div className="mt-2 space-y-2">
@@ -274,7 +274,7 @@ export function TemplateDocumentRecognitionPanel({
                     <p className="break-words text-xs text-neutral-100">
                       {suggestion.label}
                     </p>
-                    <p className="mt-1 break-words text-[11px] text-neutral-400">
+                    <p className="mt-1 break-words text-xs text-neutral-400">
                       {suggestion.value}
                     </p>
                   </div>
@@ -288,7 +288,7 @@ export function TemplateDocumentRecognitionPanel({
                         evidence: suggestion.evidence,
                       })
                     }
-                    className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 text-[11px] text-sky-100"
+                    className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 text-xs text-sky-100"
                   >
                     <Plus size={12} />
                     Use
@@ -302,7 +302,7 @@ export function TemplateDocumentRecognitionPanel({
 
       {selectedPreviewPage && (
         <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-2">
-          <p className="text-[11px] font-semibold text-neutral-300">
+          <p className="text-xs font-semibold text-neutral-300">
             Step 2: Add / correct fields
           </p>
           {previewPages.length > 1 && (
@@ -312,7 +312,7 @@ export function TemplateDocumentRecognitionPanel({
                 setSelectedPreviewPageId(event.target.value);
                 setHighlightRect(null);
               }}
-              className="mt-2 h-8 rounded-md border border-white/10 bg-[#0d1012] px-2 text-[11px] outline-none"
+              className="mt-2 h-8 rounded-md border border-white/10 bg-[#0d1012] px-2 text-xs outline-none"
             >
               {previewPages.map((page) => (
                 <option key={page.id} value={page.id}>
@@ -403,7 +403,7 @@ export function TemplateDocumentRecognitionPanel({
                   })
                 }
                 disabled={!fieldLabel.trim()}
-                className="flex h-8 items-center justify-center gap-1 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 text-[11px] text-emerald-100 disabled:opacity-40"
+                className="flex h-8 items-center justify-center gap-1 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 text-xs text-emerald-100 disabled:opacity-40"
               >
                 <Plus size={12} />
                 Add template field
@@ -412,7 +412,7 @@ export function TemplateDocumentRecognitionPanel({
                 type="button"
                 onClick={extractHighlightedSample}
                 disabled={!highlightRect || !fieldLabel.trim() || isParsing}
-                className="flex h-8 items-center justify-center gap-1 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 text-[11px] text-sky-100 disabled:opacity-40"
+                className="flex h-8 items-center justify-center gap-1 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 text-xs text-sky-100 disabled:opacity-40"
               >
                 {isParsing ? <Loader2 size={12} className="animate-spin" /> : <ImageIcon size={12} />}
                 Extract box

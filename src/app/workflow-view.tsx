@@ -98,6 +98,10 @@ import {
   getWorkflowUndoActionState,
 } from "@/lib/workflow-history-action-state";
 import {
+  getWorkflowCanvasDeleteConfirmation,
+  type ConfirmationRequest,
+} from "@/lib/confirmation-policy";
+import {
   getWorkflowMoveNodeState,
   getWorkflowUpdateSelectedNodeState,
 } from "@/lib/workflow-node-patch-state";
@@ -138,6 +142,7 @@ export function WorkflowView({
   userDirectory,
   activeUser,
   onRunWorkflowAction,
+  requestConfirmation,
 }: {
   businessDirectory: BusinessUnit[];
   tasks: ApprovalTask[];
@@ -151,6 +156,7 @@ export function WorkflowView({
   userDirectory: UserDirectoryEntry[];
   activeUser: UserDirectoryEntry;
   onRunWorkflowAction: (taskId: string, action: ApprovalAction) => void;
+  requestConfirmation: (request: ConfirmationRequest) => Promise<boolean>;
 }) {
   const workflow =
     workflowTemplates.find((template) => template.id === selectedTemplateId) ||
@@ -635,7 +641,7 @@ export function WorkflowView({
     saveWorkflowTemplate(nextTemplate, `Added ${field.label} recognition field`);
   }
 
-  function deleteSelectedCanvasItem() {
+  async function deleteSelectedCanvasItem() {
     const deleteState = getWorkflowCanvasDeleteState({
       graph: workflowGraph,
       selectedNodeId,
@@ -643,6 +649,17 @@ export function WorkflowView({
       connectFromNodeId,
     });
     if (!deleteState.didDelete) {
+      return;
+    }
+
+    const itemLabel =
+      selectedGraphNode?.label ||
+      selectedGraphEdge?.label ||
+      (selectedGraphEdge ? "selected branch" : "selected box");
+    const confirmed = await requestConfirmation(
+      getWorkflowCanvasDeleteConfirmation({ itemLabel }),
+    );
+    if (!confirmed) {
       return;
     }
 
@@ -705,7 +722,7 @@ export function WorkflowView({
       }
 
       event.preventDefault();
-      deleteSelectedCanvasItem();
+      void deleteSelectedCanvasItem();
     }
 
     window.addEventListener("keydown", handleCanvasKeyDown);
@@ -760,7 +777,7 @@ export function WorkflowView({
     saveWorkflowGraph(result.graph, result.label);
   }
 
-  function deleteSelectedConditionCase(caseId: string) {
+  async function deleteSelectedConditionCase(caseId: string) {
     const result = getWorkflowDeleteConditionCaseState({
       graph: workflowGraph,
       selectedNodeId: selectedGraphNode?.id || null,
@@ -768,6 +785,13 @@ export function WorkflowView({
       activeOutcomeCaseId: conditionOutcomeCaseId,
     });
     if (!result.didUpdate) {
+      return;
+    }
+
+    const confirmed = await requestConfirmation(
+      getWorkflowCanvasDeleteConfirmation({ itemLabel: "selected condition" }),
+    );
+    if (!confirmed) {
       return;
     }
 
@@ -824,20 +848,46 @@ export function WorkflowView({
             </div>
           )}
           <div className="mt-4 flex flex-wrap gap-2">
-            {workflowEditorTabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setWorkflowEditorTab(tab.id)}
-                className={`min-h-9 rounded-md border px-3 py-2 text-sm transition ${
-                  workflowEditorTab === tab.id
-                    ? "border-emerald-400/40 bg-emerald-400/12 text-emerald-100"
-                    : "border-white/10 bg-[#121518] text-neutral-300 hover:border-white/20"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+            {workflowEditorTabs.map((tab) => {
+              const activeClasses =
+                workflowEditorTab === tab.id
+                  ? "border-emerald-400/40 bg-emerald-400/12 text-emerald-100"
+                  : "border-white/10 bg-[#121518] text-neutral-300 hover:border-white/20";
+              if (tab.mobileDisabled) {
+                return (
+                  <div key={tab.id} className="contents">
+                    <button
+                      type="button"
+                      disabled
+                      title="Canvas editing is available on tablet and desktop screens."
+                      className="min-h-11 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-neutral-500 md:hidden"
+                    >
+                      {tab.label}
+                      <span className="ml-1 text-xs">desktop</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWorkflowEditorTab(tab.id)}
+                      title={tab.label}
+                      className={`hidden min-h-11 rounded-md border px-3 py-2 text-sm transition md:inline-flex md:items-center ${activeClasses}`}
+                    >
+                      {tab.label}
+                    </button>
+                  </div>
+                );
+              }
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setWorkflowEditorTab(tab.id)}
+                  title={tab.label}
+                  className={`min-h-11 rounded-md border px-3 py-2 text-sm transition ${activeClasses}`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
           {adminRecordError && (
             <p className="mt-3 rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-100">
@@ -852,6 +902,12 @@ export function WorkflowView({
         </div>
         {workflow && workflowEditorTab === "canvas" && (
           <div className="p-4">
+            <div className="rounded-md border border-sky-400/30 bg-sky-400/10 p-4 text-sm text-sky-100 md:hidden">
+              Canvas editing is disabled on mobile screens. Use Template Builder
+              or Template Library here, or open this workflow on a tablet or
+              desktop to edit the canvas.
+            </div>
+            <div className="hidden md:block">
             <div className="relative min-w-0">
               <WorkflowCanvasToolbar
                 connectFromNode={connectFromNode}
@@ -940,7 +996,7 @@ export function WorkflowView({
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={deleteSelectedCanvasItem}
+                        onClick={() => void deleteSelectedCanvasItem()}
                         disabled={selectedGraphNode?.id === "start"}
                         title={
                           selectedGraphNode?.id === "start"
@@ -1217,7 +1273,7 @@ export function WorkflowView({
                       activeOutcomeCaseId={conditionOutcomeCaseId}
                       onAddCase={addConditionCaseToSelectedBox}
                       onAddFallbackCase={addFallbackConditionCaseToSelectedBox}
-                      onDeleteCase={deleteSelectedConditionCase}
+                      onDeleteCase={(caseId) => void deleteSelectedConditionCase(caseId)}
                       onUpdateCase={updateSelectedConditionCase}
                       onStartOutcomePick={(caseId) =>
                         setConditionOutcomeCaseId((activeCaseId) =>
@@ -1254,7 +1310,7 @@ export function WorkflowView({
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="min-w-0 flex-1 space-y-2">
                                     <label className="block">
-                                      <span className="mb-1 block text-[11px] text-neutral-500">
+                                      <span className="mb-1 block text-xs text-neutral-500">
                                         Document type
                                       </span>
                                       <input
@@ -1269,7 +1325,7 @@ export function WorkflowView({
                                       />
                                     </label>
                                     <label className="block">
-                                      <span className="mb-1 block text-[11px] text-neutral-500">
+                                      <span className="mb-1 block text-xs text-neutral-500">
                                         Input method
                                       </span>
                                       <select
@@ -1294,7 +1350,7 @@ export function WorkflowView({
                                     </label>
                                     <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
                                       <label className="block">
-                                        <span className="mb-1 block text-[11px] text-neutral-500">
+                                        <span className="mb-1 block text-xs text-neutral-500">
                                           {isManualForm
                                             ? "Sample form format"
                                             : "Document format"}
@@ -1333,7 +1389,7 @@ export function WorkflowView({
                                         {isManualForm ? "Required form" : "Required"}
                                       </label>
                                     </div>
-                                    <p className="rounded-md border border-white/10 bg-[#101214] px-2 py-1 text-[11px] text-neutral-500">
+                                    <p className="rounded-md border border-white/10 bg-[#101214] px-2 py-1 text-xs text-neutral-500">
                                       {formatDocumentInputMode(document.inputMode || "upload")}
                                     </p>
                                   </div>
@@ -1357,7 +1413,7 @@ export function WorkflowView({
                                     <p className="text-xs font-semibold text-sky-100">
                                       Step 1: Required template fields
                                     </p>
-                                    <p className="mt-1 text-[11px] text-sky-100/70">
+                                    <p className="mt-1 text-xs text-sky-100/70">
                                       These fields guide OCR and appear first when a request document is uploaded.
                                     </p>
                                   </div>
@@ -1366,7 +1422,7 @@ export function WorkflowView({
                                       <p className="text-xs font-semibold text-neutral-400">
                                         Step 2: Add / correct fields
                                       </p>
-                                      <p className="mt-1 text-[11px] text-neutral-500">
+                                      <p className="mt-1 text-xs text-neutral-500">
                                         Add field names and extraction instructions for this document type.
                                       </p>
                                     </div>
@@ -1558,6 +1614,7 @@ export function WorkflowView({
               >
                 {workflowPublishAction.label}
               </button>
+            </div>
             </div>
           </div>
         )}

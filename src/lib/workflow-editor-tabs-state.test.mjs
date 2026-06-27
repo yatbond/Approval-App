@@ -22,3 +22,9 @@ test("keeps publishing as a canvas action instead of an editor tab", () => {
     false,
   );
 });
+
+test("marks Canvas as unavailable on mobile screens", () => {
+  const canvasTab = workflowEditorTabs.find((tab) => tab.id === "canvas");
+
+  assert.equal(canvasTab?.mobileDisabled, true);
+});

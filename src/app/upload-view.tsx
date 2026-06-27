@@ -547,8 +547,8 @@ export function UploadView({
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
-      <section className="rounded-md border border-white/10 bg-white/[0.03] p-5">
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+      <section className="min-w-0 rounded-md border border-white/10 bg-white/[0.03] p-4 sm:p-5">
         <h2 className="font-semibold">Upload request documents</h2>
         <p className="mt-1 text-sm text-neutral-400">
           Choose a template, then upload each required or optional document.
@@ -571,7 +571,7 @@ export function UploadView({
           <select
             value={selectedTemplate?.id || ""}
             onChange={(event) => setSelectedTemplateId(event.target.value)}
-            className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+            className="min-h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
           >
             {requestTemplates.length === 0 && (
               <option value="">No published templates</option>
@@ -1062,7 +1062,7 @@ export function UploadView({
               </div>
 
               {fieldInputMode !== "suggested" && (
-              <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-3">
+          <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-neutral-200">
@@ -1531,7 +1531,7 @@ function UploadDraftPanel({
             <button
               type="button"
               onClick={onClearRequestDraft}
-              className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-xs font-medium text-rose-100 transition hover:bg-rose-500/20"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20"
             >
               <X size={13} />
               Clear current
@@ -1547,13 +1547,13 @@ function UploadDraftPanel({
                 value={uploadDraftTitle}
                 onChange={(event) => setUploadDraftTitle(event.target.value)}
                 placeholder="Example: Gleneagles final account"
-                className="h-9 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-xs outline-none transition focus:border-emerald-400/60"
+                className="min-h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none transition focus:border-emerald-400/60"
               />
             </label>
             <button
               type="button"
               onClick={onSaveRequestDraft}
-              className="mt-auto inline-flex h-9 items-center justify-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 text-xs font-medium text-emerald-100 transition hover:bg-emerald-500/20"
+              className="mt-auto inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/20"
             >
               <Save size={13} />
               Save named draft
@@ -1583,7 +1583,7 @@ function UploadDraftPanel({
               return (
                 <div
                   key={draft.id}
-                  className={`rounded-md border p-2 text-xs ${
+                  className={`rounded-md border p-3 text-sm ${
                     draft.id === selectedUploadDraftId
                       ? "border-emerald-400/50 bg-emerald-400/5"
                       : "border-white/10 bg-[#101214]"
@@ -1598,18 +1598,18 @@ function UploadDraftPanel({
                         {summary?.detail}
                       </p>
                     </div>
-                    <div className="flex shrink-0 gap-2">
+                    <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex">
                       <button
                         type="button"
                         onClick={() => onLoadRequestDraft(draft)}
-                        className="inline-flex h-8 items-center justify-center rounded-md border border-sky-500/30 bg-sky-500/10 px-3 font-medium text-sky-100 transition hover:bg-sky-500/20"
+                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-sky-500/30 bg-sky-500/10 px-3 font-medium text-sky-100 transition hover:bg-sky-500/20"
                       >
                         Load
                       </button>
                       <button
                         type="button"
                         onClick={() => onDeleteRequestDraft(draft.id)}
-                        className="inline-flex h-8 items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3 font-medium text-rose-100 transition hover:bg-rose-500/20"
+                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3 font-medium text-rose-100 transition hover:bg-rose-500/20"
                       >
                         Delete
                       </button>
