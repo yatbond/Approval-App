@@ -640,7 +640,9 @@ function HandoffSummary({
 
       {handoff.processes.length ? (
         <div className="mt-3 space-y-2">
-          <p className="text-xs font-semibold text-neutral-400">Checks</p>
+          <p className="text-xs font-semibold text-neutral-400">
+            Checks and calculations
+          </p>
           {handoff.processes.map((process) => (
             <div
               key={process.id}
@@ -649,7 +651,9 @@ function HandoffSummary({
                   ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
                   : process.tone === "fail"
                     ? "border-amber-400/30 bg-amber-400/10 text-amber-100"
-                    : "border-white/10 bg-[#101214] text-neutral-300"
+                    : process.tone === "info"
+                      ? "border-sky-400/30 bg-sky-400/10 text-sky-100"
+                      : "border-white/10 bg-[#101214] text-neutral-300"
               }`}
             >
               <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">

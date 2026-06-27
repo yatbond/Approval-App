@@ -4,6 +4,8 @@ import type {
   WorkflowGraphNode,
   WorkflowHandoffDocumentVisibility,
   WorkflowHandoffFieldVisibility,
+  WorkflowHandoffCalculationProcess,
+  WorkflowHandoffComparisonProcess,
   WorkflowHandoffProcess,
   WorkflowRuleOperator,
   WorkflowTemplate,
@@ -22,7 +24,7 @@ export type TaskHandoffAttachment = ApprovalAttachment & {
 export type TaskHandoffProcessResult = {
   id: string;
   label: string;
-  tone: "pass" | "fail" | "unknown";
+  tone: "pass" | "fail" | "unknown" | "info";
   result: string;
   detail: string;
 };
@@ -147,11 +149,15 @@ function evaluateProcesses(
   processes: WorkflowHandoffProcess[],
   fields: Record<string, string>,
 ) {
-  return processes.map((process) => evaluateComparisonProcess(process, fields));
+  return processes.map((process) =>
+    process.type === "calculation"
+      ? evaluateCalculationProcess(process, fields)
+      : evaluateComparisonProcess(process, fields),
+  );
 }
 
 function evaluateComparisonProcess(
-  process: WorkflowHandoffProcess,
+  process: WorkflowHandoffComparisonProcess,
   fields: Record<string, string>,
 ): TaskHandoffProcessResult {
   const leftValue = fields[process.leftField];
@@ -174,6 +180,65 @@ function evaluateComparisonProcess(
     tone: comparison ? "pass" : "fail",
     result: comparison ? "Matched" : "Not matched",
     detail: `${process.leftField} ${leftValue} ${comparison ? "is" : "is not"} ${process.operator} ${process.rightField} ${rightValue}.`,
+  };
+}
+
+function evaluateCalculationProcess(
+  process: WorkflowHandoffCalculationProcess,
+  fields: Record<string, string>,
+): TaskHandoffProcessResult {
+  const leftValue = fields[process.leftField];
+  const rightValue = fields[process.rightField];
+  const leftNumber =
+    leftValue === undefined ? undefined : parseComparableNumber(leftValue);
+  const rightNumber =
+    rightValue === undefined ? undefined : parseComparableNumber(rightValue);
+
+  if (leftNumber === undefined || rightNumber === undefined) {
+    return {
+      id: process.id,
+      label: process.label,
+      tone: "unknown",
+      result: "Needs review",
+      detail: `${process.leftField} or ${process.rightField} is not numeric.`,
+    };
+  }
+
+  if (process.calculation === "percentage_difference") {
+    if (rightNumber === 0) {
+      return {
+        id: process.id,
+        label: process.label,
+        tone: "unknown",
+        result: "Needs review",
+        detail: `${process.rightField} is zero, so percentage difference cannot be calculated.`,
+      };
+    }
+
+    const percent = ((leftNumber - rightNumber) / Math.abs(rightNumber)) * 100;
+    const direction = percent > 0 ? "above" : percent < 0 ? "below" : "equal to";
+    const formattedPercent = `${formatNumber(Math.abs(percent))}%`;
+
+    return {
+      id: process.id,
+      label: process.label,
+      tone: "info",
+      result: formattedPercent,
+      detail:
+        direction === "equal to"
+          ? `${process.leftField} is equal to ${process.rightField}.`
+          : `${process.leftField} is ${formattedPercent} ${direction} ${process.rightField}.`,
+    };
+  }
+
+  const difference = leftNumber - rightNumber;
+
+  return {
+    id: process.id,
+    label: process.label,
+    tone: "info",
+    result: formatNumber(difference),
+    detail: `${process.leftField} ${leftValue} minus ${process.rightField} ${rightValue} equals ${formatNumber(difference)}.`,
   };
 }
 
@@ -219,6 +284,13 @@ function parseComparableNumber(value: string) {
 
 function normalizeName(value: string) {
   return value.trim().toLowerCase();
+}
+
+function formatNumber(value: number) {
+  return value.toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  });
 }
 
 function isCustomPolicy(policy: WorkflowGraphNode["handoffView"]) {

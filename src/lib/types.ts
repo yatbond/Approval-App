@@ -254,7 +254,9 @@ export type WorkflowHandoffDocumentVisibility = {
 
 export type WorkflowHandoffLayout = "standard" | "compact" | "comparison";
 
-export type WorkflowHandoffProcess = {
+export type WorkflowHandoffCalculation = "difference" | "percentage_difference";
+
+export type WorkflowHandoffComparisonProcess = {
   id: string;
   type: "comparison";
   label: string;
@@ -262,6 +264,19 @@ export type WorkflowHandoffProcess = {
   operator: WorkflowRuleOperator;
   rightField: string;
 };
+
+export type WorkflowHandoffCalculationProcess = {
+  id: string;
+  type: "calculation";
+  label: string;
+  calculation: WorkflowHandoffCalculation;
+  leftField: string;
+  rightField: string;
+};
+
+export type WorkflowHandoffProcess =
+  | WorkflowHandoffComparisonProcess
+  | WorkflowHandoffCalculationProcess;
 
 export type WorkflowHandoffView = {
   fieldVisibility?: WorkflowHandoffFieldVisibility;

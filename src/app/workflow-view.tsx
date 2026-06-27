@@ -114,6 +114,7 @@ import type {
   WorkflowGraph,
   WorkflowGraphEdge,
   WorkflowGraphNode,
+  WorkflowHandoffCalculation,
   WorkflowHandoffProcess,
   WorkflowNodeKind,
   WorkflowRuleOperator,
@@ -159,6 +160,25 @@ const handoffComparisonOperators: WorkflowRuleOperator[] = [
   "<=",
   "contains",
 ];
+
+const handoffProcessTypeOptions = [
+  { value: "comparison", label: "Comparison check" },
+  { value: "calculation", label: "Calculated value" },
+] as const;
+
+const handoffCalculationOptions = [
+  { value: "difference", label: "Difference" },
+  { value: "percentage_difference", label: "Percentage difference" },
+] as const;
+
+type HandoffProcessPatch = {
+  type?: WorkflowHandoffProcess["type"];
+  label?: string;
+  leftField?: string;
+  rightField?: string;
+  operator?: WorkflowRuleOperator;
+  calculation?: WorkflowHandoffCalculation;
+};
 
 export function WorkflowView({
   businessDirectory,
@@ -591,12 +611,14 @@ export function WorkflowView({
 
   function updateSelectedNodeHandoffProcess(
     processId: string,
-    patch: Partial<WorkflowHandoffProcess>,
+    patch: HandoffProcessPatch,
   ) {
     const processes = selectedGraphNode?.handoffView?.processes || [];
     updateSelectedNodeHandoffView({
       processes: processes.map((process) =>
-        process.id === processId ? { ...process, ...patch } : process,
+        process.id === processId
+          ? applyHandoffProcessPatch(process, patch)
+          : process,
       ),
     });
   }
@@ -1338,6 +1360,9 @@ export function WorkflowView({
                           <p className="mt-1 text-xs text-neutral-500">
                             Default is all values and documents in a standard summary.
                           </p>
+                          <p className="mt-2 rounded-md border border-amber-400/25 bg-amber-400/10 px-2 py-1 text-xs text-amber-100">
+                            Display control only. Sensitive data still needs server-side access rules.
+                          </p>
                         </div>
                         <datalist id="workflow-handoff-field-names">
                           {handoffFieldNames.map((fieldName) => (
@@ -1510,7 +1535,7 @@ export function WorkflowView({
                         <div className="space-y-2 border-t border-white/10 pt-3">
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-xs font-semibold text-neutral-400">
-                              Comparison checks
+                              Checks and calculations
                             </p>
                             <button
                               type="button"
@@ -1527,7 +1552,7 @@ export function WorkflowView({
                                 key={process.id}
                                 className="space-y-2 rounded-md border border-white/10 bg-[#121518] p-2"
                               >
-                                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                                <div className="grid gap-2 sm:grid-cols-[1fr_150px_auto]">
                                   <input
                                     value={process.label}
                                     onChange={(event) =>
@@ -1537,6 +1562,22 @@ export function WorkflowView({
                                     }
                                     className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
                                   />
+                                  <select
+                                    value={process.type}
+                                    onChange={(event) =>
+                                      updateSelectedNodeHandoffProcess(process.id, {
+                                        type: event.target
+                                          .value as WorkflowHandoffProcess["type"],
+                                      })
+                                    }
+                                    className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                                  >
+                                    {handoffProcessTypeOptions.map((option) => (
+                                      <option key={option.value} value={option.value}>
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </select>
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -1558,21 +1599,44 @@ export function WorkflowView({
                                     }
                                     className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
                                   />
-                                  <select
-                                    value={process.operator}
-                                    onChange={(event) =>
-                                      updateSelectedNodeHandoffProcess(process.id, {
-                                        operator: event.target.value as WorkflowRuleOperator,
-                                      })
-                                    }
-                                    className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
-                                  >
-                                    {handoffComparisonOperators.map((operator) => (
-                                      <option key={operator} value={operator}>
-                                        {operator}
-                                      </option>
-                                    ))}
-                                  </select>
+                                  {process.type === "calculation" ? (
+                                    <select
+                                      value={process.calculation}
+                                      onChange={(event) =>
+                                        updateSelectedNodeHandoffProcess(process.id, {
+                                          calculation: event.target
+                                            .value as WorkflowHandoffCalculation,
+                                        })
+                                      }
+                                      className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                                    >
+                                      {handoffCalculationOptions.map((option) => (
+                                        <option
+                                          key={option.value}
+                                          value={option.value}
+                                        >
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <select
+                                      value={process.operator}
+                                      onChange={(event) =>
+                                        updateSelectedNodeHandoffProcess(process.id, {
+                                          operator: event.target
+                                            .value as WorkflowRuleOperator,
+                                        })
+                                      }
+                                      className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                                    >
+                                      {handoffComparisonOperators.map((operator) => (
+                                        <option key={operator} value={operator}>
+                                          {operator}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
                                   <input
                                     value={process.rightField}
                                     list="workflow-handoff-field-names"
@@ -2035,4 +2099,37 @@ function nextHandoffProcessId(processes: WorkflowHandoffProcess[]) {
   }
 
   return id;
+}
+
+function applyHandoffProcessPatch(
+  process: WorkflowHandoffProcess,
+  patch: HandoffProcessPatch,
+): WorkflowHandoffProcess {
+  const type = patch.type || process.type;
+  const label = patch.label ?? process.label;
+  const leftField = patch.leftField ?? process.leftField;
+  const rightField = patch.rightField ?? process.rightField;
+
+  if (type === "calculation") {
+    return {
+      id: process.id,
+      type,
+      label,
+      leftField,
+      rightField,
+      calculation:
+        patch.calculation ||
+        (process.type === "calculation" ? process.calculation : "difference"),
+    };
+  }
+
+  return {
+    id: process.id,
+    type,
+    label,
+    leftField,
+    rightField,
+    operator:
+      patch.operator || (process.type === "comparison" ? process.operator : "="),
+  };
 }

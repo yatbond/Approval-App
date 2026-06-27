@@ -234,3 +234,98 @@ test("marks numeric comparison processes unknown when values are not numeric", (
     },
   ]);
 });
+
+test("evaluates calculated variance process blocks for handoff packets", () => {
+  const template = {
+    ...baseTemplate,
+    graph: {
+      ...baseTemplate.graph,
+      nodes: baseTemplate.graph.nodes.map((node) =>
+        node.id === "finance"
+          ? {
+              ...node,
+              handoffView: {
+                processes: [
+                  {
+                    id: "amount-variance",
+                    type: "calculation",
+                    label: "Variance vs PO",
+                    calculation: "difference",
+                    leftField: "Amount",
+                    rightField: "PO Amount",
+                  },
+                  {
+                    id: "amount-variance-percent",
+                    type: "calculation",
+                    label: "Variance percent",
+                    calculation: "percentage_difference",
+                    leftField: "Amount",
+                    rightField: "PO Amount",
+                  },
+                ],
+              },
+            }
+          : node,
+      ),
+    },
+  };
+
+  const view = buildTaskHandoffView({ task: baseTask, template });
+
+  assert.deepEqual(view.processes, [
+    {
+      id: "amount-variance",
+      label: "Variance vs PO",
+      tone: "info",
+      result: "200",
+      detail: "Amount 12000 minus PO Amount 11800 equals 200.",
+    },
+    {
+      id: "amount-variance-percent",
+      label: "Variance percent",
+      tone: "info",
+      result: "1.69%",
+      detail: "Amount is 1.69% above PO Amount.",
+    },
+  ]);
+});
+
+test("marks calculation processes unknown when values are not numeric", () => {
+  const template = {
+    ...baseTemplate,
+    graph: {
+      ...baseTemplate.graph,
+      nodes: baseTemplate.graph.nodes.map((node) =>
+        node.id === "finance"
+          ? {
+              ...node,
+              handoffView: {
+                processes: [
+                  {
+                    id: "supplier-difference",
+                    type: "calculation",
+                    label: "Supplier difference",
+                    calculation: "difference",
+                    leftField: "Supplier",
+                    rightField: "Internal Budget Code",
+                  },
+                ],
+              },
+            }
+          : node,
+      ),
+    },
+  };
+
+  const view = buildTaskHandoffView({ task: baseTask, template });
+
+  assert.deepEqual(view.processes, [
+    {
+      id: "supplier-difference",
+      label: "Supplier difference",
+      tone: "unknown",
+      result: "Needs review",
+      detail: "Supplier or Internal Budget Code is not numeric.",
+    },
+  ]);
+});
