@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { WorkspaceTab } from "@/lib/workspace-tabs-state";
+import { InfoTip } from "./ui-hint";
 
 const tabs: { id: WorkspaceTab; label: string; icon: React.ElementType }[] = [
   { id: "queue", label: "Queue", icon: ClipboardList },
@@ -62,7 +63,6 @@ export function WorkspaceShell({
             </div>
             <div className={`hidden lg:block ${sidebarCollapsed ? "lg:hidden" : ""}`}>
               <p className="text-sm font-semibold">Approval App</p>
-              <p className="text-xs text-neutral-400">MVP workspace</p>
             </div>
             <button
               type="button"
@@ -116,12 +116,12 @@ export function WorkspaceShell({
         <section className="min-w-0">
           <header className="flex min-h-16 flex-col justify-center gap-3 border-b border-white/10 bg-[#15181b] px-3 py-3 sm:px-4 md:flex-row md:items-center md:justify-between md:px-6">
             <div className="min-w-0">
-              <h1 className="text-xl font-semibold tracking-normal md:text-2xl">
-                General approval workflow
-              </h1>
-              <p className="text-sm text-neutral-400">
-                Dynamic departments, AI/OCR parsing, approvals, delegation, deadlines, and escalation.
-              </p>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-semibold tracking-normal md:text-2xl">
+                  Approvals
+                </h1>
+                <InfoTip label="Dynamic departments, AI/OCR parsing, approvals, delegation, deadlines, and escalation." />
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex min-h-11 items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 text-sm">

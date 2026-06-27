@@ -31,6 +31,7 @@ import type {
   WorkflowField,
   WorkflowTemplate,
 } from "@/lib/types";
+import { InfoTip } from "./ui-hint";
 
 export function TemplateDocumentRecognitionPanel({
   document,
@@ -225,12 +226,12 @@ export function TemplateDocumentRecognitionPanel({
     <div className="mt-3 rounded-md border border-white/10 bg-[#0d1012] p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-semibold text-neutral-300">
-            Sample recognition
-          </p>
-          <p className="mt-1 text-xs text-neutral-500">
-            Upload a sample, accept suggested fields, or box a value to create template fields.
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-semibold text-neutral-300">
+              Sample
+            </p>
+            <InfoTip label="Upload a sample, accept suggested fields, or box a value to create template fields." />
+          </div>
         </div>
         <label className="flex min-h-8 cursor-pointer items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 text-xs text-emerald-100 transition hover:bg-emerald-400/20">
           {isParsing ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
@@ -261,7 +262,7 @@ export function TemplateDocumentRecognitionPanel({
       {parseResult?.suggestedFields?.length ? (
         <div className="mt-3 rounded-md border border-sky-500/25 bg-sky-500/10 p-2">
           <p className="text-xs font-semibold text-sky-100">
-            Step 1: Suggested fields
+            Suggestions
           </p>
           <div className="mt-2 space-y-2">
             {parseResult.suggestedFields.map((suggestion, index) => (
@@ -303,7 +304,7 @@ export function TemplateDocumentRecognitionPanel({
       {selectedPreviewPage && (
         <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-2">
           <p className="text-xs font-semibold text-neutral-300">
-            Step 2: Add / correct fields
+            Add fields
           </p>
           {previewPages.length > 1 && (
             <select

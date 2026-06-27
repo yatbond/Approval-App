@@ -16,6 +16,7 @@ import type {
 import type {
   WorkflowRouteSimulation,
 } from "@/lib/workflow-graph";
+import { InfoTip } from "./ui-hint";
 
 export function WorkflowRuntimePanel({
   workflowTasks,
@@ -58,7 +59,7 @@ export function WorkflowRuntimePanel({
   return (
     <>
       <div className="mb-3 flex flex-col gap-2 rounded-md border border-white/10 bg-[#101214] p-3 text-xs text-neutral-400 lg:flex-row lg:items-center lg:justify-between">
-        <span>Runtime status: {getRuntimeStatusLabel(runtimeTask)}</span>
+        <span>Runtime: {getRuntimeStatusLabel(runtimeTask)}</span>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           {workflowTasks.length > 0 && (
             <select
@@ -107,12 +108,12 @@ export function WorkflowRuntimePanel({
             className="flex min-h-9 items-center justify-center gap-1 rounded-md border border-white/10 bg-[#121518] px-2 text-xs text-neutral-200 transition hover:border-emerald-400/50"
           >
             <RotateCcw size={13} />
-            Reset view
+            Reset
           </button>
           <div className="flex flex-wrap gap-3">
             {lastWorkflowEdit && (
               <span className="flex min-w-0 items-center gap-1.5 break-words text-neutral-300">
-                Last edit: {lastWorkflowEdit}
+                Last: {lastWorkflowEdit}
               </span>
             )}
             <span className="flex items-center gap-1.5">
@@ -167,7 +168,7 @@ export function WorkflowRuntimePanel({
                 ))
               ) : (
                 <p className="text-neutral-400">
-                  No blocking configuration issues found.
+                  Ready.
                 </p>
               )}
               {workflowSimulation.issues.length > 4 && (
@@ -186,7 +187,7 @@ export function WorkflowRuntimePanel({
           <div className="rounded-md border border-white/10 bg-[#101214] p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-neutral-300">
-                Route simulation
+                Route
               </h3>
               <span className="rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-400">
                 Autosaved
@@ -227,13 +228,12 @@ export function WorkflowRuntimePanel({
           <div className="rounded-md border border-white/10 bg-[#101214] p-3 xl:col-span-2">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-neutral-300">
-                  Workflow runner
-                </h3>
-                <p className="mt-1 text-xs text-neutral-500">
-                  Simulate the selected request through this template using the same
-                  routing engine as the approval queue.
-                </p>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-neutral-300">
+                    Runner
+                  </h3>
+                  <InfoTip label="Simulate the selected request through this template using the same routing engine as the approval queue." />
+                </div>
                 {runtimeTask ? (
                   <div className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
                     <div className="rounded-md border border-white/10 bg-[#121518] p-2">
@@ -263,7 +263,7 @@ export function WorkflowRuntimePanel({
                   </div>
                 ) : (
                   <p className="mt-3 text-xs text-neutral-500">
-                    Submit a request for this template before running it.
+                    Submit a request first.
                   </p>
                 )}
               </div>

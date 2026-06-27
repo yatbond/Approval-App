@@ -9,6 +9,7 @@ import type {
   WorkflowGraphNode,
   WorkflowNodeKind,
 } from "@/lib/types";
+import { InfoTip } from "./ui-hint";
 
 export function WorkflowCanvasToolbar({
   connectFromNode,
@@ -35,12 +36,10 @@ export function WorkflowCanvasToolbar({
     <>
       <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-neutral-300">
-            Workflow canvas
-          </h3>
-          <p className="text-xs text-neutral-500">
-            Add boxes, connect paths, and select any box or line to edit it.
-          </p>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-neutral-300">Canvas</h3>
+            <InfoTip label="Add boxes, connect paths, and select any box or line to edit it." />
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {workflowNodeOptions.map((option) => (

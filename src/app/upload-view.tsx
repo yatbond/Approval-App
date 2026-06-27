@@ -56,6 +56,7 @@ import type {
   WorkflowField,
   WorkflowTemplate,
 } from "@/lib/types";
+import { InfoTip } from "./ui-hint";
 
 type UploadRequestDraftRowView = {
   id: string;
@@ -549,13 +550,13 @@ export function UploadView({
   return (
     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
       <section className="min-w-0 rounded-md border border-white/10 bg-white/[0.03] p-4 sm:p-5">
-        <h2 className="font-semibold">Upload request documents</h2>
-        <p className="mt-1 text-sm text-neutral-400">
-          Choose a template, then upload each required or optional document.
-        </p>
+        <div className="flex items-center gap-2">
+          <h2 className="font-semibold">New request</h2>
+          <InfoTip label="Choose a template, then upload each required or optional document." />
+        </div>
 
         <label className="mt-4 block">
-          <span className="mb-1 block text-xs text-neutral-400">Workflow template</span>
+          <span className="mb-1 block text-xs text-neutral-400">Template</span>
           <select
             value={selectedTemplate?.id || ""}
             onChange={(event) => setSelectedTemplateId(event.target.value)}
@@ -599,14 +600,11 @@ export function UploadView({
             )}
             {sharedUploadDocuments.length > 0 && (
               <div className="space-y-2 rounded-md border border-sky-500/25 bg-sky-500/10 p-3">
-                <div>
+                <div className="flex items-center gap-2">
                   <p className="text-sm font-semibold text-sky-100">
-                    Other required uploads you may help fulfill
+                    Shared uploads
                   </p>
-                  <p className="mt-1 text-xs text-sky-100/70">
-                    Uploading here records you as the uploader while keeping the
-                    original submit box visible in tracking.
-                  </p>
+                  <InfoTip label="Uploading here records you as the uploader while keeping the original submit box visible in tracking." />
                 </div>
                 {sharedUploadDocuments.map((document) =>
                   renderUploadDocumentRequirement(
@@ -625,10 +623,7 @@ export function UploadView({
               sharedManualFormDocuments.length > 0) && (
               <div className="rounded-md border border-sky-500/25 bg-sky-500/10 p-3">
                 <p className="text-sm font-semibold text-sky-100">
-                  Manual digital form
-                </p>
-                <p className="mt-1 text-xs text-sky-100/70">
-                  Fill these fields on the right. No paper form upload is required.
+                  Manual form
                 </p>
                 <div className="mt-2 space-y-1 text-xs text-sky-100/80">
                   {assignedManualFormDocuments.map((document) => (
@@ -680,11 +675,9 @@ export function UploadView({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-neutral-200">
-                  Request drafts
+                  Drafts
                 </p>
-                <p className="mt-1 text-xs text-neutral-500">
-                  Each uploaded document will submit as a separate request.
-                </p>
+                <InfoTip label="Each uploaded document will submit as a separate request." />
               </div>
               <span className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-400">
                 {requestDrafts.length}
@@ -736,7 +729,7 @@ export function UploadView({
           <span className="text-sm font-medium">
             {isParsing ? "Parsing document" : "Choose a file"}
           </span>
-          <span className="mt-1 text-xs text-neutral-500">Ad hoc PDF, image, Excel, or CSV</span>
+          <span className="mt-1 text-xs text-neutral-500">PDF, image, Excel, or CSV</span>
           <input
             type="file"
             className="sr-only"
@@ -766,10 +759,10 @@ export function UploadView({
 
       <section className="rounded-md border border-white/10 bg-white/[0.03]">
         <div className="border-b border-white/10 p-4">
-          <h2 className="font-semibold">Extraction draft</h2>
-          <p className="text-sm text-neutral-400">
-            Corrections here become training examples for workflow-specific extraction.
-          </p>
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold">Draft</h2>
+            <InfoTip label="Corrections here become training examples for workflow-specific extraction." />
+          </div>
         </div>
 
         <div className="p-4">
@@ -778,11 +771,9 @@ export function UploadView({
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-sm font-semibold text-neutral-200">
-                    Document preview
+                    Preview
                   </p>
-                  <p className="mt-1 text-xs text-neutral-500">
-                    Drag over a value, name the field, then extract just that area.
-                  </p>
+                  <InfoTip label="Drag over a value, name the field, then extract just that area." />
                 </div>
                 {documentPreviewPages.length > 1 && (
                   <select
@@ -987,11 +978,9 @@ export function UploadView({
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-sky-100">
-                      Step 1: Suggested fields
+                      Suggestions
                     </p>
-                    <p className="mt-1 text-xs text-sky-100/70">
-                      Review fields the parser found first. Use Step 2 only when something is missing or needs correction.
-                    </p>
+                    <InfoTip label="Review fields the parser found first. Use boxed or manual fields only when something is missing or needs correction." />
                   </div>
                 </div>
                 {visibleSuggestedFields.length ? (
@@ -1016,7 +1005,7 @@ export function UploadView({
                               </p>
                             )}
                             <p className="mt-1 text-xs text-sky-100/60">
-                              Page location is not returned reliably yet. Use Step 2 to box and correct this field if needed.
+                              Box and correct this field if needed.
                             </p>
                           </div>
                           <span className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-300">
@@ -1055,7 +1044,7 @@ export function UploadView({
                   </div>
                 ) : (
                   <p className="mt-3 rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-xs text-neutral-400">
-                    No extra suggestions yet. Upload or parse a document, then use Step 2 for fields the parser missed.
+                    No suggestions yet. Use boxed or manual fields if needed.
                   </p>
                 )}
                   </>
@@ -1068,14 +1057,16 @@ export function UploadView({
                   <div>
                     <p className="text-sm font-semibold text-neutral-200">
                       {fieldInputMode === "boxed"
-                        ? "Box from preview"
-                        : "Manual values"}
+                        ? "Boxed"
+                        : "Manual"}
                     </p>
-                    <p className="mt-1 text-xs text-neutral-500">
-                      {fieldInputMode === "boxed"
-                        ? "Create a field, draw one or more value boxes, then extract only those highlighted areas."
-                        : "Create a field and type or paste the value directly when the parser and boxing are not enough."}
-                    </p>
+                    <InfoTip
+                      label={
+                        fieldInputMode === "boxed"
+                          ? "Create a field, draw one or more value boxes, then extract only those highlighted areas."
+                          : "Create a field and type or paste the value directly when the parser and boxing are not enough."
+                      }
+                    />
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {fieldInputMode === "boxed" && highlightRect && activeHighlightGroup ? (
@@ -1089,7 +1080,7 @@ export function UploadView({
                       </button>
                     ) : fieldInputMode === "boxed" ? (
                       <span className="flex min-h-9 items-center rounded-md border border-white/10 px-3 text-xs text-neutral-500">
-                        Draw a box to add it to the active field.
+                        Draw a box first.
                       </span>
                     ) : null}
                     <button
@@ -1254,12 +1245,12 @@ export function UploadView({
 
           {manualFormDocuments.length > 0 && (
             <div className="mb-4 rounded-md border border-sky-500/25 bg-sky-500/10 p-4">
-              <h3 className="text-sm font-semibold text-sky-100">
-                Manual form fields
-              </h3>
-              <p className="mt-1 text-xs text-sky-100/70">
-                Enter these values directly. They will be routed and validated like OCR fields.
-              </p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-sky-100">
+                  Manual fields
+                </h3>
+                <InfoTip label="Enter these values directly. They will be routed and validated like OCR fields." />
+              </div>
               <div className="mt-3 space-y-4">
                 {manualFormDocuments.map((document) => (
                   <div
@@ -1508,13 +1499,11 @@ function UploadDraftPanel({
   return (
     <div className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="flex items-center gap-2">
           <p className="text-sm font-semibold text-neutral-200">
-            Request work in progress
+            Work
           </p>
-          <p className="mt-1 text-xs text-neutral-500">
-            Autosave keeps the current screen. Save a named draft when you want to return later.
-          </p>
+          <InfoTip label="Autosave keeps the current screen. Save a named draft when you want to return later." />
         </div>
         <span className="shrink-0 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-neutral-400">
           {workInProgressItems.length} item(s)
@@ -1525,7 +1514,7 @@ function UploadDraftPanel({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-              Current autosave
+              Autosave
             </p>
             <p className="mt-1 text-sm text-neutral-200">{uploadDraftStatus.label}</p>
           </div>
@@ -1536,7 +1525,7 @@ function UploadDraftPanel({
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20"
             >
               <X size={13} />
-              Clear current
+              Clear
             </button>
           )}
         </div>
@@ -1544,7 +1533,7 @@ function UploadDraftPanel({
         {uploadDraftStatus.hasDraft && (
           <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
             <label className="block">
-              <span className="mb-1 block text-xs text-neutral-400">Saved draft name</span>
+              <span className="mb-1 block text-xs text-neutral-400">Draft name</span>
               <input
                 value={uploadDraftTitle}
                 onChange={(event) => setUploadDraftTitle(event.target.value)}
@@ -1558,7 +1547,7 @@ function UploadDraftPanel({
               className="mt-auto inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/20"
             >
               <Save size={13} />
-              Save named draft
+              Save
             </button>
           </div>
         )}
@@ -1572,7 +1561,7 @@ function UploadDraftPanel({
 
       <div className="mt-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-          Named saved drafts
+          Saved
         </p>
         {savedUploadDrafts.length === 0 ? (
           <p className="mt-2 rounded-md border border-dashed border-white/10 bg-[#101214] px-3 py-2 text-xs text-neutral-500">

@@ -3,6 +3,7 @@
 import { CalendarClock, Check, Mail, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { InfoTip } from "./ui-hint";
 import {
   addBusiness,
   addDepartment,
@@ -166,10 +167,10 @@ export function AdminView({
     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(260px,320px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)_minmax(280px,340px)]">
       <section className="rounded-md border border-white/10 bg-white/[0.03]">
         <div className="border-b border-white/10 p-4">
-          <h2 className="font-semibold">Businesses</h2>
-          <p className="text-sm text-neutral-400">
-            Superuser master list for workflow template ownership.
-          </p>
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold">Businesses</h2>
+            <InfoTip label="Superuser master list for workflow template ownership." />
+          </div>
         </div>
         <div className="max-h-[56vh] space-y-2 overflow-y-auto p-4 pr-3 xl:max-h-none xl:overflow-visible xl:pr-4">
           {adminRecordError && (
@@ -215,12 +216,16 @@ export function AdminView({
 
       <section className="rounded-md border border-white/10 bg-white/[0.03]">
         <div className="border-b border-white/10 p-4">
-          <h2 className="font-semibold">Departments</h2>
-          <p className="break-words text-sm text-neutral-400">
-            {selectedBusiness
-              ? `Editing departments for ${selectedBusiness.name}.`
-              : "Select a business to edit departments."}
-          </p>
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold">Departments</h2>
+            <InfoTip
+              label={
+                selectedBusiness
+                  ? `Editing departments for ${selectedBusiness.name}.`
+                  : "Select a business to edit departments."
+              }
+            />
+          </div>
         </div>
         {selectedBusiness && (
           <div className="space-y-4 p-4">
@@ -302,10 +307,10 @@ export function AdminView({
 
       <section className="space-y-4">
         <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
-          <h2 className="font-semibold">User directory</h2>
-          <p className="mt-1 text-sm text-neutral-400">
-            Lightweight roles inferred from requests and workflow templates.
-          </p>
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold">Users</h2>
+            <InfoTip label="Lightweight roles inferred from requests and workflow templates." />
+          </div>
           <div className="mt-3 max-h-[42vh] space-y-2 overflow-y-auto pr-1 xl:max-h-96">
             {userDirectory.slice(0, 10).map((user) => (
               <div
@@ -321,10 +326,10 @@ export function AdminView({
           </div>
         </div>
         <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
-          <h2 className="font-semibold">Role management</h2>
-          <p className="mt-1 text-sm text-neutral-400">
-            Assign business, department, and workflow role for routing.
-          </p>
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold">Roles</h2>
+            <InfoTip label="Assign business, department, and workflow role for routing." />
+          </div>
           <div className="mt-3 max-h-[56vh] space-y-3 overflow-y-auto pr-1 xl:max-h-[560px]">
             {roleAssignments.slice(0, 8).map((assignment, index) => {
               const assignedBusiness =
@@ -418,19 +423,21 @@ export function AdminView({
           </div>
         </div>
         <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
-          <h2 className="font-semibold">Legacy departments</h2>
-          <p className="mt-1 text-sm text-neutral-400">
-            {legacyDepartments.length} existing department label(s) are still available to older mock data.
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold">Legacy</h2>
+            <InfoTip label="Existing department labels still available to older mock data." />
+          </div>
+          <p className="mt-2 text-sm text-neutral-400">
+            {legacyDepartments.length} label(s)
           </p>
         </div>
         <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
-          <h2 className="font-semibold">Live email</h2>
-          <p className="mt-1 text-sm text-neutral-400">
-            Send a test email before routing workflow tasks to real inboxes.
-          </p>
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold">Email</h2>
+            <InfoTip label="Send a test email before routing workflow tasks to real inboxes." />
+          </div>
           <p className="mt-2 rounded-md border border-yellow-400/20 bg-yellow-400/10 p-2 text-xs text-yellow-100">
-            Resend test mode can only send to the account email until a sending domain is
-            verified. Verify a domain in Resend before sending to real approvers.
+            Resend test mode: verify a domain before sending to real approvers.
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
             <input
@@ -463,7 +470,7 @@ export function AdminView({
           ) : null}
           <div className="mt-4">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-neutral-300">Email outbox</h3>
+              <h3 className="text-sm font-semibold text-neutral-300">Outbox</h3>
               <span className="text-xs text-neutral-500">
                 {emailOutboxEntries.length} recent attempt(s)
               </span>
@@ -503,14 +510,14 @@ export function AdminView({
               ))}
               {!emailOutboxEntries.length && (
                 <p className="rounded-md border border-white/10 bg-[#121518] p-3 text-xs text-neutral-500">
-                  No email attempts yet. Send a test email or route a workflow task.
+                  No email attempts yet.
                 </p>
               )}
             </div>
           </div>
         </div>
         <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
-          <h2 className="font-semibold">In-app notifications</h2>
+          <h2 className="font-semibold">Alerts</h2>
           <div className="mt-3 space-y-2">
             {taskNotifications.slice(0, 12).map((item) => (
               <Link
@@ -545,10 +552,10 @@ export function AdminView({
         </div>
 
         <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
-          <h2 className="font-semibold">Template audit</h2>
-          <p className="mt-1 text-sm text-neutral-400">
-            Recent template create, publish, duplicate, and archive actions.
-          </p>
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold">Audit</h2>
+            <InfoTip label="Recent template create, publish, duplicate, and archive actions." />
+          </div>
           <div className="mt-3 space-y-2">
             {adminAuditEvents.slice(0, 8).map((event) => (
               <div
@@ -565,7 +572,7 @@ export function AdminView({
             ))}
             {!adminAuditEvents.length && (
               <p className="rounded-md border border-white/10 bg-[#121518] p-3 text-sm text-neutral-500">
-                No template audit events yet.
+                No audit events yet.
               </p>
             )}
           </div>

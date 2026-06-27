@@ -122,6 +122,7 @@ import type {
   WorkflowField,
   WorkflowTemplate,
 } from "@/lib/types";
+import { InfoTip } from "./ui-hint";
 
 const WorkflowCanvas = dynamic(() => import("@/app/workflow-canvas"), {
   loading: () => (
@@ -930,11 +931,13 @@ export function WorkflowView({
           <h2 className="font-semibold">
             {workflow ? workflow.name : "No workflow templates yet"}
           </h2>
-          <p className="text-sm text-neutral-400">
-            {workflow
-              ? `${workflow.business} - ${workflow.department} - ${workflow.documentTypes.join(", ")}`
-              : "Create the first template from the builder."}
-          </p>
+          {workflow ? (
+            <p className="text-sm text-neutral-400">
+              {workflow.business} - {workflow.department}
+            </p>
+          ) : (
+            <p className="text-sm text-neutral-400">Create one in Builder.</p>
+          )}
           {workflow && (
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
               <span className="rounded-md border border-white/10 bg-[#121518] px-2 py-1 text-neutral-300">
@@ -1214,14 +1217,12 @@ export function WorkflowView({
                   )}
                   {selectedGraphNode.kind === "submit_request" && (
                     <div className="space-y-3 rounded-md border border-sky-500/20 bg-sky-500/10 p-3">
-                      <p className="text-xs font-semibold text-sky-100">
-                        Submission contributor
-                      </p>
-                      <p className="mt-1 text-xs text-sky-100/70">
-                        This box defines documents or form fields expected from the
-                        submitter above. Add documents below to require uploads before
-                        the workflow is reviewed.
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-semibold text-sky-100">
+                          Submitter
+                        </p>
+                        <InfoTip label="This box defines documents or form fields expected from the submitter above." />
+                      </div>
                       <label className="flex items-start gap-2 text-xs text-sky-50">
                         <input
                           type="checkbox"
@@ -1354,12 +1355,12 @@ export function WorkflowView({
                     ) && (
                       <div className="space-y-3 rounded-md border border-white/10 bg-[#101214] p-3">
                         <div>
-                          <p className="text-xs font-semibold text-neutral-300">
-                            Handoff view
-                          </p>
-                          <p className="mt-1 text-xs text-neutral-500">
-                            Default is all values and documents in a standard summary.
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-semibold text-neutral-300">
+                              Handoff
+                            </p>
+                            <InfoTip label="Default is all values and documents in a standard summary." />
+                          </div>
                           <p className="mt-2 rounded-md border border-amber-400/25 bg-amber-400/10 px-2 py-1 text-xs text-amber-100">
                             Display control only. Sensitive data still needs server-side access rules.
                           </p>
@@ -1535,7 +1536,7 @@ export function WorkflowView({
                         <div className="space-y-2 border-t border-white/10 pt-3">
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-xs font-semibold text-neutral-400">
-                              Checks and calculations
+                              Checks
                             </p>
                             <button
                               type="button"
@@ -1701,14 +1702,18 @@ export function WorkflowView({
                     selectedGraphNode.kind,
                   ) && (
                       <div className="rounded-md border border-white/10 bg-[#101214] p-3">
-                        <p className="text-xs font-semibold text-neutral-400">
-                          Recognition setup for this box
-                        </p>
-                        <p className="mt-1 text-xs text-neutral-500">
-                          {selectedGraphNode.kind === "submit_request"
-                            ? "Documents configured here are shown on the Upload page before submission."
-                            : "Documents configured here are requested when this workflow box is active."}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-semibold text-neutral-400">
+                            Recognition
+                          </p>
+                          <InfoTip
+                            label={
+                              selectedGraphNode.kind === "submit_request"
+                                ? "Documents configured here are shown on the Upload page before submission."
+                                : "Documents configured here are requested when this workflow box is active."
+                            }
+                          />
+                        </div>
                         <div className="mt-2 space-y-2">
                           {workflow.documents
                             .filter((document) =>
@@ -1826,19 +1831,13 @@ export function WorkflowView({
                                 <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
                                   <div className="rounded-md border border-sky-500/20 bg-sky-500/10 p-2">
                                     <p className="text-xs font-semibold text-sky-100">
-                                      Step 1: Required template fields
-                                    </p>
-                                    <p className="mt-1 text-xs text-sky-100/70">
-                                      These fields guide OCR and appear first when a request document is uploaded.
+                                      Fields
                                     </p>
                                   </div>
                                   <div className="flex items-center justify-between gap-2">
                                     <div>
                                       <p className="text-xs font-semibold text-neutral-400">
-                                        Step 2: Add / correct fields
-                                      </p>
-                                      <p className="mt-1 text-xs text-neutral-500">
-                                        Add field names and extraction instructions for this document type.
+                                        Edit fields
                                       </p>
                                     </div>
                                     <button

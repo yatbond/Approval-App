@@ -46,7 +46,7 @@ export function WorkflowTemplateLibrary({
     <div className="p-4">
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h3 className="text-sm font-semibold text-neutral-300">
-          {isArchive ? "Template archive" : "Template library"}
+          {isArchive ? "Archive" : "Library"}
         </h3>
         <div className="grid grid-cols-2 gap-2 rounded-md border border-white/10 bg-[#101214] p-1 text-sm sm:w-auto">
           <button
@@ -58,7 +58,7 @@ export function WorkflowTemplateLibrary({
                 : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
             }`}
           >
-            Template Library ({libraryCount})
+            Library ({libraryCount})
           </button>
           <button
             type="button"
@@ -69,7 +69,7 @@ export function WorkflowTemplateLibrary({
                 : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
             }`}
           >
-            Template Archive ({archiveCount})
+            Archive ({archiveCount})
           </button>
         </div>
       </div>
@@ -161,8 +161,8 @@ export function WorkflowTemplateLibrary({
         {!templateItems.length && (
           <div className="rounded-md border border-white/10 bg-[#121518] p-4 text-sm text-neutral-400 lg:col-span-2">
             {isArchive
-              ? "No archived workflow templates yet."
-              : "No active workflow templates yet."}
+              ? "No archived templates."
+              : "No active templates."}
           </div>
         )}
       </div>

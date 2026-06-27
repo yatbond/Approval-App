@@ -6,6 +6,7 @@ import {
   getWorkflowTemplateBuilderBusinessState,
 } from "@/lib/workflow-template-builder-state";
 import type { BusinessUnit } from "@/lib/types";
+import { InfoTip } from "./ui-hint";
 
 export function WorkflowTemplateBuilder({
   templateName,
@@ -34,7 +35,10 @@ export function WorkflowTemplateBuilder({
 
   return (
     <section className="rounded-md border border-white/10 bg-white/[0.03] p-4">
-      <h2 className="font-semibold">Template builder</h2>
+      <div className="flex items-center gap-2">
+        <h2 className="font-semibold">Builder</h2>
+        <InfoTip label="Add boxes on the Canvas tab, then select a box to set people, due hours, escalation, and documents." />
+      </div>
       <div className="mt-4 space-y-3">
         <label className="block">
           <span className="mb-1 block text-xs text-neutral-400">Template name</span>
@@ -86,10 +90,6 @@ export function WorkflowTemplateBuilder({
             />
           )}
         </label>
-        <div className="rounded-md border border-sky-400/30 bg-sky-400/10 p-3 text-sm text-sky-100">
-          Add submit request, approval, review, and for-information boxes on the Canvas tab.
-          Select a box to set people, due hours, escalation, and document uploads.
-        </div>
         <button
           type="button"
           onClick={onCreateTemplate}

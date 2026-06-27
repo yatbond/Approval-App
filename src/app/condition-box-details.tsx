@@ -20,6 +20,7 @@ import type {
   WorkflowGraphNode,
   WorkflowRuleOperator,
 } from "@/lib/types";
+import { InfoTip } from "./ui-hint";
 
 const ruleOperatorOptions: { value: WorkflowRuleOperator; label: string }[] = [
   { value: ">", label: "is greater than" },
@@ -62,15 +63,14 @@ export function ConditionBoxDetails({
 
   return (
     <div className="rounded-md border border-amber-400/30 bg-amber-400/10 p-3">
-      <p className="text-xs font-semibold text-amber-100">Condition rules</p>
-      <p className="mt-1 text-xs text-amber-100/80">
-        Build each rule as: if this approval or numeric result is true, route to these
-        outcome boxes.
-      </p>
+      <div className="flex items-center gap-2">
+        <p className="text-xs font-semibold text-amber-100">Rules</p>
+        <InfoTip label="Build each rule as: if this approval or numeric result is true, route to these outcome boxes." />
+      </div>
       <div className="mt-3 space-y-3">
         <div className="rounded-md border border-white/10 bg-[#101214] p-2">
           <p className="text-xs font-semibold text-neutral-400">
-            Upstream approvals
+            Upstream
           </p>
           {context.upstreamNodes.length ? (
             <div className="mt-2 flex flex-wrap gap-2">
@@ -85,14 +85,14 @@ export function ConditionBoxDetails({
             </div>
           ) : (
             <p className="mt-2 text-xs text-neutral-500">
-              No approval/review boxes connect into this condition.
+              No upstream boxes.
             </p>
           )}
         </div>
 
         <div className="rounded-md border border-white/10 bg-[#101214] p-2">
           <p className="text-xs font-semibold text-neutral-400">
-            Downstream outcome boxes
+            Outcomes
           </p>
           {context.downstreamNodes.length ? (
             <div className="mt-2 flex flex-wrap gap-2">
@@ -107,14 +107,14 @@ export function ConditionBoxDetails({
             </div>
           ) : (
             <p className="mt-2 text-xs text-neutral-500">
-              Connect this condition to outcome boxes before assigning routes.
+              Connect outcome boxes first.
             </p>
           )}
         </div>
 
         <div className="rounded-md border border-white/10 bg-[#101214] p-2">
           <p className="text-xs font-semibold text-neutral-400">
-            Parsed numeric values
+            Numbers
           </p>
           {context.numericFields.length ? (
             <div className="mt-2 flex flex-wrap gap-2">
@@ -129,7 +129,7 @@ export function ConditionBoxDetails({
             </div>
           ) : (
             <p className="mt-2 text-xs text-neutral-500">
-              No numeric fields are available upstream.
+              No numeric fields upstream.
             </p>
           )}
         </div>
@@ -435,7 +435,7 @@ export function ConditionBoxDetails({
                           })}
                         </div>
                         <p className="mt-2 text-xs text-neutral-500">
-                          Select multiple boxes when all selected reviewers must approve.
+                          Select all required approvals.
                         </p>
                       </>
                     )}
@@ -528,14 +528,14 @@ export function ConditionBoxDetails({
                   }
                   className="h-9 w-full rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none focus:border-emerald-400/60"
                 >
-                  <option value="and">Approval and numeric rules must both match</option>
-                  <option value="or">Either approval or numeric rule can match</option>
+                  <option value="and">Approval and number both match</option>
+                  <option value="or">Approval or number can match</option>
                 </select>
                 )}
 
                 {conditionCase.isFallback && (
                   <div className="rounded-md border border-sky-400/30 bg-sky-400/10 p-2 text-xs text-sky-100">
-                    This outcome is used only when none of the conditions above match.
+                    Used when nothing above matches.
                   </div>
                 )}
 
@@ -606,8 +606,7 @@ export function ConditionBoxDetails({
             ))
           ) : (
             <p className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
-              Add a condition, then select the upstream approvals and optional numeric
-              value that should route to an outcome.
+              Add a condition, then choose approvals, numbers, and route.
             </p>
           )}
         </div>

@@ -40,6 +40,7 @@ import type {
   WorkflowTemplate,
 } from "@/lib/types";
 import type { UserDirectoryEntry } from "@/lib/user-directory";
+import { InfoTip } from "./ui-hint";
 
 const actionConfig: Record<
   ApprovalAction,
@@ -51,7 +52,7 @@ const actionConfig: Record<
     tone: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20",
   },
   approve_with_comment: {
-    label: "Approve with comment",
+    label: "Approve + note",
     icon: MessageSquare,
     tone: "border-sky-500/40 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20",
   },
@@ -61,7 +62,7 @@ const actionConfig: Record<
     tone: "border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20",
   },
   reject_with_comment: {
-    label: "Reject with comment",
+    label: "Reject + note",
     icon: X,
     tone: "border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20",
   },
@@ -76,7 +77,7 @@ const actionConfig: Record<
     tone: "border-violet-500/40 bg-violet-500/10 text-violet-100 hover:bg-violet-500/20",
   },
   amend_resubmit: {
-    label: "Amend and resubmit",
+    label: "Resubmit",
     icon: Send,
     tone: "border-sky-500/40 bg-sky-500/10 text-sky-100 hover:bg-sky-500/20",
   },
@@ -153,10 +154,10 @@ export function QueueView({
   if (!selectedTask) {
     return (
       <section className="rounded-md border border-white/10 bg-white/[0.03] p-5">
-        <h2 className="font-semibold">No items need your action</h2>
-        <p className="mt-1 text-sm text-neutral-400">
-          Use Tracking to follow requests you submitted, approved, reassigned, or delegated.
-        </p>
+        <div className="flex items-center gap-2">
+          <h2 className="font-semibold">Empty</h2>
+          <InfoTip label="Use Tracking to follow requests you submitted, approved, reassigned, or delegated." />
+        </div>
       </section>
     );
   }
@@ -180,8 +181,10 @@ export function QueueView({
     <div className="grid gap-4 xl:grid-cols-[360px_1fr_320px]">
       <section className="rounded-md border border-white/10 bg-white/[0.03]">
         <div className="border-b border-white/10 p-4">
-          <h2 className="font-semibold">Approval queue</h2>
-          <p className="text-sm text-neutral-400">Pending, overdue, and escalated work.</p>
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold">Queue</h2>
+            <InfoTip label="Pending, overdue, and escalated work." />
+          </div>
         </div>
         <div className="divide-y divide-white/10">
           {tasks.map((task) => (
@@ -234,7 +237,7 @@ export function QueueView({
           </div>
 
           <div>
-            <h3 className="mb-3 text-sm font-semibold text-neutral-300">Decision</h3>
+            <h3 className="mb-3 text-sm font-semibold text-neutral-300">Act</h3>
             <textarea
               value={comment}
               onChange={(event) => setComment(event.target.value)}
@@ -243,18 +246,16 @@ export function QueueView({
             />
             {missingCurrentDocuments.length > 0 && (
               <div className="mt-3 rounded-md border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
-                <p className="font-medium">Required before approval</p>
+                <p className="font-medium">Required</p>
                 <div className="mt-2 space-y-2">
                   {missingCurrentDocuments.map((document) => (
                     <label
                       key={document.id}
+                      title="Upload this document before approving the current box."
                       className="flex cursor-pointer flex-col gap-2 rounded-md border border-amber-300/20 bg-[#121518] p-2 transition hover:border-amber-300/50"
                     >
                       <span className="text-xs">
                         {document.documentType} - {formatDocumentFormat(document.format)}
-                      </span>
-                      <span className="text-xs text-amber-100/70">
-                        Upload this document before approving the current box.
                       </span>
                       <input
                         type="file"
@@ -453,8 +454,10 @@ export function QueueView({
 
       <section className="rounded-md border border-white/10 bg-white/[0.03]">
         <div className="border-b border-white/10 p-4">
-          <h2 className="font-semibold">Audit trail</h2>
-          <p className="text-sm text-neutral-400">Everyone involved can track this item.</p>
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold">Audit</h2>
+            <InfoTip label="Everyone involved can track this item." />
+          </div>
         </div>
         <AuditTrail task={selectedTask} />
       </section>
@@ -507,10 +510,10 @@ export function TrackingView({
     <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
       <section className="rounded-md border border-white/10 bg-white/[0.03]">
         <div className="border-b border-white/10 p-4">
-          <h2 className="font-semibold">Tracked requests</h2>
-          <p className="text-sm text-neutral-400">
-            Requests you submitted, approved, reassigned, delegated, or received.
-          </p>
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold">Tracking</h2>
+            <InfoTip label="Requests you submitted, approved, reassigned, delegated, or received." />
+          </div>
         </div>
         <div className="divide-y divide-white/10">
           {tasks.map((task) => (
@@ -663,10 +666,10 @@ function HandoffSummary({
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-neutral-200">Handoff packet</h3>
-          <p className="mt-1 break-words text-xs text-neutral-500">
-            {handoff.nodeLabel} - {handoff.policyLabel}
-          </p>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-neutral-200">Handoff</h3>
+            <InfoTip label={`${handoff.nodeLabel} - ${handoff.policyLabel}`} />
+          </div>
         </div>
         <span className="self-start rounded-md border border-white/10 bg-[#101214] px-2 py-1 text-xs text-neutral-300">
           {formatStatusText(handoff.layout)}
@@ -689,7 +692,7 @@ function HandoffSummary({
           ))
         ) : (
           <p className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
-            No values are available in this handoff.
+            No values.
           </p>
         )}
       </div>
@@ -697,7 +700,7 @@ function HandoffSummary({
       {handoff.processes.length ? (
         <div className="mt-3 space-y-2">
           <p className="text-xs font-semibold text-neutral-400">
-            Checks and calculations
+            Checks
           </p>
           {handoff.processes.map((process) => (
             <div
@@ -764,14 +767,14 @@ function HandoffSummary({
           ))
         ) : (
           <p className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
-            No documents are available in this handoff.
+            No documents.
           </p>
         )}
       </div>
 
       {handoff.hiddenFieldCount || handoff.hiddenAttachmentCount ? (
         <p className="mt-3 rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
-          Hidden by handoff policy: {handoff.hiddenFieldCount} value(s),{" "}
+          Hidden: {handoff.hiddenFieldCount} value(s),{" "}
           {handoff.hiddenAttachmentCount} document(s).
         </p>
       ) : null}
@@ -883,13 +886,9 @@ function CollaborationStatusPanel({
   return (
     <div className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold text-neutral-300">
-            Collaboration status
-          </p>
-          <p className="mt-1 text-xs text-neutral-500">
-            Upstream submissions, confirmations, and corrections.
-          </p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-semibold text-neutral-300">Collab</p>
+          <InfoTip label="Upstream submissions, confirmations, and corrections." />
         </div>
         {state.blockingReasons.length ? (
           <span className="self-start rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-xs text-amber-100">

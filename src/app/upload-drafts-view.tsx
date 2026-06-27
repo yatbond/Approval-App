@@ -2,6 +2,7 @@
 
 import { FileText, Plus, RotateCcw, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { InfoTip } from "./ui-hint";
 import {
   getUploadDraftResumeItems,
   type SavedUploadRequestDraft,
@@ -48,10 +49,10 @@ export function UploadDraftsView({
     <section className="rounded-md border border-white/10 bg-white/[0.03]">
       <div className="flex flex-col gap-3 border-b border-white/10 p-5 md:flex-row md:items-start md:justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Request drafts</h2>
-          <p className="mt-1 text-sm text-neutral-400">
-            Resume interrupted uploads, OCR review, highlighted fields, and saved attachments.
-          </p>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">Drafts</h2>
+            <InfoTip label="Resume interrupted uploads, OCR review, highlighted fields, and saved attachments." />
+          </div>
         </div>
         <Link
           href="/?tab=upload"
@@ -67,10 +68,10 @@ export function UploadDraftsView({
           <div className="rounded-md border border-dashed border-white/10 bg-[#121518] p-6 text-center">
             <FileText className="mx-auto text-neutral-500" size={28} />
             <p className="mt-3 text-sm font-medium text-neutral-200">
-              No request drafts
+              Empty
             </p>
             <p className="mx-auto mt-1 max-w-xl text-sm text-neutral-500">
-              Upload a document or save a named draft from the Upload tab to resume it here later.
+              Save a draft from Upload to resume it here.
             </p>
           </div>
         </div>
@@ -121,7 +122,7 @@ export function UploadDraftsView({
                         className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20"
                       >
                         <RotateCcw size={15} />
-                        Resume autosave
+                        Resume
                       </Link>
                       <button
                         type="button"
@@ -130,7 +131,7 @@ export function UploadDraftsView({
                         className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500 sm:flex-none"
                       >
                         <Trash2 size={15} />
-                        Clear autosave
+                        Clear
                       </button>
                     </>
                   ) : (
