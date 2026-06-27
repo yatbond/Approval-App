@@ -616,7 +616,7 @@ export function UploadView({
             )}
             {!uploadDocuments.length && !manualFormDocuments.length && (
               <div className="rounded-md border border-white/10 bg-[#121518] p-3 text-sm text-neutral-400">
-                No document requirements are attached to the starting route.
+                No requirements.
               </div>
             )}
             {(assignedManualFormDocuments.length > 0 ||
@@ -634,7 +634,7 @@ export function UploadView({
                   {sharedManualFormDocuments.map((document) => (
                     <p key={document.id}>
                       {document.documentType} - {document.fields.length} field(s)
-                      {" "}available for shared fulfillment
+                      {" "}shared
                     </p>
                   ))}
                 </div>
@@ -645,7 +645,7 @@ export function UploadView({
 
         {uploadedAttachments.length > 0 && (
           <div className="mt-4 rounded-md border border-white/10 bg-[#121518] p-3">
-            <p className="text-sm font-semibold text-neutral-200">Attached files</p>
+            <p className="text-sm font-semibold text-neutral-200">Files</p>
             <div className="mt-2 space-y-2">
               {uploadedAttachments.map((attachment) => (
                 <div
@@ -1005,7 +1005,7 @@ export function UploadView({
                               </p>
                             )}
                             <p className="mt-1 text-xs text-sky-100/60">
-                              Box and correct this field if needed.
+                              Box if needed.
                             </p>
                           </div>
                           <span className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-300">
@@ -1150,7 +1150,7 @@ export function UploadView({
                                   [fieldLabel]: event.target.value,
                                 });
                               }}
-                              placeholder="Extracted values appear here, one per line"
+                              placeholder="One value per line"
                               rows={Math.max(2, Math.min(5, group.boxes.length || 2))}
                               className="min-h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-sm outline-none transition focus:border-emerald-400/60"
                             />
@@ -1179,7 +1179,7 @@ export function UploadView({
                           <div className="mt-3 space-y-2">
                           {group.boxes.length === 0 ? (
                             <p className="rounded-md border border-dashed border-white/10 px-3 py-2 text-xs text-neutral-500">
-                              Draw a rectangle on the preview, then add it as a value box.
+                              Draw box, then add.
                             </p>
                           ) : (
                             group.boxes.map((box, boxIndex) => (
@@ -1303,7 +1303,7 @@ export function UploadView({
                     </div>
                     {!document.fields.length && (
                       <p className="mt-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-xs text-neutral-500">
-                        This manual form has no fields yet. Add fields in the workflow template.
+                        No fields yet.
                       </p>
                     )}
                   </div>
@@ -1320,7 +1320,7 @@ export function UploadView({
                   <FileText size={22} />
                   <FileSpreadsheet size={22} />
                 </div>
-                Upload a document to create an editable extraction draft.
+                Upload a document to start.
               </div>
             </div>
           )}
@@ -1565,7 +1565,7 @@ function UploadDraftPanel({
         </p>
         {savedUploadDrafts.length === 0 ? (
           <p className="mt-2 rounded-md border border-dashed border-white/10 bg-[#101214] px-3 py-2 text-xs text-neutral-500">
-            No named drafts yet.
+            No saved drafts.
           </p>
         ) : (
           <div className="mt-2 space-y-2">

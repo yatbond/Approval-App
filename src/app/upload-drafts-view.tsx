@@ -71,7 +71,7 @@ export function UploadDraftsView({
               Empty
             </p>
             <p className="mx-auto mt-1 max-w-xl text-sm text-neutral-500">
-              Save a draft from Upload to resume it here.
+              Save from Upload to resume.
             </p>
           </div>
         </div>

@@ -12,7 +12,7 @@ const branchTypeOptions: { value: WorkflowBranchType; label: string }[] = [
   { value: "approved", label: "Approved" },
   { value: "rejected", label: "Rejected" },
   { value: "condition", label: "Condition" },
-  { value: "for_information", label: "For information" },
+  { value: "for_information", label: "FYI" },
 ];
 
 const ruleOperatorOptions: { value: WorkflowRuleOperator; label: string }[] = [
@@ -39,9 +39,7 @@ export function WorkflowEdgeDetails({
   return (
     <div className="mt-4 space-y-3">
       <label className="block">
-        <span className="mb-1 block text-xs text-neutral-400">
-          Branch type
-        </span>
+        <span className="mb-1 block text-xs text-neutral-400">Type</span>
         <select
           value={edge.branchType}
           onChange={(event) =>
@@ -59,9 +57,7 @@ export function WorkflowEdgeDetails({
         </select>
       </label>
       <label className="block">
-        <span className="mb-1 block text-xs text-neutral-400">
-          Branch label
-        </span>
+        <span className="mb-1 block text-xs text-neutral-400">Label</span>
         <input
           value={edge.label}
           onChange={(event) => onUpdateEdge({ label: event.target.value })}
@@ -71,7 +67,7 @@ export function WorkflowEdgeDetails({
       {state.showsRuleBuilder && (
         <div className="rounded-md border border-amber-400/30 bg-amber-400/10 p-3">
           <p className="text-xs font-semibold text-amber-100">
-            Rule builder
+            Rule
           </p>
           <div className="mt-2 space-y-2">
             <select
@@ -120,12 +116,11 @@ export function WorkflowEdgeDetails({
             onUpdateEdge({ blocking: event.target.checked })
           }
         />
-        Blocks the main workflow
+        Blocking
       </label>
       {state.showsForInformationNote && (
         <p className="rounded-md border border-sky-400/30 bg-sky-400/10 p-3 text-xs text-sky-100">
-          For-information branches send visibility only and do not block the
-          approval path.
+          FYI only. Nonblocking.
         </p>
       )}
     </div>

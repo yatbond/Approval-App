@@ -1015,9 +1015,7 @@ export function WorkflowView({
         {workflow && workflowEditorTab === "canvas" && (
           <div className="p-4">
             <div className="rounded-md border border-sky-400/30 bg-sky-400/10 p-4 text-sm text-sky-100 md:hidden">
-              Canvas editing is disabled on mobile screens. Use Template Builder
-              or Template Library here, or open this workflow on a tablet or
-              desktop to edit the canvas.
+              Canvas editing needs tablet or desktop.
             </div>
             <div className="hidden md:block">
             <div className="relative min-w-0">
@@ -1049,7 +1047,7 @@ export function WorkflowView({
                 <div className="mb-3 flex flex-col gap-2 rounded-md border border-white/10 bg-[#121518] p-3 sm:flex-row sm:items-end">
                   <label className="min-w-0 flex-1">
                     <span className="mb-1 block text-xs text-neutral-400">
-                      Copy workflow from template
+                      Copy from
                     </span>
                     <select
                       value={copySourceTemplateSelectValue}
@@ -1071,7 +1069,7 @@ export function WorkflowView({
                     className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-4 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <ArrowRightLeft size={15} />
-                    Copy into canvas
+                    Copy
                   </button>
                 </div>
               )}
@@ -1239,7 +1237,7 @@ export function WorkflowView({
                             })
                           }
                         />
-                        Allow this submitter to fulfill other submit boxes
+                        Shared uploads
                       </label>
                       {selectedGraphNode.allowSharedFulfillment && (
                         <label className="flex items-start gap-2 text-xs text-sky-50">
@@ -1257,7 +1255,7 @@ export function WorkflowView({
                               })
                             }
                           />
-                          Require confirmation for shared fulfillment
+                          Confirm shared
                         </label>
                       )}
                     </div>
@@ -1334,7 +1332,7 @@ export function WorkflowView({
                           })
                         }
                       />
-                      Acknowledgement required
+                      Require ack
                     </label>
                   )}
                   <label className="flex items-center gap-2 text-sm text-neutral-300">
@@ -1347,7 +1345,7 @@ export function WorkflowView({
                         updateSelectedNode({ blocking: event.target.checked })
                       }
                     />
-                    Blocking step
+                    Blocking
                   </label>
                   {workflow &&
                     ["approval", "review", "for_information"].includes(
@@ -1671,7 +1669,7 @@ export function WorkflowView({
                     <ArrowRightLeft size={15} />
                     {connectFromNodeId === selectedGraphNode.id
                       ? "Click target box"
-                      : "Connect from this box"}
+                      : "Connect"}
                   </button>
                   {selectedGraphNode.kind === "condition" && workflow && (
                     <ConditionBoxDetails
@@ -1847,7 +1845,7 @@ export function WorkflowView({
                                       className="flex min-h-7 items-center justify-center gap-1 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 text-xs text-sky-100 transition hover:bg-sky-400/20"
                                     >
                                       <Plus size={12} />
-                                      Add template field
+                                      Add field
                                     </button>
                                   </div>
                                   {document.fields.map((field, fieldIndex) => (
@@ -1914,7 +1912,7 @@ export function WorkflowView({
                                   ))}
                                   {!document.fields.length && (
                                     <p className="text-xs text-neutral-500">
-                                  No template fields configured. Add at least one field so the Upload page knows what to extract.
+                                  No fields yet.
                                     </p>
                                   )}
                                   <TemplateDocumentRecognitionPanel
@@ -1934,7 +1932,7 @@ export function WorkflowView({
                             })}
                           {!selectedGraphNode.documentIds?.length && (
                             <p className="text-xs text-neutral-500">
-                              No documents are required at this box yet.
+                              No documents yet.
                             </p>
                           )}
                         </div>

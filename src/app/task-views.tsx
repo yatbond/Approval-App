@@ -299,7 +299,7 @@ export function QueueView({
                   className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
                   title="Ask another person for supporting input."
                 >
-                  <span className="min-w-0 font-medium">Add contributor</span>
+                  <span className="min-w-0 font-medium">Contributor request</span>
                   <input
                     type="checkbox"
                     aria-label="Show additional contributor request options"
@@ -384,7 +384,7 @@ export function QueueView({
                         onChange={(event) =>
                           setContributorRequestNote(event.target.value)
                         }
-                        placeholder="Tell the contributor what documents or information are needed."
+                        placeholder="Needed docs/info"
                         className="h-20 w-full resize-none rounded-md border border-white/10 bg-[#101214] p-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
                       />
                     </label>
@@ -398,8 +398,7 @@ export function QueueView({
                         className="mt-0.5"
                       />
                       <span>
-                        Block approval until this contributor submits the requested
-                        information.
+                        Block until submitted.
                       </span>
                     </label>
                     {contributorRequestError && (
@@ -557,30 +556,30 @@ export function TrackingView({
                     href={`/?tab=tracking&request=${encodeURIComponent(selectedTask.id)}`}
                     className="mt-2 inline-flex min-h-11 items-center rounded-md border border-sky-400/40 bg-sky-400/12 px-3 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20"
                   >
-                    Open request detail page
+                    Open detail
                   </Link>
                 </div>
                 <StatusBadge status={selectedTask.status} />
               </div>
               <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
                 <div className="rounded-md border border-white/10 bg-[#121518] p-3">
-                  <p className="text-xs text-neutral-500">Current owner</p>
+                  <p className="text-xs text-neutral-500">Owner</p>
                   <p className="mt-1 break-words text-neutral-200">
                     {selectedTask.currentOwner || "Closed"}
                   </p>
                 </div>
                 <div className="rounded-md border border-white/10 bg-[#121518] p-3">
-                  <p className="text-xs text-neutral-500">Current step</p>
+                  <p className="text-xs text-neutral-500">Step</p>
                   <p className="mt-1 break-words text-neutral-200">{selectedTask.currentStep}</p>
                 </div>
                 <div className="rounded-md border border-white/10 bg-[#121518] p-3">
-                  <p className="text-xs text-neutral-500">Last action</p>
+                  <p className="text-xs text-neutral-500">Last</p>
                   <p className="mt-1 break-words text-neutral-200">{selectedTask.lastAction}</p>
                 </div>
               </div>
               {selectedTask.pendingOwners?.length ? (
                 <div className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
-                  <p className="text-xs text-neutral-500">Pending actors</p>
+                  <p className="text-xs text-neutral-500">Pending</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {selectedTask.pendingOwners.map((owner) => (
                       <span
@@ -600,7 +599,7 @@ export function TrackingView({
               />
               <div className="mt-3 grid gap-3 lg:grid-cols-2">
                 <div className="rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
-                  <p className="text-xs text-neutral-500">People who can track this</p>
+                  <p className="text-xs text-neutral-500">Visible to</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {selectedTask.participants.map((participant) => (
                       <span
@@ -642,7 +641,7 @@ export function TrackingView({
             <AuditTrail task={selectedTask} />
           </>
         ) : (
-          <div className="p-5 text-sm text-neutral-400">No tracked requests yet.</div>
+          <div className="p-5 text-sm text-neutral-400">No tracked requests.</div>
         )}
       </section>
     </div>
@@ -906,7 +905,7 @@ function CollaborationStatusPanel({
         </div>
       ) : null}
       <StatusPanelGroup
-        title="Required submissions"
+        title="Required"
         rows={state.requiredSubmissions}
       />
       <div className="mt-3 space-y-2">
@@ -998,7 +997,7 @@ function CollaborationStatusPanel({
         ))}
       </div>
       <StatusPanelGroup
-        title="Contributor requests"
+        title="Contributors"
         rows={state.contributorRequests}
       />
     </div>
@@ -1142,7 +1141,7 @@ function ContributorRequestList({
               {request.blocksApproval !== false &&
               request.status === "requested" ? (
                 <p className="mt-2 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-amber-100">
-                  Blocks approval until submitted
+                  Blocks approval.
                 </p>
               ) : null}
               {request.submittedAt ? (

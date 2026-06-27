@@ -407,7 +407,7 @@ export function TemplateDocumentRecognitionPanel({
                 className="flex h-8 items-center justify-center gap-1 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 text-xs text-emerald-100 disabled:opacity-40"
               >
                 <Plus size={12} />
-                Add template field
+                Add field
               </button>
               <button
                 type="button"

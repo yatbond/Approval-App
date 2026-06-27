@@ -147,7 +147,7 @@ export function ConditionBoxDetails({
                 className="flex min-h-8 items-center justify-center gap-1 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 text-xs text-emerald-100 transition hover:bg-emerald-400/20"
               >
                 <Plus size={12} />
-                Add condition
+                Add
               </button>
               <button
                 type="button"
@@ -156,7 +156,7 @@ export function ConditionBoxDetails({
                 className="flex min-h-8 items-center justify-center gap-1 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 text-xs text-sky-100 transition hover:bg-sky-400/20"
               >
                 <Plus size={12} />
-                Add fallback outcome
+                Fallback
               </button>
             </div>
           </div>
@@ -164,7 +164,7 @@ export function ConditionBoxDetails({
           {coverage && (
             <div className="rounded-md border border-amber-400/30 bg-amber-400/10 p-2 text-xs text-amber-100">
               Missing paths for {coverage.missingApprovalCounts.join(", ")} approved upstream
-              box(es). Add condition(s) for those cases or add a fallback outcome.
+              box(es). Add conditions or fallback.
             </div>
           )}
 
@@ -276,9 +276,9 @@ export function ConditionBoxDetails({
                       }}
                       className="h-9 w-full rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none focus:border-emerald-400/60"
                     >
-                      <option value="none">Do not check approvals</option>
-                      <option value="specific">Named reviewers approved</option>
-                      <option value="count">Approval count</option>
+                      <option value="none">No approval</option>
+                      <option value="specific">Named</option>
+                      <option value="count">Count</option>
                     </select>
                   </label>
                 )}
@@ -291,7 +291,7 @@ export function ConditionBoxDetails({
                       <div className="space-y-3">
                         <div>
                           <p className="mb-2 text-xs font-semibold text-neutral-400">
-                            Count approvals from
+                            Count from
                           </p>
                           <div className="space-y-1">
                             {context.upstreamNodes.map((node) => {
@@ -435,7 +435,7 @@ export function ConditionBoxDetails({
                           })}
                         </div>
                         <p className="mt-2 text-xs text-neutral-500">
-                          Select all required approvals.
+                          Select required.
                         </p>
                       </>
                     )}
@@ -445,7 +445,7 @@ export function ConditionBoxDetails({
                 {!conditionCase.isFallback && (
                 <div>
                   <p className="mb-1 text-xs font-semibold text-neutral-400">
-                    Numeric rule
+                    Number
                   </p>
                 <div className="grid gap-2 sm:grid-cols-3">
                   <select
@@ -606,7 +606,7 @@ export function ConditionBoxDetails({
             ))
           ) : (
             <p className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
-              Add a condition, then choose approvals, numbers, and route.
+              Add condition, then route.
             </p>
           )}
         </div>
