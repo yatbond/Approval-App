@@ -6,6 +6,7 @@ import {
   getApprovalActionConfirmation,
   getDraftDeleteConfirmation,
   getLiveEmailConfirmation,
+  getSignOutConfirmation,
   getWorkflowCanvasDeleteConfirmation,
   getWorkflowTemplateArchiveConfirmation,
 } from "./confirmation-policy.ts";
@@ -76,4 +77,13 @@ test("destructive records, drafts, templates, canvas edits, and email sends requ
       .confirmLabel,
     "Send test email",
   );
+});
+
+test("sign out requires explicit confirmation", () => {
+  assert.deepEqual(getSignOutConfirmation(), {
+    title: "Sign out?",
+    message: "This will end your current Approval App session.",
+    confirmLabel: "Sign out",
+    tone: "warning",
+  });
 });

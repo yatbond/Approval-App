@@ -88,6 +88,7 @@ import {
   getApprovalActionConfirmation,
   getDraftDeleteConfirmation,
   getLiveEmailConfirmation,
+  getSignOutConfirmation,
   getWorkflowTemplateArchiveConfirmation,
   type ConfirmationRequest,
 } from "@/lib/confirmation-policy";
@@ -1659,6 +1660,13 @@ function ApprovalWorkspaceBody({
     }
   }
 
+  async function confirmSignOut() {
+    const confirmed = await requestConfirmation(getSignOutConfirmation());
+    if (confirmed) {
+      window.location.href = "/logout";
+    }
+  }
+
   function createTemplateRecord(template: WorkflowTemplate) {
     const action = template.isDraft === false
       ? "template_published"
@@ -1877,6 +1885,7 @@ function ApprovalWorkspaceBody({
       syncLabel={shellState.syncLabel}
       draftItemCount={shellState.draftItemCount}
       unreadCount={shellState.unreadCount}
+      onRequestSignOut={() => void confirmSignOut()}
       onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
     >
             {activeTab === "queue" && (

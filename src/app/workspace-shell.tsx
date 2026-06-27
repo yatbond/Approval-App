@@ -31,6 +31,7 @@ export function WorkspaceShell({
   sidebarCollapsed,
   syncLabel,
   unreadCount,
+  onRequestSignOut,
   onToggleSidebar,
 }: {
   activeTab: WorkspaceTab;
@@ -40,6 +41,7 @@ export function WorkspaceShell({
   sidebarCollapsed: boolean;
   syncLabel: string;
   unreadCount: number;
+  onRequestSignOut: () => void;
   onToggleSidebar: () => void;
 }) {
   return (
@@ -132,13 +134,14 @@ export function WorkspaceShell({
               <div className="hidden min-h-11 items-center rounded-md border border-white/10 bg-white/[0.03] px-3 text-xs text-neutral-400 xl:flex">
                 {syncLabel}
               </div>
-              <Link
-                href="/logout"
+              <button
+                type="button"
+                onClick={onRequestSignOut}
                 title="Sign out"
                 className="flex size-11 items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-neutral-300 transition hover:border-white/20 hover:bg-white/[0.07]"
               >
                 <LogOut size={16} />
-              </Link>
+              </button>
               <Link
                 href="/?tab=upload"
                 className="flex min-h-11 items-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"

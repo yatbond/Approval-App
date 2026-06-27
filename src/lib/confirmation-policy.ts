@@ -134,3 +134,12 @@ export function getLiveEmailConfirmation({
     tone: "warning",
   };
 }
+
+export function getSignOutConfirmation(): ConfirmationRequest {
+  return {
+    title: "Sign out?",
+    message: "This will end your current Approval App session.",
+    confirmLabel: "Sign out",
+    tone: "warning",
+  };
+}
