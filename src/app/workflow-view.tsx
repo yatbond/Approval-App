@@ -92,7 +92,7 @@ import {
   workflowEditorTabs,
   type WorkflowEditorTab,
 } from "@/lib/workflow-editor-tabs-state";
-import { workflowPublishAction } from "@/lib/workflow-publish-action-state";
+import { getWorkflowTemplateLifecycleState } from "@/lib/workflow-template-lifecycle-state";
 import {
   getWorkflowRedoActionState,
   getWorkflowUndoActionState,
@@ -213,6 +213,7 @@ export function WorkflowView({
   const workflow =
     workflowTemplates.find((template) => template.id === selectedTemplateId) ||
     workflowTemplates[0];
+  const workflowLifecycle = getWorkflowTemplateLifecycleState(workflow || null);
   const persistedWorkflowGraph = useMemo(
     () => (workflow ? createWorkflowGraphFromTemplate(workflow) : { nodes: [], edges: [] }),
     [workflow],
@@ -944,13 +945,11 @@ export function WorkflowView({
                 Version {workflow.version || 1}
               </span>
               <span
-                className={`rounded-md border px-2 py-1 ${
-                  workflow.isDraft === false
-                    ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
-                    : "border-amber-400/30 bg-amber-400/10 text-amber-100"
-                }`}
+                className={`rounded-md border px-2 py-1 ${workflowLifecycleToneClassName(
+                  workflowLifecycle.statusTone,
+                )}`}
               >
-                {workflow.isDraft === false ? "Published" : "Draft"}
+                {workflowLifecycle.statusLabel}
               </span>
               {workflow.publishedAt && (
                 <span className="rounded-md border border-white/10 bg-[#121518] px-2 py-1 text-neutral-400">
@@ -959,6 +958,9 @@ export function WorkflowView({
               )}
             </div>
           )}
+          <p className="mt-2 text-sm text-neutral-400">
+            {workflowLifecycle.detail}
+          </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {workflowEditorTabs.map((tab) => {
               const activeClasses =
@@ -2021,10 +2023,11 @@ export function WorkflowView({
               <button
                 type="button"
                 onClick={publishSelectedTemplate}
-                title={workflowPublishAction.title}
-                className="flex min-h-10 w-full items-center justify-center rounded-md border border-sky-400/40 bg-sky-400/12 px-4 py-2 text-sm font-medium text-sky-100 transition hover:bg-sky-400/20 sm:w-auto"
+                disabled={!workflowLifecycle.canPublish}
+                title={workflowLifecycle.publishTitle}
+                className="flex min-h-10 w-full items-center justify-center rounded-md border border-sky-400/40 bg-sky-400/12 px-4 py-2 text-sm font-medium text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
               >
-                {workflowPublishAction.label}
+                {workflowLifecycle.publishLabel}
               </button>
             </div>
             </div>
@@ -2059,6 +2062,19 @@ export function WorkflowView({
       )}
     </div>
   );
+}
+
+function workflowLifecycleToneClassName(statusTone: string) {
+  if (statusTone === "published") {
+    return "border-emerald-400/30 bg-emerald-400/10 text-emerald-100";
+  }
+  if (statusTone === "archived") {
+    return "border-neutral-500/30 bg-neutral-500/10 text-neutral-300";
+  }
+  if (statusTone === "empty") {
+    return "border-white/10 bg-white/[0.04] text-neutral-400";
+  }
+  return "border-amber-400/30 bg-amber-400/10 text-amber-100";
 }
 
 function getWorkflowHandoffFieldNames(template: WorkflowTemplate) {
