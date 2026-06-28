@@ -1,5 +1,27 @@
+import type { DocumentPreviewPage } from "./document-preview.ts";
+import type { PdfPageImageInput } from "./parser.ts";
 import type { WorkflowField } from "./types.ts";
 import type { ParsedWorkspaceFilePayload } from "./workspace-file-api.ts";
+
+export function buildSampleRecognitionPageImages({
+  selectedPreviewPage,
+  samplePageImages,
+}: {
+  selectedPreviewPage?: DocumentPreviewPage | null;
+  samplePageImages: PdfPageImageInput[];
+}): PdfPageImageInput[] {
+  if (selectedPreviewPage?.imageBase64) {
+    return [
+      {
+        pageNumber: selectedPreviewPage.pageNumber,
+        mimeType: selectedPreviewPage.mimeType,
+        imageBase64: selectedPreviewPage.imageBase64,
+      },
+    ];
+  }
+
+  return samplePageImages;
+}
 
 export function readRecognizedSampleField(
   payload: ParsedWorkspaceFilePayload,

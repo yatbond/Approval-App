@@ -22,7 +22,10 @@ import {
   renderPdfFileToPageImages,
   shouldRenderPdfForVision,
 } from "@/lib/pdf-page-images";
-import { readRecognizedSampleField } from "@/lib/sample-recognition-state";
+import {
+  buildSampleRecognitionPageImages,
+  readRecognizedSampleField,
+} from "@/lib/sample-recognition-state";
 import { parseWorkspaceFile, type ParsedWorkspaceFilePayload } from "@/lib/workspace-file-api";
 import { createWorkflowFieldFromRecognition } from "@/lib/template-recognition-state";
 import { acceptForDocumentFormat } from "@/lib/workflow-documents";
@@ -341,7 +344,10 @@ export function TemplateDocumentRecognitionPanel({
       const payload = await parseWorkspaceFile({
         file: sampleFile,
         adHocFields: [field],
-        pageImages: samplePageImages,
+        pageImages: buildSampleRecognitionPageImages({
+          selectedPreviewPage,
+          samplePageImages,
+        }),
         extractionExamples: documentExtractionExamples,
       });
       const recognized = readRecognizedSampleField(payload, field);
