@@ -86,6 +86,7 @@ import {
   getWorkflowCreateTemplateActionState,
   getWorkflowDuplicateTemplateActionState,
   getWorkflowPublishTemplateActionState,
+  getWorkflowTemplateBaseOptions,
 } from "@/lib/workflow-template-action-state";
 import {
   defaultWorkflowEditorTab,
@@ -314,12 +315,24 @@ export function WorkflowView({
   const [departmentName, setDepartmentName] = useState(
     selectedBusiness?.departments[0] || "",
   );
+  const [baseTemplateId, setBaseTemplateId] = useState("");
+  const baseWorkflowTemplates = useMemo(
+    () => getWorkflowTemplateBaseOptions({ templates: workflowTemplates }),
+    [workflowTemplates],
+  );
   const copySourceTemplates = useMemo(
-    () => workflowTemplates.filter((template) => template.id !== workflow?.id),
+    () =>
+      getWorkflowTemplateBaseOptions({
+        templates: workflowTemplates,
+        excludeTemplateId: workflow?.id,
+      }),
     [workflowTemplates, workflow?.id],
   );
   const [copySourceTemplateId, setCopySourceTemplateId] = useState("");
   const [workflowActionMessage, setWorkflowActionMessage] = useState("");
+  const baseTemplate =
+    baseWorkflowTemplates.find((template) => template.id === baseTemplateId) ||
+    null;
   const copySourceTemplate =
     copySourceTemplates.find((template) => template.id === copySourceTemplateId) ||
     copySourceTemplates[0] ||
@@ -331,12 +344,25 @@ export function WorkflowView({
       templateName,
       selectedBusinessName: selectedBusiness?.name || null,
       departmentName,
+      baseTemplate,
     });
     if (!nextState.didCreate || !nextState.template) {
       return;
     }
 
     onCreateTemplate(nextState.template);
+    setSelectedTemplateId(nextState.selectedTemplateId || nextState.template.id);
+    if (nextState.workflowEditorTab) {
+      setWorkflowEditorTab(nextState.workflowEditorTab);
+    }
+    if (nextState.shouldResetCanvasView) {
+      resetCanvasView();
+    }
+    setWorkflowActionMessage(
+      baseTemplate
+        ? `Created ${nextState.template.name} from ${baseTemplate.name}.`
+        : `Created blank workflow ${nextState.template.name}.`,
+    );
   }
 
   function publishSelectedTemplate() {
@@ -2057,6 +2083,9 @@ export function WorkflowView({
           setBusinessId={setBusinessId}
           departmentName={departmentName}
           setDepartmentName={setDepartmentName}
+          baseTemplateId={baseTemplateId}
+          setBaseTemplateId={setBaseTemplateId}
+          baseTemplates={baseWorkflowTemplates}
           onCreateTemplate={createTemplate}
         />
       )}

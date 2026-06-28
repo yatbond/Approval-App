@@ -5,7 +5,7 @@ import {
   getDepartmentForBusiness,
   getWorkflowTemplateBuilderBusinessState,
 } from "@/lib/workflow-template-builder-state";
-import type { BusinessUnit } from "@/lib/types";
+import type { BusinessUnit, WorkflowTemplate } from "@/lib/types";
 import { InfoTip } from "./ui-hint";
 
 export function WorkflowTemplateBuilder({
@@ -16,6 +16,9 @@ export function WorkflowTemplateBuilder({
   setBusinessId,
   departmentName,
   setDepartmentName,
+  baseTemplateId,
+  setBaseTemplateId,
+  baseTemplates,
   onCreateTemplate,
 }: {
   templateName: string;
@@ -25,6 +28,9 @@ export function WorkflowTemplateBuilder({
   setBusinessId: (businessId: string) => void;
   departmentName: string;
   setDepartmentName: (departmentName: string) => void;
+  baseTemplateId: string;
+  setBaseTemplateId: (templateId: string) => void;
+  baseTemplates: WorkflowTemplate[];
   onCreateTemplate: () => void;
 }) {
   const { selectedBusiness, departmentOptions, usesDepartmentSelect } =
@@ -90,13 +96,28 @@ export function WorkflowTemplateBuilder({
             />
           )}
         </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-neutral-400">Base workflow</span>
+          <select
+            value={baseTemplateId}
+            onChange={(event) => setBaseTemplateId(event.target.value)}
+            className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+          >
+            <option value="">Blank workflow</option>
+            {baseTemplates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           type="button"
           onClick={onCreateTemplate}
           className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 py-2 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
         >
           <Plus size={16} />
-          Create template
+          New template
         </button>
       </div>
     </section>

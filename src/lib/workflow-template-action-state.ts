@@ -1,6 +1,6 @@
 import type { WorkflowTemplate } from "./types.ts";
 import { createWorkflowTemplateFromDraft } from "./template-builder.ts";
-import { validateWorkflowTemplate } from "./workflow-graph.ts";
+import { createWorkflowGraphFromTemplate, validateWorkflowTemplate } from "./workflow-graph.ts";
 import { publishWorkflowTemplateVersion } from "./workflow-system.ts";
 
 type WorkflowTemplateActionState = {
@@ -9,16 +9,19 @@ type WorkflowTemplateActionState = {
   message?: string;
   selectedTemplateId?: string;
   workflowEditorTab?: "canvas";
+  shouldResetCanvasView?: boolean;
 };
 
 export function getWorkflowCreateTemplateActionState({
   templateName,
   selectedBusinessName,
   departmentName,
+  baseTemplate,
 }: {
   templateName: string;
   selectedBusinessName: string | null;
   departmentName: string;
+  baseTemplate?: WorkflowTemplate | null;
 }): WorkflowTemplateActionState {
   const cleanName = templateName.trim();
   const cleanDepartment = departmentName.trim();
@@ -26,16 +29,36 @@ export function getWorkflowCreateTemplateActionState({
     return { didCreate: false, template: null };
   }
 
+  const template = createWorkflowTemplateFromDraft({
+    name: cleanName,
+    business: selectedBusinessName,
+    department: cleanDepartment,
+    documents: [],
+    steps: [],
+  });
+  const basedTemplate = baseTemplate
+    ? applyBaseTemplate(template, baseTemplate)
+    : template;
+
   return {
     didCreate: true,
-    template: createWorkflowTemplateFromDraft({
-      name: cleanName,
-      business: selectedBusinessName,
-      department: cleanDepartment,
-      documents: [],
-      steps: [],
-    }),
+    template: basedTemplate,
+    selectedTemplateId: basedTemplate.id,
+    workflowEditorTab: "canvas",
+    shouldResetCanvasView: true,
   };
+}
+
+export function getWorkflowTemplateBaseOptions({
+  templates,
+  excludeTemplateId = "",
+}: {
+  templates: WorkflowTemplate[];
+  excludeTemplateId?: string;
+}) {
+  return templates.filter(
+    (template) => !template.isArchived && template.id !== excludeTemplateId,
+  );
 }
 
 export function getWorkflowPublishTemplateActionState({
@@ -128,4 +151,23 @@ export function getWorkflowDuplicateTemplateActionState({
 
 function cloneTemplate(template: WorkflowTemplate): WorkflowTemplate {
   return JSON.parse(JSON.stringify(template)) as WorkflowTemplate;
+}
+
+function applyBaseTemplate(
+  template: WorkflowTemplate,
+  baseTemplate: WorkflowTemplate,
+): WorkflowTemplate {
+  return {
+    ...template,
+    documentTypes: cloneValue(baseTemplate.documentTypes),
+    documents: cloneValue(baseTemplate.documents),
+    languages: cloneValue(baseTemplate.languages),
+    fields: cloneValue(baseTemplate.fields),
+    steps: cloneValue(baseTemplate.steps),
+    graph: cloneValue(createWorkflowGraphFromTemplate(baseTemplate)),
+  };
+}
+
+function cloneValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }

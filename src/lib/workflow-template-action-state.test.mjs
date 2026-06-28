@@ -4,6 +4,7 @@ import {
   getWorkflowCreateTemplateActionState,
   getWorkflowDuplicateTemplateActionState,
   getWorkflowPublishTemplateActionState,
+  getWorkflowTemplateBaseOptions,
 } from "./workflow-template-action-state.ts";
 
 const template = {
@@ -64,6 +65,52 @@ test("creates a workflow template from valid builder fields", () => {
   assert.equal(result.template?.department, "Finance");
   assert.deepEqual(result.template?.documents, []);
   assert.deepEqual(result.template?.steps, []);
+  assert.equal(result.workflowEditorTab, "canvas");
+  assert.equal(result.shouldResetCanvasView, true);
+});
+
+test("creates a workflow template from a selected base template", () => {
+  const result = getWorkflowCreateTemplateActionState({
+    templateName: "  Site permit  ",
+    selectedBusinessName: "HyPath",
+    departmentName: "  Administration  ",
+    baseTemplate: template,
+  });
+
+  assert.equal(result.didCreate, true);
+  assert.equal(result.template?.name, "Site permit");
+  assert.equal(result.template?.business, "HyPath");
+  assert.equal(result.template?.department, "Administration");
+  assert.notEqual(result.template?.id, template.id);
+  assert.deepEqual(result.template?.graph, template.graph);
+  assert.deepEqual(result.template?.documents, template.documents);
+  assert.deepEqual(result.template?.fields, template.fields);
+  assert.deepEqual(result.template?.languages, template.languages);
+  assert.equal(result.workflowEditorTab, "canvas");
+  assert.equal(result.shouldResetCanvasView, true);
+});
+
+test("lists only active templates as workflow base options", () => {
+  const archivedTemplate = {
+    ...template,
+    id: "archived-template",
+    name: "Archived workflow",
+    isArchived: true,
+  };
+
+  assert.deepEqual(
+    getWorkflowTemplateBaseOptions({
+      templates: [template, archivedTemplate],
+    }).map((item) => item.id),
+    ["template-1"],
+  );
+  assert.deepEqual(
+    getWorkflowTemplateBaseOptions({
+      templates: [template, archivedTemplate],
+      excludeTemplateId: "template-1",
+    }),
+    [],
+  );
 });
 
 test("does not create a workflow template without required builder fields", () => {
