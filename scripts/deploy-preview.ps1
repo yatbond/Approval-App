@@ -18,9 +18,16 @@ function Invoke-Checked {
   )
 
   Write-Host "> $File $($Arguments -join ' ')"
-  & $File @Arguments
-  if ($LASTEXITCODE -ne 0) {
-    throw "$File exited with code $LASTEXITCODE."
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & $File @Arguments
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+  if ($exitCode -ne 0) {
+    throw "$File exited with code $exitCode."
   }
 }
 
@@ -31,10 +38,17 @@ function Invoke-CaptureChecked {
   )
 
   Write-Host "> $File $($Arguments -join ' ')"
-  $output = & $File @Arguments 2>&1
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $output = & $File @Arguments 2>&1
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
   $output | ForEach-Object { Write-Host $_ }
-  if ($LASTEXITCODE -ne 0) {
-    throw "$File exited with code $LASTEXITCODE."
+  if ($exitCode -ne 0) {
+    throw "$File exited with code $exitCode."
   }
   return $output
 }
