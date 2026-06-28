@@ -4,6 +4,7 @@ param(
   [string]$Team = "team_LPbk7bp4UBMSijEI2bBgaTJm",
   [string]$Branch = "codex/approval-tracking",
   [string]$Alias = "approval-app-git-codex-approval-tracking-derrick-pangs-projects.vercel.app",
+  [int]$DeployTimeoutSeconds = 300,
   [switch]$SkipTests,
   [switch]$Force
 )
@@ -34,7 +35,8 @@ function Invoke-Checked {
 function Invoke-CaptureChecked {
   param(
     [Parameter(Mandatory = $true)][string]$File,
-    [Parameter(Mandatory = $true)][string[]]$Arguments
+    [Parameter(Mandatory = $true)][string[]]$Arguments,
+    [switch]$Quiet
   )
 
   Write-Host "> $File $($Arguments -join ' ')"
@@ -46,29 +48,51 @@ function Invoke-CaptureChecked {
   } finally {
     $ErrorActionPreference = $previousErrorActionPreference
   }
-  $output | ForEach-Object { Write-Host $_ }
+  if (-not $Quiet) {
+    $output | ForEach-Object { Write-Host $_ }
+  }
   if ($exitCode -ne 0) {
     throw "$File exited with code $exitCode."
   }
   return $output
 }
 
-function Get-FirstUrl {
+function Convert-JsonOutput {
   param([Parameter(Mandatory = $true)][object[]]$Lines)
 
-  $matches = @()
-  foreach ($line in $Lines) {
-    $lineMatches = [regex]::Matches([string]$line, "https://[^\s]+\.vercel\.app")
-    foreach ($match in $lineMatches) {
-      $matches += $match.Value
+  $jsonText = ($Lines | ForEach-Object { [string]$_ }) -join "`n"
+  try {
+    return $jsonText | ConvertFrom-Json
+  } catch {
+    throw "Unable to parse Vercel JSON output: $($_.Exception.Message)"
+  }
+}
+
+function Get-ReadyGithubDeploymentForCommit {
+  param(
+    [Parameter(Mandatory = $true)][string]$CommitSha,
+    [Parameter(Mandatory = $true)][string]$ExpectedBranch
+  )
+
+  $listOutput = Invoke-CaptureChecked "vercel" @(
+    "ls",
+    $Project,
+    "--scope", $Team,
+    "--format", "json"
+  ) -Quiet
+  $deployments = Convert-JsonOutput $listOutput
+
+  foreach ($deployment in $deployments.deployments) {
+    if (
+      $deployment.state -eq "READY" -and
+      $deployment.meta.githubCommitSha -eq $CommitSha -and
+      $deployment.meta.githubCommitRef -eq $ExpectedBranch
+    ) {
+      return $deployment
     }
   }
 
-  if ($matches.Count -eq 0) {
-    return ""
-  }
-
-  return $matches[$matches.Count - 1]
+  return $null
 }
 
 $repoRoot = (& git rev-parse --show-toplevel).Trim()
@@ -95,27 +119,33 @@ if (-not $SkipTests) {
 $commit = (& git rev-parse HEAD).Trim()
 Invoke-Checked "git" @("push", "origin", "HEAD:$Branch")
 
-if (-not (Test-Path ".vercel/project.json")) {
-  Invoke-Checked "vercel" @("link", "--yes", "--team", $Team, "--project", $Project)
+$deadline = (Get-Date).AddSeconds($DeployTimeoutSeconds)
+$deployment = $null
+while ((Get-Date) -lt $deadline) {
+  $deployment = Get-ReadyGithubDeploymentForCommit -CommitSha $commit -ExpectedBranch $Branch
+  if ($null -ne $deployment) {
+    break
+  }
+
+  Write-Host "Waiting for Vercel GitHub deployment for $commit..."
+  Start-Sleep -Seconds 10
 }
 
-$deploymentOutput = Invoke-CaptureChecked "vercel" @(
-  "deploy",
-  "--yes",
-  "--target", "preview",
-  "--scope", $Team,
-  "--meta", "gitBranch=$Branch",
-  "--meta", "gitCommitSha=$commit"
-)
-$deploymentUrl = Get-FirstUrl $deploymentOutput
-if (-not $deploymentUrl) {
-  throw "Vercel deploy succeeded but no deployment URL was found in CLI output."
+if ($null -eq $deployment) {
+  throw "Timed out waiting for a Ready Vercel GitHub deployment for commit $commit."
 }
 
+$deploymentUrl = "https://$($deployment.url)"
 Invoke-Checked "vercel" @("alias", "set", $deploymentUrl, $Alias, "--scope", $Team)
 
-$inspectOutput = Invoke-CaptureChecked "vercel" @("inspect", $Alias, "--scope", $Team)
-$resolvedUrl = Get-FirstUrl $inspectOutput
+$inspectOutput = Invoke-CaptureChecked "vercel" @(
+  "inspect",
+  $Alias,
+  "--scope", $Team,
+  "--format", "json"
+) -Quiet
+$inspection = Convert-JsonOutput $inspectOutput
+$resolvedUrl = "https://$($inspection.url)"
 if ($resolvedUrl -ne $deploymentUrl) {
   throw "Alias verification failed. $Alias resolved to $resolvedUrl, expected $deploymentUrl."
 }

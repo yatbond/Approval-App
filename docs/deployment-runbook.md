@@ -24,7 +24,8 @@ The script does four things in order:
 1. Refuses to deploy if the working tree has uncommitted changes.
 2. Runs the test suite unless `-SkipTests` is passed directly to the script.
 3. Pushes `HEAD` to `origin/codex/approval-tracking`.
-4. Creates a Vercel preview deployment, points the stable preview alias at it, and verifies the alias.
+4. Waits for the Vercel GitHub integration to produce a Ready preview deployment for the pushed commit.
+5. Points the stable preview alias at that Ready deployment and verifies the alias.
 
 This avoids the failure mode where a new deployment exists but the branch URL still points at an older Vercel deployment.
 
