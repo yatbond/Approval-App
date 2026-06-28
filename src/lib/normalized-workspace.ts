@@ -34,6 +34,8 @@ export type NormalizedWorkflowTemplateVersionRow = {
   templateSnapshot: WorkflowTemplate;
   createdBy: string;
   isActive?: boolean;
+  isActiveVersion?: boolean;
+  versionComment?: string;
 };
 
 export type NormalizedApprovalRequestRow = {
@@ -121,6 +123,8 @@ export function buildNormalizedWorkspaceRows(
       templateSnapshot: template,
       createdBy: owner.userId,
       isActive: template.isArchived !== true,
+      isActiveVersion: template.isActiveVersion === true,
+      versionComment: template.versionComment || "",
     })),
     ...archivedTaskTemplateRows(snapshot, owner),
   ];
@@ -298,6 +302,8 @@ function archivedTaskTemplateRows(
       },
       createdBy: owner.userId,
       isActive: false,
+      isActiveVersion: false,
+      versionComment: task.workflowTemplateSnapshot.versionComment || "",
     });
   }
 

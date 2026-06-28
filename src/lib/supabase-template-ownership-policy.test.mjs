@@ -26,6 +26,10 @@ const uploadDraftKindMigration = readFileSync(
   "supabase/migrations/20260623113319_add_upload_request_draft_kind.sql",
   "utf8",
 );
+const workflowVersionActivationMigration = readFileSync(
+  "supabase/migrations/20260628093000_add_workflow_template_version_activation_columns.sql",
+  "utf8",
+);
 
 test("migration allows template creators to insert and update their own template versions", () => {
   assert.match(
@@ -109,4 +113,18 @@ test("migration separates current autosave drafts from named upload drafts", () 
   assert.match(uploadDraftKindMigration, /add column if not exists draft_kind text/i);
   assert.match(uploadDraftKindMigration, /check \(draft_kind in \('current', 'named'\)\)/i);
   assert.match(uploadDraftKindMigration, /upload_request_drafts_owner_kind_idx/i);
+});
+
+test("migration stores workflow version activation and comments in dedicated columns", () => {
+  assert.match(
+    workflowVersionActivationMigration,
+    /alter table public\.workflow_template_versions/i,
+  );
+  assert.match(workflowVersionActivationMigration, /is_active_version boolean/i);
+  assert.match(workflowVersionActivationMigration, /version_comment text/i);
+  assert.match(workflowVersionActivationMigration, /template_snapshot->>'isActiveVersion'/i);
+  assert.match(
+    workflowVersionActivationMigration,
+    /workflow_template_versions_active_version_idx/i,
+  );
 });

@@ -62,6 +62,8 @@ type TemplateDbRow = {
   template_key: string;
   version_number: number;
   is_active?: boolean;
+  is_active_version?: boolean | null;
+  version_comment?: string | null;
   name: string;
   graph: unknown;
   document_requirements: unknown;
@@ -271,7 +273,7 @@ export async function loadNormalizedWorkspaceState(
     supabase
       .from("workflow_template_versions")
       .select(
-        "id,template_key,version_number,is_active,name,graph,document_requirements,supported_languages,template_snapshot,business_units(name),business_departments(name)",
+        "id,template_key,version_number,is_active,is_active_version,version_comment,name,graph,document_requirements,supported_languages,template_snapshot,business_units(name),business_departments(name)",
       )
       .order("updated_at", { ascending: false }),
   );
@@ -506,6 +508,8 @@ async function upsertTemplates(
       supported_languages: row.supportedLanguages,
       template_snapshot: row.templateSnapshot,
       is_active: row.isActive !== false,
+      is_active_version: row.isActiveVersion === true,
+      version_comment: row.versionComment || "",
       created_by: row.createdBy,
       updated_at: savedAt,
     };
@@ -688,9 +692,13 @@ function mapTemplateRow(row: TemplateDbRow): NormalizedWorkflowTemplateVersionRo
     templateSnapshot: {
       ...snapshot,
       version: row.version_number,
+      isActiveVersion: row.is_active_version === true,
+      versionComment: row.version_comment || snapshot.versionComment || "",
       ...(isArchived ? { isArchived: true } : {}),
     },
     isActive: !isArchived,
+    isActiveVersion: row.is_active_version === true,
+    versionComment: row.version_comment || snapshot.versionComment || "",
     createdBy: "",
   };
 }

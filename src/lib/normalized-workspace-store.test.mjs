@@ -299,6 +299,32 @@ test("uses the same archived template key for historical requests and template F
   assert.equal(requestUpsert.payload[0].workflow_template_version_id, "template-1");
 });
 
+test("saves workflow version activation and comments to dedicated template columns", async () => {
+  const supabase = new FakeSupabase();
+  const snapshot = createSnapshot({
+    workflowTemplates: [
+      {
+        ...template,
+        version: 1,
+        isDraft: false,
+        isActiveVersion: true,
+        versionComment: "Current finance routing.",
+      },
+    ],
+  });
+
+  await saveNormalizedWorkspaceState(supabase, snapshot, user);
+
+  const templateUpsert = supabase.operations.find(
+    (operation) =>
+      operation.type === "upsert" &&
+      operation.table === "workflow_template_versions",
+  );
+
+  assert.equal(templateUpsert.payload[0].is_active_version, true);
+  assert.equal(templateUpsert.payload[0].version_comment, "Current finance routing.");
+});
+
 test("soft-deactivates a business and its departments through an explicit admin action", async () => {
   const supabase = new FakeSupabase({
     business_units: [
@@ -475,6 +501,37 @@ test("restores template version numbers from normalized template rows", async ()
   const snapshot = await loadNormalizedWorkspaceState(supabase, "template-finance");
 
   assert.equal(snapshot.workflowTemplates[0].version, 3);
+});
+
+test("restores workflow version activation and comments from dedicated columns", async () => {
+  const supabase = new FakeSupabase({
+    workflow_template_versions: [
+      {
+        id: "template-finance-db",
+        template_key: "template-finance",
+        version_number: 3,
+        name: "Finance invoice approval",
+        graph: template.graph,
+        document_requirements: [],
+        supported_languages: ["English"],
+        template_snapshot: {
+          ...template,
+          isActiveVersion: false,
+          versionComment: "Stale snapshot note",
+        },
+        business_units: { name: "Asia Allied Infrastructure" },
+        business_departments: { name: "Finance" },
+        is_active: true,
+        is_active_version: true,
+        version_comment: "Column note wins.",
+      },
+    ],
+  });
+
+  const snapshot = await loadNormalizedWorkspaceState(supabase, "template-finance");
+
+  assert.equal(snapshot.workflowTemplates[0].isActiveVersion, true);
+  assert.equal(snapshot.workflowTemplates[0].versionComment, "Column note wins.");
 });
 
 test("loads inactive workflow template rows as archived library items", async () => {

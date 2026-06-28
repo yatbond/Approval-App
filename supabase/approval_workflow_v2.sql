@@ -34,6 +34,8 @@ create table if not exists public.workflow_template_versions (
   supported_languages text[] not null default array['en', 'zh-Hant', 'zh-Hans'],
   template_snapshot jsonb not null default '{}'::jsonb,
   is_active boolean not null default true,
+  is_active_version boolean not null default false,
+  version_comment text not null default '',
   created_by uuid references public.profiles(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
