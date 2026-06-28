@@ -335,7 +335,6 @@ export function WorkflowView({
     null;
   const copySourceTemplate =
     copySourceTemplates.find((template) => template.id === copySourceTemplateId) ||
-    copySourceTemplates[0] ||
     null;
   const copySourceTemplateSelectValue = copySourceTemplate?.id || "";
 
@@ -411,7 +410,7 @@ export function WorkflowView({
   }
 
   function copyTemplateIntoCanvas() {
-    if (!workflow || !copySourceTemplate) {
+    if (!workflow) {
       return;
     }
 
@@ -1071,36 +1070,34 @@ export function WorkflowView({
                 onResetView={resetCanvasView}
                 onRunWorkflowAction={onRunWorkflowAction}
               />
-              {copySourceTemplates.length > 0 && (
-                <div className="mb-3 flex flex-col gap-2 rounded-md border border-white/10 bg-[#121518] p-3 sm:flex-row sm:items-end">
-                  <label className="min-w-0 flex-1">
-                    <span className="mb-1 block text-xs text-neutral-400">
-                      Copy from
-                    </span>
-                    <select
-                      value={copySourceTemplateSelectValue}
-                      onChange={(event) => setCopySourceTemplateId(event.target.value)}
-                      className="h-10 w-full rounded-md border border-white/10 bg-[#0d1013] px-3 text-sm outline-none focus:border-emerald-400/60"
-                    >
-                      {copySourceTemplates.map((template) => (
-                        <option key={template.id} value={template.id}>
-                          {template.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={copyTemplateIntoCanvas}
-                    disabled={!copySourceTemplate}
-                    title="Copy the selected template workflow into the current canvas while keeping this template's name, business, and department."
-                    className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-4 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-45"
+              <div className="mb-3 flex flex-col gap-2 rounded-md border border-white/10 bg-[#121518] p-3 sm:flex-row sm:items-end">
+                <label className="min-w-0 flex-1">
+                  <span className="mb-1 block text-xs text-neutral-400">
+                    Copy from
+                  </span>
+                  <select
+                    value={copySourceTemplateSelectValue}
+                    onChange={(event) => setCopySourceTemplateId(event.target.value)}
+                    className="h-10 w-full rounded-md border border-white/10 bg-[#0d1013] px-3 text-sm outline-none focus:border-emerald-400/60"
                   >
-                    <ArrowRightLeft size={15} />
-                    Copy
-                  </button>
-                </div>
-              )}
+                    <option value="">Blank workflow</option>
+                    {copySourceTemplates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={copyTemplateIntoCanvas}
+                  title="Copy the selected template workflow into the current canvas while keeping this template's name, business, and department. Choose Blank workflow to start fresh."
+                  className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-4 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20"
+                >
+                  <ArrowRightLeft size={15} />
+                  Copy
+                </button>
+              </div>
               <WorkflowCanvas
                 graph={workflowGraph}
                 runtimeTask={runtimeTask}

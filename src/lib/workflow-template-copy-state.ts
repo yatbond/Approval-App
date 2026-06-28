@@ -6,15 +6,37 @@ export function getWorkflowTemplateCopyState({
   sourceTemplate,
 }: {
   targetTemplate: WorkflowTemplate;
-  sourceTemplate: WorkflowTemplate;
+  sourceTemplate: WorkflowTemplate | null;
 }) {
-  if (targetTemplate.id === sourceTemplate.id) {
+  if (sourceTemplate && targetTemplate.id === sourceTemplate.id) {
     return {
       didCopy: false,
       template: targetTemplate,
       label: "",
       workflowEditorTab: "canvas" as const,
       shouldResetCanvasView: false,
+    };
+  }
+
+  if (!sourceTemplate) {
+    const blankTemplate = {
+      ...targetTemplate,
+      documentTypes: [],
+      documents: [],
+      fields: [],
+      steps: [],
+      graph: undefined,
+    };
+
+    return {
+      didCopy: true,
+      template: {
+        ...blankTemplate,
+        graph: cloneValue(createWorkflowGraphFromTemplate(blankTemplate)),
+      },
+      label: "Copied blank workflow",
+      workflowEditorTab: "canvas" as const,
+      shouldResetCanvasView: true,
     };
   }
 

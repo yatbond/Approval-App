@@ -117,3 +117,31 @@ test("does not copy when source and target are the same template", () => {
   assert.equal(result.didCopy, false);
   assert.equal(result.template, targetTemplate);
 });
+
+test("copies a blank workflow into the current template", () => {
+  const result = getWorkflowTemplateCopyState({
+    targetTemplate: sourceTemplate,
+    sourceTemplate: null,
+  });
+
+  assert.equal(result.didCopy, true);
+  assert.equal(result.template.id, "invoice-template");
+  assert.equal(result.template.name, "Invoice approval");
+  assert.equal(result.template.business, "Asia Allied Infrastructure");
+  assert.equal(result.template.department, "Finance");
+  assert.deepEqual(result.template.documentTypes, []);
+  assert.deepEqual(result.template.documents, []);
+  assert.deepEqual(result.template.fields, []);
+  assert.deepEqual(result.template.steps, []);
+  assert.deepEqual(result.template.languages, sourceTemplate.languages);
+  assert.deepEqual(result.template.graph.nodes.map((node) => node.id), [
+    "start",
+    "end",
+  ]);
+  assert.deepEqual(result.template.graph.edges.map((edge) => edge.id), [
+    "edge-start-end",
+  ]);
+  assert.equal(result.workflowEditorTab, "canvas");
+  assert.equal(result.shouldResetCanvasView, true);
+  assert.equal(result.label, "Copied blank workflow");
+});
