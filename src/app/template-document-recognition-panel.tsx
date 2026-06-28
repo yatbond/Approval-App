@@ -1,6 +1,6 @@
 "use client";
 
-import { Image as ImageIcon, Loader2, Maximize2, Plus, Upload, X } from "lucide-react";
+import { Image as ImageIcon, Loader2, Maximize2, Plus, Sparkles, Upload, X } from "lucide-react";
 import { useState } from "react";
 import type { MouseEvent } from "react";
 import {
@@ -53,6 +53,10 @@ export function TemplateDocumentRecognitionPanel({
   onAddField: (field: WorkflowField, example?: ExtractionTrainingExample) => void;
 }) {
   const [fileName, setFileName] = useState("");
+  const [sampleFile, setSampleFile] = useState<File | null>(null);
+  const [samplePageImages, setSamplePageImages] = useState<
+    Awaited<ReturnType<typeof renderPdfFileToPageImages>>
+  >([]);
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState("");
   const [parseResult, setParseResult] = useState<ParsedWorkspaceFilePayload | null>(null);
@@ -111,6 +115,9 @@ export function TemplateDocumentRecognitionPanel({
     brightness: 88,
     zoom: boxSelectorZoom,
   });
+  const documentExtractionExamples = (template.extractionExamples || []).filter(
+    (example) => example.documentId === document.id,
+  );
 
   function selectTrainingField(fieldName: string) {
     const selected = document.fields.find((field) => field.name === fieldName);
@@ -180,6 +187,8 @@ export function TemplateDocumentRecognitionPanel({
 
   async function parseSampleFile(file: File) {
     setFileName(file.name);
+    setSampleFile(file);
+    setSamplePageImages([]);
     setIsParsing(true);
     setParseError("");
     setParseResult(null);
@@ -194,6 +203,7 @@ export function TemplateDocumentRecognitionPanel({
       const pageImages = shouldRenderPdfForVision(file)
         ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
         : [];
+      setSamplePageImages(pageImages);
       if (pdfPreviewImages.length) {
         const pages = buildPreviewPagesFromPdfImages(pdfPreviewImages);
         setPreviewPages(pages);
@@ -208,9 +218,7 @@ export function TemplateDocumentRecognitionPanel({
         file,
         documentRequirement: document,
         pageImages,
-        extractionExamples: (template.extractionExamples || []).filter(
-          (example) => example.documentId === document.id,
-        ),
+        extractionExamples: documentExtractionExamples,
       });
       setParseResult(payload);
     } catch (error) {
@@ -320,6 +328,52 @@ export function TemplateDocumentRecognitionPanel({
     onAddField(field, buildExample({ field, value, evidence }));
   }
 
+  function readRecognizedField(
+    payload: ParsedWorkspaceFilePayload,
+    field: WorkflowField,
+  ) {
+    return {
+      value:
+        payload.fields[field.label] ||
+        payload.fields[field.name] ||
+        Object.values(payload.fields || {})[0] ||
+        "",
+      evidence:
+        payload.evidence?.[field.label] ||
+        payload.evidence?.[field.name] ||
+        Object.values(payload.evidence || {})[0] ||
+        "",
+    };
+  }
+
+  async function recognizeSampleField() {
+    const field = resolveField();
+    if (!sampleFile || !field) {
+      return;
+    }
+
+    setIsParsing(true);
+    setParseError("");
+    try {
+      const payload = await parseWorkspaceFile({
+        file: sampleFile,
+        adHocFields: [field],
+        pageImages: samplePageImages,
+        extractionExamples: documentExtractionExamples,
+      });
+      const recognized = readRecognizedField(payload, field);
+      setFieldValue(recognized.value);
+      setFieldEvidence(recognized.evidence);
+      setFieldAnchor(null);
+    } catch (error) {
+      setParseError(
+        error instanceof Error ? error.message : "Unable to recognize sample value.",
+      );
+    } finally {
+      setIsParsing(false);
+    }
+  }
+
   async function extractHighlightedSample() {
     const field = resolveField();
     if (!selectedPreviewPage || !highlightRect || !field) {
@@ -337,24 +391,15 @@ export function TemplateDocumentRecognitionPanel({
       const payload = await parseWorkspaceFile({
         file: cropFile,
         adHocFields: [field],
-        extractionExamples: template.extractionExamples || [],
+        extractionExamples: documentExtractionExamples,
       });
-      const value =
-        payload.fields[field.label] ||
-        payload.fields[field.name] ||
-        Object.values(payload.fields || {})[0] ||
-        "";
-      const evidence =
-        payload.evidence?.[field.label] ||
-        payload.evidence?.[field.name] ||
-        Object.values(payload.evidence || {})[0] ||
-        "";
-      setFieldValue(value);
-      setFieldEvidence(evidence);
+      const recognized = readRecognizedField(payload, field);
+      setFieldValue(recognized.value);
+      setFieldEvidence(recognized.evidence);
       setFieldAnchor({
         pageNumber: selectedPreviewPage.pageNumber,
         rect: highlightRect,
-        nearbyText: evidence,
+        nearbyText: recognized.evidence,
       });
       setIsBoxSelectorOpen(false);
     } catch (error) {
@@ -570,7 +615,17 @@ export function TemplateDocumentRecognitionPanel({
                 Box saved as a location hint, not an exact rule.
               </p>
             )}
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                onClick={recognizeSampleField}
+                disabled={!sampleFile || !activeFieldLabel || isParsing}
+                title="Recognize the selected field from the uploaded sample using the current instruction."
+                className="flex h-8 items-center justify-center gap-1 rounded-md border border-violet-400/40 bg-violet-400/12 px-2 text-xs text-violet-100 disabled:opacity-40"
+              >
+                {isParsing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                AI Recognize
+              </button>
               <button
                 type="button"
                 onClick={saveFieldSample}

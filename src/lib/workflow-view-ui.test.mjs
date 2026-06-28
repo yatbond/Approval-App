@@ -63,3 +63,18 @@ test("sample recognition supports training multiple fields from one upload", () 
   assert.equal(source.includes("Save and next field"), true);
   assert.equal(source.includes("selectNextUnsavedField"), true);
 });
+
+test("sample recognition can AI recognize the selected field before saving", () => {
+  const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
+
+  assert.equal(source.includes("AI Recognize"), true);
+  assert.equal(source.includes("recognizeSampleField"), true);
+  assert.equal(source.includes("setSampleFile(file)"), true);
+  assert.equal(source.includes("setSamplePageImages(pageImages)"), true);
+  assert.equal(
+    source.includes(
+      "Recognize the selected field from the uploaded sample using the current instruction.",
+    ),
+    true,
+  );
+});
