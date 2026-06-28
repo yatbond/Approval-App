@@ -1251,7 +1251,7 @@ export function WorkflowView({
                         <p className="text-xs font-semibold text-sky-100">
                           Submitter
                         </p>
-                        <InfoTip label="This box defines documents or form fields expected from the submitter above." />
+                        <InfoTip label="The person or team required to complete this submit box's documents or form fields." />
                       </div>
                       <label className="flex items-start gap-2 text-xs text-sky-50">
                         <input
@@ -1269,7 +1269,10 @@ export function WorkflowView({
                             })
                           }
                         />
-                        Shared uploads
+                        <span className="inline-flex items-center gap-1">
+                          Shared uploads
+                          <InfoTip label="Lets this submitter see and fulfill other submit boxes' upload requirements." />
+                        </span>
                       </label>
                       {selectedGraphNode.allowSharedFulfillment && (
                         <label className="flex items-start gap-2 text-xs text-sky-50">
@@ -1287,7 +1290,10 @@ export function WorkflowView({
                               })
                             }
                           />
-                          Confirm shared
+                          <span className="inline-flex items-center gap-1">
+                            Confirm shared
+                            <InfoTip label="Shared uploads must be accepted by the assigned submitter or current reviewer before they count." />
+                          </span>
                         </label>
                       )}
                     </div>
