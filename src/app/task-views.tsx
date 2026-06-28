@@ -319,12 +319,14 @@ export function QueueView({
               </div>
             )}
             {!originatorAction && !pendingReassignmentRequest && (
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] gap-2">
                 <label
-                  className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
+                  className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
                   title="Ask another person to become the task owner. Ownership changes only after they accept."
                 >
-                  <span className="min-w-0 font-medium">Reassign</span>
+                  <span className="min-w-0 flex-1 break-words font-medium leading-tight">
+                    Reassign
+                  </span>
                   <input
                     type="checkbox"
                     aria-label="Show reassign options"
@@ -337,14 +339,26 @@ export function QueueView({
                       });
                       setQueueActionMode(nextState.actionMode);
                     }}
-                    className="size-4 shrink-0"
+                    className="peer sr-only"
                   />
+                  <span
+                    aria-hidden="true"
+                    className={`flex h-6 w-11 shrink-0 items-center rounded-full border p-0.5 transition peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-emerald-300 ${
+                      queueActionMode === "reassign"
+                        ? "justify-end border-amber-400/40 bg-amber-400/20 text-amber-100"
+                        : "justify-start border-white/10 bg-black/20 text-neutral-500"
+                    }`}
+                  >
+                    <span className="size-4 rounded-full bg-current" />
+                  </span>
                 </label>
                 <label
-                  className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
+                  className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
                   title="Let another person act while you remain the owner and keep visibility."
                 >
-                  <span className="min-w-0 font-medium">Delegate</span>
+                  <span className="min-w-0 flex-1 break-words font-medium leading-tight">
+                    Delegate
+                  </span>
                   <input
                     type="checkbox"
                     aria-label="Show delegate options"
@@ -357,14 +371,26 @@ export function QueueView({
                       });
                       setQueueActionMode(nextState.actionMode);
                     }}
-                    className="size-4 shrink-0"
+                    className="peer sr-only"
                   />
+                  <span
+                    aria-hidden="true"
+                    className={`flex h-6 w-11 shrink-0 items-center rounded-full border p-0.5 transition peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-emerald-300 ${
+                      queueActionMode === "delegate"
+                        ? "justify-end border-violet-400/40 bg-violet-400/20 text-violet-100"
+                        : "justify-start border-white/10 bg-black/20 text-neutral-500"
+                    }`}
+                  >
+                    <span className="size-4 rounded-full bg-current" />
+                  </span>
                 </label>
                 <label
-                  className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
+                  className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
                   title="Ask another person for supporting input."
                 >
-                  <span className="min-w-0 font-medium">Additional contributor</span>
+                  <span className="min-w-0 flex-1 break-words font-medium leading-tight">
+                    Additional contributor
+                  </span>
                   <input
                     type="checkbox"
                     aria-label="Show additional contributor request options"
@@ -372,8 +398,18 @@ export function QueueView({
                     onChange={(event) =>
                       setContributorRequestExpanded(event.target.checked)
                     }
-                    className="size-4 shrink-0"
+                    className="peer sr-only"
                   />
+                  <span
+                    aria-hidden="true"
+                    className={`flex h-6 w-11 shrink-0 items-center rounded-full border p-0.5 transition peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-emerald-300 ${
+                      contributorRequestExpanded
+                        ? "justify-end border-sky-400/40 bg-sky-400/20 text-sky-100"
+                        : "justify-start border-white/10 bg-black/20 text-neutral-500"
+                    }`}
+                  >
+                    <span className="size-4 rounded-full bg-current" />
+                  </span>
                 </label>
               </div>
             )}
