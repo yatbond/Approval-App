@@ -69,6 +69,7 @@ export function buildExtractionPrompt(
         `  Original: ${example.originalValue || "(blank)"}`,
         `  Corrected: ${example.correctedValue}`,
         example.evidence ? `  Evidence: ${example.evidence}` : "",
+        formatExampleAnchor(example),
       ]
         .filter(Boolean)
         .join("\n"),
@@ -85,6 +86,7 @@ export function buildExtractionPrompt(
     "Use low confidence when the value is blank, partially visible, inferred, or ambiguous.",
     "Put only requested fields under fields. Put optional extra candidates under suggestedFields.",
     "Limit suggestedFields to useful business fields visible in the document and avoid duplicates of requested fields.",
+    "If a prior example includes a soft anchor, use it as a nearby region hint only. Documents may be rotated, shifted, scanned, or photocopied, so also rely on labels, nearby text, and visual context.",
     `Document languages may include: ${languageHint}.`,
     "Requested fields:",
     requestedFields,
@@ -92,6 +94,27 @@ export function buildExtractionPrompt(
       ? ["Prior corrected examples:", correctedExamples].join("\n")
       : "",
   ].join("\n");
+}
+
+function formatExampleAnchor(example: ExtractionTrainingExample) {
+  if (!example.anchor) {
+    return "";
+  }
+
+  const { pageNumber, rect, nearbyText } = example.anchor;
+  const percent = {
+    x: Math.round(rect.x * 100),
+    y: Math.round(rect.y * 100),
+    width: Math.round(rect.width * 100),
+    height: Math.round(rect.height * 100),
+  };
+
+  return [
+    `  Soft anchor: page ${pageNumber}, nearby region x ${percent.x}%, y ${percent.y}%, width ${percent.width}%, height ${percent.height}%.`,
+    nearbyText ? `  Nearby text: ${nearbyText}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function normalizeUserCorrections(

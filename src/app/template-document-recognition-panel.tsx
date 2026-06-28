@@ -1,6 +1,6 @@
 "use client";
 
-import { Image as ImageIcon, Loader2, Plus, Upload } from "lucide-react";
+import { Image as ImageIcon, Loader2, Maximize2, Plus, Upload, X } from "lucide-react";
 import { useState } from "react";
 import type { MouseEvent } from "react";
 import {
@@ -33,6 +33,10 @@ import type {
 } from "@/lib/types";
 import { InfoTip } from "./ui-hint";
 
+const NEW_FIELD_VALUE = "__new_field__";
+
+type TrainingAnchor = NonNullable<ExtractionTrainingExample["anchor"]>;
+
 export function TemplateDocumentRecognitionPanel({
   document,
   template,
@@ -48,9 +52,18 @@ export function TemplateDocumentRecognitionPanel({
   const [parseResult, setParseResult] = useState<ParsedWorkspaceFilePayload | null>(null);
   const [previewPages, setPreviewPages] = useState<DocumentPreviewPage[]>([]);
   const [selectedPreviewPageId, setSelectedPreviewPageId] = useState("");
-  const [fieldLabel, setFieldLabel] = useState("");
-  const [fieldInstructions, setFieldInstructions] = useState("");
+  const [selectedFieldName, setSelectedFieldName] = useState(
+    document.fields[0]?.name || NEW_FIELD_VALUE,
+  );
+  const [newFieldLabel, setNewFieldLabel] = useState("");
+  const [fieldInstructions, setFieldInstructions] = useState(
+    document.fields[0]?.instructions || "",
+  );
   const [fieldValue, setFieldValue] = useState("");
+  const [fieldEvidence, setFieldEvidence] = useState("");
+  const [fieldAnchor, setFieldAnchor] = useState<TrainingAnchor | null>(null);
+  const [isBoxSelectorOpen, setIsBoxSelectorOpen] = useState(false);
+  const [boxSelectorZoom, setBoxSelectorZoom] = useState(180);
   const [selectionStart, setSelectionStart] = useState<Point | null>(null);
   const [selectionCurrent, setSelectionCurrent] = useState<{
     point: Point;
@@ -58,6 +71,20 @@ export function TemplateDocumentRecognitionPanel({
   } | null>(null);
   const [highlightRect, setHighlightRect] = useState<NormalizedRect | null>(null);
 
+  const selectedFieldStillExists = document.fields.some(
+    (field) => field.name === selectedFieldName,
+  );
+  const effectiveSelectedFieldName =
+    selectedFieldName === NEW_FIELD_VALUE || selectedFieldStillExists
+      ? selectedFieldName
+      : document.fields[0]?.name || NEW_FIELD_VALUE;
+  const selectedExistingField = document.fields.find(
+    (field) => field.name === effectiveSelectedFieldName,
+  );
+  const isNewField = selectedFieldName === NEW_FIELD_VALUE || !selectedExistingField;
+  const activeFieldLabel = isNewField
+    ? newFieldLabel.trim()
+    : selectedExistingField.label;
   const selectedPreviewPage =
     previewPages.find((page) => page.id === selectedPreviewPageId) ||
     previewPages[0];
@@ -72,6 +99,21 @@ export function TemplateDocumentRecognitionPanel({
     brightness: 88,
     zoom: 135,
   });
+  const boxSelectorImageStyle = buildPreviewImageStyle({
+    contrast: 210,
+    brightness: 88,
+    zoom: boxSelectorZoom,
+  });
+
+  function selectTrainingField(fieldName: string) {
+    const selected = document.fields.find((field) => field.name === fieldName);
+    setSelectedFieldName(fieldName);
+    setFieldInstructions(selected?.instructions || "");
+    setFieldValue("");
+    setFieldEvidence("");
+    setFieldAnchor(null);
+    setHighlightRect(null);
+  }
 
   function pointFromPreviewEvent(event: MouseEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -85,6 +127,32 @@ export function TemplateDocumentRecognitionPanel({
     };
   }
 
+  function startSelection(event: MouseEvent<HTMLDivElement>) {
+    const point = pointFromPreviewEvent(event);
+    setSelectionStart({ x: point.x, y: point.y });
+    setSelectionCurrent({ point: { x: point.x, y: point.y }, bounds: point.bounds });
+  }
+
+  function moveSelection(event: MouseEvent<HTMLDivElement>) {
+    if (!selectionStart) {
+      return;
+    }
+    const point = pointFromPreviewEvent(event);
+    setSelectionCurrent({ point: { x: point.x, y: point.y }, bounds: point.bounds });
+  }
+
+  function finishSelection(event: MouseEvent<HTMLDivElement>) {
+    if (!selectionStart) {
+      return;
+    }
+    const point = pointFromPreviewEvent(event);
+    setHighlightRect(
+      normalizeSelectionRect(selectionStart, { x: point.x, y: point.y }, point.bounds),
+    );
+    setSelectionStart(null);
+    setSelectionCurrent(null);
+  }
+
   async function parseSampleFile(file: File) {
     setFileName(file.name);
     setIsParsing(true);
@@ -92,6 +160,7 @@ export function TemplateDocumentRecognitionPanel({
     setParseResult(null);
     setPreviewPages([]);
     setHighlightRect(null);
+    setFieldAnchor(null);
     try {
       const pdfPreviewImages = isPdfFile(file)
         ? await renderPdfFileToPageImages(file, getPdfPreviewRenderOptions())
@@ -127,7 +196,75 @@ export function TemplateDocumentRecognitionPanel({
     }
   }
 
-  function addFieldFromValues({
+  function resolveField(): WorkflowField | null {
+    if (selectedExistingField) {
+      return {
+        ...selectedExistingField,
+        instructions: fieldInstructions.trim() || selectedExistingField.instructions,
+      };
+    }
+
+    if (!newFieldLabel.trim()) {
+      return null;
+    }
+
+    return createWorkflowFieldFromRecognition({
+      documentId: document.id,
+      label: newFieldLabel,
+      instructions: fieldInstructions,
+      existingFields: document.fields,
+    });
+  }
+
+  function buildExample({
+    field,
+    value,
+    evidence = "",
+    anchor,
+  }: {
+    field: WorkflowField;
+    value: string;
+    evidence?: string;
+    anchor?: TrainingAnchor | null;
+  }): ExtractionTrainingExample | undefined {
+    if (!value.trim()) {
+      return undefined;
+    }
+
+    return {
+      id: createTemplateSampleExampleId(document.id, field.name, fileName),
+      templateId: template.id,
+      documentId: document.id,
+      documentType: document.documentType,
+      fieldLabel: field.label,
+      originalValue: "",
+      correctedValue: value,
+      evidence,
+      anchor: anchor || undefined,
+      sourceFileName: fileName,
+      createdByEmail: template.updatedByEmail || template.createdByEmail || "",
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  function saveFieldSample() {
+    const field = resolveField();
+    if (!field) {
+      return;
+    }
+
+    onAddField(
+      field,
+      buildExample({
+        field,
+        value: fieldValue,
+        evidence: fieldEvidence,
+        anchor: fieldAnchor,
+      }),
+    );
+  }
+
+  function addFieldFromSuggestion({
     label,
     instructions,
     value = "",
@@ -144,40 +281,18 @@ export function TemplateDocumentRecognitionPanel({
       instructions,
       existingFields: document.fields,
     });
-    onAddField(
-      field,
-      value
-        ? {
-            id: createTemplateSampleExampleId(document.id, field.name, fileName),
-            templateId: template.id,
-            documentId: document.id,
-            documentType: document.documentType,
-            fieldLabel: field.label,
-            originalValue: "",
-            correctedValue: value,
-            evidence,
-            sourceFileName: fileName,
-            createdByEmail: template.updatedByEmail || template.createdByEmail || "",
-            createdAt: new Date().toISOString(),
-          }
-        : undefined,
-    );
+    onAddField(field, buildExample({ field, value, evidence }));
   }
 
   async function extractHighlightedSample() {
-    if (!selectedPreviewPage || !highlightRect || !fieldLabel.trim()) {
+    const field = resolveField();
+    if (!selectedPreviewPage || !highlightRect || !field) {
       return;
     }
 
     setIsParsing(true);
     setParseError("");
     try {
-      const field = createWorkflowFieldFromRecognition({
-        documentId: document.id,
-        label: fieldLabel,
-        instructions: fieldInstructions,
-        existingFields: document.fields,
-      });
       const cropFile = await cropPreviewPageToFile({
         page: selectedPreviewPage,
         rect: highlightRect,
@@ -199,20 +314,13 @@ export function TemplateDocumentRecognitionPanel({
         Object.values(payload.evidence || {})[0] ||
         "";
       setFieldValue(value);
-      onAddField(field, {
-        id: createTemplateSampleExampleId(document.id, field.name, fileName),
-        templateId: template.id,
-        documentId: document.id,
-        documentType: document.documentType,
-        fieldLabel: field.label,
-        originalValue: "",
-        correctedValue: value,
-        evidence,
-        sourceFileName: fileName,
-        createdByEmail: template.updatedByEmail || template.createdByEmail || "",
-        createdAt: new Date().toISOString(),
+      setFieldEvidence(evidence);
+      setFieldAnchor({
+        pageNumber: selectedPreviewPage.pageNumber,
+        rect: highlightRect,
+        nearbyText: evidence,
       });
-      setHighlightRect(null);
+      setIsBoxSelectorOpen(false);
     } catch (error) {
       setParseError(
         error instanceof Error ? error.message : "Unable to extract highlighted sample.",
@@ -227,10 +335,8 @@ export function TemplateDocumentRecognitionPanel({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-xs font-semibold text-neutral-300">
-              Sample
-            </p>
-            <InfoTip label="Upload a sample, accept suggested fields, or box a value to create template fields." />
+            <p className="text-xs font-semibold text-neutral-300">Sample</p>
+            <InfoTip label="Upload a sample, choose a configured field, then save the correct sample value or a boxed extraction example." />
           </div>
         </div>
         <label className="flex min-h-8 cursor-pointer items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 text-xs text-emerald-100 transition hover:bg-emerald-400/20">
@@ -261,9 +367,7 @@ export function TemplateDocumentRecognitionPanel({
 
       {parseResult?.suggestedFields?.length ? (
         <div className="mt-3 rounded-md border border-sky-500/25 bg-sky-500/10 p-2">
-          <p className="text-xs font-semibold text-sky-100">
-            Suggestions
-          </p>
+          <p className="text-xs font-semibold text-sky-100">Suggestions</p>
           <div className="mt-2 space-y-2">
             {parseResult.suggestedFields.map((suggestion, index) => (
               <div
@@ -282,7 +386,7 @@ export function TemplateDocumentRecognitionPanel({
                   <button
                     type="button"
                     onClick={() =>
-                      addFieldFromValues({
+                      addFieldFromSuggestion({
                         label: suggestion.label,
                         instructions: suggestion.instructions,
                         value: suggestion.value,
@@ -303,15 +407,14 @@ export function TemplateDocumentRecognitionPanel({
 
       {selectedPreviewPage && (
         <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-2">
-          <p className="text-xs font-semibold text-neutral-300">
-            Add fields
-          </p>
+          <p className="text-xs font-semibold text-neutral-300">Add fields</p>
           {previewPages.length > 1 && (
             <select
               value={selectedPreviewPage.id}
               onChange={(event) => {
                 setSelectedPreviewPageId(event.target.value);
                 setHighlightRect(null);
+                setFieldAnchor(null);
               }}
               className="mt-2 h-8 rounded-md border border-white/10 bg-[#0d1012] px-2 text-xs outline-none"
             >
@@ -326,33 +429,6 @@ export function TemplateDocumentRecognitionPanel({
             <div
               className="relative overflow-hidden"
               style={{ width: previewImageStyle.width, maxWidth: previewImageStyle.maxWidth }}
-              onMouseDown={(event) => {
-                const point = pointFromPreviewEvent(event);
-                setSelectionStart({ x: point.x, y: point.y });
-                setSelectionCurrent({ point: { x: point.x, y: point.y }, bounds: point.bounds });
-              }}
-              onMouseMove={(event) => {
-                if (!selectionStart) {
-                  return;
-                }
-                const point = pointFromPreviewEvent(event);
-                setSelectionCurrent({ point: { x: point.x, y: point.y }, bounds: point.bounds });
-              }}
-              onMouseUp={(event) => {
-                if (!selectionStart) {
-                  return;
-                }
-                const point = pointFromPreviewEvent(event);
-                setHighlightRect(
-                  normalizeSelectionRect(
-                    selectionStart,
-                    { x: point.x, y: point.y },
-                    point.bounds,
-                  ),
-                );
-                setSelectionStart(null);
-                setSelectionCurrent(null);
-              }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -366,57 +442,195 @@ export function TemplateDocumentRecognitionPanel({
                   width: "100%",
                 }}
               />
-              {activeSelectionRect && (
+              {fieldAnchor?.pageNumber === selectedPreviewPage.pageNumber && (
                 <div
                   className="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-300/20"
-                  style={normalizedRectToPercentStyle(activeSelectionRect)}
+                  style={normalizedRectToPercentStyle(fieldAnchor.rect)}
                 />
               )}
             </div>
           </div>
           <div className="mt-2 grid gap-2">
-            <input
-              value={fieldLabel}
-              onChange={(event) => setFieldLabel(event.target.value)}
-              placeholder="Field, e.g. Invoice total"
-              className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
-            />
-            <input
-              value={fieldInstructions}
-              onChange={(event) => setFieldInstructions(event.target.value)}
-              placeholder="Instruction"
-              className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
-            />
-            <input
-              value={fieldValue}
-              onChange={(event) => setFieldValue(event.target.value)}
-              placeholder="Sample value"
-              className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
-            />
+            <label className="grid gap-1 text-xs text-neutral-400">
+              <span>Field to train</span>
+              <select
+                value={effectiveSelectedFieldName}
+                onChange={(event) => selectTrainingField(event.target.value)}
+                className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs text-neutral-100 outline-none"
+              >
+                {document.fields.map((field) => (
+                  <option key={field.name} value={field.name}>
+                    {field.label}
+                  </option>
+                ))}
+                <option value={NEW_FIELD_VALUE}>+ New field</option>
+              </select>
+            </label>
+            {isNewField && (
+              <input
+                value={newFieldLabel}
+                onChange={(event) => setNewFieldLabel(event.target.value)}
+                placeholder="New field name"
+                className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
+              />
+            )}
+            <label className="grid gap-1 text-xs text-neutral-400">
+              <span className="inline-flex items-center gap-1">
+                Instruction
+                <InfoTip label="Optional guidance for the AI, for example: extract the final payable amount in HKD, not the subtotal." />
+              </span>
+              <input
+                value={fieldInstructions}
+                onChange={(event) => setFieldInstructions(event.target.value)}
+                placeholder="Instruction"
+                className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
+              />
+            </label>
+            <label className="grid gap-1 text-xs text-neutral-400">
+              <span className="inline-flex items-center gap-1">
+                Sample value
+                <InfoTip label="The correct answer from this sample document, used as a training example for future uploads." />
+              </span>
+              <input
+                value={fieldValue}
+                onChange={(event) => setFieldValue(event.target.value)}
+                placeholder="Sample value"
+                className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
+              />
+            </label>
+            {fieldAnchor && (
+              <p className="rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-xs text-emerald-100">
+                Box saved as a location hint, not an exact rule.
+              </p>
+            )}
             <div className="grid gap-2 sm:grid-cols-2">
               <button
                 type="button"
-                onClick={() =>
-                  addFieldFromValues({
-                    label: fieldLabel,
-                    instructions: fieldInstructions,
-                    value: fieldValue,
-                  })
-                }
-                disabled={!fieldLabel.trim()}
+                onClick={saveFieldSample}
+                disabled={!activeFieldLabel}
                 className="flex h-8 items-center justify-center gap-1 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 text-xs text-emerald-100 disabled:opacity-40"
               >
                 <Plus size={12} />
-                Add field
+                Save sample
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsBoxSelectorOpen(true)}
+                disabled={!selectedPreviewPage || !activeFieldLabel}
+                className="flex h-8 items-center justify-center gap-1 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 text-xs text-sky-100 disabled:opacity-40"
+              >
+                <Maximize2 size={12} />
+                Extract box
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isBoxSelectorOpen && selectedPreviewPage && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Large extraction selector"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+        >
+          <div className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-md border border-white/10 bg-[#101214] shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-white/10 p-3">
+              <div>
+                <p className="text-sm font-semibold text-neutral-100">
+                  Large extraction selector
+                </p>
+                <p className="mt-1 text-xs text-neutral-400">
+                  Use this large view to zoom, pan, and draw the sample box.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBoxSelectorOpen(false)}
+                className="flex size-8 shrink-0 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:bg-white/5"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 border-b border-white/10 p-3">
+              {previewPages.length > 1 && (
+                <select
+                  value={selectedPreviewPage.id}
+                  onChange={(event) => {
+                    setSelectedPreviewPageId(event.target.value);
+                    setHighlightRect(null);
+                  }}
+                  className="h-8 rounded-md border border-white/10 bg-[#0d1012] px-2 text-xs outline-none"
+                >
+                  {previewPages.map((page) => (
+                    <option key={page.id} value={page.id}>
+                      Page {page.pageNumber}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <label className="flex items-center gap-2 text-xs text-neutral-300">
+                Zoom
+                <input
+                  type="range"
+                  min="100"
+                  max="220"
+                  value={boxSelectorZoom}
+                  onChange={(event) => setBoxSelectorZoom(Number(event.target.value))}
+                />
+                <span className="w-10 text-right">{boxSelectorZoom}%</span>
+              </label>
+              <p className="text-xs text-neutral-500">
+                The saved box is a soft location hint, not an exact rule.
+              </p>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-4">
+              <div
+                className="relative overflow-hidden"
+                style={{
+                  width: boxSelectorImageStyle.width,
+                  maxWidth: boxSelectorImageStyle.maxWidth,
+                }}
+                onMouseDown={startSelection}
+                onMouseMove={moveSelection}
+                onMouseUp={finishSelection}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={selectedPreviewPage.dataUrl}
+                  alt={`Template sample page ${selectedPreviewPage.pageNumber}`}
+                  draggable={false}
+                  className="block select-none"
+                  style={{
+                    filter: boxSelectorImageStyle.filter,
+                    maxWidth: "none",
+                    width: "100%",
+                  }}
+                />
+                {activeSelectionRect && (
+                  <div
+                    className="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-300/20"
+                    style={normalizedRectToPercentStyle(activeSelectionRect)}
+                  />
+                )}
+              </div>
+            </div>
+            <div className="grid gap-2 border-t border-white/10 p-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setIsBoxSelectorOpen(false)}
+                className="flex h-9 items-center justify-center rounded-md border border-white/10 text-xs text-neutral-200 hover:bg-white/5"
+              >
+                Cancel
               </button>
               <button
                 type="button"
                 onClick={extractHighlightedSample}
-                disabled={!highlightRect || !fieldLabel.trim() || isParsing}
-                className="flex h-8 items-center justify-center gap-1 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 text-xs text-sky-100 disabled:opacity-40"
+                disabled={!highlightRect || isParsing}
+                className="flex h-9 items-center justify-center gap-1 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 text-xs text-sky-100 disabled:opacity-40"
               >
                 {isParsing ? <Loader2 size={12} className="animate-spin" /> : <ImageIcon size={12} />}
-                Extract box
+                Extract selected box
               </button>
             </div>
           </div>

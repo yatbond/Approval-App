@@ -697,6 +697,34 @@ test("includes corrected extraction examples in the parser prompt", () => {
   assert.match(prompt, /Total HKD 8,000/);
 });
 
+test("includes sample box anchors as soft extraction hints in the parser prompt", () => {
+  const prompt = buildExtractionPrompt(fields, "English", [
+    {
+      id: "example-1",
+      templateId: "template-1",
+      documentId: "invoice-doc",
+      documentType: "Invoice",
+      fieldLabel: "Amount",
+      originalValue: "",
+      correctedValue: "HKD 8,000",
+      evidence: "Boxed total amount on sample page",
+      sourceFileName: "invoice.pdf",
+      createdByEmail: "reviewer@example.com",
+      createdAt: "2026-06-22T09:00:00.000Z",
+      anchor: {
+        pageNumber: 1,
+        rect: { x: 0.58, y: 0.72, width: 0.24, height: 0.06 },
+      },
+    },
+  ]);
+
+  assert.match(prompt, /Soft anchor/);
+  assert.match(prompt, /page 1/i);
+  assert.match(prompt, /x 58%/);
+  assert.match(prompt, /nearby region/i);
+  assert.match(prompt, /rotated, shifted, scanned, or photocopied/i);
+});
+
 async function withParserEnvironment(env, callback) {
   const keys = [
     "AI_PROVIDER",

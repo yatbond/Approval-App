@@ -765,10 +765,23 @@ export function WorkflowView({
               `Requester enters ${field.label} in the digital form.`,
           }
         : field;
+      const hasExistingField = document.fields.some(
+        (existingField) => existingField.name === nextField.name,
+      );
 
       return {
         ...document,
-        fields: [...document.fields, nextField],
+        fields: hasExistingField
+          ? document.fields.map((existingField) =>
+              existingField.name === nextField.name
+                ? {
+                    ...existingField,
+                    instructions:
+                      nextField.instructions || existingField.instructions,
+                  }
+                : existingField,
+            )
+          : [...document.fields, nextField],
       };
     });
     const documentState = getWorkflowTemplateDocumentState({

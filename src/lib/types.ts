@@ -94,6 +94,16 @@ export type ExtractionTrainingExample = {
   originalValue: string;
   correctedValue: string;
   evidence?: string;
+  anchor?: {
+    pageNumber: number;
+    rect: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+    nearbyText?: string;
+  };
   sourceFileName?: string;
   createdByEmail: string;
   createdAt: string;

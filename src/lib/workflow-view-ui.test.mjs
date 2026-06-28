@@ -43,3 +43,14 @@ test("workflow box details do not show a redundant connect button", () => {
   assert.equal(source.includes("setConnectFromNodeId(selectedGraphNode.id)"), false);
   assert.equal(source.includes("Click target box"), false);
 });
+
+test("sample recognition trains existing fields with a large box selector", () => {
+  const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
+
+  assert.equal(source.includes("Field to train"), true);
+  assert.equal(source.includes("+ New field"), true);
+  assert.equal(source.includes("Large extraction selector"), true);
+  assert.equal(source.includes("Use this large view to zoom, pan, and draw the sample box."), true);
+  assert.equal(source.includes("location hint, not an exact rule"), true);
+  assert.equal(source.includes("Field, e.g. Invoice total"), false);
+});

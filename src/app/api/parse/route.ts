@@ -184,6 +184,24 @@ function isExtractionTrainingExample(
       typeof value.originalValue === "string" &&
       typeof value.correctedValue === "string" &&
       typeof value.createdByEmail === "string" &&
-      typeof value.createdAt === "string",
+      typeof value.createdAt === "string" &&
+      isOptionalTrainingAnchor(value.anchor),
+  );
+}
+
+function isOptionalTrainingAnchor(value: ExtractionTrainingExample["anchor"]) {
+  if (value === undefined) {
+    return true;
+  }
+
+  return Boolean(
+    value &&
+      typeof value.pageNumber === "number" &&
+      value.rect &&
+      typeof value.rect.x === "number" &&
+      typeof value.rect.y === "number" &&
+      typeof value.rect.width === "number" &&
+      typeof value.rect.height === "number" &&
+      (value.nearbyText === undefined || typeof value.nearbyText === "string"),
   );
 }
