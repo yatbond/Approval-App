@@ -121,6 +121,32 @@ test("lists only active templates as workflow base options", () => {
   );
 });
 
+test("excludes inactive workflow versions from base options", () => {
+  assert.deepEqual(
+    getWorkflowTemplateBaseOptions({
+      templates: [
+        {
+          ...template,
+          id: "template-1-v1",
+          version: 1,
+          isDraft: false,
+          isActiveVersion: false,
+          sourceTemplateId: "template-1",
+        },
+        {
+          ...template,
+          id: "template-1-v2",
+          version: 2,
+          isDraft: false,
+          isActiveVersion: true,
+          sourceTemplateId: "template-1",
+        },
+      ],
+    }).map((item) => item.id),
+    ["template-1-v2"],
+  );
+});
+
 test("does not create a duplicate workflow name inside the same business and department", () => {
   const result = getWorkflowCreateTemplateActionState({
     templateName: " invoice APPROVAL ",
@@ -207,6 +233,7 @@ test("publishes the selected workflow template when one exists", () => {
   assert.equal(result.template?.id, "template-1-v2");
   assert.equal(result.template?.version, 2);
   assert.equal(result.template?.isDraft, false);
+  assert.equal(result.template?.isActiveVersion, true);
   assert.equal(result.template?.publishedAt, "2026-06-21T05:00:00.000Z");
 });
 

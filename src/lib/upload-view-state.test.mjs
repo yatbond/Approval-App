@@ -86,6 +86,35 @@ test("selects the requested template and derives upload document state", () => {
   assert.deepEqual(state.missingRequiredDocuments, []);
 });
 
+test("uses only the active published version for new requests", () => {
+  const inactiveVersion = {
+    ...templateA,
+    id: "template-a-v2",
+    version: 2,
+    sourceTemplateId: "template-a",
+    isActiveVersion: false,
+  };
+  const activeVersion = {
+    ...templateA,
+    id: "template-a-v3",
+    version: 3,
+    sourceTemplateId: "template-a",
+    isActiveVersion: true,
+  };
+
+  const state = getUploadViewState({
+    workflowTemplates: [inactiveVersion, activeVersion, templateB],
+    selectedTemplateId: "template-a-v2",
+    uploadedAttachments: [],
+  });
+
+  assert.deepEqual(
+    state.requestTemplates.map((template) => template.id),
+    ["template-a-v3"],
+  );
+  assert.equal(state.selectedTemplate?.id, "template-a-v3");
+});
+
 test("shows only the active submitter assigned documents when shared fulfillment is off", () => {
   const siteReportDocument = {
     id: "site-report",

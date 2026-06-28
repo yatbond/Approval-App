@@ -2,6 +2,7 @@ import {
   getMissingRequiredSubmissionDocuments,
   getSubmissionDocumentRequirements,
 } from "./request-builder.ts";
+import { getActiveWorkflowRequestTemplates } from "./workflow-template-version-state.ts";
 import { isManualFormRequirement } from "./workflow-documents.ts";
 import type { NormalizedRect } from "./document-preview.ts";
 import type {
@@ -50,9 +51,7 @@ export function getUploadViewState({
   uploadedAttachments: ApprovalAttachment[];
   activeUserEmail?: string;
 }) {
-  const requestTemplates = workflowTemplates.filter(
-    (template) => template.isDraft !== true && template.isArchived !== true,
-  );
+  const requestTemplates = getActiveWorkflowRequestTemplates(workflowTemplates);
   const selectedTemplate =
     requestTemplates.find((template) => template.id === selectedTemplateId) ||
     requestTemplates[0];

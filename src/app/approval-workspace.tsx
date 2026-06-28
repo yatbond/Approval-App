@@ -94,8 +94,10 @@ import {
   type ConfirmationRequest,
 } from "@/lib/confirmation-policy";
 import {
+  getActivatedTemplateVersionRecordState,
   getCreatedTemplateRecordState,
   getDeletedTemplateRecordState,
+  getUpdatedTemplateVersionCommentRecordState,
   getUpdatedTemplateRecordState,
 } from "@/lib/workspace-template-record-state";
 import {
@@ -1781,6 +1783,56 @@ function ApprovalWorkspaceBody({
     );
   }
 
+  function activateTemplateVersionRecord(templateId: string) {
+    const nextState = getActivatedTemplateVersionRecordState({
+      templates,
+      selectedTemplateId,
+      templateId,
+      actor: activeUser,
+    });
+    if (!nextState.didUpdate) {
+      return;
+    }
+
+    const nextAuditEvents = nextState.auditEvent
+      ? [nextState.auditEvent, ...adminAuditEvents]
+      : adminAuditEvents;
+    setTemplates(nextState.templates);
+    setAdminAuditEvents(nextAuditEvents);
+    setSelectedTemplateId(nextState.selectedTemplateId);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({
+        workflowTemplates: nextState.templates,
+        adminAuditEvents: nextAuditEvents,
+        selectedTemplateId: nextState.selectedTemplateId,
+      }),
+    );
+  }
+
+  function updateTemplateVersionCommentRecord(templateId: string, comment: string) {
+    const nextState = getUpdatedTemplateVersionCommentRecordState({
+      templates,
+      templateId,
+      comment,
+      actor: activeUser,
+    });
+    if (!nextState.didUpdate) {
+      return;
+    }
+
+    const nextAuditEvents = nextState.auditEvent
+      ? [nextState.auditEvent, ...adminAuditEvents]
+      : adminAuditEvents;
+    setTemplates(nextState.templates);
+    setAdminAuditEvents(nextAuditEvents);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({
+        workflowTemplates: nextState.templates,
+        adminAuditEvents: nextAuditEvents,
+      }),
+    );
+  }
+
   async function deleteTemplateRecord(templateId: string) {
     const template = templates.find((item) => item.id === templateId);
     const didDeactivate = template
@@ -2066,6 +2118,8 @@ function ApprovalWorkspaceBody({
                 adminRecordError={adminRecordError}
                 onCreateTemplate={createTemplateRecord}
                 onUpdateTemplate={updateTemplateRecord}
+                onActivateTemplateVersion={activateTemplateVersionRecord}
+                onUpdateTemplateVersionComment={updateTemplateVersionCommentRecord}
                 userDirectory={userDirectory}
                 activeUser={activeUser}
                 onRunWorkflowAction={runWorkflowAction}

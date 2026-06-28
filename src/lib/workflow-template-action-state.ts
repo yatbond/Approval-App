@@ -2,6 +2,10 @@ import type { WorkflowTemplate } from "./types.ts";
 import { createWorkflowTemplateFromDraft } from "./template-builder.ts";
 import { createWorkflowGraphFromTemplate, validateWorkflowTemplate } from "./workflow-graph.ts";
 import { publishWorkflowTemplateVersion } from "./workflow-system.ts";
+import {
+  getActiveWorkflowRequestTemplates,
+  isActiveWorkflowTemplateVersion,
+} from "./workflow-template-version-state.ts";
 
 type WorkflowTemplateActionState = {
   didCreate: boolean;
@@ -75,8 +79,17 @@ export function getWorkflowTemplateBaseOptions({
   templates: WorkflowTemplate[];
   excludeTemplateId?: string;
 }) {
+  const activePublishedTemplateIds = new Set(
+    getActiveWorkflowRequestTemplates(templates).map((template) => template.id),
+  );
+
   return templates.filter(
-    (template) => !template.isArchived && template.id !== excludeTemplateId,
+    (template) =>
+      !template.isArchived &&
+      template.id !== excludeTemplateId &&
+      (template.isDraft !== false ||
+        activePublishedTemplateIds.has(template.id) ||
+        isActiveWorkflowTemplateVersion(template, templates)),
   );
 }
 

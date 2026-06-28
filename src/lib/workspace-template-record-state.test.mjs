@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   getCreatedTemplateRecordState,
   getDeletedTemplateRecordState,
+  getActivatedTemplateVersionRecordState,
+  getUpdatedTemplateVersionCommentRecordState,
   getUpdatedTemplateRecordState,
 } from "./workspace-template-record-state.ts";
 
@@ -104,10 +106,21 @@ test("stamps template ownership and audit event when creating a template", () =>
 
 test("keeps existing creator metadata while stamping publish audit details", () => {
   const state = getCreatedTemplateRecordState({
-    templates: [],
+    templates: [
+      {
+        ...template("published-template-v2", "Published Template"),
+        version: 2,
+        isDraft: false,
+        isActiveVersion: true,
+        sourceTemplateId: "published-template",
+      },
+    ],
     template: {
-      ...template("published-template", "Published Template"),
+      ...template("published-template-v3", "Published Template"),
       version: 3,
+      isDraft: false,
+      isActiveVersion: true,
+      sourceTemplateId: "published-template",
       createdByEmail: "original@example.com",
       createdByName: "Original Creator",
       createdAt: "2026-06-01T00:00:00.000Z",
@@ -125,14 +138,16 @@ test("keeps existing creator metadata while stamping publish audit details", () 
   assert.equal(state.templates[0].createdByName, "Original Creator");
   assert.equal(state.templates[0].createdAt, "2026-06-01T00:00:00.000Z");
   assert.equal(state.templates[0].updatedByEmail, "dpang@chunwo.com");
+  assert.equal(state.templates[0].isActiveVersion, true);
+  assert.equal(state.templates[1].isActiveVersion, false);
   assert.deepEqual(state.auditEvent, {
-    id: "template-published-template-1782028800000-published",
+    id: "template-published-template-v3-1782028800000-published",
     action: "template_published",
     actor: "Derrick Pang",
     actorEmail: "dpang@chunwo.com",
     timestamp: "2026-06-21T08:00:00.000Z",
     detail: "Published template Published Template.",
-    templateId: "published-template",
+    templateId: "published-template-v3",
     templateName: "Published Template",
     templateVersion: 3,
   });
@@ -239,4 +254,83 @@ test("does not create archive audit event when actor delete target is missing", 
   );
   assert.equal(state.selectedTemplateId, "a");
   assert.equal(state.auditEvent, undefined);
+});
+
+test("activates a template version with audit details", () => {
+  const state = getActivatedTemplateVersionRecordState({
+    templates: [
+      {
+        ...template("invoice-v1", "Invoice"),
+        version: 1,
+        isDraft: false,
+        isActiveVersion: true,
+        sourceTemplateId: "invoice",
+        createdByEmail: "dpang@chunwo.com",
+      },
+      {
+        ...template("invoice-v2", "Invoice"),
+        version: 2,
+        isDraft: false,
+        isActiveVersion: false,
+        sourceTemplateId: "invoice",
+        createdByEmail: "dpang@chunwo.com",
+      },
+    ],
+    selectedTemplateId: "invoice-v1",
+    templateId: "invoice-v2",
+    actor: {
+      name: "Derrick Pang",
+      email: "dpang@chunwo.com",
+      role: "superuser",
+    },
+    now: new Date("2026-06-22T03:00:00.000Z"),
+  });
+
+  assert.equal(state.selectedTemplateId, "invoice-v2");
+  assert.deepEqual(
+    state.templates.map((item) => ({
+      id: item.id,
+      isActiveVersion: item.isActiveVersion,
+    })),
+    [
+      { id: "invoice-v1", isActiveVersion: false },
+      { id: "invoice-v2", isActiveVersion: true },
+    ],
+  );
+  assert.deepEqual(state.auditEvent, {
+    id: "template-invoice-v2-1782097200000-activated",
+    action: "template_activated",
+    actor: "Derrick Pang",
+    actorEmail: "dpang@chunwo.com",
+    timestamp: "2026-06-22T03:00:00.000Z",
+    detail: "Activated template Invoice.",
+    templateId: "invoice-v2",
+    templateName: "Invoice",
+    templateVersion: 2,
+  });
+});
+
+test("saves a template version comment with owner permissions", () => {
+  const state = getUpdatedTemplateVersionCommentRecordState({
+    templates: [
+      {
+        ...template("invoice-v1", "Invoice"),
+        version: 1,
+        isDraft: false,
+        createdByEmail: "dpang@chunwo.com",
+      },
+    ],
+    templateId: "invoice-v1",
+    comment: "Keep for old department routing.",
+    actor: {
+      name: "Derrick Pang",
+      email: "dpang@chunwo.com",
+      role: "approver",
+    },
+    now: new Date("2026-06-22T04:00:00.000Z"),
+  });
+
+  assert.equal(state.didUpdate, true);
+  assert.equal(state.templates[0].versionComment, "Keep for old department routing.");
+  assert.equal(state.auditEvent?.action, "template_updated");
 });

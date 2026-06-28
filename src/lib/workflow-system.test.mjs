@@ -28,6 +28,7 @@ test("publishes a workflow template as a new immutable version", () => {
   assert.equal(published.id, "template-1-v2");
   assert.equal(published.version, 2);
   assert.equal(published.isDraft, false);
+  assert.equal(published.isActiveVersion, true);
   assert.equal(published.publishedAt, "2026-06-20T10:00:00.000Z");
   assert.equal(published.sourceTemplateId, "template-1");
 });

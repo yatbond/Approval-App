@@ -4,6 +4,11 @@ import type {
   UserRole,
   WorkflowTemplate,
 } from "./types.ts";
+import {
+  getWorkflowTemplateFamilyKey,
+  setActiveWorkflowTemplateVersion,
+  setWorkflowTemplateVersionComment,
+} from "./workflow-template-version-state.ts";
 
 type TemplateActor = {
   name: string;
@@ -25,8 +30,9 @@ export function getCreatedTemplateRecordState({
   action?: AdminAuditEventAction;
 }) {
   const stampedTemplate = actor ? stampCreatedTemplate(template, actor, now) : template;
+  const nextTemplates = normalizePublishedActiveVersion([stampedTemplate, ...templates], stampedTemplate);
   return {
-    templates: [stampedTemplate, ...templates],
+    templates: nextTemplates,
     selectedTemplateId: stampedTemplate.id,
     auditEvent: actor
       ? buildTemplateAdminAuditEvent({
@@ -130,6 +136,109 @@ export function getDeletedTemplateRecordState({
   };
 }
 
+export function getActivatedTemplateVersionRecordState({
+  templates,
+  selectedTemplateId,
+  templateId,
+  actor,
+  now = new Date(),
+}: {
+  templates: WorkflowTemplate[];
+  selectedTemplateId: string;
+  templateId: string;
+  actor: TemplateActor;
+  now?: Date;
+}) {
+  const nextState = setActiveWorkflowTemplateVersion({
+    templates,
+    templateId,
+    activeUserEmail: actor.email,
+    activeUserRole: actor.role,
+    now,
+  });
+  const activatedTemplate = nextState.templates.find(
+    (template) => template.id === templateId,
+  );
+
+  return {
+    ...nextState,
+    selectedTemplateId: nextState.didUpdate ? templateId : selectedTemplateId,
+    auditEvent:
+      nextState.didUpdate && activatedTemplate
+        ? buildTemplateAdminAuditEvent({
+            action: "template_activated",
+            template: activatedTemplate,
+            actor,
+            now,
+          })
+        : undefined,
+  };
+}
+
+export function getUpdatedTemplateVersionCommentRecordState({
+  templates,
+  templateId,
+  comment,
+  actor,
+  now = new Date(),
+}: {
+  templates: WorkflowTemplate[];
+  templateId: string;
+  comment: string;
+  actor: TemplateActor;
+  now?: Date;
+}) {
+  const nextState = setWorkflowTemplateVersionComment({
+    templates,
+    templateId,
+    comment,
+    activeUserEmail: actor.email,
+    activeUserRole: actor.role,
+    now,
+  });
+  const updatedTemplate = nextState.templates.find(
+    (template) => template.id === templateId,
+  );
+
+  return {
+    ...nextState,
+    auditEvent:
+      nextState.didUpdate && updatedTemplate
+        ? buildTemplateAdminAuditEvent({
+            action: "template_updated",
+            template: updatedTemplate,
+            actor,
+            now,
+          })
+        : undefined,
+  };
+}
+
+function normalizePublishedActiveVersion(
+  templates: WorkflowTemplate[],
+  activeTemplate: WorkflowTemplate,
+) {
+  if (activeTemplate.isDraft !== false || activeTemplate.isActiveVersion !== true) {
+    return templates;
+  }
+
+  const activeFamilyKey = getWorkflowTemplateFamilyKey(activeTemplate);
+  return templates.map((template) => {
+    const isPublishedSibling =
+      template.isDraft !== true &&
+      template.isArchived !== true &&
+      getWorkflowTemplateFamilyKey(template) === activeFamilyKey;
+    if (!isPublishedSibling) {
+      return template;
+    }
+
+    return {
+      ...template,
+      isActiveVersion: template.id === activeTemplate.id,
+    };
+  });
+}
+
 function stampCreatedTemplate(
   template: WorkflowTemplate,
   actor: TemplateActor,
@@ -193,6 +302,9 @@ function formatTemplateAuditVerb(action: AdminAuditEventAction) {
   }
   if (action === "template_archived") {
     return "Archived";
+  }
+  if (action === "template_activated") {
+    return "Activated";
   }
   return "Updated";
 }

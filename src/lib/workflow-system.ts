@@ -3,6 +3,7 @@ import type {
   NotificationItem,
   WorkflowTemplate,
 } from "@/lib/types";
+import { getWorkflowTemplateFamilyKey } from "./workflow-template-version-state.ts";
 
 export type TaskNotification = NotificationItem & {
   requestId: string;
@@ -20,15 +21,17 @@ export function publishWorkflowTemplateVersion(
   now = new Date(),
 ): WorkflowTemplate {
   const nextVersion = (template.version || 1) + 1;
-  const baseTemplateId = template.sourceTemplateId || template.id.replace(/-v\d+$/, "");
+  const baseTemplateId = getWorkflowTemplateFamilyKey(template);
 
   return {
     ...template,
     id: `${baseTemplateId}-v${nextVersion}`,
     version: nextVersion,
     isDraft: false,
+    isActiveVersion: true,
+    versionComment: undefined,
     publishedAt: now.toISOString(),
-    sourceTemplateId: template.id,
+    sourceTemplateId: baseTemplateId,
   };
 }
 

@@ -193,6 +193,8 @@ export function WorkflowView({
   adminRecordError,
   onCreateTemplate,
   onUpdateTemplate,
+  onActivateTemplateVersion,
+  onUpdateTemplateVersionComment,
   userDirectory,
   activeUser,
   onRunWorkflowAction,
@@ -207,6 +209,8 @@ export function WorkflowView({
   adminRecordError?: string;
   onCreateTemplate: (template: WorkflowTemplate) => void;
   onUpdateTemplate: (template: WorkflowTemplate) => void;
+  onActivateTemplateVersion: (templateId: string) => void;
+  onUpdateTemplateVersionComment: (templateId: string, comment: string) => void;
   userDirectory: UserDirectoryEntry[];
   activeUser: UserDirectoryEntry;
   onRunWorkflowAction: (taskId: string, action: ApprovalAction) => void;
@@ -2068,6 +2072,8 @@ export function WorkflowView({
             onLoadTemplate={loadTemplateIntoBuilder}
             onDuplicateTemplate={duplicateTemplateAsDraft}
             onDeleteTemplate={onDeleteTemplate}
+            onActivateTemplateVersion={onActivateTemplateVersion}
+            onUpdateTemplateVersionComment={onUpdateTemplateVersionComment}
             activeUserEmail={activeUser.email}
             activeUserRole={activeUser.role}
           />

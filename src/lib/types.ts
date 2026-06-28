@@ -339,6 +339,8 @@ export type WorkflowTemplate = {
   department: string;
   version?: number;
   isDraft?: boolean;
+  isActiveVersion?: boolean;
+  versionComment?: string;
   publishedAt?: string;
   sourceTemplateId?: string;
   createdByEmail?: string;
@@ -421,7 +423,8 @@ export type AdminAuditEventAction =
   | "template_updated"
   | "template_published"
   | "template_duplicated"
-  | "template_archived";
+  | "template_archived"
+  | "template_activated";
 
 export type AdminAuditEvent = {
   id: string;

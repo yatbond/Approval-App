@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Archive, Copy, RotateCcw } from "lucide-react";
+import { Archive, CheckCircle2, Copy, RotateCcw, Save } from "lucide-react";
 import {
   getWorkflowTemplateLibraryItems,
   type WorkflowTemplateLibrarySection,
@@ -15,6 +15,8 @@ export function WorkflowTemplateLibrary({
   onLoadTemplate,
   onDuplicateTemplate,
   onDeleteTemplate,
+  onActivateTemplateVersion,
+  onUpdateTemplateVersionComment,
   activeUserEmail,
   activeUserRole,
 }: {
@@ -24,11 +26,14 @@ export function WorkflowTemplateLibrary({
   onLoadTemplate: (template: WorkflowTemplate) => void;
   onDuplicateTemplate: (template: WorkflowTemplate) => void;
   onDeleteTemplate: (templateId: string) => void | Promise<void>;
+  onActivateTemplateVersion: (templateId: string) => void;
+  onUpdateTemplateVersionComment: (templateId: string, comment: string) => void;
   activeUserEmail: string;
   activeUserRole: UserRole;
 }) {
   const [section, setSection] =
     useState<Exclude<WorkflowTemplateLibrarySection, "all">>("library");
+  const [versionComments, setVersionComments] = useState<Record<string, string>>({});
   const templateItems = getWorkflowTemplateLibraryItems({
     workflowTemplates,
     selectedTemplateId,
@@ -36,15 +41,29 @@ export function WorkflowTemplateLibrary({
     activeUserRole,
     section,
   });
-  const libraryCount = workflowTemplates.filter(
+  const libraryCount = getWorkflowTemplateLibraryItems({
+    workflowTemplates,
+    selectedTemplateId,
+    activeUserEmail,
+    activeUserRole,
+    section: "library",
+  }).length;
+  const versionsCount = workflowTemplates.filter(
     (template) => template.isArchived !== true,
   ).length;
-  const archiveCount = workflowTemplates.length - libraryCount;
+  const archiveCount = workflowTemplates.length - versionsCount;
   const isArchive = section === "archive";
-  const sectionTitle = isArchive ? "Archived workflows" : "Active workflows";
+  const isVersions = section === "versions";
+  const sectionTitle = isArchive
+    ? "Archived workflows"
+    : isVersions
+      ? "Workflow versions"
+      : "Active workflows";
   const sectionDescription = isArchive
     ? "Archived workflows are kept for history and cannot be used for new requests."
-    : "Usable workflow templates for new requests and template editing.";
+    : isVersions
+      ? "Choose which published version is active and document why each version exists."
+      : "Drafts and active published workflow templates for new requests.";
 
   return (
     <div className="p-4">
@@ -55,7 +74,7 @@ export function WorkflowTemplateLibrary({
           </h3>
           <p className="mt-1 text-xs text-neutral-500">{sectionDescription}</p>
         </div>
-        <div className="grid grid-cols-2 gap-2 rounded-md border border-white/10 bg-[#101214] p-1 text-sm sm:w-auto">
+        <div className="grid grid-cols-3 gap-2 rounded-md border border-white/10 bg-[#101214] p-1 text-sm sm:w-auto">
           <button
             type="button"
             onClick={() => setSection("library")}
@@ -66,6 +85,17 @@ export function WorkflowTemplateLibrary({
             }`}
           >
             Active ({libraryCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setSection("versions")}
+            className={`min-h-11 rounded px-3 transition ${
+              section === "versions"
+                ? "bg-sky-400/15 text-sky-100"
+                : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
+            }`}
+          >
+            Versions ({versionsCount})
           </button>
           <button
             type="button"
@@ -115,6 +145,9 @@ export function WorkflowTemplateLibrary({
                 {item.countsLabel}
               </p>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-neutral-300">
+                  {item.versionLabel}
+                </span>
                 <span className={`rounded border px-2 py-1 ${statusToneClassName(item.statusTone)}`}>
                   {item.statusLabel}
                 </span>
@@ -123,6 +156,68 @@ export function WorkflowTemplateLibrary({
                 </span>
               </div>
             </button>
+            {isVersions && (
+              <div className="mt-3 space-y-2 rounded-md border border-white/10 bg-[#0d1013] p-2">
+                <label className="block">
+                  <span className="mb-1 block text-xs text-neutral-500">
+                    Version note
+                  </span>
+                  <textarea
+                    value={versionComments[item.id] ?? item.versionComment}
+                    onChange={(event) =>
+                      setVersionComments((comments) => ({
+                        ...comments,
+                        [item.id]: event.target.value,
+                      }))
+                    }
+                    disabled={!item.canComment}
+                    rows={2}
+                    placeholder="Why this version exists or when to use it."
+                    title={
+                      item.canComment
+                        ? "Document why this workflow version exists."
+                        : "Only superusers or the workflow creator can edit version notes."
+                    }
+                    className="w-full resize-y rounded-md border border-white/10 bg-[#121518] px-2 py-2 text-sm text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                </label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateTemplateVersionComment(
+                        item.id,
+                        versionComments[item.id] ?? item.versionComment,
+                      )
+                    }
+                    disabled={!item.canComment}
+                    title={
+                      item.canComment
+                        ? "Save this version note."
+                        : "Only superusers or the workflow creator can save version notes."
+                    }
+                    className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-3 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Save size={15} />
+                    {item.commentActionLabel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onActivateTemplateVersion(item.id)}
+                    disabled={!item.canActivate}
+                    title={
+                      item.canActivate
+                        ? "Use this published version for new requests."
+                        : "Only inactive published versions managed by you can be made active."
+                    }
+                    className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 py-2 text-sm text-emerald-100 transition hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <CheckCircle2 size={15} />
+                    {item.activateActionLabel}
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               <button
                 type="button"
@@ -169,6 +264,8 @@ export function WorkflowTemplateLibrary({
           <div className="rounded-md border border-white/10 bg-[#121518] p-4 text-sm text-neutral-400 lg:col-span-2">
             {isArchive
               ? "No archived workflows."
+              : isVersions
+                ? "No workflow versions."
               : "No active workflows."}
           </div>
         )}
@@ -178,8 +275,11 @@ export function WorkflowTemplateLibrary({
 }
 
 function statusToneClassName(statusTone: string) {
-  if (statusTone === "published") {
+  if (statusTone === "active") {
     return "border-emerald-400/30 bg-emerald-400/10 text-emerald-100";
+  }
+  if (statusTone === "inactive") {
+    return "border-sky-400/30 bg-sky-400/10 text-sky-100";
   }
   if (statusTone === "archived") {
     return "border-neutral-500/30 bg-neutral-500/10 text-neutral-300";
