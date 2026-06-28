@@ -54,3 +54,12 @@ test("sample recognition trains existing fields with a large box selector", () =
   assert.equal(source.includes("location hint, not an exact rule"), true);
   assert.equal(source.includes("Field, e.g. Invoice total"), false);
 });
+
+test("sample recognition supports training multiple fields from one upload", () => {
+  const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
+
+  assert.equal(source.includes("Saved sample fields"), true);
+  assert.equal(source.includes("No sample fields saved yet."), true);
+  assert.equal(source.includes("Save and next field"), true);
+  assert.equal(source.includes("selectNextUnsavedField"), true);
+});

@@ -36,6 +36,12 @@ import { InfoTip } from "./ui-hint";
 const NEW_FIELD_VALUE = "__new_field__";
 
 type TrainingAnchor = NonNullable<ExtractionTrainingExample["anchor"]>;
+type SavedSampleField = {
+  fieldName: string;
+  label: string;
+  value: string;
+  hasAnchor: boolean;
+};
 
 export function TemplateDocumentRecognitionPanel({
   document,
@@ -62,6 +68,7 @@ export function TemplateDocumentRecognitionPanel({
   const [fieldValue, setFieldValue] = useState("");
   const [fieldEvidence, setFieldEvidence] = useState("");
   const [fieldAnchor, setFieldAnchor] = useState<TrainingAnchor | null>(null);
+  const [savedSampleFields, setSavedSampleFields] = useState<SavedSampleField[]>([]);
   const [isBoxSelectorOpen, setIsBoxSelectorOpen] = useState(false);
   const [boxSelectorZoom, setBoxSelectorZoom] = useState(180);
   const [selectionStart, setSelectionStart] = useState<Point | null>(null);
@@ -115,6 +122,24 @@ export function TemplateDocumentRecognitionPanel({
     setHighlightRect(null);
   }
 
+  function selectNextUnsavedField(currentFieldName: string) {
+    const savedNames = new Set([
+      ...savedSampleFields.map((field) => field.fieldName),
+      currentFieldName,
+    ]);
+    const nextField = document.fields.find((field) => !savedNames.has(field.name));
+
+    if (nextField) {
+      selectTrainingField(nextField.name);
+      return;
+    }
+
+    setFieldValue("");
+    setFieldEvidence("");
+    setFieldAnchor(null);
+    setHighlightRect(null);
+  }
+
   function pointFromPreviewEvent(event: MouseEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     return {
@@ -161,6 +186,7 @@ export function TemplateDocumentRecognitionPanel({
     setPreviewPages([]);
     setHighlightRect(null);
     setFieldAnchor(null);
+    setSavedSampleFields([]);
     try {
       const pdfPreviewImages = isPdfFile(file)
         ? await renderPdfFileToPageImages(file, getPdfPreviewRenderOptions())
@@ -252,16 +278,26 @@ export function TemplateDocumentRecognitionPanel({
     if (!field) {
       return;
     }
-
-    onAddField(
+    const example = buildExample({
       field,
-      buildExample({
-        field,
-        value: fieldValue,
-        evidence: fieldEvidence,
-        anchor: fieldAnchor,
-      }),
-    );
+      value: fieldValue,
+      evidence: fieldEvidence,
+      anchor: fieldAnchor,
+    });
+
+    onAddField(field, example);
+    if (example) {
+      setSavedSampleFields((current) => [
+        ...current.filter((item) => item.fieldName !== field.name),
+        {
+          fieldName: field.name,
+          label: field.label,
+          value: example.correctedValue,
+          hasAnchor: Boolean(example.anchor),
+        },
+      ]);
+    }
+    selectNextUnsavedField(field.name);
   }
 
   function addFieldFromSuggestion({
@@ -407,6 +443,37 @@ export function TemplateDocumentRecognitionPanel({
 
       {selectedPreviewPage && (
         <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-2">
+          <div className="mb-3 rounded-md border border-white/10 bg-[#0d1012] p-2">
+            <p className="text-xs font-semibold text-neutral-300">
+              Saved sample fields
+            </p>
+            {savedSampleFields.length ? (
+              <div className="mt-2 space-y-2">
+                {savedSampleFields.map((field) => (
+                  <div
+                    key={field.fieldName}
+                    className="rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1"
+                  >
+                    <p className="text-xs font-medium text-emerald-100">
+                      {field.label}
+                    </p>
+                    <p className="mt-0.5 break-words text-xs text-emerald-50/80">
+                      {field.value}
+                    </p>
+                    {field.hasAnchor && (
+                      <p className="mt-0.5 text-[11px] text-emerald-100/70">
+                        Includes box location hint
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-1 text-xs text-neutral-500">
+                No sample fields saved yet.
+              </p>
+            )}
+          </div>
           <p className="text-xs font-semibold text-neutral-300">Add fields</p>
           {previewPages.length > 1 && (
             <select
@@ -511,7 +578,7 @@ export function TemplateDocumentRecognitionPanel({
                 className="flex h-8 items-center justify-center gap-1 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 text-xs text-emerald-100 disabled:opacity-40"
               >
                 <Plus size={12} />
-                Save sample
+                Save and next field
               </button>
               <button
                 type="button"
