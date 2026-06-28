@@ -108,6 +108,13 @@ export function buildNormalizedWorkspaceRows(
   snapshot: WorkspaceStateSnapshot,
   owner: NormalizedOwner,
 ): NormalizedWorkspaceRows {
+  const archivedTemplateRows = archivedTaskTemplateRows(snapshot, owner);
+  const legacyTemplateRows = legacyTaskTemplateRows(snapshot, owner);
+  const templatesForRequests = [
+    ...snapshot.workflowTemplates,
+    ...archivedTemplateRows.map((row) => row.templateSnapshot),
+    ...legacyTemplateRows.map((row) => row.templateSnapshot),
+  ];
   const workflowTemplateVersions = [
     ...snapshot.workflowTemplates.map((template) => ({
       templateKey: template.id,
@@ -126,7 +133,8 @@ export function buildNormalizedWorkspaceRows(
       isActiveVersion: template.isActiveVersion === true,
       versionComment: template.versionComment || "",
     })),
-    ...archivedTaskTemplateRows(snapshot, owner),
+    ...archivedTemplateRows,
+    ...legacyTemplateRows,
   ];
 
   return {
@@ -142,7 +150,7 @@ export function buildNormalizedWorkspaceRows(
     ),
     workflowTemplateVersions,
     approvalRequests: snapshot.approvalTasks.map((task) => {
-      const template = findTaskTemplate(task, snapshot.workflowTemplates);
+      const template = findTaskTemplate(task, templatesForRequests);
 
       return {
         requestNo: task.id,
@@ -308,6 +316,109 @@ function archivedTaskTemplateRows(
   }
 
   return rows;
+}
+
+function legacyTaskTemplateRows(
+  snapshot: WorkspaceStateSnapshot,
+  owner: NormalizedOwner,
+): NormalizedWorkflowTemplateVersionRow[] {
+  const rows: NormalizedWorkflowTemplateVersionRow[] = [];
+  const existingTemplateKeys = new Set(snapshot.workflowTemplates.map((template) => template.id));
+  const legacyTemplateKeys = new Set<string>();
+
+  for (const task of snapshot.approvalTasks) {
+    if (
+      task.workflowTemplateId ||
+      task.workflowTemplateSnapshot ||
+      findTaskTemplate(task, snapshot.workflowTemplates)
+    ) {
+      continue;
+    }
+
+    const templateKey = legacyWorkflowTemplateKey(task);
+    if (
+      !templateKey ||
+      existingTemplateKeys.has(templateKey) ||
+      legacyTemplateKeys.has(templateKey)
+    ) {
+      continue;
+    }
+
+    legacyTemplateKeys.add(templateKey);
+    const businessName = legacyTaskBusinessName(snapshot.businessDirectory, task);
+    const departmentName = task.department || "Unassigned";
+    const templateSnapshot: WorkflowTemplate = {
+      id: templateKey,
+      name: task.workflow || "Legacy workflow",
+      business: businessName,
+      department: departmentName,
+      version: task.workflowTemplateVersion || 1,
+      isDraft: false,
+      isActiveVersion: false,
+      isArchived: true,
+      documentTypes: [],
+      documents: [],
+      languages: [],
+      fields: [],
+      steps: [],
+      graph: {
+        nodes: [
+          { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+          { id: "end", kind: "end", label: "End", x: 240, y: 0 },
+        ],
+        edges: [
+          {
+            id: "legacy-start-end",
+            sourceId: "start",
+            targetId: "end",
+            label: "Legacy route",
+            branchType: "main",
+          },
+        ],
+      },
+    };
+
+    rows.push({
+      templateKey,
+      versionNumber: templateSnapshot.version || 1,
+      name: templateSnapshot.name,
+      businessName,
+      departmentName,
+      graph: templateSnapshot.graph,
+      documentRequirements: templateSnapshot.documents,
+      supportedLanguages: templateSnapshot.languages,
+      templateSnapshot,
+      createdBy: owner.userId,
+      isActive: false,
+      isActiveVersion: false,
+      versionComment: "Legacy request reference created during normalization.",
+    });
+  }
+
+  return rows;
+}
+
+function legacyWorkflowTemplateKey(task: ApprovalTask) {
+  const base = (task.workflow || task.title || task.id || "legacy-workflow")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+
+  return `legacy-${base || "workflow"}`;
+}
+
+function legacyTaskBusinessName(
+  businessDirectory: BusinessUnit[],
+  task: ApprovalTask,
+) {
+  return (
+    businessDirectory.find((business) =>
+      business.departments.some((department) => department === task.department),
+    )?.name ||
+    businessDirectory[0]?.name ||
+    "Legacy business"
+  );
 }
 
 function restoreBusinessDirectory(

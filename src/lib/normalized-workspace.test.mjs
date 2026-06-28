@@ -200,3 +200,38 @@ test("uses the template version before task history when normalizing templates",
   assert.equal(rows.workflowTemplateVersions[0].versionNumber, 2);
   assert.equal(rows.workflowTemplateVersions[0].templateSnapshot.version, 2);
 });
+
+test("creates archived placeholders for legacy tasks without template ids", () => {
+  const rows = buildNormalizedWorkspaceRows(
+    {
+      ...snapshot,
+      approvalTasks: [
+        {
+          ...snapshot.approvalTasks[0],
+          id: "APR-LEGACY",
+          workflow: "Operations site endorsement",
+          workflowTemplateId: undefined,
+          workflowTemplateVersion: undefined,
+          workflowTemplateSnapshot: undefined,
+          department: "Operations",
+        },
+      ],
+    },
+    {
+      userId: "user-1",
+      email: "dpang@chunwo.com",
+    },
+  );
+
+  const legacyTemplate = rows.workflowTemplateVersions.find(
+    (template) => template.templateKey === "legacy-operations-site-endorsement",
+  );
+
+  assert.equal(legacyTemplate?.isActive, false);
+  assert.equal(legacyTemplate?.templateSnapshot.isArchived, true);
+  assert.equal(legacyTemplate?.templateSnapshot.name, "Operations site endorsement");
+  assert.equal(
+    rows.approvalRequests[0].workflowTemplateKey,
+    "legacy-operations-site-endorsement",
+  );
+});
