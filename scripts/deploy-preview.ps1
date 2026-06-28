@@ -60,7 +60,21 @@ function Invoke-CaptureChecked {
 function Convert-JsonOutput {
   param([Parameter(Mandatory = $true)][object[]]$Lines)
 
-  $jsonText = ($Lines | ForEach-Object { [string]$_ }) -join "`n"
+  $textLines = @($Lines | ForEach-Object { [string]$_ })
+  $jsonStartIndex = -1
+  for ($index = 0; $index -lt $textLines.Count; $index++) {
+    $trimmed = $textLines[$index].TrimStart()
+    if ($trimmed.StartsWith("{") -or $trimmed.StartsWith("[")) {
+      $jsonStartIndex = $index
+      break
+    }
+  }
+
+  if ($jsonStartIndex -lt 0) {
+    throw "Unable to parse Vercel JSON output: no JSON object or array was found."
+  }
+
+  $jsonText = ($textLines[$jsonStartIndex..($textLines.Count - 1)]) -join "`n"
   try {
     return $jsonText | ConvertFrom-Json
   } catch {
