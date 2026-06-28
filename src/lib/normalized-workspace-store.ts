@@ -61,6 +61,7 @@ type TemplateDbRow = {
   id: string;
   template_key: string;
   version_number: number;
+  is_active?: boolean;
   name: string;
   graph: unknown;
   document_requirements: unknown;
@@ -270,9 +271,8 @@ export async function loadNormalizedWorkspaceState(
     supabase
       .from("workflow_template_versions")
       .select(
-        "id,template_key,version_number,name,graph,document_requirements,supported_languages,template_snapshot,business_units(name),business_departments(name)",
+        "id,template_key,version_number,is_active,name,graph,document_requirements,supported_languages,template_snapshot,business_units(name),business_departments(name)",
       )
-      .eq("is_active", true)
       .order("updated_at", { ascending: false }),
   );
   const requests = await selectRows<RequestDbRow>(
@@ -673,6 +673,7 @@ async function upsertApprovalRequestAttachments(
 
 function mapTemplateRow(row: TemplateDbRow): NormalizedWorkflowTemplateVersionRow {
   const snapshot = row.template_snapshot as NormalizedWorkflowTemplateVersionRow["templateSnapshot"];
+  const isArchived = row.is_active === false;
   return {
     templateKey: row.template_key,
     versionNumber: row.version_number,
@@ -687,7 +688,9 @@ function mapTemplateRow(row: TemplateDbRow): NormalizedWorkflowTemplateVersionRo
     templateSnapshot: {
       ...snapshot,
       version: row.version_number,
+      ...(isArchived ? { isArchived: true } : {}),
     },
+    isActive: !isArchived,
     createdBy: "",
   };
 }

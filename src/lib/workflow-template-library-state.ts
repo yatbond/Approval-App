@@ -7,7 +7,7 @@ export function getWorkflowTemplateLibraryItems({
   selectedTemplateId,
   activeUserEmail = "",
   activeUserRole = "participant",
-  section = "all",
+  section = "library",
 }: {
   workflowTemplates: WorkflowTemplate[];
   selectedTemplateId: string;

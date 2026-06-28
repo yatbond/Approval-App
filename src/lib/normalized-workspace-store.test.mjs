@@ -477,6 +477,60 @@ test("restores template version numbers from normalized template rows", async ()
   assert.equal(snapshot.workflowTemplates[0].version, 3);
 });
 
+test("loads inactive workflow template rows as archived library items", async () => {
+  const supabase = new FakeSupabase({
+    workflow_template_versions: [
+      {
+        id: "template-active-db",
+        template_key: "template-active",
+        version_number: 1,
+        name: "Active approval",
+        graph: template.graph,
+        document_requirements: [],
+        supported_languages: ["English"],
+        template_snapshot: {
+          ...template,
+          id: "template-active",
+          name: "Active approval",
+        },
+        business_units: { name: "Asia Allied Infrastructure" },
+        business_departments: { name: "Finance" },
+        is_active: true,
+      },
+      {
+        id: "template-archived-db",
+        template_key: "template-archived",
+        version_number: 1,
+        name: "Archived approval",
+        graph: template.graph,
+        document_requirements: [],
+        supported_languages: ["English"],
+        template_snapshot: {
+          ...template,
+          id: "template-archived",
+          name: "Archived approval",
+        },
+        business_units: { name: "Asia Allied Infrastructure" },
+        business_departments: { name: "Finance" },
+        is_active: false,
+      },
+    ],
+  });
+
+  const snapshot = await loadNormalizedWorkspaceState(supabase, "template-active");
+
+  assert.deepEqual(
+    snapshot.workflowTemplates.map((item) => ({
+      id: item.id,
+      isArchived: item.isArchived,
+    })),
+    [
+      { id: "template-active", isArchived: undefined },
+      { id: "template-archived", isArchived: true },
+    ],
+  );
+});
+
 test("restores directory rows, event targets, and attachment metadata from normalized rows", async () => {
   const task = createSnapshot().approvalTasks[0];
   const supabase = new FakeSupabase({

@@ -114,6 +114,7 @@ test("labels template status, ownership, and available actions", () => {
     selectedTemplateId: "own-draft",
     activeUserEmail: "dpang@chunwo.com",
     activeUserRole: "approver",
+    section: "all",
   });
 
   assert.deepEqual(
@@ -151,6 +152,24 @@ test("labels template status, ownership, and available actions", () => {
         canDelete: false,
       },
     ],
+  );
+});
+
+test("defaults to usable library templates instead of mixing archived templates", () => {
+  const archivedTemplate = {
+    ...templates[1],
+    id: "archived-default",
+    isArchived: true,
+  };
+
+  const items = getWorkflowTemplateLibraryItems({
+    workflowTemplates: [templates[0], archivedTemplate],
+    selectedTemplateId: "invoice",
+  });
+
+  assert.deepEqual(
+    items.map((item) => item.id),
+    ["invoice"],
   );
 });
 
