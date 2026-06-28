@@ -6,6 +6,7 @@ import {
   extractPdfFields,
   extractPdfFieldsWithQwenPageImages,
 } from "@/lib/parser";
+import { normalizeWorkflowFieldsForParsing } from "@/lib/workflow-parse-fields";
 import type { PdfPageImageInput } from "@/lib/parser";
 import type { ExtractionTrainingExample, WorkflowField } from "@/lib/types";
 
@@ -130,7 +131,7 @@ function parseWorkflowFields(value: FormDataEntryValue | null) {
 
   try {
     const parsed = JSON.parse(value) as Partial<WorkflowField>[];
-    const fields = parsed.filter(isWorkflowField);
+    const fields = normalizeWorkflowFieldsForParsing(parsed);
     return fields.length ? fields : null;
   } catch {
     return null;
@@ -158,18 +159,6 @@ function isPageImage(value: Partial<PdfPageImageInput>): value is PdfPageImageIn
       value.mimeType.startsWith("image/") &&
       typeof value.imageBase64 === "string" &&
       value.imageBase64.length > 0,
-  );
-}
-
-function isWorkflowField(value: Partial<WorkflowField>): value is WorkflowField {
-  return Boolean(
-    value &&
-      typeof value.name === "string" &&
-      typeof value.label === "string" &&
-      typeof value.instructions === "string" &&
-      typeof value.type === "string" &&
-      typeof value.source === "string" &&
-      typeof value.required === "boolean",
   );
 }
 

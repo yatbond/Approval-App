@@ -22,6 +22,7 @@ import {
   renderPdfFileToPageImages,
   shouldRenderPdfForVision,
 } from "@/lib/pdf-page-images";
+import { readRecognizedSampleField } from "@/lib/sample-recognition-state";
 import { parseWorkspaceFile, type ParsedWorkspaceFilePayload } from "@/lib/workspace-file-api";
 import { createWorkflowFieldFromRecognition } from "@/lib/template-recognition-state";
 import { acceptForDocumentFormat } from "@/lib/workflow-documents";
@@ -328,24 +329,6 @@ export function TemplateDocumentRecognitionPanel({
     onAddField(field, buildExample({ field, value, evidence }));
   }
 
-  function readRecognizedField(
-    payload: ParsedWorkspaceFilePayload,
-    field: WorkflowField,
-  ) {
-    return {
-      value:
-        payload.fields[field.label] ||
-        payload.fields[field.name] ||
-        Object.values(payload.fields || {})[0] ||
-        "",
-      evidence:
-        payload.evidence?.[field.label] ||
-        payload.evidence?.[field.name] ||
-        Object.values(payload.evidence || {})[0] ||
-        "",
-    };
-  }
-
   async function recognizeSampleField() {
     const field = resolveField();
     if (!sampleFile || !field) {
@@ -361,10 +344,15 @@ export function TemplateDocumentRecognitionPanel({
         pageImages: samplePageImages,
         extractionExamples: documentExtractionExamples,
       });
-      const recognized = readRecognizedField(payload, field);
+      const recognized = readRecognizedSampleField(payload, field);
       setFieldValue(recognized.value);
       setFieldEvidence(recognized.evidence);
       setFieldAnchor(null);
+      if (!recognized.value) {
+        setParseError(
+          "AI did not recognize a value for this field. Adjust the instruction or use Extract box.",
+        );
+      }
     } catch (error) {
       setParseError(
         error instanceof Error ? error.message : "Unable to recognize sample value.",
@@ -393,7 +381,7 @@ export function TemplateDocumentRecognitionPanel({
         adHocFields: [field],
         extractionExamples: documentExtractionExamples,
       });
-      const recognized = readRecognizedField(payload, field);
+      const recognized = readRecognizedSampleField(payload, field);
       setFieldValue(recognized.value);
       setFieldEvidence(recognized.evidence);
       setFieldAnchor({
