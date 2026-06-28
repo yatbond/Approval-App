@@ -1367,18 +1367,6 @@ export function WorkflowView({
                       Require ack
                     </label>
                   )}
-                  <label className="flex items-center gap-2 text-sm text-neutral-300">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(selectedGraphNode.blocking)}
-                      disabled={selectedGraphNode.kind === "for_information"}
-                      title="When enabled, the workflow waits here before continuing. FYI boxes are non-blocking."
-                      onChange={(event) =>
-                        updateSelectedNode({ blocking: event.target.checked })
-                      }
-                    />
-                    Blocking
-                  </label>
                   {workflow &&
                     ["approval", "review", "for_information"].includes(
                       selectedGraphNode.kind,
