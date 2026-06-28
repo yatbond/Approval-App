@@ -30,9 +30,14 @@ import {
 } from "@/lib/task-display";
 import { buildTaskHandoffView } from "@/lib/task-handoff-view";
 import {
+  getPendingReassignmentRequest,
+} from "@/lib/approval-state";
+import {
   getQueueActionList,
+  getQueueActionModeToggleState,
   shouldShowQueueContributorRequest,
   shouldShowQueueReassignActions,
+  type QueueActionMode,
 } from "@/lib/queue-advanced-actions-state";
 import { getTrackingHandoffPanelState } from "@/lib/tracking-handoff-panel-state";
 import { getCollaborationStatusPanelState } from "@/lib/collaboration-status-panel-state";
@@ -74,6 +79,16 @@ const actionConfig: Record<
     label: "Reassign",
     icon: ArrowRightLeft,
     tone: "border-amber-500/40 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20",
+  },
+  accept_reassignment: {
+    label: "Accept reassignment",
+    icon: Check,
+    tone: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20",
+  },
+  decline_reassignment: {
+    label: "Decline reassignment",
+    icon: X,
+    tone: "border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20",
   },
   delegate: {
     label: "Delegate",
@@ -152,7 +167,8 @@ export function QueueView({
     documentRequirement: WorkflowDocumentRequirement,
   ) => void;
 }) {
-  const [reassignActionsExpanded, setReassignActionsExpanded] = useState(false);
+  const [queueActionMode, setQueueActionMode] =
+    useState<QueueActionMode>("normal");
   const [contributorRequestExpanded, setContributorRequestExpanded] = useState(false);
 
   if (!selectedTask) {
@@ -168,9 +184,13 @@ export function QueueView({
 
   const originatorAction = selectedTask.status === "returned" && selectedTask.currentOwner === activeUserEmail;
   const selectedTemplate = findTemplateForTask(selectedTask, workflowTemplates);
+  const pendingReassignmentRequest = getPendingReassignmentRequest(
+    selectedTask,
+    activeUserEmail,
+  );
   const showReassignActions = shouldShowQueueReassignActions({
     isOriginatorAction: originatorAction,
-    isExpanded: reassignActionsExpanded,
+    isExpanded: queueActionMode === "reassign" || queueActionMode === "delegate",
   });
   const showContributorRequest = shouldShowQueueContributorRequest({
     isOriginatorAction: originatorAction,
@@ -178,8 +198,24 @@ export function QueueView({
   });
   const availableActions = getQueueActionList({
     isOriginatorAction: originatorAction,
+    hasPendingReassignmentRequest: Boolean(pendingReassignmentRequest),
     showReassignActions,
+    actionMode: queueActionMode,
   });
+  const actionModeCopy = {
+    reassign: {
+      title: "Reassign request",
+      targetLabel: "Proposed owner email",
+      description:
+        "Transfer ownership only after the proposed owner accepts. Until then, you remain responsible.",
+    },
+    delegate: {
+      title: "Delegate task",
+      targetLabel: "Delegate email",
+      description:
+        "Let another person act on this task while you remain the owner and can keep tracking it.",
+    },
+  }[queueActionMode === "normal" ? "reassign" : queueActionMode];
 
   return (
     <div className="grid gap-4 xl:grid-cols-[360px_1fr_320px]">
@@ -282,20 +318,45 @@ export function QueueView({
                 {actionError}
               </div>
             )}
-            {!originatorAction && (
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {!originatorAction && !pendingReassignmentRequest && (
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
                 <label
                   className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
-                  title="Show reassign and delegate actions."
+                  title="Ask another person to become the task owner. Ownership changes only after they accept."
                 >
                   <span className="min-w-0 font-medium">Reassign</span>
                   <input
                     type="checkbox"
                     aria-label="Show reassign options"
-                    checked={reassignActionsExpanded}
-                    onChange={(event) =>
-                      setReassignActionsExpanded(event.target.checked)
-                    }
+                    checked={queueActionMode === "reassign"}
+                    onChange={(event) => {
+                      const nextState = getQueueActionModeToggleState({
+                        currentMode: queueActionMode,
+                        toggledMode: "reassign",
+                        checked: event.target.checked,
+                      });
+                      setQueueActionMode(nextState.actionMode);
+                    }}
+                    className="size-4 shrink-0"
+                  />
+                </label>
+                <label
+                  className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
+                  title="Let another person act while you remain the owner and keep visibility."
+                >
+                  <span className="min-w-0 font-medium">Delegate</span>
+                  <input
+                    type="checkbox"
+                    aria-label="Show delegate options"
+                    checked={queueActionMode === "delegate"}
+                    onChange={(event) => {
+                      const nextState = getQueueActionModeToggleState({
+                        currentMode: queueActionMode,
+                        toggledMode: "delegate",
+                        checked: event.target.checked,
+                      });
+                      setQueueActionMode(nextState.actionMode);
+                    }}
                     className="size-4 shrink-0"
                   />
                 </label>
@@ -303,7 +364,7 @@ export function QueueView({
                   className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
                   title="Ask another person for supporting input."
                 >
-                  <span className="min-w-0 font-medium">Contributor request</span>
+                  <span className="min-w-0 font-medium">Additional contributor</span>
                   <input
                     type="checkbox"
                     aria-label="Show additional contributor request options"
@@ -316,16 +377,28 @@ export function QueueView({
                 </label>
               </div>
             )}
+            {pendingReassignmentRequest && (
+              <div className="mt-3 rounded-md border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
+                <p className="font-medium">Reassignment request</p>
+                <p className="mt-1 text-xs text-amber-100/80">
+                  {pendingReassignmentRequest.fromEmail} asked you to take ownership.
+                  Accept to transfer the task to your queue, or decline to leave it with the current owner.
+                </p>
+              </div>
+            )}
             {(showReassignActions || showContributorRequest) && (
               <div className="mt-3 space-y-3">
                 {showReassignActions && (
                   <div className="rounded-md border border-white/10 bg-[#121518] p-3">
                     <p className="text-xs font-semibold text-neutral-300">
-                      Reassign
+                      {actionModeCopy.title}
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      {actionModeCopy.description}
                     </p>
                     <label className="mt-2 block">
                       <span className="mb-1 block text-xs text-neutral-400">
-                        Target email
+                        {actionModeCopy.targetLabel}
                       </span>
                       <input
                         type="email"

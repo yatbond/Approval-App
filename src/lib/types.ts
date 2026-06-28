@@ -16,6 +16,8 @@ export type ApprovalAction =
   | "reject"
   | "reject_with_comment"
   | "reassign"
+  | "accept_reassignment"
+  | "decline_reassignment"
   | "delegate"
   | "amend_resubmit"
   | "cancel";
@@ -33,6 +35,16 @@ export type ApprovalStatus =
 export type ApprovalActor = {
   name: string;
   email: string;
+};
+
+export type TaskReassignmentRequest = {
+  id: string;
+  fromEmail: string;
+  toEmail: string;
+  status: "requested" | "accepted" | "declined" | "cancelled";
+  requestedAt: string;
+  decidedAt?: string;
+  decisionNote?: string;
 };
 
 export type AuditEvent = {
@@ -400,6 +412,7 @@ export type ApprovalTask = {
   collaborationRequests?: TaskCollaborationRequest[];
   sharedFulfillments?: TaskSharedFulfillment[];
   correctionRequests?: TaskCorrectionRequest[];
+  reassignmentRequests?: TaskReassignmentRequest[];
   auditTrail: AuditEvent[];
 };
 

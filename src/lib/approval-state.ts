@@ -3,6 +3,7 @@ import type {
   ApprovalActor,
   ApprovalTask,
   AuditEvent,
+  TaskReassignmentRequest,
   WorkflowGraph,
   WorkflowGraphEdge,
   WorkflowGraphNode,
@@ -23,13 +24,23 @@ export type TaskActionInput = {
 export function isActionableBy(task: ApprovalTask, userEmail: string) {
   return (
     (task.currentOwner === userEmail ||
-      Boolean(task.pendingOwners?.includes(userEmail))) &&
+      Boolean(task.pendingOwners?.includes(userEmail)) ||
+      Boolean(getPendingReassignmentRequest(task, userEmail))) &&
     !closedStatuses.has(task.status)
   );
 }
 
 export function isVisibleToParticipant(task: ApprovalTask, userEmail: string) {
   return task.participants.includes(userEmail);
+}
+
+export function getPendingReassignmentRequest(
+  task: ApprovalTask,
+  userEmail: string,
+) {
+  return task.reassignmentRequests?.find(
+    (request) => request.toEmail === userEmail && request.status === "requested",
+  );
 }
 
 export function applyTaskAction(
@@ -134,20 +145,105 @@ export function applyTaskAction(
 
   if (input.action === "reassign") {
     const reassigneeEmail = requireTargetEmail(targetEmail, "Reassign");
+    const request: TaskReassignmentRequest = {
+      id: `${task.id}-reassignment-${(task.reassignmentRequests || []).length + 1}`,
+      fromEmail: input.actor.email,
+      toEmail: reassigneeEmail,
+      status: "requested",
+      requestedAt: eventBase.timestamp,
+    };
+
     return appendEvent(
       {
         ...task,
-        status: "reassigned",
-        currentOwner: reassigneeEmail,
-        currentStep: `Reassigned to ${reassigneeEmail}`,
-        pendingOwners: replacePendingOwner(task.pendingOwners, input.actor.email, reassigneeEmail),
+        status: "pending",
         participants,
-        lastAction: `Reassigned to ${reassigneeEmail}`,
+        reassignmentRequests: [...(task.reassignmentRequests || []), request],
+        lastAction: `Reassignment requested to ${reassigneeEmail}`,
       },
       {
         ...eventBase,
         action: "reassigned",
-        detail: joinDetail(`Reassigned to ${reassigneeEmail}.`, comment),
+        detail: joinDetail(`Reassignment requested to ${reassigneeEmail}.`, comment),
+      },
+    );
+  }
+
+  if (input.action === "accept_reassignment") {
+    const reassignmentRequest = getPendingReassignmentRequest(task, input.actor.email);
+    if (!reassignmentRequest) {
+      return task;
+    }
+
+    return appendEvent(
+      {
+        ...task,
+        status: "reassigned",
+        currentOwner: input.actor.email,
+        pendingOwners: replacePendingOwnerOrDefault(
+          task.pendingOwners,
+          reassignmentRequest.fromEmail,
+          input.actor.email,
+        ),
+        participants: transferReassignmentParticipants({
+          participants: task.participants,
+          fromEmail: reassignmentRequest.fromEmail,
+          toEmail: input.actor.email,
+          requesterEmail: task.requesterEmail,
+        }),
+        reassignmentRequests: updateReassignmentRequest(
+          task.reassignmentRequests,
+          reassignmentRequest.id,
+          {
+            status: "accepted",
+            decidedAt: eventBase.timestamp,
+            decisionNote: comment,
+          },
+        ),
+        lastAction: `Reassignment accepted by ${input.actor.name}`,
+      },
+      {
+        ...eventBase,
+        action: "reassigned",
+        targetEmail: input.actor.email,
+        detail: joinDetail(
+          `Accepted reassignment from ${reassignmentRequest.fromEmail}.`,
+          comment,
+        ),
+      },
+    );
+  }
+
+  if (input.action === "decline_reassignment") {
+    const reassignmentRequest = getPendingReassignmentRequest(task, input.actor.email);
+    if (!reassignmentRequest) {
+      return task;
+    }
+
+    return appendEvent(
+      {
+        ...task,
+        status: "pending",
+        participants: removeReassignmentCandidateParticipant(task, input.actor.email),
+        reassignmentRequests: updateReassignmentRequest(
+          task.reassignmentRequests,
+          reassignmentRequest.id,
+          {
+            status: "declined",
+            decidedAt: eventBase.timestamp,
+            decisionNote: comment,
+          },
+        ),
+        lastAction: `Reassignment declined by ${input.actor.name}`,
+      },
+      {
+        ...eventBase,
+        action: "reassigned",
+        targetEmail: input.actor.email,
+        detail: joinDetail(
+          `Declined reassignment from ${reassignmentRequest.fromEmail}.`,
+          comment,
+        ),
       },
     );
   }
@@ -158,9 +254,8 @@ export function applyTaskAction(
       {
         ...task,
         status: "delegated",
-        currentOwner: delegateEmail,
-        currentStep: `Delegated to ${delegateEmail}`,
-        pendingOwners: replacePendingOwner(task.pendingOwners, input.actor.email, delegateEmail),
+        currentOwner: task.currentOwner,
+        pendingOwners: delegatePendingOwners(task, input.actor.email, delegateEmail),
         participants,
         lastAction: `Delegated to ${delegateEmail}`,
       },
@@ -925,16 +1020,72 @@ function isActionableRouteNode(node: WorkflowGraphNode) {
   );
 }
 
-function replacePendingOwner(
+function replacePendingOwnerOrDefault(
   owners: string[] | undefined,
   previousEmail: string,
   nextEmail: string,
 ) {
-  if (!owners?.length) {
-    return owners;
-  }
+  const sourceOwners = owners?.length ? owners : [previousEmail];
+  const replaced = sourceOwners.map((email) =>
+    email === previousEmail ? nextEmail : email,
+  );
 
-  return owners.map((email) => (email === previousEmail ? nextEmail : email));
+  return addParticipants([], [...replaced, nextEmail]);
+}
+
+function delegatePendingOwners(
+  task: ApprovalTask,
+  actorEmail: string,
+  delegateEmail: string,
+) {
+  const accountableOwners = task.pendingOwners?.length
+    ? task.pendingOwners
+    : [task.currentOwner || actorEmail];
+
+  return addParticipants([], [...accountableOwners, actorEmail, delegateEmail]);
+}
+
+function transferReassignmentParticipants({
+  participants,
+  fromEmail,
+  toEmail,
+  requesterEmail,
+}: {
+  participants: string[];
+  fromEmail: string;
+  toEmail: string;
+  requesterEmail: string;
+}) {
+  const retainedParticipants = participants.filter(
+    (email) => email !== fromEmail || email === requesterEmail,
+  );
+
+  return addParticipants(retainedParticipants, [toEmail, requesterEmail]);
+}
+
+function removeReassignmentCandidateParticipant(
+  task: ApprovalTask,
+  candidateEmail: string,
+) {
+  const shouldKeepCandidate =
+    task.requesterEmail === candidateEmail ||
+    task.currentOwner === candidateEmail ||
+    Boolean(task.pendingOwners?.includes(candidateEmail));
+
+  return shouldKeepCandidate
+    ? task.participants
+    : task.participants.filter((email) => email !== candidateEmail);
+}
+
+function updateReassignmentRequest(
+  requests: TaskReassignmentRequest[] | undefined,
+  requestId: string,
+  patch: Pick<TaskReassignmentRequest, "status"> &
+    Partial<Pick<TaskReassignmentRequest, "decidedAt" | "decisionNote">>,
+) {
+  return (requests || []).map((request) =>
+    request.id === requestId ? { ...request, ...patch } : request,
+  );
 }
 
 function dueForNode(node?: WorkflowGraphNode) {

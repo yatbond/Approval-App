@@ -36,8 +36,9 @@ test("keeps approval actions one-click while confirming risky decisions", () => 
     taskTitle: "Invoice",
     targetEmail: "manager@example.com",
   });
-  assert.equal(reassignment?.confirmLabel, "Reassign request");
+  assert.equal(reassignment?.confirmLabel, "Request reassignment");
   assert.match(reassignment?.message || "", /manager@example\.com/);
+  assert.match(reassignment?.message || "", /stay responsible/);
 
   const delegation = getApprovalActionConfirmation({
     action: "delegate",
@@ -45,6 +46,7 @@ test("keeps approval actions one-click while confirming risky decisions", () => 
   });
   assert.equal(delegation?.confirmLabel, "Delegate request");
   assert.match(delegation?.message || "", /entered target email/);
+  assert.match(delegation?.message || "", /remain the owner/);
 
   const cancellation = getApprovalActionConfirmation({
     action: "cancel",

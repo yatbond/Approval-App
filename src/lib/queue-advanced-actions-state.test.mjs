@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   getQueueActionList,
+  getQueueActionModeToggleState,
   shouldShowQueueAdvancedActions,
   shouldShowQueueContributorRequest,
   shouldShowQueueReassignActions,
@@ -55,7 +56,7 @@ test("keeps reassign and contributor options hidden until expanded", () => {
   );
 });
 
-test("shows reassign and delegate actions independently from contributor controls", () => {
+test("shows only reassign while reassign mode is expanded", () => {
   assert.equal(
     shouldShowQueueReassignActions({
       isOriginatorAction: false,
@@ -73,16 +74,29 @@ test("shows reassign and delegate actions independently from contributor control
   assert.deepEqual(
     getQueueActionList({
       isOriginatorAction: false,
-      showReassignActions: true,
+      actionMode: "reassign",
     }),
-    [
-      "approve",
-      "approve_with_comment",
-      "reject",
-      "reject_with_comment",
-      "reassign",
-      "delegate",
-    ],
+    ["reassign"],
+  );
+});
+
+test("shows only delegate while delegate mode is expanded", () => {
+  assert.deepEqual(
+    getQueueActionList({
+      isOriginatorAction: false,
+      actionMode: "delegate",
+    }),
+    ["delegate"],
+  );
+});
+
+test("shows only reassignment decision actions for a pending reassignee", () => {
+  assert.deepEqual(
+    getQueueActionList({
+      isOriginatorAction: false,
+      hasPendingReassignmentRequest: true,
+    }),
+    ["accept_reassignment", "decline_reassignment"],
   );
 });
 
@@ -124,6 +138,33 @@ test("allows reassign and contributor options to be expanded together", () => {
       isExpanded: true,
     }),
     true,
+  );
+});
+
+test("keeps reassign and delegate toggles mutually exclusive", () => {
+  assert.deepEqual(
+    getQueueActionModeToggleState({
+      currentMode: "normal",
+      toggledMode: "reassign",
+      checked: true,
+    }),
+    { actionMode: "reassign" },
+  );
+  assert.deepEqual(
+    getQueueActionModeToggleState({
+      currentMode: "reassign",
+      toggledMode: "delegate",
+      checked: true,
+    }),
+    { actionMode: "delegate" },
+  );
+  assert.deepEqual(
+    getQueueActionModeToggleState({
+      currentMode: "delegate",
+      toggledMode: "delegate",
+      checked: false,
+    }),
+    { actionMode: "normal" },
   );
 });
 

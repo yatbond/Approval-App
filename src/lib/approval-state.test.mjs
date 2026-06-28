@@ -1268,7 +1268,7 @@ test("reject follows a configured rejected branch when provided", () => {
   assert.ok(result.auditTrail.some((event) => event.detail.includes("Please amend")));
 });
 
-test("reassign keeps the task active and marks it as reassigned", () => {
+test("reassign requests acceptance before transferring ownership", () => {
   const result = applyTaskAction(makeTask(), {
     action: "reassign",
     actor,
@@ -1276,12 +1276,75 @@ test("reassign keeps the task active and marks it as reassigned", () => {
     comment: "Please take this one",
   });
 
-  assert.equal(result.status, "reassigned");
-  assert.equal(result.currentOwner, "alex@example.com");
+  assert.equal(result.status, "pending");
+  assert.equal(result.currentOwner, actor.email);
+  assert.equal(result.reassignmentRequests[0].status, "requested");
+  assert.equal(result.reassignmentRequests[0].fromEmail, actor.email);
+  assert.equal(result.reassignmentRequests[0].toEmail, "alex@example.com");
+  assert.equal(isActionableBy(result, actor.email), true);
+  assert.equal(isActionableBy(result, "alex@example.com"), true);
+  assert.ok(result.participants.includes("alex@example.com"));
+  assert.match(result.lastAction, /Reassignment requested/);
+});
+
+test("accepting reassignment transfers ownership and visibility", () => {
+  const requested = applyTaskAction(makeTask(), {
+    action: "reassign",
+    actor,
+    targetEmail: "alex@example.com",
+  });
+  const accepted = applyTaskAction(requested, {
+    action: "accept_reassignment",
+    actor: { name: "Alex", email: "alex@example.com" },
+  });
+
+  assert.equal(accepted.status, "reassigned");
+  assert.equal(accepted.currentOwner, "alex@example.com");
+  assert.deepEqual(accepted.pendingOwners, ["alex@example.com"]);
+  assert.equal(accepted.reassignmentRequests[0].status, "accepted");
+  assert.equal(isActionableBy(accepted, "alex@example.com"), true);
+  assert.equal(isActionableBy(accepted, actor.email), false);
+  assert.equal(isVisibleToParticipant(accepted, actor.email), false);
+  assert.equal(isVisibleToParticipant(accepted, "alex@example.com"), true);
+});
+
+test("declining reassignment keeps ownership with the original owner", () => {
+  const requested = applyTaskAction(makeTask(), {
+    action: "reassign",
+    actor,
+    targetEmail: "alex@example.com",
+  });
+  const declined = applyTaskAction(requested, {
+    action: "decline_reassignment",
+    actor: { name: "Alex", email: "alex@example.com" },
+    comment: "Wrong department",
+  });
+
+  assert.equal(declined.status, "pending");
+  assert.equal(declined.currentOwner, actor.email);
+  assert.equal(declined.reassignmentRequests[0].status, "declined");
+  assert.equal(isActionableBy(declined, actor.email), true);
+  assert.equal(isActionableBy(declined, "alex@example.com"), false);
+  assert.equal(isVisibleToParticipant(declined, "alex@example.com"), false);
+  assert.match(declined.auditTrail.at(-1).detail, /Wrong department/);
+});
+
+test("delegate lets another person act while the owner remains accountable", () => {
+  const result = applyTaskAction(makeTask(), {
+    action: "delegate",
+    actor,
+    targetEmail: "alex@example.com",
+    comment: "Please handle this for me",
+  });
+
+  assert.equal(result.status, "delegated");
+  assert.equal(result.currentOwner, actor.email);
+  assert.deepEqual(result.pendingOwners, [actor.email, "alex@example.com"]);
+  assert.equal(isActionableBy(result, actor.email), true);
   assert.equal(isActionableBy(result, "alex@example.com"), true);
   assert.equal(isVisibleToParticipant(result, actor.email), true);
-  assert.ok(result.participants.includes("alex@example.com"));
-  assert.match(result.lastAction, /Reassigned to alex@example.com/);
+  assert.equal(isVisibleToParticipant(result, "alex@example.com"), true);
+  assert.match(result.lastAction, /Delegated to alex@example.com/);
 });
 
 test("originator can cancel a returned task and close it for everyone", () => {

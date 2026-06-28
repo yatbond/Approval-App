@@ -38,9 +38,9 @@ export function getApprovalActionConfirmation({
 
   if (action === "reassign") {
     return {
-      title: "Reassign request?",
-      message: `This will move ${requestName} to ${targetEmail || "the entered target email"}.`,
-      confirmLabel: "Reassign request",
+      title: "Request reassignment?",
+      message: `This will ask ${targetEmail || "the entered target email"} to take ownership of ${requestName}. You stay responsible until they accept.`,
+      confirmLabel: "Request reassignment",
       tone: "warning",
     };
   }
@@ -48,7 +48,7 @@ export function getApprovalActionConfirmation({
   if (action === "delegate") {
     return {
       title: "Delegate request?",
-      message: `This will delegate ${requestName} to ${targetEmail || "the entered target email"}.`,
+      message: `This will let ${targetEmail || "the entered target email"} act on ${requestName} while you remain the owner.`,
       confirmLabel: "Delegate request",
       tone: "warning",
     };
