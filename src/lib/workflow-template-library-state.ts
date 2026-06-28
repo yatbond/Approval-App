@@ -33,13 +33,14 @@ export function getWorkflowTemplateLibraryItems({
       businessDepartmentLabel: `${template.business} - ${template.department}`,
       countsLabel: `${template.documents.length} document(s), ${template.fields.length} field(s), ${template.steps.length} step(s)`,
       statusLabel: formatTemplateStatus(template),
+      statusTone: getTemplateStatusTone(template),
       ownershipLabel: formatTemplateOwnership(template, activeUserEmail, activeUserRole),
       canOpen: !isArchived && canManage && template.isDraft !== false,
       canDuplicate: !isArchived,
       canDelete: !isArchived && canManage,
       openActionLabel: "Open",
       duplicateActionLabel: "Duplicate",
-      archiveActionLabel: isArchived ? "Archived" : "Delete",
+      archiveActionLabel: isArchived ? "Archived" : "Archive",
     };
   });
 }
@@ -74,6 +75,13 @@ function formatTemplateStatus(template: WorkflowTemplate) {
     return "Archived";
   }
   return template.isDraft === false ? "Published" : "Draft";
+}
+
+function getTemplateStatusTone(template: WorkflowTemplate) {
+  if (template.isArchived) {
+    return "archived";
+  }
+  return template.isDraft === false ? "published" : "draft";
 }
 
 function formatTemplateOwnership(

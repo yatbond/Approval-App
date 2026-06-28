@@ -41,13 +41,14 @@ test("summarizes template library cards with counts and active state", () => {
       businessDepartmentLabel: "Asia Allied Infrastructure - Finance",
       countsLabel: "2 document(s), 1 field(s), 3 step(s)",
       statusLabel: "Draft",
+      statusTone: "draft",
       ownershipLabel: "Cannot edit",
       canOpen: false,
       canDuplicate: true,
       canDelete: false,
       openActionLabel: "Open",
       duplicateActionLabel: "Duplicate",
-      archiveActionLabel: "Delete",
+      archiveActionLabel: "Archive",
     },
     {
       id: "leave",
@@ -56,13 +57,14 @@ test("summarizes template library cards with counts and active state", () => {
       businessDepartmentLabel: "Chun Wo Construction - Human Resources",
       countsLabel: "0 document(s), 0 field(s), 0 step(s)",
       statusLabel: "Draft",
+      statusTone: "draft",
       ownershipLabel: "Cannot edit",
       canOpen: false,
       canDuplicate: true,
       canDelete: false,
       openActionLabel: "Open",
       duplicateActionLabel: "Duplicate",
-      archiveActionLabel: "Delete",
+      archiveActionLabel: "Archive",
     },
   ]);
 });
@@ -121,6 +123,7 @@ test("labels template status, ownership, and available actions", () => {
     items.map((item) => ({
       id: item.id,
       statusLabel: item.statusLabel,
+      statusTone: item.statusTone,
       ownershipLabel: item.ownershipLabel,
       canOpen: item.canOpen,
       canDuplicate: item.canDuplicate,
@@ -130,6 +133,7 @@ test("labels template status, ownership, and available actions", () => {
       {
         id: "own-draft",
         statusLabel: "Draft",
+        statusTone: "draft",
         ownershipLabel: "Mine",
         canOpen: true,
         canDuplicate: true,
@@ -138,6 +142,7 @@ test("labels template status, ownership, and available actions", () => {
       {
         id: "locked-published",
         statusLabel: "Published",
+        statusTone: "published",
         ownershipLabel: "Cannot edit",
         canOpen: false,
         canDuplicate: true,
@@ -146,6 +151,7 @@ test("labels template status, ownership, and available actions", () => {
       {
         id: "archived",
         statusLabel: "Archived",
+        statusTone: "archived",
         ownershipLabel: "Cannot edit",
         canOpen: false,
         canDuplicate: false,
@@ -213,6 +219,7 @@ test("separates active templates from archived templates", () => {
       canDuplicate: item.canDuplicate,
       canDelete: item.canDelete,
       archiveActionLabel: item.archiveActionLabel,
+      statusTone: item.statusTone,
     })),
     [
       {
@@ -221,6 +228,7 @@ test("separates active templates from archived templates", () => {
         canDuplicate: false,
         canDelete: false,
         archiveActionLabel: "Archived",
+        statusTone: "archived",
       },
     ],
   );
