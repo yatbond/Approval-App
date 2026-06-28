@@ -6,6 +6,7 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "deploy:preview": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy-preview.ps1",
+    "perf:pages": "node scripts/measure-page-load.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/*.test.mjs",
