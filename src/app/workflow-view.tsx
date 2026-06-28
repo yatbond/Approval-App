@@ -83,6 +83,7 @@ import { getWorkflowTemplateLoadState } from "@/lib/workflow-template-load-state
 import { getWorkflowTemplateCopyState } from "@/lib/workflow-template-copy-state";
 import { getWorkflowTemplateSaveState } from "@/lib/workflow-template-save-state";
 import {
+  formatWorkflowTemplateOptionLabel,
   getWorkflowCreateTemplateActionState,
   getWorkflowDuplicateTemplateActionState,
   getWorkflowPublishTemplateActionState,
@@ -344,8 +345,10 @@ export function WorkflowView({
       selectedBusinessName: selectedBusiness?.name || null,
       departmentName,
       baseTemplate,
+      existingTemplates: workflowTemplates,
     });
     if (!nextState.didCreate || !nextState.template) {
+      setWorkflowActionMessage(nextState.message || "");
       return;
     }
 
@@ -1083,7 +1086,7 @@ export function WorkflowView({
                     <option value="">Blank workflow</option>
                     {copySourceTemplates.map((template) => (
                       <option key={template.id} value={template.id}>
-                        {template.name}
+                        {formatWorkflowTemplateOptionLabel(template)}
                       </option>
                     ))}
                   </select>

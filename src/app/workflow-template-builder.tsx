@@ -5,6 +5,7 @@ import {
   getDepartmentForBusiness,
   getWorkflowTemplateBuilderBusinessState,
 } from "@/lib/workflow-template-builder-state";
+import { formatWorkflowTemplateOptionLabel } from "@/lib/workflow-template-action-state";
 import type { BusinessUnit, WorkflowTemplate } from "@/lib/types";
 import { InfoTip } from "./ui-hint";
 
@@ -106,7 +107,7 @@ export function WorkflowTemplateBuilder({
             <option value="">Blank workflow</option>
             {baseTemplates.map((template) => (
               <option key={template.id} value={template.id}>
-                {template.name}
+                {formatWorkflowTemplateOptionLabel(template)}
               </option>
             ))}
           </select>

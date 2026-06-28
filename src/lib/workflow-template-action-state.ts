@@ -17,16 +17,35 @@ export function getWorkflowCreateTemplateActionState({
   selectedBusinessName,
   departmentName,
   baseTemplate,
+  existingTemplates = [],
 }: {
   templateName: string;
   selectedBusinessName: string | null;
   departmentName: string;
   baseTemplate?: WorkflowTemplate | null;
+  existingTemplates?: WorkflowTemplate[];
 }): WorkflowTemplateActionState {
   const cleanName = templateName.trim();
   const cleanDepartment = departmentName.trim();
   if (!cleanName || !selectedBusinessName || !cleanDepartment) {
     return { didCreate: false, template: null };
+  }
+
+  const hasDuplicate = existingTemplates.some(
+    (template) =>
+      !template.isArchived &&
+      normalizeComparableValue(template.name) === normalizeComparableValue(cleanName) &&
+      normalizeComparableValue(template.business) ===
+        normalizeComparableValue(selectedBusinessName) &&
+      normalizeComparableValue(template.department) ===
+        normalizeComparableValue(cleanDepartment),
+  );
+  if (hasDuplicate) {
+    return {
+      didCreate: false,
+      template: null,
+      message: `A workflow named ${cleanName} already exists for ${selectedBusinessName} / ${cleanDepartment}.`,
+    };
   }
 
   const template = createWorkflowTemplateFromDraft({
@@ -59,6 +78,10 @@ export function getWorkflowTemplateBaseOptions({
   return templates.filter(
     (template) => !template.isArchived && template.id !== excludeTemplateId,
   );
+}
+
+export function formatWorkflowTemplateOptionLabel(template: WorkflowTemplate) {
+  return `${template.name} - ${template.business} / ${template.department}`;
 }
 
 export function getWorkflowPublishTemplateActionState({
@@ -170,4 +193,8 @@ function applyBaseTemplate(
 
 function cloneValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function normalizeComparableValue(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }

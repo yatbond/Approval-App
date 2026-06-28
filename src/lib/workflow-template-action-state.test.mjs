@@ -4,6 +4,7 @@ import {
   getWorkflowCreateTemplateActionState,
   getWorkflowDuplicateTemplateActionState,
   getWorkflowPublishTemplateActionState,
+  formatWorkflowTemplateOptionLabel,
   getWorkflowTemplateBaseOptions,
 } from "./workflow-template-action-state.ts";
 
@@ -90,6 +91,13 @@ test("creates a workflow template from a selected base template", () => {
   assert.equal(result.shouldResetCanvasView, true);
 });
 
+test("formats workflow template options with business and department context", () => {
+  assert.equal(
+    formatWorkflowTemplateOptionLabel(template),
+    "Invoice approval - Asia Allied Infrastructure / Finance",
+  );
+});
+
 test("lists only active templates as workflow base options", () => {
   const archivedTemplate = {
     ...template,
@@ -110,6 +118,55 @@ test("lists only active templates as workflow base options", () => {
       excludeTemplateId: "template-1",
     }),
     [],
+  );
+});
+
+test("does not create a duplicate workflow name inside the same business and department", () => {
+  const result = getWorkflowCreateTemplateActionState({
+    templateName: " invoice APPROVAL ",
+    selectedBusinessName: "Asia Allied Infrastructure",
+    departmentName: " Finance ",
+    existingTemplates: [template],
+  });
+
+  assert.equal(result.didCreate, false);
+  assert.equal(result.template, null);
+  assert.match(result.message, /already exists/i);
+});
+
+test("allows the same workflow name in another business or department and ignores archived templates", () => {
+  const archivedTemplate = {
+    ...template,
+    id: "archived-template",
+    isArchived: true,
+  };
+
+  assert.equal(
+    getWorkflowCreateTemplateActionState({
+      templateName: "Invoice approval",
+      selectedBusinessName: "Asia Allied Infrastructure",
+      departmentName: "Operations",
+      existingTemplates: [template],
+    }).didCreate,
+    true,
+  );
+  assert.equal(
+    getWorkflowCreateTemplateActionState({
+      templateName: "Invoice approval",
+      selectedBusinessName: "Chun Wo Construction",
+      departmentName: "Finance",
+      existingTemplates: [template],
+    }).didCreate,
+    true,
+  );
+  assert.equal(
+    getWorkflowCreateTemplateActionState({
+      templateName: "Invoice approval",
+      selectedBusinessName: "Asia Allied Infrastructure",
+      departmentName: "Finance",
+      existingTemplates: [archivedTemplate],
+    }).didCreate,
+    true,
   );
 });
 
