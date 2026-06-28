@@ -1679,24 +1679,6 @@ export function WorkflowView({
                         </div>
                       </div>
                     )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConnectFromNodeId(selectedGraphNode.id);
-                      setSelectedEdgeId(null);
-                    }}
-                    title="Start drawing a connection from this box to another box on the canvas."
-                    className={`flex min-h-10 w-full items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
-                      connectFromNodeId === selectedGraphNode.id
-                        ? "border-sky-400/50 bg-sky-400/15 text-sky-100"
-                        : "border-sky-400/40 bg-sky-400/12 text-sky-100 hover:bg-sky-400/20"
-                    }`}
-                  >
-                    <ArrowRightLeft size={15} />
-                    {connectFromNodeId === selectedGraphNode.id
-                      ? "Click target box"
-                      : "Connect"}
-                  </button>
                   {selectedGraphNode.kind === "condition" && workflow && (
                     <ConditionBoxDetails
                       context={getConditionContext(

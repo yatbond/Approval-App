@@ -32,3 +32,14 @@ test("submit workflow box controls explain submitter and shared upload behavior"
     true,
   );
 });
+
+test("workflow box details do not show a redundant connect button", () => {
+  const source = readFileSync("src/app/workflow-view.tsx", "utf8");
+
+  assert.equal(
+    source.includes("Start drawing a connection from this box to another box on the canvas."),
+    false,
+  );
+  assert.equal(source.includes("setConnectFromNodeId(selectedGraphNode.id)"), false);
+  assert.equal(source.includes("Click target box"), false);
+});
