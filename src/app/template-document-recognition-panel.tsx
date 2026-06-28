@@ -615,13 +615,13 @@ export function TemplateDocumentRecognitionPanel({
                 Box saved as a location hint, not an exact rule.
               </p>
             )}
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2">
               <button
                 type="button"
                 onClick={recognizeSampleField}
                 disabled={!sampleFile || !activeFieldLabel || isParsing}
                 title="Recognize the selected field from the uploaded sample using the current instruction."
-                className="flex h-8 items-center justify-center gap-1 rounded-md border border-violet-400/40 bg-violet-400/12 px-2 text-xs text-violet-100 disabled:opacity-40"
+                className="flex min-h-9 items-center justify-center gap-1 whitespace-normal rounded-md border border-violet-400/40 bg-violet-400/12 px-2 py-2 text-center text-xs leading-tight text-violet-100 disabled:opacity-40"
               >
                 {isParsing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                 AI Recognize
@@ -630,7 +630,7 @@ export function TemplateDocumentRecognitionPanel({
                 type="button"
                 onClick={saveFieldSample}
                 disabled={!activeFieldLabel}
-                className="flex h-8 items-center justify-center gap-1 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 text-xs text-emerald-100 disabled:opacity-40"
+                className="flex min-h-9 items-center justify-center gap-1 whitespace-normal rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 py-2 text-center text-xs leading-tight text-emerald-100 disabled:opacity-40"
               >
                 <Plus size={12} />
                 Save and next field
@@ -639,7 +639,7 @@ export function TemplateDocumentRecognitionPanel({
                 type="button"
                 onClick={() => setIsBoxSelectorOpen(true)}
                 disabled={!selectedPreviewPage || !activeFieldLabel}
-                className="flex h-8 items-center justify-center gap-1 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 text-xs text-sky-100 disabled:opacity-40"
+                className="flex min-h-9 items-center justify-center gap-1 whitespace-normal rounded-md border border-sky-400/40 bg-sky-400/12 px-2 py-2 text-center text-xs leading-tight text-sky-100 disabled:opacity-40"
               >
                 <Maximize2 size={12} />
                 Extract box

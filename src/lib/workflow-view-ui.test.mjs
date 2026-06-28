@@ -78,3 +78,12 @@ test("sample recognition can AI recognize the selected field before saving", () 
     true,
   );
 });
+
+test("sample recognition actions fit inside the narrow workflow side panel", () => {
+  const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
+
+  assert.equal(source.includes("sm:grid-cols-3"), false);
+  assert.equal(source.includes("min-h-9"), true);
+  assert.equal(source.includes("whitespace-normal"), true);
+  assert.equal(source.includes("leading-tight"), true);
+});
