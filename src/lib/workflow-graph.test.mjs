@@ -91,6 +91,33 @@ test("creates a workflow graph from a linear template", () => {
   ]);
 });
 
+test("creates a blank canvas graph with a separate submit request box", () => {
+  const graph = createWorkflowGraphFromTemplate({
+    ...template,
+    documents: [],
+    documentTypes: [],
+    fields: [],
+    steps: [],
+    graph: undefined,
+  });
+
+  assert.deepEqual(
+    graph.nodes.map((node) => [node.id, node.kind, node.label]),
+    [
+      ["start", "start", "Start"],
+      ["submit-request", "submit_request", "Submit request"],
+      ["end", "end", "End"],
+    ],
+  );
+  assert.deepEqual(
+    graph.edges.map((edge) => [edge.id, edge.sourceId, edge.targetId, edge.label]),
+    [
+      ["edge-start-submit-request", "start", "submit-request", "Start"],
+      ["edge-submit-request-end", "submit-request", "end", "Submit"],
+    ],
+  );
+});
+
 test("adds a dropdown condition branch", () => {
   const graph = createWorkflowGraphFromTemplate(template);
   const cfoNode = graph.nodes.find((node) => node.label === "CFO approval");

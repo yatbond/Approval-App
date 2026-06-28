@@ -131,6 +131,18 @@ export function createWorkflowGraphFromTemplate(
       index === 0 ? template.documents.map((document) => document.id) : undefined,
     blocking: true,
   }));
+  const actionNodes: WorkflowGraphNode[] = stepNodes.length
+    ? stepNodes
+    : [
+        {
+          id: "submit-request",
+          kind: "submit_request",
+          label: "Submit request",
+          x: 320,
+          y: 120,
+          blocking: true,
+        },
+      ];
   const nodes: WorkflowGraphNode[] = [
     {
       id: "start",
@@ -140,19 +152,19 @@ export function createWorkflowGraphFromTemplate(
       y: 120,
       blocking: true,
     },
-    ...stepNodes,
+    ...actionNodes,
     {
       id: "end",
       kind: "end",
       label: "End",
-      x: 400 + stepNodes.length * 260,
+      x: 400 + actionNodes.length * 260,
       y: 120,
       blocking: false,
     },
   ];
   const chainIds = [
     "start",
-    ...stepNodes.map((node) => node.id),
+    ...actionNodes.map((node) => node.id),
     "end",
   ];
   const edges: WorkflowGraphEdge[] = chainIds.slice(0, -1).map((sourceId, index) => {
@@ -161,13 +173,23 @@ export function createWorkflowGraphFromTemplate(
       id: `edge-${sourceId}-${targetId}`,
       sourceId,
       targetId,
-      label: index === 0 ? "Submit" : "Next",
+      label: getDefaultChainEdgeLabel(sourceId, targetId, index),
       branchType: "main",
       blocking: true,
     };
   });
 
   return { nodes, edges };
+}
+
+function getDefaultChainEdgeLabel(sourceId: string, targetId: string, index: number) {
+  if (sourceId === "start" && targetId === "submit-request") {
+    return "Start";
+  }
+  if (sourceId === "submit-request") {
+    return "Submit";
+  }
+  return index === 0 ? "Submit" : "Next";
 }
 
 function collapseDocumentNodes(graph: LegacyWorkflowGraph): WorkflowGraph {

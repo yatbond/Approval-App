@@ -136,10 +136,17 @@ test("copies a blank workflow into the current template", () => {
   assert.deepEqual(result.template.languages, sourceTemplate.languages);
   assert.deepEqual(result.template.graph.nodes.map((node) => node.id), [
     "start",
+    "submit-request",
+    "end",
+  ]);
+  assert.deepEqual(result.template.graph.nodes.map((node) => node.kind), [
+    "start",
+    "submit_request",
     "end",
   ]);
   assert.deepEqual(result.template.graph.edges.map((edge) => edge.id), [
-    "edge-start-end",
+    "edge-start-submit-request",
+    "edge-submit-request-end",
   ]);
   assert.equal(result.workflowEditorTab, "canvas");
   assert.equal(result.shouldResetCanvasView, true);
