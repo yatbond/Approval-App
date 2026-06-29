@@ -64,10 +64,10 @@ test("sample recognition supports training multiple fields from one upload", () 
   assert.equal(source.includes("selectNextUnsavedField"), true);
 });
 
-test("sample recognition can AI recognize the selected field before saving", () => {
+test("sample recognition can full-auto detect the selected field before saving", () => {
   const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
 
-  assert.equal(source.includes("AI Recognize"), true);
+  assert.equal(source.includes("Full Auto Detect"), true);
   assert.equal(source.includes("recognizeSampleField"), true);
   assert.equal(source.includes("setSampleFile(file)"), true);
   assert.equal(source.includes("setSamplePageImages(pageImages)"), true);
@@ -98,4 +98,19 @@ test("sample recognition actions fit inside the narrow workflow side panel", () 
   assert.equal(source.includes("min-h-9"), true);
   assert.equal(source.includes("whitespace-normal"), true);
   assert.equal(source.includes("leading-tight"), true);
+});
+
+test("sample recognition actions prioritize manual extract before full auto and save", () => {
+  const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
+  const manualIndex = source.indexOf("Manual Extract");
+  const fullAutoIndex = source.indexOf("Full Auto Detect");
+  const saveIndex = source.indexOf("Save and next field");
+
+  assert.notEqual(manualIndex, -1);
+  assert.notEqual(fullAutoIndex, -1);
+  assert.notEqual(saveIndex, -1);
+  assert.equal(manualIndex < fullAutoIndex, true);
+  assert.equal(fullAutoIndex < saveIndex, true);
+  assert.equal(source.includes("AI Recognize"), false);
+  assert.equal(source.includes("Extract box"), false);
 });

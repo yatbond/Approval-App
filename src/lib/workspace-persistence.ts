@@ -2,10 +2,10 @@ import type {
   AdminAuditEvent,
   ApprovalTask,
   BusinessUnit,
-  WorkflowDocumentSample,
   UserRoleAssignment,
   WorkflowTemplate,
 } from "@/lib/types";
+import { sanitizeWorkflowDocumentSample } from "./workflow-document-sample-state.ts";
 
 export type WorkspaceStateSnapshot = {
   selectedTemplateId: string;
@@ -72,24 +72,4 @@ function sanitizeWorkflowTemplates(
         : {}),
     })),
   }));
-}
-
-function sanitizeWorkflowDocumentSample(
-  sample: WorkflowDocumentSample,
-): WorkflowDocumentSample {
-  return {
-    fileName: sample.fileName,
-    mimeType: sample.mimeType,
-    previewPages: (sample.previewPages || []).map((page) => ({
-      pageNumber: page.pageNumber,
-      mimeType: page.mimeType,
-      ...(page.pageText ? { pageText: page.pageText } : {}),
-    })),
-    pageImages: (sample.pageImages || []).map((page) => ({
-      pageNumber: page.pageNumber,
-      mimeType: page.mimeType,
-      ...(page.pageText ? { pageText: page.pageText } : {}),
-    })),
-    savedAt: sample.savedAt,
-  };
 }

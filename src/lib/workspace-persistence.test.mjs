@@ -113,7 +113,7 @@ test("parses older workspace state without saved approval tasks", () => {
   assert.deepEqual(parsed?.adminAuditEvents, []);
 });
 
-test("strips oversized workflow sample image data during workspace persistence", () => {
+test("keeps bounded workflow sample OCR images during workspace persistence", () => {
   const state = {
     selectedTemplateId: "template-1",
     approvalTasks: [],
@@ -168,7 +168,7 @@ test("strips oversized workflow sample image data during workspace persistence",
   const serialized = serializeWorkspaceState(state);
   assert.equal(serialized.includes("data:application/pdf"), false);
   assert.equal(serialized.includes("y".repeat(100)), false);
-  assert.equal(serialized.includes("z".repeat(100)), false);
+  assert.equal(serialized.includes("z".repeat(100)), true);
 
   const parsed = parseWorkspaceState(JSON.stringify(state));
   assert.deepEqual(parsed?.workflowTemplates[0].documents[0].sample, {
@@ -185,6 +185,7 @@ test("strips oversized workflow sample image data during workspace persistence",
       {
         pageNumber: 1,
         mimeType: "image/png",
+        imageBase64: "z".repeat(1000),
         pageText: "Subcontractor Ming Kee",
       },
     ],

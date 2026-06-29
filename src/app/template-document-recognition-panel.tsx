@@ -592,7 +592,7 @@ export function TemplateDocumentRecognitionPanel({
           ) : (
             <p className="mt-2 rounded-md border border-white/10 bg-[#0d1012] px-2 py-2 text-xs text-neutral-400">
               Saved sample text is available for AI recognition. Upload the
-              sample again to use Extract box.
+              sample again to use Manual Extract.
             </p>
           )}
           <div className="mt-2 grid gap-2">
@@ -651,13 +651,22 @@ export function TemplateDocumentRecognitionPanel({
             <div className="grid gap-2">
               <button
                 type="button"
+                onClick={() => setIsBoxSelectorOpen(true)}
+                disabled={!selectedPreviewPage || !activeFieldLabel}
+                className="flex min-h-9 items-center justify-center gap-1 whitespace-normal rounded-md border border-sky-400/40 bg-sky-400/12 px-2 py-2 text-center text-xs leading-tight text-sky-100 disabled:opacity-40"
+              >
+                <Maximize2 size={12} />
+                Manual Extract
+              </button>
+              <button
+                type="button"
                 onClick={recognizeSampleField}
                 disabled={!(sampleFile || document.sample) || !activeFieldLabel || isParsing}
                 title="Recognize the selected field from the uploaded sample using the current instruction."
                 className="flex min-h-9 items-center justify-center gap-1 whitespace-normal rounded-md border border-violet-400/40 bg-violet-400/12 px-2 py-2 text-center text-xs leading-tight text-violet-100 disabled:opacity-40"
               >
                 {isParsing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                AI Recognize
+                Full Auto Detect
               </button>
               <button
                 type="button"
@@ -667,15 +676,6 @@ export function TemplateDocumentRecognitionPanel({
               >
                 <Plus size={12} />
                 Save and next field
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsBoxSelectorOpen(true)}
-                disabled={!selectedPreviewPage || !activeFieldLabel}
-                className="flex min-h-9 items-center justify-center gap-1 whitespace-normal rounded-md border border-sky-400/40 bg-sky-400/12 px-2 py-2 text-center text-xs leading-tight text-sky-100 disabled:opacity-40"
-              >
-                <Maximize2 size={12} />
-                Extract box
               </button>
             </div>
           </div>
