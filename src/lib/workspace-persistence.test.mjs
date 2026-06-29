@@ -153,6 +153,11 @@ test("keeps bounded workflow sample OCR images during workspace persistence", ()
                 },
               ],
               savedAt: "2026-06-29T01:00:00.000Z",
+              trainingDraft: {
+                selectedFieldName: "subcontractor",
+                instructions: "Extract the subcontractor name.",
+                value: "Ming Kee",
+              },
             },
           },
         ],
@@ -169,6 +174,8 @@ test("keeps bounded workflow sample OCR images during workspace persistence", ()
   assert.equal(serialized.includes("data:application/pdf"), false);
   assert.equal(serialized.includes("y".repeat(100)), false);
   assert.equal(serialized.includes("z".repeat(100)), true);
+  assert.equal(serialized.includes("Subcontractor Ming Kee"), true);
+  assert.equal(serialized.includes("Ming Kee"), true);
 
   const parsed = parseWorkspaceState(JSON.stringify(state));
   assert.deepEqual(parsed?.workflowTemplates[0].documents[0].sample, {
@@ -190,5 +197,10 @@ test("keeps bounded workflow sample OCR images during workspace persistence", ()
       },
     ],
     savedAt: "2026-06-29T01:00:00.000Z",
+    trainingDraft: {
+      selectedFieldName: "subcontractor",
+      instructions: "Extract the subcontractor name.",
+      value: "Ming Kee",
+    },
   });
 });

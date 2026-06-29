@@ -67,6 +67,25 @@ export function sanitizeWorkflowDocumentSample(
   };
 }
 
+export function sanitizeWorkflowDocumentSampleForPublishedTemplate(
+  sample: WorkflowDocumentSample,
+): WorkflowDocumentSample {
+  return {
+    fileName: sample.fileName,
+    mimeType: sample.mimeType,
+    previewPages: sanitizeSamplePages(sample.previewPages || [], {
+      includeImages: false,
+    }),
+    pageImages: sanitizeSamplePages(sample.pageImages || [], {
+      includeImages: false,
+    }),
+    savedAt: sample.savedAt,
+    ...(sample.trainingDraft
+      ? { trainingDraft: sanitizeWorkflowDocumentSampleTrainingDraft(sample.trainingDraft) }
+      : {}),
+  };
+}
+
 export function saveWorkflowDocumentSampleTrainingDraft(
   sample: WorkflowDocumentSample,
   draft: WorkflowDocumentSampleTrainingDraft,

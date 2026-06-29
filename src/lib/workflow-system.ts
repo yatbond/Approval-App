@@ -3,6 +3,7 @@ import type {
   NotificationItem,
   WorkflowTemplate,
 } from "@/lib/types";
+import { sanitizeWorkflowDocumentSampleForPublishedTemplate } from "./workflow-document-sample-state.ts";
 import { getWorkflowTemplateFamilyKey } from "./workflow-template-version-state.ts";
 
 export type TaskNotification = NotificationItem & {
@@ -26,6 +27,12 @@ export function publishWorkflowTemplateVersion(
   return {
     ...template,
     id: `${baseTemplateId}-v${nextVersion}`,
+    documents: template.documents.map((document) => ({
+      ...document,
+      ...(document.sample
+        ? { sample: sanitizeWorkflowDocumentSampleForPublishedTemplate(document.sample) }
+        : {}),
+    })),
     version: nextVersion,
     isDraft: false,
     isActiveVersion: true,
