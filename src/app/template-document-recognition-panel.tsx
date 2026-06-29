@@ -10,7 +10,6 @@ import {
   getActiveSelectionRect,
   normalizedRectToPercentStyle,
   normalizeSelectionRect,
-  readFileAsDataUrl,
   readImageFileAsPreviewPage,
   type DocumentPreviewPage,
   type NormalizedRect,
@@ -238,11 +237,9 @@ export function TemplateDocumentRecognitionPanel({
         extractionExamples: documentExtractionExamples,
       });
       setParseResult(payload);
-      const dataUrl = await readFileAsDataUrl(file);
       onSaveSample(
         buildWorkflowDocumentSample({
           file,
-          dataUrl,
           previewPages: pdfPreviewImages.length
             ? buildPreviewPagesFromPdfImages(pdfPreviewImages)
             : file.type.startsWith("image/")
@@ -361,7 +358,7 @@ export function TemplateDocumentRecognitionPanel({
   async function recognizeSampleField() {
     const field = resolveField();
     const recognitionFile =
-      sampleFile || createFileFromSavedSample(document.sample);
+      sampleFile || createPlaceholderFileFromSavedSample(document.sample);
     if (!recognitionFile || !field) {
       return;
     }
@@ -792,27 +789,17 @@ function createTemplateSampleExampleId(
   return `template-sample-${documentId}-${fieldName}-${slugify(fileName) || "sample"}`;
 }
 
-function createFileFromSavedSample(sample?: WorkflowDocumentSample) {
-  if (!sample?.dataUrl) {
+function createPlaceholderFileFromSavedSample(sample?: WorkflowDocumentSample) {
+  if (!sample) {
     return null;
   }
 
-  const [metadata, base64 = ""] = sample.dataUrl.split(",");
-  if (!base64) {
-    return null;
-  }
-
-  const mimeType =
-    metadata.match(/^data:([^;]+);base64$/)?.[1] ||
-    sample.mimeType ||
-    "application/octet-stream";
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-
-  return new File([bytes], sample.fileName || "sample", { type: mimeType });
+  const fileName = sample.fileName.toLowerCase().endsWith(".pdf")
+    ? sample.fileName
+    : `${sample.fileName || "sample"}.pdf`;
+  return new File(["Saved workflow sample text"], fileName, {
+    type: "application/pdf",
+  });
 }
 
 function slugify(value: string) {

@@ -20,7 +20,7 @@ export type ParsedDocumentDraft = {
 export type PdfPageImageInput = {
   pageNumber: number;
   mimeType: string;
-  imageBase64: string;
+  imageBase64?: string;
   pageText?: string;
 };
 
@@ -505,12 +505,14 @@ export async function extractPdfFieldsWithQwenPageImages(params: {
           role: "user",
           content: [
             { type: "text", text: prompt },
-            ...params.pageImages.map((page) => ({
-              type: "image_url",
-              image_url: {
-                url: `data:${page.mimeType};base64,${page.imageBase64}`,
-              },
-            })),
+            ...params.pageImages
+              .filter((page) => page.imageBase64)
+              .map((page) => ({
+                type: "image_url",
+                image_url: {
+                  url: `data:${page.mimeType};base64,${page.imageBase64}`,
+                },
+              })),
           ],
         },
       ],

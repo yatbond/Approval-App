@@ -36,6 +36,32 @@ test("builds preview pages from rendered PDF page images", () => {
   );
 });
 
+test("skips text-only PDF page context when building visual previews", () => {
+  assert.deepEqual(
+    buildPreviewPagesFromPdfImages([
+      {
+        pageNumber: 1,
+        mimeType: "image/png",
+        pageText: "Saved page text without embedded image data",
+      },
+      {
+        pageNumber: 2,
+        mimeType: "image/png",
+        imageBase64: "page-two",
+      },
+    ]),
+    [
+      {
+        id: "pdf-page-2",
+        pageNumber: 2,
+        mimeType: "image/png",
+        imageBase64: "page-two",
+        dataUrl: "data:image/png;base64,page-two",
+      },
+    ],
+  );
+});
+
 test("creates an image preview page from a data URL", () => {
   assert.deepEqual(
     createPreviewPageFromDataUrl("scan.png", "data:image/png;base64,abc123"),

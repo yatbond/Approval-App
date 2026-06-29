@@ -749,6 +749,57 @@ test("includes typed PDF page text when extracting rendered page images", async 
   );
 });
 
+test("uses typed PDF page text without sending empty image URLs", async () => {
+  let capturedContent;
+
+  await withParserEnvironment(
+    {
+      OPENROUTER_API_KEY: "test-key",
+      OPENROUTER_VISION_OCR_MODEL: "qwen/qwen3-vl-8b-instruct",
+    },
+    async () => {
+      globalThis.fetch = async (_url, init) => {
+        const body = JSON.parse(init.body);
+        capturedContent = body.messages[0].content;
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  fields: {
+                    Amount: {
+                      value: "HKD 8,400",
+                      confidence: "high",
+                      evidence: "Total HKD 8,400",
+                    },
+                  },
+                  suggestedFields: [],
+                }),
+              },
+            },
+          ],
+        });
+      };
+
+      await extractPdfFieldsWithQwenPageImages({
+        pageImages: [
+          {
+            pageNumber: 1,
+            mimeType: "text/plain",
+            pageText: "Typed text: Total HKD 8,400",
+          },
+        ],
+        fields,
+        languageHint: "English",
+      });
+    },
+  );
+
+  assert.equal(capturedContent.length, 1);
+  assert.equal(capturedContent[0].type, "text");
+  assert.match(capturedContent[0].text, /Typed text: Total HKD 8,400/);
+});
+
 test("includes sample box anchors as soft extraction hints in the parser prompt", () => {
   const prompt = buildExtractionPrompt(fields, "English", [
     {

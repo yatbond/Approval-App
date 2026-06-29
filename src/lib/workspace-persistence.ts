@@ -2,6 +2,7 @@ import type {
   AdminAuditEvent,
   ApprovalTask,
   BusinessUnit,
+  WorkflowDocumentSample,
   UserRoleAssignment,
   WorkflowTemplate,
 } from "@/lib/types";
@@ -16,7 +17,7 @@ export type WorkspaceStateSnapshot = {
 };
 
 export function serializeWorkspaceState(snapshot: WorkspaceStateSnapshot) {
-  return JSON.stringify(snapshot);
+  return JSON.stringify(sanitizeWorkspaceStateSnapshot(snapshot));
 }
 
 export function parseWorkspaceState(value: string): WorkspaceStateSnapshot | null {
@@ -37,7 +38,7 @@ export function parseWorkspaceState(value: string): WorkspaceStateSnapshot | nul
         ? parsed.approvalTasks
         : [],
       businessDirectory: parsed.businessDirectory,
-      workflowTemplates: parsed.workflowTemplates,
+      workflowTemplates: sanitizeWorkflowTemplates(parsed.workflowTemplates),
       userRoleAssignments: Array.isArray(parsed.userRoleAssignments)
         ? parsed.userRoleAssignments
         : [],
@@ -48,4 +49,47 @@ export function parseWorkspaceState(value: string): WorkspaceStateSnapshot | nul
   } catch {
     return null;
   }
+}
+
+function sanitizeWorkspaceStateSnapshot(
+  snapshot: WorkspaceStateSnapshot,
+): WorkspaceStateSnapshot {
+  return {
+    ...snapshot,
+    workflowTemplates: sanitizeWorkflowTemplates(snapshot.workflowTemplates),
+  };
+}
+
+function sanitizeWorkflowTemplates(
+  templates: WorkflowTemplate[],
+): WorkflowTemplate[] {
+  return templates.map((template) => ({
+    ...template,
+    documents: template.documents.map((document) => ({
+      ...document,
+      ...(document.sample
+        ? { sample: sanitizeWorkflowDocumentSample(document.sample) }
+        : {}),
+    })),
+  }));
+}
+
+function sanitizeWorkflowDocumentSample(
+  sample: WorkflowDocumentSample,
+): WorkflowDocumentSample {
+  return {
+    fileName: sample.fileName,
+    mimeType: sample.mimeType,
+    previewPages: (sample.previewPages || []).map((page) => ({
+      pageNumber: page.pageNumber,
+      mimeType: page.mimeType,
+      ...(page.pageText ? { pageText: page.pageText } : {}),
+    })),
+    pageImages: (sample.pageImages || []).map((page) => ({
+      pageNumber: page.pageNumber,
+      mimeType: page.mimeType,
+      ...(page.pageText ? { pageText: page.pageText } : {}),
+    })),
+    savedAt: sample.savedAt,
+  };
 }

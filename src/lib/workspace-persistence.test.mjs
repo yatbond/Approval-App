@@ -112,3 +112,82 @@ test("parses older workspace state without saved approval tasks", () => {
   assert.deepEqual(parsed?.approvalTasks, []);
   assert.deepEqual(parsed?.adminAuditEvents, []);
 });
+
+test("strips oversized workflow sample image data during workspace persistence", () => {
+  const state = {
+    selectedTemplateId: "template-1",
+    approvalTasks: [],
+    businessDirectory: [],
+    workflowTemplates: [
+      {
+        id: "template-1",
+        name: "Template 1",
+        business: "Business 1",
+        department: "Finance",
+        documentTypes: ["Invoice"],
+        documents: [
+          {
+            id: "document-1",
+            documentType: "Invoice",
+            format: "pdf",
+            required: true,
+            fields: [],
+            sample: {
+              fileName: "sample.pdf",
+              mimeType: "application/pdf",
+              dataUrl: `data:application/pdf;base64,${"x".repeat(1000)}`,
+              previewPages: [
+                {
+                  pageNumber: 1,
+                  mimeType: "image/png",
+                  imageBase64: "y".repeat(1000),
+                  pageText: "Subcontractor Ming Kee",
+                },
+              ],
+              pageImages: [
+                {
+                  pageNumber: 1,
+                  mimeType: "image/png",
+                  imageBase64: "z".repeat(1000),
+                  pageText: "Subcontractor Ming Kee",
+                },
+              ],
+              savedAt: "2026-06-29T01:00:00.000Z",
+            },
+          },
+        ],
+        languages: ["English"],
+        fields: [],
+        steps: [],
+      },
+    ],
+    userRoleAssignments: [],
+    adminAuditEvents: [],
+  };
+
+  const serialized = serializeWorkspaceState(state);
+  assert.equal(serialized.includes("data:application/pdf"), false);
+  assert.equal(serialized.includes("y".repeat(100)), false);
+  assert.equal(serialized.includes("z".repeat(100)), false);
+
+  const parsed = parseWorkspaceState(JSON.stringify(state));
+  assert.deepEqual(parsed?.workflowTemplates[0].documents[0].sample, {
+    fileName: "sample.pdf",
+    mimeType: "application/pdf",
+    previewPages: [
+      {
+        pageNumber: 1,
+        mimeType: "image/png",
+        pageText: "Subcontractor Ming Kee",
+      },
+    ],
+    pageImages: [
+      {
+        pageNumber: 1,
+        mimeType: "image/png",
+        pageText: "Subcontractor Ming Kee",
+      },
+    ],
+    savedAt: "2026-06-29T01:00:00.000Z",
+  });
+});

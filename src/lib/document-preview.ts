@@ -37,14 +37,16 @@ export type PreviewPixelEnhancementInput = {
 export function buildPreviewPagesFromPdfImages(
   pageImages: PdfPageImageInput[],
 ): DocumentPreviewPage[] {
-  return pageImages.map((page) => ({
-    id: `pdf-page-${page.pageNumber}`,
-    pageNumber: page.pageNumber,
-    mimeType: page.mimeType,
-    imageBase64: page.imageBase64,
-    dataUrl: `data:${page.mimeType};base64,${page.imageBase64}`,
-    ...(page.pageText ? { pageText: page.pageText } : {}),
-  }));
+  return pageImages
+    .filter(hasPageImageBase64)
+    .map((page) => ({
+      id: `pdf-page-${page.pageNumber}`,
+      pageNumber: page.pageNumber,
+      mimeType: page.mimeType,
+      imageBase64: page.imageBase64,
+      dataUrl: `data:${page.mimeType};base64,${page.imageBase64}`,
+      ...(page.pageText ? { pageText: page.pageText } : {}),
+    }));
 }
 
 export function createPreviewPageFromDataUrl(
@@ -252,6 +254,12 @@ export function readFileAsDataUrl(file: File) {
     reader.onerror = () => reject(new Error("Unable to read image preview."));
     reader.readAsDataURL(file);
   });
+}
+
+function hasPageImageBase64(
+  page: PdfPageImageInput,
+): page is PdfPageImageInput & { imageBase64: string } {
+  return Boolean(page.imageBase64);
 }
 
 function loadImage(dataUrl: string) {

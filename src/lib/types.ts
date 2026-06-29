@@ -125,14 +125,13 @@ export type WorkflowDocumentRequirement = {
 export type WorkflowDocumentSamplePage = {
   pageNumber: number;
   mimeType: string;
-  imageBase64: string;
+  imageBase64?: string;
   pageText?: string;
 };
 
 export type WorkflowDocumentSample = {
   fileName: string;
   mimeType: string;
-  dataUrl: string;
   previewPages: WorkflowDocumentSamplePage[];
   pageImages?: WorkflowDocumentSamplePage[];
   savedAt: string;
