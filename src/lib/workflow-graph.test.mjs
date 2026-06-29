@@ -197,7 +197,7 @@ test("creates default labels for every workflow box kind", () => {
   assert.deepEqual(labels, [
     "Submit 1",
     "Approval 1",
-    "Review 1",
+    "Approval 1",
     "FYI 1",
     "Condition 1",
     "Return/Reject 1",

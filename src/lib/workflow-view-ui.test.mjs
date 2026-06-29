@@ -56,6 +56,16 @@ test("workflow template box details use position names without person-name field
   assert.equal(source.includes("assigneeName: event.target.value"), false);
 });
 
+test("workflow builder exposes approval instead of separate review nodes", () => {
+  const contextSource = readFileSync("src/lib/workflow-condition-context.ts", "utf8");
+  const viewSource = readFileSync("src/app/workflow-view.tsx", "utf8");
+
+  assert.equal(contextSource.includes('{ kind: "approval", label: "Approval" }'), true);
+  assert.equal(contextSource.includes('{ kind: "review", label: "Review" }'), false);
+  assert.equal(viewSource.includes("+ Review"), false);
+  assert.equal(viewSource.includes("approval, review, FYI"), false);
+});
+
 test("sample recognition trains existing fields with a large box selector", () => {
   const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
 

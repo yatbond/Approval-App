@@ -1394,7 +1394,7 @@ function defaultNodeLabel(kind: WorkflowNodeKind, count: number) {
     return `Approval ${count}`;
   }
   if (kind === "review") {
-    return `Review ${count}`;
+    return `Approval ${count}`;
   }
   if (kind === "for_information") {
     return `FYI ${count}`;

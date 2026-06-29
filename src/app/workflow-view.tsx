@@ -1186,8 +1186,12 @@ export function WorkflowView({
                   <label className="block">
                     <span className="mb-1 block text-xs text-neutral-400">Type</span>
                     <select
-                      value={selectedGraphNode.kind}
-                      title="Choose what this box does in the workflow: submit request, approval, review, FYI, condition, or end."
+                      value={
+                        selectedGraphNode.kind === "review"
+                          ? "approval"
+                          : selectedGraphNode.kind
+                      }
+                      title="Choose what this box does in the workflow: submit request, approval, FYI, condition, or end."
                       onChange={(event) =>
                         updateSelectedNode({
                           kind: event.target.value as WorkflowNodeKind,
