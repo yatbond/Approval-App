@@ -19,6 +19,7 @@ export type TaskActionInput = {
   comment?: string;
   targetEmail?: string;
   template?: WorkflowTemplate;
+  returnTargetNodeIds?: string[];
 };
 
 export function isActionableBy(task: ApprovalTask, userEmail: string) {
@@ -92,7 +93,11 @@ export function applyTaskAction(
 
   if (input.action === "reject" || input.action === "reject_with_comment") {
     const actionTask = taskForActorNode(task, input.actor.email, input.template);
-    const rejectedRoute = routeAfterRejection(actionTask, input.template);
+    const rejectedRoute = routeAfterRejection(
+      actionTask,
+      input.template,
+      input.returnTargetNodeIds,
+    );
     if (rejectedRoute) {
       const rejectedEvent = {
         ...eventBase,
@@ -316,7 +321,11 @@ export function applyTaskAction(
   return task;
 }
 
-function routeAfterRejection(task: ApprovalTask, template?: WorkflowTemplate) {
+function routeAfterRejection(
+  task: ApprovalTask,
+  template?: WorkflowTemplate,
+  returnTargetNodeIds: string[] = [],
+) {
   if (!template || !task.currentNodeId) {
     return null;
   }
@@ -327,6 +336,17 @@ function routeAfterRejection(task: ApprovalTask, template?: WorkflowTemplate) {
     task.currentNodeId,
     "rejected",
   );
+  const targetedReturn = routeRejectionToSelectedTargets({
+    task,
+    graph,
+    currentNodeId: task.currentNodeId,
+    returnTargetNodeIds,
+    nodeDecisions,
+  });
+  if (targetedReturn) {
+    return targetedReturn;
+  }
+
   const rejectedEdge = graph.edges.find(
     (edge) => edge.sourceId === task.currentNodeId && edge.branchType === "rejected",
   );
@@ -414,6 +434,10 @@ function routeAfterRejection(task: ApprovalTask, template?: WorkflowTemplate) {
   const currentNodes = route.currentNodes.length ? route.currentNodes : [route.currentNode];
   const currentOwners = uniqueNodeEmails(currentNodes);
   const nextDue = dueForNode(route.currentNode);
+  const routedNodeDecisions = removeNodeDecisions(
+    nodeDecisions,
+    currentNodes.map((node) => node.id),
+  );
   return {
     task: {
       ...task,
@@ -427,7 +451,7 @@ function routeAfterRejection(task: ApprovalTask, template?: WorkflowTemplate) {
       dueAt: nextDue.iso,
       completedNodeIds,
       notifiedNodeIds,
-      nodeDecisions,
+      nodeDecisions: routedNodeDecisions,
       participants: addParticipants(task.participants, [
         ...currentOwners,
         ...currentNodes.map((node) => node.escalationEmail),
@@ -437,6 +461,79 @@ function routeAfterRejection(task: ApprovalTask, template?: WorkflowTemplate) {
     },
     detail: `Rejected and sent to ${route.currentNode.label}.`,
     assignedEvent: `Assigned to ${route.currentNode.assigneeName || route.currentNode.assigneeEmail} for ${route.currentNode.label}.`,
+  };
+}
+
+function routeRejectionToSelectedTargets({
+  task,
+  graph,
+  currentNodeId,
+  returnTargetNodeIds,
+  nodeDecisions,
+}: {
+  task: ApprovalTask;
+  graph: WorkflowGraph;
+  currentNodeId: string;
+  returnTargetNodeIds: string[];
+  nodeDecisions: ApprovalTask["nodeDecisions"];
+}) {
+  if (!returnTargetNodeIds.length) {
+    return null;
+  }
+
+  const upstreamNodeIds = getUpstreamNodeIds(graph, currentNodeId);
+  const targetNodes = returnTargetNodeIds
+    .map((nodeId) => graph.nodes.find((node) => node.id === nodeId))
+    .filter((node): node is WorkflowGraphNode => Boolean(node))
+    .filter((node) => upstreamNodeIds.has(node.id))
+    .filter(isActionableRouteNode);
+
+  if (!targetNodes.length) {
+    return null;
+  }
+
+  const resetNodeIds = getDownstreamNodeIds(graph, targetNodes.map((node) => node.id));
+  const targetOwners = uniqueNodeEmails(targetNodes);
+  const currentNode = targetNodes[0];
+  const due = dueForNode(currentNode);
+  const resetNodeDecisions = removeNodeDecisions(nodeDecisions, [
+    ...Array.from(resetNodeIds).filter((nodeId) => nodeId !== currentNodeId),
+    ...targetNodes.map((node) => node.id),
+  ]);
+  const targetLabel = targetNodes.map((node) => node.label).join(" + ");
+
+  return {
+    task: {
+      ...task,
+      status: "pending" as const,
+      currentOwner: targetOwners[0] || task.requesterEmail,
+      currentStep:
+        targetNodes.length > 1
+          ? `${currentNode.label} (${targetNodes.length} pending)`
+          : currentNode.label,
+      currentNodeId: currentNode.id,
+      pendingNodeIds: targetNodes.map((node) => node.id),
+      pendingOwners: targetOwners,
+      due: due.label,
+      dueAt: due.iso,
+      completedNodeIds: (task.completedNodeIds || []).filter(
+        (nodeId) => !resetNodeIds.has(nodeId),
+      ),
+      notifiedNodeIds: (task.notifiedNodeIds || []).filter(
+        (nodeId) => !resetNodeIds.has(nodeId),
+      ),
+      nodeDecisions: resetNodeDecisions,
+      participants: addParticipants(task.participants, [
+        ...targetOwners,
+        ...targetNodes.map((node) => node.escalationEmail),
+      ]),
+      activeBranchId: `return-${currentNodeId}-${targetNodes.map((node) => node.id).join("-")}`,
+    },
+    detail: `Rejected. Returned to ${targetLabel}.`,
+    assignedEvent:
+      targetNodes.length > 1
+        ? `Returned to ${targetNodes.length} upstream owner(s): ${targetOwners.join(", ")}.`
+        : `Returned to ${currentNode.assigneeName || currentNode.assigneeEmail} for ${currentNode.label}.`,
   };
 }
 
@@ -538,6 +635,10 @@ function routeAfterApproval(task: ApprovalTask, template?: WorkflowTemplate) {
   const currentNodes = route.currentNodes.length ? route.currentNodes : [route.currentNode];
   const currentOwners = uniqueNodeEmails(currentNodes);
   const nextDue = dueForNode(route.currentNode);
+  const routedNodeDecisions = removeNodeDecisions(
+    nodeDecisions,
+    currentNodes.map((node) => node.id),
+  );
   return {
     task: {
       ...task,
@@ -551,7 +652,7 @@ function routeAfterApproval(task: ApprovalTask, template?: WorkflowTemplate) {
       dueAt: nextDue.iso,
       completedNodeIds,
       notifiedNodeIds,
-      nodeDecisions,
+      nodeDecisions: routedNodeDecisions,
       participants: addParticipants(task.participants, [
         ...currentOwners,
         ...currentNodes.map((node) => node.escalationEmail),
@@ -1126,6 +1227,62 @@ function addUnique(existing: string[], ...values: string[]) {
   return Array.from(new Set([...existing, ...values.filter(Boolean)]));
 }
 
+function getUpstreamNodeIds(graph: WorkflowGraph, currentNodeId: string) {
+  const upstreamNodeIds = new Set<string>();
+  const queue = [currentNodeId];
+
+  while (queue.length) {
+    const currentId = queue.shift();
+    if (!currentId) {
+      continue;
+    }
+
+    graph.edges
+      .filter(
+        (edge) => edge.targetId === currentId && edge.branchType !== "for_information",
+      )
+      .forEach((edge) => {
+        if (upstreamNodeIds.has(edge.sourceId)) {
+          return;
+        }
+
+        upstreamNodeIds.add(edge.sourceId);
+        queue.push(edge.sourceId);
+      });
+  }
+
+  return upstreamNodeIds;
+}
+
+function getDownstreamNodeIds(graph: WorkflowGraph, sourceNodeIds: string[]) {
+  const downstreamNodeIds = new Set<string>();
+  const queue = [...sourceNodeIds];
+
+  sourceNodeIds.forEach((nodeId) => downstreamNodeIds.add(nodeId));
+
+  while (queue.length) {
+    const currentId = queue.shift();
+    if (!currentId) {
+      continue;
+    }
+
+    graph.edges
+      .filter(
+        (edge) => edge.sourceId === currentId && edge.branchType !== "for_information",
+      )
+      .forEach((edge) => {
+        if (downstreamNodeIds.has(edge.targetId)) {
+          return;
+        }
+
+        downstreamNodeIds.add(edge.targetId);
+        queue.push(edge.targetId);
+      });
+  }
+
+  return downstreamNodeIds;
+}
+
 function addParticipants(
   existing: string[],
   emails: Array<string | undefined>,
@@ -1147,6 +1304,20 @@ function recordNodeDecision(
     ...(existing || {}),
     [nodeId]: decision,
   };
+}
+
+function removeNodeDecisions(
+  existing: ApprovalTask["nodeDecisions"],
+  nodeIds: string[],
+) {
+  if (!existing || !nodeIds.length) {
+    return existing;
+  }
+
+  const omittedNodeIds = new Set(nodeIds);
+  return Object.fromEntries(
+    Object.entries(existing).filter(([nodeId]) => !omittedNodeIds.has(nodeId)),
+  );
 }
 
 function joinDetail(detail: string, comment?: string) {

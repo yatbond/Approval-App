@@ -1183,14 +1183,13 @@ export function WorkflowView({
                     <span className="mb-1 block text-xs text-neutral-400">Type</span>
                     <select
                       value={selectedGraphNode.kind}
-                      title="Choose what this box does in the workflow: submit request, approval, review, FYI, condition, return/reject, or end."
+                      title="Choose what this box does in the workflow: submit request, approval, review, FYI, condition, or end."
                       onChange={(event) =>
                         updateSelectedNode({
                           kind: event.target.value as WorkflowNodeKind,
                           blocking:
                             event.target.value !== "for_information" &&
-                            event.target.value !== "end" &&
-                            event.target.value !== "return_reject",
+                            event.target.value !== "end",
                         })
                       }
                       className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"

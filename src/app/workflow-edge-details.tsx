@@ -10,7 +10,6 @@ import type {
 const branchTypeOptions: { value: WorkflowBranchType; label: string }[] = [
   { value: "main", label: "Main" },
   { value: "approved", label: "Approved" },
-  { value: "rejected", label: "Rejected" },
   { value: "condition", label: "Condition" },
   { value: "for_information", label: "FYI" },
 ];

@@ -867,7 +867,7 @@ function ApprovalWorkspaceBody({
     setSubmissionMessage("");
   }
 
-  function recordAction(action: ApprovalAction) {
+  function recordAction(action: ApprovalAction, returnTargetNodeIds: string[] = []) {
     const nextState = getWorkspaceRecordTaskActionState({
       tasks,
       selectedTask,
@@ -876,6 +876,7 @@ function ApprovalWorkspaceBody({
       action,
       comment,
       targetEmail,
+      returnTargetNodeIds,
     });
 
     if (!nextState.didApply) {
@@ -900,7 +901,10 @@ function ApprovalWorkspaceBody({
     setActionError(nextState.actionError);
   }
 
-  async function confirmRecordAction(action: ApprovalAction) {
+  async function confirmRecordAction(
+    action: ApprovalAction,
+    returnTargetNodeIds: string[] = [],
+  ) {
     const confirmation = getApprovalActionConfirmation({
       action,
       taskTitle: selectedTask?.title || "this request",
@@ -910,7 +914,7 @@ function ApprovalWorkspaceBody({
       return;
     }
 
-    recordAction(action);
+    recordAction(action, returnTargetNodeIds);
   }
 
   async function requestTaskContributor() {

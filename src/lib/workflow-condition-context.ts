@@ -12,7 +12,6 @@ export const workflowNodeOptions: { kind: WorkflowNodeKind; label: string }[] = 
   { kind: "review", label: "Review" },
   { kind: "for_information", label: "FYI" },
   { kind: "condition", label: "Condition" },
-  { kind: "return_reject", label: "Return/Reject" },
   { kind: "end", label: "End" },
 ];
 
@@ -63,5 +62,9 @@ export function getConditionContext(
 }
 
 export function formatNodeKind(kind: WorkflowNodeKind) {
+  if (kind === "return_reject") {
+    return "Return/Reject";
+  }
+
   return workflowNodeOptions.find((option) => option.kind === kind)?.label || "Start";
 }

@@ -18,6 +18,7 @@ type RecordTaskActionInput = {
   action: ApprovalAction;
   comment: string;
   targetEmail: string;
+  returnTargetNodeIds?: string[];
 };
 
 type TaskActionState = {
@@ -36,6 +37,7 @@ export function getWorkspaceRecordTaskActionState({
   action,
   comment,
   targetEmail,
+  returnTargetNodeIds,
 }: RecordTaskActionInput): TaskActionState {
   if (!selectedTask) {
     return {
@@ -84,6 +86,7 @@ export function getWorkspaceRecordTaskActionState({
     comment,
     targetEmail,
     template,
+    returnTargetNodeIds,
   });
 
   return {

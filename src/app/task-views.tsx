@@ -39,6 +39,7 @@ import {
   shouldShowQueueReassignActions,
   type QueueActionMode,
 } from "@/lib/queue-advanced-actions-state";
+import { getRejectReturnTargetOptions } from "@/lib/reject-return-routing-state";
 import { getTrackingHandoffPanelState } from "@/lib/tracking-handoff-panel-state";
 import { getCollaborationStatusPanelState } from "@/lib/collaboration-status-panel-state";
 import type {
@@ -156,7 +157,7 @@ export function QueueView({
   setContributorBlocksApproval: (value: boolean) => void;
   contributorRequestError: string;
   onRequestContributor: () => void;
-  recordAction: (action: ApprovalAction) => void;
+  recordAction: (action: ApprovalAction, returnTargetNodeIds?: string[]) => void;
   activeUserEmail: string;
   userDirectory: UserDirectoryEntry[];
   workflowTemplates: WorkflowTemplate[];
@@ -170,6 +171,7 @@ export function QueueView({
   const [queueActionMode, setQueueActionMode] =
     useState<QueueActionMode>("normal");
   const [contributorRequestExpanded, setContributorRequestExpanded] = useState(false);
+  const [rejectReturnTargetId, setRejectReturnTargetId] = useState("originator");
 
   if (!selectedTask) {
     return (
@@ -202,6 +204,13 @@ export function QueueView({
     showReassignActions,
     actionMode: queueActionMode,
   });
+  const rejectReturnTargetOptions = getRejectReturnTargetOptions({
+    task: selectedTask,
+    template: selectedTemplate,
+  });
+  const selectedRejectReturnTarget =
+    rejectReturnTargetOptions.find((option) => option.id === rejectReturnTargetId) ||
+    rejectReturnTargetOptions[0];
   const actionModeCopy = {
     reassign: {
       title: "Reassign request",
@@ -538,10 +547,40 @@ export function QueueView({
                 activeUserEmail={activeUserEmail}
               />
             ) : null}
+            {!originatorAction && !pendingReassignmentRequest && rejectReturnTargetOptions.length > 1 && (
+              <details className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3">
+                <summary className="cursor-pointer text-sm font-medium text-neutral-200">
+                  Return to...
+                </summary>
+                <label className="mt-3 block">
+                  <span className="mb-1 block text-xs text-neutral-400">
+                    Reject return target
+                  </span>
+                  <select
+                    value={selectedRejectReturnTarget?.id || "originator"}
+                    onChange={(event) => setRejectReturnTargetId(event.target.value)}
+                    className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                  >
+                    {rejectReturnTargetOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {selectedRejectReturnTarget?.description && (
+                  <p className="mt-2 text-xs text-neutral-500">
+                    {selectedRejectReturnTarget.description}
+                  </p>
+                )}
+              </details>
+            )}
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {availableActions.map((action) => {
                 const Icon = actionConfig[action].icon;
                 const needsTarget = action === "reassign" || action === "delegate";
+                const isRejectAction =
+                  action === "reject" || action === "reject_with_comment";
                 const needsCurrentDocuments =
                   (action === "approve" || action === "approve_with_comment") &&
                   missingCurrentDocuments.length > 0;
@@ -551,7 +590,14 @@ export function QueueView({
                     key={action}
                     type="button"
                     disabled={disabled}
-                    onClick={() => recordAction(action)}
+                    onClick={() =>
+                      recordAction(
+                        action,
+                        isRejectAction
+                          ? selectedRejectReturnTarget?.nodeIds || []
+                          : [],
+                      )
+                    }
                     className={`flex min-h-11 items-center justify-center gap-2 rounded-md border px-3 py-2 text-center text-sm leading-tight transition disabled:cursor-not-allowed disabled:opacity-45 ${actionConfig[action].tone}`}
                   >
                     <Icon size={15} className="shrink-0" />

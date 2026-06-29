@@ -139,6 +139,91 @@ function makeGraphTemplate() {
   };
 }
 
+function makeParallelReturnTemplate() {
+  return {
+    id: "payment-cert",
+    name: "Payment cert",
+    business: "Chun Wo",
+    department: "Commercial",
+    documentTypes: [],
+    documents: [],
+    languages: ["English"],
+    fields: [],
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+        {
+          id: "qs",
+          kind: "approval",
+          label: "QS",
+          x: 200,
+          y: 0,
+          assigneeName: "QS",
+          assigneeEmail: "qs@example.com",
+        },
+        {
+          id: "qs-manager",
+          kind: "approval",
+          label: "QS Manager",
+          x: 400,
+          y: -80,
+          assigneeName: "QS Manager",
+          assigneeEmail: "qs-manager@example.com",
+        },
+        {
+          id: "commercial-director",
+          kind: "approval",
+          label: "Commercial Director",
+          x: 400,
+          y: 80,
+          assigneeName: "Commercial Director",
+          assigneeEmail: "commercial@example.com",
+        },
+        {
+          id: "supervisor",
+          kind: "review",
+          label: "Supervisor endorsement",
+          x: 640,
+          y: 0,
+          assigneeName: "Supervisor",
+          assigneeEmail: "supervisor@example.com",
+        },
+        {
+          id: "cfo",
+          kind: "approval",
+          label: "CFO approval",
+          x: 860,
+          y: -80,
+          assigneeName: "CFO",
+          assigneeEmail: "cfo@example.com",
+        },
+        {
+          id: "chairman",
+          kind: "approval",
+          label: "Chairman",
+          x: 860,
+          y: 80,
+          assigneeName: "Chairman",
+          assigneeEmail: "chairman@example.com",
+        },
+        { id: "end", kind: "end", label: "End", x: 1080, y: 0 },
+      ],
+      edges: [
+        { id: "edge-start-qs", sourceId: "start", targetId: "qs", label: "Start", branchType: "main" },
+        { id: "edge-qs-manager", sourceId: "qs", targetId: "qs-manager", label: "Main", branchType: "main" },
+        { id: "edge-qs-director", sourceId: "qs", targetId: "commercial-director", label: "Main", branchType: "main" },
+        { id: "edge-manager-supervisor", sourceId: "qs-manager", targetId: "supervisor", label: "Main", branchType: "main" },
+        { id: "edge-director-supervisor", sourceId: "commercial-director", targetId: "supervisor", label: "Main", branchType: "main" },
+        { id: "edge-supervisor-cfo", sourceId: "supervisor", targetId: "cfo", label: "Main", branchType: "main" },
+        { id: "edge-supervisor-chairman", sourceId: "supervisor", targetId: "chairman", label: "Main", branchType: "main" },
+        { id: "edge-cfo-end", sourceId: "cfo", targetId: "end", label: "Main", branchType: "main" },
+        { id: "edge-chairman-end", sourceId: "chairman", targetId: "end", label: "Main", branchType: "main" },
+      ],
+    },
+  };
+}
+
 function makeAllNodeKindsTemplate(conditionCases) {
   return {
     id: "all-node-kinds",
@@ -1266,6 +1351,82 @@ test("reject follows a configured rejected branch when provided", () => {
   assert.equal(result.currentNodeId, "originator-review");
   assert.equal(result.activeBranchId, "edge-approval-1-rejected");
   assert.ok(result.auditTrail.some((event) => event.detail.includes("Please amend")));
+});
+
+test("reject can return to a selected parallel upstream stage and resume forward", () => {
+  const template = makeParallelReturnTemplate();
+  const supervisorTask = {
+    ...makeTask(),
+    workflowTemplateId: template.id,
+    workflow: template.name,
+    currentStep: "Supervisor endorsement",
+    currentOwner: "supervisor@example.com",
+    currentNodeId: "supervisor",
+    pendingNodeIds: ["supervisor"],
+    pendingOwners: ["supervisor@example.com"],
+    completedNodeIds: ["start", "qs", "qs-manager", "commercial-director"],
+    nodeDecisions: {
+      qs: "approved",
+      "qs-manager": "approved",
+      "commercial-director": "approved",
+    },
+    participants: [
+      "mandy@example.com",
+      "qs@example.com",
+      "qs-manager@example.com",
+      "commercial@example.com",
+      "supervisor@example.com",
+    ],
+  };
+
+  const returned = applyTaskAction(supervisorTask, {
+    action: "reject_with_comment",
+    actor: { name: "Supervisor", email: "supervisor@example.com" },
+    comment: "Please recheck the amount",
+    template,
+    returnTargetNodeIds: ["qs-manager", "commercial-director"],
+  });
+
+  assert.equal(returned.status, "pending");
+  assert.deepEqual(returned.pendingNodeIds, ["qs-manager", "commercial-director"]);
+  assert.deepEqual(returned.pendingOwners, [
+    "qs-manager@example.com",
+    "commercial@example.com",
+  ]);
+  assert.equal(returned.currentOwner, "qs-manager@example.com");
+  assert.equal(returned.currentNodeId, "qs-manager");
+  assert.deepEqual(returned.completedNodeIds, ["start", "qs"]);
+  assert.equal(returned.nodeDecisions?.supervisor, "rejected");
+  assert.equal(returned.nodeDecisions?.["qs-manager"], undefined);
+  assert.equal(returned.nodeDecisions?.["commercial-director"], undefined);
+  assert.ok(
+    returned.auditTrail.some((event) =>
+      event.detail.includes("Returned to QS Manager + Commercial Director"),
+    ),
+  );
+
+  const managerApproved = applyTaskAction(returned, {
+    action: "approve",
+    actor: { name: "QS Manager", email: "qs-manager@example.com" },
+    template,
+  });
+
+  assert.equal(managerApproved.currentNodeId, "commercial-director");
+  assert.deepEqual(managerApproved.pendingNodeIds, ["commercial-director"]);
+  assert.equal(managerApproved.nodeDecisions?.["qs-manager"], "approved");
+  assert.equal(managerApproved.nodeDecisions?.supervisor, "rejected");
+
+  const directorApproved = applyTaskAction(managerApproved, {
+    action: "approve",
+    actor: { name: "Commercial Director", email: "commercial@example.com" },
+    template,
+  });
+
+  assert.equal(directorApproved.status, "pending");
+  assert.equal(directorApproved.currentNodeId, "supervisor");
+  assert.equal(directorApproved.currentOwner, "supervisor@example.com");
+  assert.deepEqual(directorApproved.pendingNodeIds, ["supervisor"]);
+  assert.equal(directorApproved.nodeDecisions?.supervisor, undefined);
 });
 
 test("reassign requests acceptance before transferring ownership", () => {
