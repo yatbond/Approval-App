@@ -66,6 +66,18 @@ test("workflow builder exposes approval instead of separate review nodes", () =>
   assert.equal(viewSource.includes("approval, review, FYI"), false);
 });
 
+test("workflow builder does not expose end as a user-created box", () => {
+  const contextSource = readFileSync("src/lib/workflow-condition-context.ts", "utf8");
+  const viewSource = readFileSync("src/app/workflow-view.tsx", "utf8");
+
+  assert.equal(contextSource.includes('{ kind: "end", label: "End" }'), false);
+  assert.equal(viewSource.includes("The start and end boxes cannot be deleted."), true);
+  assert.equal(
+    viewSource.includes('selectedGraphNode?.id === "start" || selectedGraphNode?.id === "end"'),
+    true,
+  );
+});
+
 test("sample recognition trains existing fields with a large box selector", () => {
   const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
 

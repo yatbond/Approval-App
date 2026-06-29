@@ -60,6 +60,42 @@ test("protects the start node and can delete the selected edge instead", () => {
   assert.deepEqual(result.graph.edges, []);
 });
 
+test("protects the default end node and can delete the selected edge instead", () => {
+  const result = getWorkflowCanvasDeleteState({
+    graph,
+    selectedNodeId: "end",
+    selectedEdgeId: "edge-1",
+    connectFromNodeId: "end",
+  });
+
+  assert.equal(result.didDelete, true);
+  assert.equal(result.label, "Deleted Approved branch");
+  assert.equal(result.selectedNodeId, "end");
+  assert.equal(result.selectedEdgeId, null);
+  assert.equal(result.connectFromNodeId, "end");
+  assert.deepEqual(
+    result.graph.nodes.map((node) => node.id),
+    ["start", "review-1", "end"],
+  );
+  assert.deepEqual(result.graph.edges, []);
+});
+
+test("does not delete the default end node when no branch is selected", () => {
+  const result = getWorkflowCanvasDeleteState({
+    graph,
+    selectedNodeId: "end",
+    selectedEdgeId: null,
+    connectFromNodeId: "review-1",
+  });
+
+  assert.equal(result.didDelete, false);
+  assert.equal(result.label, "");
+  assert.equal(result.graph, graph);
+  assert.equal(result.selectedNodeId, "end");
+  assert.equal(result.selectedEdgeId, null);
+  assert.equal(result.connectFromNodeId, "review-1");
+});
+
 test("returns unchanged state when no deletable selection exists", () => {
   const result = getWorkflowCanvasDeleteState({
     graph,

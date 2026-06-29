@@ -227,9 +227,9 @@ test("formats workflow node kind labels", () => {
     { kind: "approval", label: "Approval" },
     { kind: "for_information", label: "FYI" },
     { kind: "condition", label: "Condition" },
-    { kind: "end", label: "End" },
   ]);
   assert.equal(formatNodeKind("submit_request"), "Submit");
+  assert.equal(formatNodeKind("end"), "End");
   assert.equal(formatNodeKind("review"), "Approval");
   assert.equal(formatNodeKind("return_reject"), "Return/Reject");
   assert.equal(formatNodeKind("start"), "Start");

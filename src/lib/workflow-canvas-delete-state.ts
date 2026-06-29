@@ -28,7 +28,7 @@ export function getWorkflowCanvasDeleteState({
 }: WorkflowCanvasDeleteStateInput): WorkflowCanvasDeleteState {
   const selectedNode =
     graph.nodes.find((node) => node.id === selectedNodeId) || null;
-  if (selectedNode && selectedNode.id !== "start") {
+  if (selectedNode && selectedNode.id !== "start" && selectedNode.id !== "end") {
     return {
       didDelete: true,
       graph: deleteWorkflowNode(graph, selectedNode.id),

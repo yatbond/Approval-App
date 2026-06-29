@@ -1156,10 +1156,12 @@ export function WorkflowView({
                       <button
                         type="button"
                         onClick={() => void deleteSelectedCanvasItem()}
-                        disabled={selectedGraphNode?.id === "start"}
+                        disabled={
+                          selectedGraphNode?.id === "start" || selectedGraphNode?.id === "end"
+                        }
                         title={
-                          selectedGraphNode?.id === "start"
-                            ? "The start box cannot be deleted."
+                          selectedGraphNode?.id === "start" || selectedGraphNode?.id === "end"
+                            ? "The start and end boxes cannot be deleted."
                             : "Delete the selected box or branch from the workflow canvas."
                         }
                         className="flex min-h-8 items-center justify-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 text-xs text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-45"
@@ -1191,7 +1193,10 @@ export function WorkflowView({
                           ? "approval"
                           : selectedGraphNode.kind
                       }
-                      title="Choose what this box does in the workflow: submit request, approval, FYI, condition, or end."
+                      title="Choose what this box does in the workflow. Start and end boxes are fixed workflow boundaries."
+                      disabled={
+                        selectedGraphNode.id === "start" || selectedGraphNode.id === "end"
+                      }
                       onChange={(event) =>
                         updateSelectedNode({
                           kind: event.target.value as WorkflowNodeKind,
@@ -1203,6 +1208,9 @@ export function WorkflowView({
                       className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
                     >
                       <option value="start">Start</option>
+                      {selectedGraphNode.id === "end" && (
+                        <option value="end">End</option>
+                      )}
                       {workflowNodeOptions.map((option) => (
                         <option key={option.kind} value={option.kind}>
                           {option.label}

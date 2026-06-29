@@ -72,16 +72,21 @@ test("nudges new boxes away from occupied positions", () => {
   assert.equal(created?.y, 200);
 });
 
-test("creates nonblocking for-information and end boxes with the expected defaults", () => {
+test("creates nonblocking for-information boxes with the expected defaults", () => {
   const fyi = getWorkflowCreateNodeState({ graph, kind: "for_information" });
-  const end = getWorkflowCreateNodeState({ graph, kind: "end" });
 
   assert.equal(fyi.graph.nodes.at(-1)?.blocking, false);
   assert.equal(fyi.graph.nodes.at(-1)?.assigneeName, undefined);
   assert.equal(fyi.graph.nodes.at(-1)?.assigneeEmail, undefined);
-  assert.equal(end.graph.nodes.at(-1)?.blocking, false);
-  assert.equal(end.graph.nodes.at(-1)?.assigneeName, undefined);
-  assert.equal(end.graph.nodes.at(-1)?.assigneeEmail, undefined);
+});
+
+test("does not create extra end boxes from the canvas toolbar", () => {
+  const result = getWorkflowCreateNodeState({ graph, kind: "end" });
+
+  assert.equal(result.didUpdate, false);
+  assert.equal(result.label, "");
+  assert.equal(result.graph, graph);
+  assert.equal(result.selectedNodeId, undefined);
 });
 
 test("creates a blocking submit request box without a fixed owner", () => {

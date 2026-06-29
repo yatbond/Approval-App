@@ -26,11 +26,19 @@ export function getWorkflowCreateNodeState({
   kind: WorkflowNodeKind;
   selectedNodeId?: string | null;
 }): WorkflowCanvasEditState {
+  if (kind === "end") {
+    return {
+      didUpdate: false,
+      graph,
+      label: "",
+    };
+  }
+
   const position = getNewNodePosition(graph, selectedNodeId);
   const nextGraph = addWorkflowNode(graph, kind, {
     x: position.x,
     y: position.y,
-    blocking: kind !== "for_information" && kind !== "end",
+    blocking: kind !== "for_information",
   });
   const created = nextGraph.nodes.at(-1);
 
