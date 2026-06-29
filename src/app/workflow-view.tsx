@@ -64,6 +64,10 @@ import {
   appendExtractionExamplesToTemplate,
 } from "@/lib/template-recognition-state";
 import {
+  getWorkflowHandoffFieldNames,
+  toggleWorkflowHandoffFieldName,
+} from "@/lib/workflow-handoff-fields-state";
+import {
   getWorkflowAddOutcomeTargetState,
   getWorkflowAddConditionCaseState,
   getWorkflowAddFallbackConditionCaseState,
@@ -1203,10 +1207,12 @@ export function WorkflowView({
                     </select>
                   </label>
                   <label className="block">
-                    <span className="mb-1 block text-xs text-neutral-400">Name</span>
+                    <span className="mb-1 block text-xs text-neutral-400">
+                      Position Name
+                    </span>
                     <input
                       value={selectedGraphNode.label}
-                      title="Display name shown inside this workflow box on the canvas."
+                      title="Position or role name shown inside this workflow box on the canvas."
                       onChange={(event) => updateSelectedNode({ label: event.target.value })}
                       className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
                     />
@@ -1467,32 +1473,59 @@ export function WorkflowView({
                         {selectedGraphNode.handoffView?.fieldVisibility?.mode &&
                           selectedGraphNode.handoffView.fieldVisibility.mode !==
                             "all" && (
-                            <label className="block">
-                              <span className="mb-1 block text-xs text-neutral-400">
-                                Value names
-                              </span>
-                              <input
-                                value={formatHandoffNameList(
-                                  selectedGraphNode.handoffView.fieldVisibility
-                                    .fieldNames,
-                                )}
-                                onChange={(event) =>
-                                  updateSelectedNodeHandoffView({
-                                    fieldVisibility: {
-                                      mode:
-                                        selectedGraphNode.handoffView
-                                          ?.fieldVisibility?.mode || "selected",
-                                      fieldNames: parseHandoffNameList(
-                                        event.target.value,
-                                      ),
-                                    },
-                                  })
-                                }
-                                list="workflow-handoff-field-names"
-                                placeholder="Amount, Supplier"
-                                className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
-                              />
-                            </label>
+                            <div className="space-y-2 rounded-md border border-white/10 bg-[#121518] p-2">
+                              <p className="text-xs font-semibold text-neutral-400">
+                                {selectedGraphNode.handoffView.fieldVisibility
+                                  .mode === "hidden"
+                                  ? "Values to hide"
+                                  : "Values to show"}
+                              </p>
+                              {handoffFieldNames.length ? (
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  {handoffFieldNames.map((fieldName) => (
+                                    <label
+                                      key={fieldName}
+                                      className="flex min-h-9 items-start gap-2 rounded-md border border-white/10 bg-[#101214] px-2 py-2 text-xs text-neutral-300"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={(
+                                          selectedGraphNode.handoffView
+                                            ?.fieldVisibility?.fieldNames || []
+                                        ).includes(fieldName)}
+                                        onChange={(event) =>
+                                          updateSelectedNodeHandoffView({
+                                            fieldVisibility: {
+                                              mode:
+                                                selectedGraphNode.handoffView
+                                                  ?.fieldVisibility?.mode ||
+                                                "selected",
+                                              fieldNames:
+                                                toggleWorkflowHandoffFieldName(
+                                                  selectedGraphNode.handoffView
+                                                    ?.fieldVisibility
+                                                    ?.fieldNames,
+                                                  fieldName,
+                                                  event.target.checked,
+                                                ),
+                                            },
+                                          })
+                                        }
+                                        className="mt-0.5"
+                                      />
+                                      <span className="min-w-0 break-words">
+                                        {fieldName}
+                                      </span>
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="rounded-md border border-dashed border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
+                                  Add workflow fields or document extraction
+                                  fields first.
+                                </p>
+                              )}
+                            </div>
                           )}
                         <label className="block">
                           <span className="mb-1 block text-xs text-neutral-400">
@@ -2103,30 +2136,6 @@ function workflowLifecycleToneClassName(statusTone: string) {
     return "border-white/10 bg-white/[0.04] text-neutral-400";
   }
   return "border-amber-400/30 bg-amber-400/10 text-amber-100";
-}
-
-function getWorkflowHandoffFieldNames(template: WorkflowTemplate) {
-  const fieldNames = [
-    ...template.fields.map((field) => field.label || field.name),
-    ...template.documents.flatMap((document) =>
-      document.fields.map((field) => field.label || field.name),
-    ),
-  ];
-
-  return Array.from(
-    new Set(fieldNames.map((fieldName) => fieldName.trim()).filter(Boolean)),
-  );
-}
-
-function parseHandoffNameList(value: string) {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function formatHandoffNameList(value?: string[]) {
-  return (value || []).join(", ");
 }
 
 function nextHandoffProcessId(processes: WorkflowHandoffProcess[]) {
