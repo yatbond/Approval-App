@@ -245,9 +245,52 @@ function createTaskId(now: Date) {
 }
 
 function findDisplayValue(fields: Record<string, string>) {
-  const candidates = ["Total", "Amount", "Invoice total", "invoice_total"];
-  const match = candidates.find((field) => fields[field]?.trim());
-  return match ? fields[match] : "Pending extraction";
+  const entries = Object.entries(fields).filter(([, value]) => value.trim());
+  const normalizedEntries = entries.map(([label, value]) => ({
+    label,
+    normalizedLabel: normalizeFieldLabel(label),
+    value,
+  }));
+  const exactCandidates = [
+    "total outstanding",
+    "payment amount",
+    "amount",
+    "total",
+    "invoice total",
+    "invoice_total",
+    "total value of work done",
+    "value of work done",
+    "contract sum",
+  ].map(normalizeFieldLabel);
+  const exactMatch = exactCandidates
+    .map((candidate) =>
+      normalizedEntries.find((entry) => entry.normalizedLabel === candidate),
+    )
+    .find(Boolean);
+  if (exactMatch) {
+    return exactMatch.value;
+  }
+
+  const paymentLikeMatch = normalizedEntries.find((entry) =>
+    /\b(total|amount|outstanding|payable|payment|value)\b/.test(
+      entry.normalizedLabel,
+    ),
+  );
+  if (paymentLikeMatch) {
+    return paymentLikeMatch.value;
+  }
+
+  return entries[0]?.[1] || "Pending extraction";
+}
+
+function normalizeFieldLabel(label: string) {
+  return label
+    .trim()
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function uniqueEmails(emails: Array<string | undefined>) {

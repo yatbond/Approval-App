@@ -89,6 +89,36 @@ test("generates a request id from the submission timestamp when none is supplied
   assert.equal(task.auditTrail[1].id, "APR-1781748000-event-2");
 });
 
+test("uses extracted payment-like fields as the request summary value", () => {
+  const task = createApprovalTaskFromTemplate({
+    id: "APR-PAYMENT",
+    now: new Date("2026-06-18T10:00:00+08:00"),
+    requester: { name: "Derrick", email: "derrick@example.com" },
+    template,
+    extractedFields: {
+      "subcontractor name": "Ming Kee Construction",
+      "Total Outstanding": "500,000.00",
+      "Total Value of Work Done": "2,544,417.30",
+    },
+  });
+
+  assert.equal(task.value, "500,000.00");
+});
+
+test("falls back to the first extracted value before pending extraction", () => {
+  const task = createApprovalTaskFromTemplate({
+    id: "APR-FALLBACK",
+    now: new Date("2026-06-18T10:00:00+08:00"),
+    requester: { name: "Derrick", email: "derrick@example.com" },
+    template,
+    extractedFields: {
+      "Subcontract No.": "D061/0848/SU/S-003/000",
+    },
+  });
+
+  assert.equal(task.value, "D061/0848/SU/S-003/000");
+});
+
 test("routes a request from the workflow canvas graph", () => {
   const task = createApprovalTaskFromTemplate({
     id: "APR-GRAPH",
