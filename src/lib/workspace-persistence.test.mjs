@@ -1,0 +1,194 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+  parseWorkspaceState,
+  serializeWorkspaceState,
+} from "./workspace-persistence.ts";
+
+test("serializes and parses workspace state", () => {
+  const state = {
+    selectedTemplateId: "template-1",
+    approvalTasks: [
+      {
+        id: "APR-1",
+        title: "Request 1",
+        workflow: "Template 1",
+        requester: "Derrick",
+        requesterEmail: "derrick@example.com",
+        department: "Finance",
+        status: "pending",
+        due: "Today",
+        value: "HKD 100",
+        currentStep: "Approval",
+        currentOwner: "approver@example.com",
+        participants: ["derrick@example.com", "approver@example.com"],
+        lastAction: "Submitted",
+        extractedFields: { Total: "HKD 100" },
+        auditTrail: [],
+      },
+    ],
+    businessDirectory: [
+      {
+        id: "business-1",
+        name: "Business 1",
+        departments: ["Finance"],
+      },
+    ],
+    workflowTemplates: [
+      {
+        id: "template-1",
+        name: "Template 1",
+        business: "Business 1",
+        department: "Finance",
+        documentTypes: ["Invoice"],
+        documents: [
+          {
+            id: "document-1",
+            documentType: "Invoice",
+            format: "pdf",
+            required: true,
+            fields: [],
+          },
+        ],
+        languages: ["English"],
+        fields: [],
+        steps: [
+          {
+            name: "Finance approval 1",
+            role: "Approver",
+            approverName: "Approver",
+            approverEmail: "approver@example.com",
+            department: "Finance",
+            dueInHours: 24,
+            escalationRole: "Manager",
+            escalationName: "Manager",
+            escalationEmail: "manager@example.com",
+            condition: "Always",
+          },
+        ],
+      },
+    ],
+    userRoleAssignments: [
+      {
+        email: "approver@example.com",
+        name: "Approver",
+        role: "approver",
+        businessId: "business-1",
+        department: "Finance",
+      },
+    ],
+    adminAuditEvents: [
+      {
+        id: "template-template-1-1782025200000-created",
+        action: "template_created",
+        actor: "Derrick Pang",
+        actorEmail: "dpang@chunwo.com",
+        timestamp: "2026-06-21T07:00:00.000Z",
+        detail: "Created template Template 1.",
+        templateId: "template-1",
+        templateName: "Template 1",
+        templateVersion: 1,
+      },
+    ],
+  };
+
+  assert.deepEqual(parseWorkspaceState(serializeWorkspaceState(state)), state);
+});
+
+test("returns null for invalid saved workspace state", () => {
+  assert.equal(parseWorkspaceState("{not valid json"), null);
+  assert.equal(parseWorkspaceState(JSON.stringify({ selectedTemplateId: 42 })), null);
+});
+
+test("parses older workspace state without saved approval tasks", () => {
+  const parsed = parseWorkspaceState(
+    JSON.stringify({
+      selectedTemplateId: "template-1",
+      businessDirectory: [],
+      workflowTemplates: [],
+    }),
+  );
+
+  assert.deepEqual(parsed?.approvalTasks, []);
+  assert.deepEqual(parsed?.adminAuditEvents, []);
+});
+
+test("keeps bounded workflow sample OCR images during workspace persistence", () => {
+  const state = {
+    selectedTemplateId: "template-1",
+    approvalTasks: [],
+    businessDirectory: [],
+    workflowTemplates: [
+      {
+        id: "template-1",
+        name: "Template 1",
+        business: "Business 1",
+        department: "Finance",
+        documentTypes: ["Invoice"],
+        documents: [
+          {
+            id: "document-1",
+            documentType: "Invoice",
+            format: "pdf",
+            required: true,
+            fields: [],
+            sample: {
+              fileName: "sample.pdf",
+              mimeType: "application/pdf",
+              dataUrl: `data:application/pdf;base64,${"x".repeat(1000)}`,
+              previewPages: [
+                {
+                  pageNumber: 1,
+                  mimeType: "image/png",
+                  imageBase64: "y".repeat(1000),
+                  pageText: "Subcontractor Ming Kee",
+                },
+              ],
+              pageImages: [
+                {
+                  pageNumber: 1,
+                  mimeType: "image/png",
+                  imageBase64: "z".repeat(1000),
+                  pageText: "Subcontractor Ming Kee",
+                },
+              ],
+              savedAt: "2026-06-29T01:00:00.000Z",
+            },
+          },
+        ],
+        languages: ["English"],
+        fields: [],
+        steps: [],
+      },
+    ],
+    userRoleAssignments: [],
+    adminAuditEvents: [],
+  };
+
+  const serialized = serializeWorkspaceState(state);
+  assert.equal(serialized.includes("data:application/pdf"), false);
+  assert.equal(serialized.includes("y".repeat(100)), false);
+  assert.equal(serialized.includes("z".repeat(100)), true);
+
+  const parsed = parseWorkspaceState(JSON.stringify(state));
+  assert.deepEqual(parsed?.workflowTemplates[0].documents[0].sample, {
+    fileName: "sample.pdf",
+    mimeType: "application/pdf",
+    previewPages: [
+      {
+        pageNumber: 1,
+        mimeType: "image/png",
+        pageText: "Subcontractor Ming Kee",
+      },
+    ],
+    pageImages: [
+      {
+        pageNumber: 1,
+        mimeType: "image/png",
+        imageBase64: "z".repeat(1000),
+        pageText: "Subcontractor Ming Kee",
+      },
+    ],
+    savedAt: "2026-06-29T01:00:00.000Z",
+  });
+});

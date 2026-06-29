@@ -1,0 +1,184 @@
+"use client";
+
+import { FileText, Plus, RotateCcw, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { InfoTip } from "./ui-hint";
+import {
+  getUploadDraftResumeItems,
+  type SavedUploadRequestDraft,
+  type UploadRequestDraft,
+  type UploadRequestDraftStatus,
+} from "@/lib/upload-request-draft-state";
+import type { WorkflowTemplate } from "@/lib/types";
+
+export function UploadDraftsView({
+  currentDraft,
+  uploadDraftStatus,
+  savedUploadDrafts,
+  workflowTemplates,
+  selectedUploadDraftId,
+  activeUserEmail,
+  activeUserId,
+  onResumeSavedDraft,
+  onClearCurrentDraft,
+  onDeleteRequestDraft,
+}: {
+  currentDraft: UploadRequestDraft | null;
+  uploadDraftStatus: UploadRequestDraftStatus;
+  savedUploadDrafts: SavedUploadRequestDraft[];
+  workflowTemplates: WorkflowTemplate[];
+  selectedUploadDraftId: string;
+  activeUserEmail: string;
+  activeUserId?: string;
+  onResumeSavedDraft: (draft: SavedUploadRequestDraft) => void;
+  onClearCurrentDraft: () => void;
+  onDeleteRequestDraft: (draftId: string) => void;
+}) {
+  const resumeItems = getUploadDraftResumeItems({
+    activeUserEmail,
+    activeUserId,
+    activeDraftId: selectedUploadDraftId,
+    currentDraft,
+    currentDraftStatus: uploadDraftStatus,
+    savedDrafts: savedUploadDrafts,
+    templates: workflowTemplates,
+  });
+  const savedDraftById = new Map(savedUploadDrafts.map((draft) => [draft.id, draft]));
+
+  return (
+    <section className="rounded-md border border-white/10 bg-white/[0.03]">
+      <div className="flex flex-col gap-3 border-b border-white/10 p-5 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">Drafts</h2>
+            <InfoTip label="Resume interrupted uploads, OCR review, highlighted fields, and saved attachments." />
+          </div>
+        </div>
+        <Link
+          href="/?tab=upload"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
+        >
+          <Plus size={16} />
+          New
+        </Link>
+      </div>
+
+      {resumeItems.length === 0 ? (
+        <div className="p-5">
+          <div className="rounded-md border border-dashed border-white/10 bg-[#121518] p-6 text-center">
+            <FileText className="mx-auto text-neutral-500" size={28} />
+            <p className="mt-3 text-sm font-medium text-neutral-200">
+              Empty
+            </p>
+            <p className="mx-auto mt-1 max-w-xl text-sm text-neutral-500">
+              Save from Upload.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-3 p-4 sm:p-5 xl:grid-cols-2">
+          {resumeItems.map((item) => {
+            const savedDraft = savedDraftById.get(item.id);
+            return (
+              <article
+                key={item.id}
+                className={`rounded-md border p-4 ${
+                  item.id === selectedUploadDraftId
+                    ? "border-emerald-400/50 bg-emerald-400/5"
+                    : "border-white/10 bg-[#121518]"
+                }`}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="break-words text-sm font-semibold text-neutral-100">
+                        {item.title}
+                      </p>
+                      <span className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-neutral-400">
+                        {item.type === "current" ? "Autosave" : "Saved draft"}
+                      </span>
+                      <span className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-neutral-400">
+                        {item.accessLabel}
+                      </span>
+                    </div>
+                    <p className="mt-2 break-words text-sm text-neutral-400">
+                      {item.templateName}
+                    </p>
+                    <p className="mt-1 break-words text-xs text-neutral-500">
+                      {item.fileName}
+                    </p>
+                  </div>
+                  <div className="text-left text-xs text-neutral-500 sm:text-right">
+                    <p>{item.detail}</p>
+                    <p className="mt-1">{formatDraftDate(item.updatedAt)}</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                  {item.type === "current" ? (
+                    <>
+                      <Link
+                        href="/?tab=upload"
+                        className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20"
+                      >
+                        <RotateCcw size={15} />
+                        Resume
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={onClearCurrentDraft}
+                        disabled={!item.canDelete}
+                        className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500 sm:flex-none"
+                      >
+                        <Trash2 size={15} />
+                        Clear
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        item.canResume && savedDraft && onResumeSavedDraft(savedDraft)
+                      }
+                      disabled={!item.canResume}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500"
+                    >
+                      <RotateCcw size={15} />
+                      Resume
+                    </button>
+                  )}
+                  {item.type === "saved" && (
+                    <button
+                      type="button"
+                      onClick={() => item.canDelete && onDeleteRequestDraft(item.id)}
+                      disabled={!item.canDelete}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500 sm:flex-none"
+                    >
+                      <Trash2 size={15} />
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function formatDraftDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Saved time unavailable";
+  }
+
+  return `${date.getUTCFullYear()}-${padDatePart(date.getUTCMonth() + 1)}-${padDatePart(
+    date.getUTCDate(),
+  )} ${padDatePart(date.getUTCHours())}:${padDatePart(date.getUTCMinutes())} UTC`;
+}
+
+function padDatePart(value: number) {
+  return String(value).padStart(2, "0");
+}

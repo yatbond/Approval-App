@@ -1,149 +1,1386 @@
 "use client";
 
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle,
-  ArrowRightLeft,
-  Bell,
-  CalendarClock,
-  Check,
-  ClipboardList,
-  FileSpreadsheet,
-  FileText,
-  Image as ImageIcon,
-  Loader2,
-  LogOut,
-  MessageSquare,
-  Plus,
-  RotateCcw,
-  Send,
-  Settings,
-  ShieldCheck,
-  Upload,
-  UserPlus,
-  X,
-} from "lucide-react";
-import Link from "next/link";
-import { useMemo, useState } from "react";
-import {
-  approvalTasks,
   notifications,
 } from "@/lib/mock-data";
-import type { ApprovalAction, ApprovalTask, WorkflowTemplate } from "@/lib/types";
-
-type Tab = "queue" | "upload" | "workflow" | "admin";
-
-type ParseResult = {
-  strategy: string;
-  fields: Record<string, string>;
-  confidence: Record<string, string>;
-  notes: string[];
-  tables?: { sheetName: string; rows: Record<string, unknown>[] }[];
-};
-
-const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "queue", label: "Queue", icon: ClipboardList },
-  { id: "upload", label: "Upload", icon: Upload },
-  { id: "workflow", label: "Workflow", icon: Settings },
-  { id: "admin", label: "Admin", icon: ShieldCheck },
-];
-
-const actionConfig: Record<
+import {
+  parseWorkspaceFile,
+  type ParsedWorkspaceFilePayload,
+  uploadWorkspaceAttachmentFile,
+} from "@/lib/workspace-file-api";
+import {
+  buildPreviewPagesFromPdfImages,
+  readImageFileAsPreviewPage,
+  type DocumentPreviewPage,
+} from "@/lib/document-preview";
+import {
+  getPdfOcrRenderOptions,
+  getPdfPreviewRenderOptions,
+  isPdfFile,
+  renderPdfFileToPageImages,
+  shouldRenderPdfForVision,
+} from "@/lib/pdf-page-images";
+import {
+  getWorkspaceParseFileStartState,
+  getWorkspaceParseFileStoredAttachmentState,
+  getWorkspaceParseFileSuccessState,
+} from "@/lib/workspace-parse-file-state";
+import {
+  appendExtractionExamplesToTemplate,
+  buildExtractionTrainingExamples,
+} from "@/lib/template-recognition-state";
+import {
+  buildSavedUploadRequestDraft,
+  buildUploadRequestDraft,
+  clearUploadRequestDraft,
+  createEmptyUploadRequestDraftStatus,
+  getCurrentAutosaveUploadRequestDraft,
+  getCreatorVisibleUploadRequestDrafts,
+  getUploadAutosaveIdentity,
+  getNamedSavedUploadRequestDrafts,
+  getNextSavedUploadRequestDrafts,
+  parseUploadRequestDraft,
+  parseUploadRequestDraftList,
+  serializeUploadRequestDraftList,
+  serializeUploadRequestDraft,
+  type SavedUploadRequestDraft,
+} from "@/lib/upload-request-draft-state";
+import {
+  deleteSavedUploadRequestDraft,
+  loadSavedUploadRequestDrafts,
+  saveSavedUploadRequestDraft,
+} from "@/lib/upload-request-draft-api";
+import type {
+  HighlightFieldGroup,
+} from "@/lib/upload-view-state";
+import {
+  buildEmailOutboxEntries,
+  mergeEmailOutboxEntries,
+  type EmailOutboxEntry,
+} from "@/lib/email-outbox-state";
+import {
+  buildTaskNotifications,
+  mergeTaskNotifications,
+  type TaskNotification,
+} from "@/lib/workflow-system";
+import { buildCollaborationNotifications } from "@/lib/collaboration-notification-state";
+import {
+  getTaskCorrectionUploadState,
+  getTaskSharedFulfillmentDecisionState,
+} from "@/lib/shared-fulfillment-state";
+import { useApprovalWorkspaceState } from "@/app/use-approval-workspace-state";
+import {
+  QueueView,
+  TrackingView,
+} from "@/app/task-views";
+import { UploadView } from "@/app/upload-view";
+import { AdminView } from "@/app/admin-view";
+import { WorkflowView } from "@/app/workflow-view";
+import {
+  WorkspaceShell,
+} from "@/app/workspace-shell";
+import { UploadDraftsView } from "@/app/upload-drafts-view";
+import { ConfirmationModal } from "@/app/confirmation-modal";
+import type { WorkspaceTab } from "@/lib/workspace-tabs-state";
+import { getWorkspaceShellState } from "@/lib/workspace-shell-state";
+import {
+  getAdminRecordDeleteConfirmation,
+  getApprovalActionConfirmation,
+  getDraftDeleteConfirmation,
+  getLiveEmailConfirmation,
+  getSignOutConfirmation,
+  getWorkflowTemplateArchiveConfirmation,
+  type ConfirmationRequest,
+} from "@/lib/confirmation-policy";
+import {
+  getActivatedTemplateVersionRecordState,
+  getCreatedTemplateRecordState,
+  getDeletedTemplateRecordState,
+  getUpdatedTemplateVersionCommentRecordState,
+  getUpdatedTemplateRecordState,
+} from "@/lib/workspace-template-record-state";
+import {
+  getAdminRecordDeleteFailureState,
+  getAdminRecordDeleteSyncState,
+  getUpdatedBusinessDirectoryRecordState,
+  getUpdatedRoleAssignmentRecordState,
+} from "@/lib/workspace-admin-record-state";
+import {
+  getWorkspaceBatchRequestSubmissionState,
+  getWorkspaceRequestSubmissionPersistenceMessage,
+  getWorkspaceRequestSubmissionState,
+} from "@/lib/workspace-request-submission-state";
+import type {
+  WorkflowParticipantEmailMap,
+} from "@/lib/workflow-participant-assignment-state";
+import { getApprovalWorkspaceTaskState } from "@/lib/approval-workspace-task-state";
+import {
+  getTaskContributorRequestState,
+  getTaskContributorUploadState,
+} from "@/lib/task-collaboration-state";
+import { attachDocumentToTaskState } from "@/lib/task-document-attachment-state";
+import {
+  getWorkspaceRecordTaskActionState,
+  getWorkspaceRunnerTaskActionState,
+} from "@/lib/workspace-task-action-state";
+import { deactivateRemoteWorkspaceAdminRecord } from "@/lib/workspace-sync";
+import type {
   ApprovalAction,
-  { label: string; icon: React.ElementType; tone: string }
-> = {
-  approve: {
-    label: "Approve",
-    icon: Check,
-    tone: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20",
-  },
-  approve_with_comment: {
-    label: "Approve with comment",
-    icon: MessageSquare,
-    tone: "border-sky-500/40 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20",
-  },
-  reject_with_comment: {
-    label: "Reject with comment",
-    icon: X,
-    tone: "border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20",
-  },
-  reassign: {
-    label: "Reassign",
-    icon: ArrowRightLeft,
-    tone: "border-amber-500/40 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20",
-  },
-  delegate: {
-    label: "Delegate",
-    icon: UserPlus,
-    tone: "border-violet-500/40 bg-violet-500/10 text-violet-100 hover:bg-violet-500/20",
-  },
+  ApprovalAttachment,
+  ApprovalTask,
+  BusinessUnit,
+  WorkflowTemplate,
+  WorkflowDocumentRequirement,
+  WorkflowField,
+  UserRoleAssignment,
+} from "@/lib/types";
+
+type Tab = WorkspaceTab;
+type UploadRequestDraftRow = {
+  id: string;
+  fileName: string;
+  parseResult: ParsedWorkspaceFilePayload | null;
+  editedFields: Record<string, string>;
+  uploadedAttachments: ApprovalAttachment[];
+  parsedDocumentId?: string;
+  documentPreviewPages: DocumentPreviewPage[];
 };
 
-export default function ApprovalWorkspace({
+const uploadRequestDraftStoragePrefix = "approval-upload-request-draft-v1";
+const uploadRequestDraftListStoragePrefix = "approval-upload-request-drafts-v1";
+const uploadRequestCurrentAutosaveIdStoragePrefix =
+  "approval-upload-current-autosave-id-v1";
+const uploadRequestActiveDraftIdStoragePrefix =
+  "approval-upload-active-draft-id-v1";
+const remoteUploadAutosaveDelayMs = 12_000;
+
+export type ApprovalWorkspaceProps = {
+  initialTab: Tab;
+  sessionUser: string;
+  departments: string[];
+  workflowTemplates: WorkflowTemplate[];
+  requestId?: string;
+};
+
+export default function ApprovalWorkspace(props: ApprovalWorkspaceProps) {
+  return <ApprovalWorkspaceBody {...props} />;
+}
+function ApprovalWorkspaceBody({
   initialTab,
   sessionUser,
   departments,
   workflowTemplates,
+  requestId = "",
 }: {
   initialTab: Tab;
   sessionUser: string;
   departments: string[];
   workflowTemplates: WorkflowTemplate[];
+  requestId?: string;
 }) {
   const activeTab = initialTab;
-  const [selectedTaskId, setSelectedTaskId] = useState(approvalTasks[0]?.id);
+  const activeUser = useMemo(
+    () => ({
+      name: sessionUser.includes("@") ? sessionUser.split("@")[0] : sessionUser,
+      email: sessionUser.includes("@") ? sessionUser : "derrick@example.com",
+      role: "superuser" as const,
+    }),
+    [sessionUser],
+  );
+  const {
+    adminAuditEvents,
+    businessDirectory,
+    buildWorkspaceSnapshot,
+    effectiveRoleAssignments,
+    persistWorkspaceSnapshot,
+    selectedTaskId,
+    selectedTemplateId,
+    setBusinessDirectory,
+    setRoleAssignments,
+    setAdminAuditEvents,
+    setSelectedTaskId,
+    setSelectedTemplateId,
+    setTasks,
+    setTemplates,
+    tasks,
+    templates,
+    userDirectory,
+    workspaceSyncMode,
+  } = useApprovalWorkspaceState({
+    activeUser,
+    requestId,
+    workflowTemplates,
+  });
+  const taskState = useMemo(
+    () =>
+      getApprovalWorkspaceTaskState({
+        tasks,
+        templates,
+        selectedTaskId,
+        activeUserEmail: activeUser.email,
+      }),
+    [activeUser.email, selectedTaskId, tasks, templates],
+  );
   const [comment, setComment] = useState("");
-  const [activity, setActivity] = useState<string[]>([
-    "APR-1048 submitted by Mandy Chan",
-    "AI extraction completed for 3 fields",
-    "Finance reviewer assigned",
-  ]);
+  const [targetEmail, setTargetEmail] = useState("");
+  const [contributorName, setContributorName] = useState("");
+  const [contributorEmail, setContributorEmail] = useState("");
+  const [contributorRequestNote, setContributorRequestNote] = useState("");
+  const [contributorDueAt, setContributorDueAt] = useState("");
+  const [contributorBlocksApproval, setContributorBlocksApproval] = useState(true);
+  const [contributorRequestError, setContributorRequestError] = useState("");
   const [fileName, setFileName] = useState("");
-  const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [parseResult, setParseResult] = useState<ParsedWorkspaceFilePayload | null>(null);
   const [editedFields, setEditedFields] = useState<Record<string, string>>({});
+  const [documentPreviewPages, setDocumentPreviewPages] = useState<DocumentPreviewPage[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState("");
+  const [submissionMessage, setSubmissionMessage] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [emailDeliveryMessage, setEmailDeliveryMessage] = useState("");
+  const [emailOutboxEntries, setEmailOutboxEntries] = useState<EmailOutboxEntry[]>([]);
+  const [adminRecordError, setAdminRecordError] = useState("");
+  const [confirmationRequest, setConfirmationRequest] =
+    useState<ConfirmationRequest | null>(null);
+  const confirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(
+    null,
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [uploadedAttachments, setUploadedAttachments] = useState<ApprovalAttachment[]>([]);
+  const [parsedDocumentId, setParsedDocumentId] = useState<string | undefined>();
+  const [requestParticipantEmails, setRequestParticipantEmails] =
+    useState<WorkflowParticipantEmailMap>({});
+  const [uploadRequestDraftRows, setUploadRequestDraftRows] = useState<
+    UploadRequestDraftRow[]
+  >([]);
+  const [selectedUploadRequestDraftRowId, setSelectedUploadRequestDraftRowId] =
+    useState("");
+  const [uploadHighlightGroups, setUploadHighlightGroups] = useState<HighlightFieldGroup[]>([]);
+  const [uploadActiveHighlightGroupId, setUploadActiveHighlightGroupId] = useState("");
+  const [uploadHighlightBoxCounter, setUploadHighlightBoxCounter] = useState(1);
+  const [uploadDraftRestoreToken, setUploadDraftRestoreToken] = useState("");
+  const [uploadDraftResetToken, setUploadDraftResetToken] = useState(0);
+  const [savedUploadDrafts, setSavedUploadDrafts] = useState<SavedUploadRequestDraft[]>([]);
+  const [selectedUploadDraftId, setSelectedUploadDraftId] = useState("");
+  const [uploadDraftTitle, setUploadDraftTitle] = useState("");
+  const [uploadDraftMessage, setUploadDraftMessage] = useState("");
+  const [remoteUploadAutosaveId, setRemoteUploadAutosaveId] = useState("");
 
-  const selectedTask = useMemo(
-    () => approvalTasks.find((task) => task.id === selectedTaskId) || approvalTasks[0],
-    [selectedTaskId],
+  const requestConfirmation = useCallback((request: ConfirmationRequest) => {
+    confirmationResolverRef.current?.(false);
+    setConfirmationRequest(request);
+    return new Promise<boolean>((resolve) => {
+      confirmationResolverRef.current = resolve;
+    });
+  }, []);
+
+  const resolveConfirmation = useCallback((confirmed: boolean) => {
+    const resolver = confirmationResolverRef.current;
+    confirmationResolverRef.current = null;
+    setConfirmationRequest(null);
+    resolver?.(confirmed);
+  }, []);
+  const uploadDraftStorageReady = useRef(false);
+  const lastRemoteUploadAutosavePayloadRef = useRef("");
+  const selectedTemplate = useMemo(
+    () =>
+      templates.find((template) => template.id === selectedTemplateId) ||
+      templates[0],
+    [selectedTemplateId, templates],
+  );
+  const uploadRequestDraftStorageKey = useMemo(
+    () => `${uploadRequestDraftStoragePrefix}:${activeUser.email}`,
+    [activeUser.email],
+  );
+  const uploadRequestDraftListStorageKey = useMemo(
+    () => `${uploadRequestDraftListStoragePrefix}:${activeUser.email}`,
+    [activeUser.email],
+  );
+  const uploadRequestCurrentAutosaveIdStorageKey = useMemo(
+    () => `${uploadRequestCurrentAutosaveIdStoragePrefix}:${activeUser.email}`,
+    [activeUser.email],
+  );
+  const uploadRequestActiveDraftIdStorageKey = useMemo(
+    () => `${uploadRequestActiveDraftIdStoragePrefix}:${activeUser.email}`,
+    [activeUser.email],
+  );
+  const currentUploadRequestDraft = useMemo(
+    () =>
+      buildUploadRequestDraft({
+        selectedTemplateId: selectedTemplate?.id || selectedTemplateId,
+        fileName,
+        parseResult,
+        editedFields,
+        uploadedAttachments,
+        parsedDocumentId,
+        participantEmails: requestParticipantEmails,
+        highlightGroups: uploadHighlightGroups,
+        activeHighlightGroupId: uploadActiveHighlightGroupId,
+        highlightBoxCounter: uploadHighlightBoxCounter,
+        savedAt: "",
+      }),
+    [
+      editedFields,
+      fileName,
+      parseResult,
+      parsedDocumentId,
+      requestParticipantEmails,
+      selectedTemplate?.id,
+      selectedTemplateId,
+      uploadActiveHighlightGroupId,
+      uploadHighlightBoxCounter,
+      uploadHighlightGroups,
+      uploadedAttachments,
+    ],
+  );
+  const uploadDraftStatus = useMemo(
+    () =>
+      createEmptyUploadRequestDraftStatus(currentUploadRequestDraft),
+    [currentUploadRequestDraft],
   );
 
-  const unreadCount = notifications.filter((item) => item.unread).length;
+  const {
+    actionableTasks,
+    selectedTask,
+    selectedTaskMissingDocuments,
+    trackingTasks,
+  } = taskState;
 
-  function recordAction(action: ApprovalAction) {
-    const label = actionConfig[action].label;
-    const suffix = comment.trim() ? `: ${comment.trim()}` : "";
-    setActivity((items) => [
-      `${label} recorded for ${selectedTask.id}${suffix}`,
-      ...items,
-    ]);
-    setComment("");
-  }
+  const taskNotifications = useMemo(() => buildTaskNotifications(tasks), [tasks]);
+  const shellState = useMemo(
+    () =>
+      getWorkspaceShellState({
+        baseNotifications: notifications,
+        draftItemCount:
+          (uploadDraftStatus.hasDraft ? 1 : 0) + savedUploadDrafts.length,
+        taskNotifications,
+        workspaceSyncMode,
+      }),
+    [savedUploadDrafts.length, taskNotifications, uploadDraftStatus.hasDraft, workspaceSyncMode],
+  );
 
-  async function parseFile(file: File) {
-    setFileName(file.name);
-    setParseError("");
-    setIsParsing(true);
-    setParseResult(null);
-    setEditedFields({});
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("languageHint", "mixed English, Traditional Chinese, Simplified Chinese");
-
-    try {
-      const response = await fetch("/api/parse", {
-        method: "POST",
-        body: formData,
-      });
-
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || "Unable to parse file.");
+  const restoreUploadRequestDraft = useCallback(
+    (draft: ReturnType<typeof parseUploadRequestDraft>) => {
+      if (!draft) {
+        return;
       }
 
-      setParseResult(payload);
-      setEditedFields(payload.fields || {});
+      setSelectedTemplateId(draft.selectedTemplateId);
+      setFileName(draft.fileName);
+      setParseResult(draft.parseResult);
+      setEditedFields(draft.editedFields);
+      setUploadedAttachments(draft.uploadedAttachments);
+      setParsedDocumentId(draft.parsedDocumentId);
+      setRequestParticipantEmails(draft.participantEmails);
+      const restoredRowId = draft.fileName || draft.parsedDocumentId
+        ? `restored-${draft.savedAt}`
+        : "";
+      setUploadRequestDraftRows(
+        restoredRowId
+          ? [
+              {
+                id: restoredRowId,
+                fileName: draft.fileName,
+                parseResult: draft.parseResult,
+                editedFields: draft.editedFields,
+                uploadedAttachments: draft.uploadedAttachments,
+                parsedDocumentId: draft.parsedDocumentId,
+                documentPreviewPages: [],
+              },
+            ]
+          : [],
+      );
+      setSelectedUploadRequestDraftRowId(restoredRowId);
+      setUploadHighlightGroups(draft.highlightGroups);
+      setUploadActiveHighlightGroupId(draft.activeHighlightGroupId);
+      setUploadHighlightBoxCounter(draft.highlightBoxCounter);
+      setUploadDraftRestoreToken(draft.savedAt);
+    },
+    [setSelectedTemplateId],
+  );
+
+  const updateRequestParticipantEmail = useCallback(
+    (nodeId: string, email: string) => {
+      setRequestParticipantEmails((emails) => ({
+        ...emails,
+        [nodeId]: email,
+      }));
+    },
+    [],
+  );
+
+  useEffect(() => {
+    let didCancel = false;
+    const savedDraft = localStorage.getItem(uploadRequestDraftStorageKey);
+    const parsedDraft = savedDraft ? parseUploadRequestDraft(savedDraft) : null;
+
+    queueMicrotask(() => {
+      if (didCancel) {
+        return;
+      }
+
+      restoreUploadRequestDraft(parsedDraft);
+      setRemoteUploadAutosaveId(
+        localStorage.getItem(uploadRequestCurrentAutosaveIdStorageKey) || "",
+      );
+      setSelectedUploadDraftId(
+        localStorage.getItem(uploadRequestActiveDraftIdStorageKey) || "",
+      );
+      uploadDraftStorageReady.current = true;
+    });
+
+    return () => {
+      didCancel = true;
+    };
+  }, [
+    restoreUploadRequestDraft,
+    uploadRequestCurrentAutosaveIdStorageKey,
+    uploadRequestActiveDraftIdStorageKey,
+    uploadRequestDraftStorageKey,
+  ]);
+
+  useEffect(() => {
+    let didCancel = false;
+    const localDrafts = getNamedSavedUploadRequestDrafts(
+      getCreatorVisibleUploadRequestDrafts({
+        drafts: parseUploadRequestDraftList(
+          localStorage.getItem(uploadRequestDraftListStorageKey) || "[]",
+        ),
+        activeUserEmail: activeUser.email,
+        activeUserId: "",
+      }),
+    );
+
+    queueMicrotask(() => {
+      if (!didCancel) {
+        setSavedUploadDrafts(localDrafts);
+      }
+    });
+
+    loadSavedUploadRequestDrafts()
+      .then((remoteDrafts) => {
+        if (didCancel) {
+          return;
+        }
+
+        const mergedById = new Map<string, SavedUploadRequestDraft>();
+        [...localDrafts, ...remoteDrafts].forEach((draft) => {
+          const current = mergedById.get(draft.id);
+          if (!current || draft.savedAt > current.savedAt) {
+            mergedById.set(draft.id, draft);
+          }
+        });
+        const visibleRemoteDrafts = getCreatorVisibleUploadRequestDrafts({
+          drafts: remoteDrafts,
+          activeUserEmail: activeUser.email,
+          activeUserId: "",
+        });
+        const remoteCurrentAutosave =
+          getCurrentAutosaveUploadRequestDraft(visibleRemoteDrafts);
+        const localCurrentAutosave = parseUploadRequestDraft(
+          localStorage.getItem(uploadRequestDraftStorageKey) || "",
+        );
+        if (
+          remoteCurrentAutosave &&
+          (!localCurrentAutosave ||
+            remoteCurrentAutosave.savedAt > localCurrentAutosave.savedAt)
+        ) {
+          restoreUploadRequestDraft(remoteCurrentAutosave.draft);
+          setRemoteUploadAutosaveId(remoteCurrentAutosave.id);
+          localStorage.setItem(
+            uploadRequestCurrentAutosaveIdStorageKey,
+            remoteCurrentAutosave.id,
+          );
+        }
+
+        const merged = getNamedSavedUploadRequestDrafts(
+          getCreatorVisibleUploadRequestDrafts({
+            drafts: Array.from(mergedById.values()),
+            activeUserEmail: activeUser.email,
+            activeUserId: "",
+          }),
+        );
+        const activeUploadDraftId =
+          localStorage.getItem(uploadRequestActiveDraftIdStorageKey) || "";
+        const activeUploadDraft = merged.find(
+          (draft) => draft.id === activeUploadDraftId,
+        );
+        if (activeUploadDraft) {
+          setSelectedUploadDraftId(activeUploadDraft.id);
+          setUploadDraftTitle(activeUploadDraft.title);
+        } else if (activeUploadDraftId) {
+          setSelectedUploadDraftId("");
+          setUploadDraftTitle("");
+          localStorage.removeItem(uploadRequestActiveDraftIdStorageKey);
+        }
+        setSavedUploadDrafts(merged);
+        localStorage.setItem(
+          uploadRequestDraftListStorageKey,
+          serializeUploadRequestDraftList(merged),
+        );
+      })
+      .catch(() => {
+        if (!didCancel) {
+          setUploadDraftMessage("Using local drafts. Supabase sync unavailable.");
+        }
+      });
+
+    return () => {
+      didCancel = true;
+    };
+  }, [
+    activeUser.email,
+    restoreUploadRequestDraft,
+    uploadRequestActiveDraftIdStorageKey,
+    uploadRequestCurrentAutosaveIdStorageKey,
+    uploadRequestDraftListStorageKey,
+    uploadRequestDraftStorageKey,
+  ]);
+
+  useEffect(() => {
+    if (!uploadDraftStorageReady.current) {
+      return;
+    }
+
+    const nextDraft = buildUploadRequestDraft({
+      ...currentUploadRequestDraft,
+      savedAt: new Date().toISOString(),
+    });
+    const nextStatus = createEmptyUploadRequestDraftStatus(nextDraft);
+
+    if (!nextStatus.hasDraft) {
+      localStorage.removeItem(uploadRequestDraftStorageKey);
+      return;
+    }
+
+    localStorage.setItem(
+      uploadRequestDraftStorageKey,
+      serializeUploadRequestDraft(nextDraft),
+    );
+  }, [
+    editedFields,
+    fileName,
+    parseResult,
+    parsedDocumentId,
+    currentUploadRequestDraft,
+    uploadActiveHighlightGroupId,
+    uploadDraftRestoreToken,
+    uploadHighlightBoxCounter,
+    uploadHighlightGroups,
+    uploadedAttachments,
+    uploadRequestDraftStorageKey,
+  ]);
+
+  useEffect(() => {
+    if (!uploadDraftStorageReady.current) {
+      return;
+    }
+
+    const nextDraft = buildUploadRequestDraft({
+      ...currentUploadRequestDraft,
+      savedAt: new Date().toISOString(),
+    });
+    const nextStatus = createEmptyUploadRequestDraftStatus(nextDraft);
+    if (!nextStatus.hasDraft) {
+      return;
+    }
+
+    const serializedDraft = serializeUploadRequestDraft(nextDraft);
+    if (lastRemoteUploadAutosavePayloadRef.current === serializedDraft) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      const autosaveIdentity = getUploadAutosaveIdentity({
+        selectedUploadDraftId,
+        remoteUploadAutosaveId,
+        storedUploadAutosaveId:
+          localStorage.getItem(uploadRequestCurrentAutosaveIdStorageKey) || "",
+        createUploadAutosaveId: () => crypto.randomUUID(),
+      });
+
+      if (autosaveIdentity.isCurrentAutosave) {
+        localStorage.setItem(
+          uploadRequestCurrentAutosaveIdStorageKey,
+          autosaveIdentity.id,
+        );
+        setRemoteUploadAutosaveId(autosaveIdentity.id);
+      }
+
+      const savedDraft = buildSavedUploadRequestDraft({
+        draft: nextDraft,
+        id: autosaveIdentity.id,
+        title: autosaveIdentity.isCurrentAutosave ? "" : uploadDraftTitle,
+        createdByEmail: activeUser.email,
+        draftKind: autosaveIdentity.draftKind,
+        savedAt: nextDraft.savedAt,
+      });
+
+      try {
+        const remoteDraft = await saveSavedUploadRequestDraft({ draft: savedDraft });
+        if (!autosaveIdentity.isCurrentAutosave && remoteDraft) {
+          setSavedUploadDrafts((currentDrafts) => {
+            const visibleDrafts = getCreatorVisibleUploadRequestDrafts({
+              drafts: getNextSavedUploadRequestDrafts({
+                drafts: currentDrafts,
+                action: "upsert",
+                draft: remoteDraft,
+                activeUserEmail: activeUser.email,
+                activeUserId: "",
+              }),
+              activeUserEmail: activeUser.email,
+              activeUserId: "",
+            });
+            const namedVisibleDrafts = getNamedSavedUploadRequestDrafts(visibleDrafts);
+            localStorage.setItem(
+              uploadRequestDraftListStorageKey,
+              serializeUploadRequestDraftList(namedVisibleDrafts),
+            );
+            return namedVisibleDrafts;
+          });
+        }
+        lastRemoteUploadAutosavePayloadRef.current = serializedDraft;
+      } catch (error) {
+        setUploadDraftMessage(
+          error instanceof Error
+            ? `Saved locally. Supabase autosave failed: ${error.message}`
+            : "Saved locally. Supabase autosave failed.",
+        );
+      }
+    }, remoteUploadAutosaveDelayMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    activeUser.email,
+    currentUploadRequestDraft,
+    remoteUploadAutosaveId,
+    selectedUploadDraftId,
+    uploadDraftTitle,
+    uploadRequestCurrentAutosaveIdStorageKey,
+    uploadRequestDraftListStorageKey,
+  ]);
+
+  function resetUploadRequestDraftState() {
+    const cleared = clearUploadRequestDraft();
+    setFileName(cleared.fileName);
+    setParseResult(cleared.parseResult);
+    setEditedFields(cleared.editedFields);
+    setUploadedAttachments(cleared.uploadedAttachments);
+    setParsedDocumentId(cleared.parsedDocumentId);
+    setRequestParticipantEmails(cleared.participantEmails);
+    setUploadRequestDraftRows([]);
+    setSelectedUploadRequestDraftRowId("");
+    setDocumentPreviewPages([]);
+    setUploadHighlightGroups(cleared.highlightGroups);
+    setUploadActiveHighlightGroupId(cleared.activeHighlightGroupId);
+    setUploadHighlightBoxCounter(cleared.highlightBoxCounter);
+    setUploadDraftResetToken((value) => value + 1);
+    setSelectedUploadDraftId("");
+    setUploadDraftTitle("");
+    localStorage.removeItem(uploadRequestDraftStorageKey);
+    localStorage.removeItem(uploadRequestActiveDraftIdStorageKey);
+    if (remoteUploadAutosaveId) {
+      void deleteSavedUploadRequestDraft({ draftId: remoteUploadAutosaveId }).catch(() => {
+        // A failed cleanup should not block clearing the local draft.
+      });
+    }
+    setRemoteUploadAutosaveId("");
+    lastRemoteUploadAutosavePayloadRef.current = "";
+    localStorage.removeItem(uploadRequestCurrentAutosaveIdStorageKey);
+  }
+
+  function clearUploadRequestDraftFromUi() {
+    resetUploadRequestDraftState();
+    setParseError("");
+    setSubmissionMessage("Draft cleared.");
+  }
+
+  function persistSavedUploadDraftList(nextDrafts: SavedUploadRequestDraft[]) {
+    const visibleDrafts = getCreatorVisibleUploadRequestDrafts({
+      drafts: nextDrafts,
+      activeUserEmail: activeUser.email,
+      activeUserId: "",
+    });
+    const namedVisibleDrafts = getNamedSavedUploadRequestDrafts(visibleDrafts);
+    setSavedUploadDrafts(namedVisibleDrafts);
+    localStorage.setItem(
+      uploadRequestDraftListStorageKey,
+      serializeUploadRequestDraftList(namedVisibleDrafts),
+    );
+    return namedVisibleDrafts;
+  }
+
+  async function saveCurrentUploadRequestDraft() {
+    const nextStatus = createEmptyUploadRequestDraftStatus(currentUploadRequestDraft);
+    if (!nextStatus.hasDraft) {
+      setUploadDraftMessage("Add document/field first.");
+      return;
+    }
+
+    const savedDraft = buildSavedUploadRequestDraft({
+      draft: currentUploadRequestDraft,
+      id: selectedUploadDraftId || crypto.randomUUID(),
+      title: uploadDraftTitle,
+      createdByEmail: activeUser.email,
+      savedAt: new Date().toISOString(),
+    });
+    const nextDrafts = persistSavedUploadDraftList(
+      getNextSavedUploadRequestDrafts({
+        drafts: savedUploadDrafts,
+        action: "upsert",
+        draft: savedDraft,
+        activeUserEmail: activeUser.email,
+        activeUserId: "",
+      }),
+    );
+    setSelectedUploadDraftId(savedDraft.id);
+    setUploadDraftTitle(savedDraft.title);
+    localStorage.setItem(uploadRequestActiveDraftIdStorageKey, savedDraft.id);
+    setUploadDraftMessage(`Saved draft "${savedDraft.title}".`);
+
+    try {
+      const remoteDraft = await saveSavedUploadRequestDraft({ draft: savedDraft });
+      if (remoteDraft) {
+        persistSavedUploadDraftList(
+          getNextSavedUploadRequestDrafts({
+            drafts: nextDrafts,
+            action: "upsert",
+            draft: remoteDraft,
+            activeUserEmail: activeUser.email,
+            activeUserId: "",
+          }),
+        );
+      }
+    } catch (error) {
+      setUploadDraftMessage(
+        error instanceof Error
+          ? `Saved locally. Draft sync failed: ${error.message}`
+          : "Saved locally. Draft sync failed.",
+      );
+    }
+  }
+
+  function loadUploadRequestDraft(savedDraft: SavedUploadRequestDraft) {
+    restoreUploadRequestDraft(savedDraft.draft);
+    setSelectedUploadDraftId(savedDraft.id);
+    setUploadDraftTitle(savedDraft.title);
+    localStorage.setItem(uploadRequestActiveDraftIdStorageKey, savedDraft.id);
+    setUploadDraftMessage(`Loaded draft "${savedDraft.title}".`);
+  }
+
+  function resumeUploadRequestDraft(savedDraft: SavedUploadRequestDraft) {
+    loadUploadRequestDraft(savedDraft);
+    localStorage.setItem(
+      uploadRequestDraftStorageKey,
+      serializeUploadRequestDraft({
+        ...savedDraft.draft,
+        savedAt: new Date().toISOString(),
+      }),
+    );
+    window.location.href = "/?tab=upload";
+  }
+
+  async function deleteUploadRequestDraft(draftId: string) {
+    const target = savedUploadDrafts.find((draft) => draft.id === draftId);
+    const nextDrafts = persistSavedUploadDraftList(
+      getNextSavedUploadRequestDrafts({
+        drafts: savedUploadDrafts,
+        action: "remove",
+        draftId,
+        activeUserEmail: activeUser.email,
+        activeUserId: "",
+      }),
+    );
+    if (selectedUploadDraftId === draftId) {
+      setSelectedUploadDraftId("");
+      setUploadDraftTitle("");
+      localStorage.removeItem(uploadRequestActiveDraftIdStorageKey);
+    }
+    setUploadDraftMessage(
+      target ? `Deleted draft "${target.title}".` : "Deleted draft.",
+    );
+
+    try {
+      await deleteSavedUploadRequestDraft({ draftId });
+    } catch (error) {
+      setUploadDraftMessage(
+        error instanceof Error
+          ? `Deleted locally. Draft delete failed: ${error.message}`
+          : "Deleted locally. Draft delete failed.",
+      );
+      persistSavedUploadDraftList(nextDrafts);
+    }
+  }
+
+  async function confirmClearUploadRequestDraftFromUi() {
+    const confirmed = await requestConfirmation(
+      getDraftDeleteConfirmation({
+        draftTitle: uploadDraftStatus.label || "current autosave",
+        action: "clear",
+      }),
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    clearUploadRequestDraftFromUi();
+  }
+
+  async function confirmDeleteUploadRequestDraft(draftId: string) {
+    const target = savedUploadDrafts.find((draft) => draft.id === draftId);
+    const confirmed = await requestConfirmation(
+      getDraftDeleteConfirmation({
+        draftTitle: target?.title || "saved draft",
+        action: "delete",
+      }),
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    await deleteUploadRequestDraft(draftId);
+  }
+
+  const updateUploadHighlightDraft = useCallback(
+    (draft: {
+      highlightGroups: HighlightFieldGroup[];
+      activeHighlightGroupId: string;
+      highlightBoxCounter: number;
+    }) => {
+      setUploadHighlightGroups(draft.highlightGroups);
+      setUploadActiveHighlightGroupId(draft.activeHighlightGroupId);
+      setUploadHighlightBoxCounter(draft.highlightBoxCounter);
+    },
+    [],
+  );
+
+  function updateCurrentEditedFields(fields: Record<string, string>) {
+    setEditedFields(fields);
+    if (!selectedUploadRequestDraftRowId) {
+      return;
+    }
+    setUploadRequestDraftRows((rows) =>
+      rows.map((row) =>
+        row.id === selectedUploadRequestDraftRowId
+          ? { ...row, editedFields: fields }
+          : row,
+      ),
+    );
+  }
+
+  function selectUploadRequestDraftRow(rowId: string) {
+    const row = uploadRequestDraftRows.find((item) => item.id === rowId);
+    if (!row) {
+      return;
+    }
+
+    setSelectedUploadRequestDraftRowId(row.id);
+    setFileName(row.fileName);
+    setParseResult(row.parseResult);
+    setEditedFields(row.editedFields);
+    setUploadedAttachments(row.uploadedAttachments);
+    setParsedDocumentId(row.parsedDocumentId);
+    setDocumentPreviewPages(row.documentPreviewPages);
+    setParseError("");
+    setSubmissionMessage("");
+  }
+
+  function recordAction(action: ApprovalAction, returnTargetNodeIds: string[] = []) {
+    const nextState = getWorkspaceRecordTaskActionState({
+      tasks,
+      selectedTask,
+      templates,
+      activeUser,
+      action,
+      comment,
+      targetEmail,
+      returnTargetNodeIds,
+    });
+
+    if (!nextState.didApply) {
+      if (nextState.actionError) {
+        setActionError(nextState.actionError);
+      }
+      return;
+    }
+
+    setTasks(nextState.tasks);
+    const changedTask = nextState.tasks.find((task) => task.id === selectedTask.id);
+    if (changedTask) {
+      void sendWorkflowEmailNotifications(changedTask);
+    }
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
+    );
+    if (nextState.shouldClearInputs) {
+      setComment("");
+      setTargetEmail("");
+    }
+    setActionError(nextState.actionError);
+  }
+
+  async function confirmRecordAction(
+    action: ApprovalAction,
+    returnTargetNodeIds: string[] = [],
+  ) {
+    const confirmation = getApprovalActionConfirmation({
+      action,
+      taskTitle: selectedTask?.title || "this request",
+      targetEmail,
+    });
+    if (confirmation && !(await requestConfirmation(confirmation))) {
+      return;
+    }
+
+    recordAction(action, returnTargetNodeIds);
+  }
+
+  async function requestTaskContributor() {
+    if (!selectedTask) {
+      return;
+    }
+
+    const result = getTaskContributorRequestState({
+      task: selectedTask,
+      actor: activeUser,
+      contributorName,
+      contributorEmail,
+      requestNote: contributorRequestNote,
+      dueAt: contributorDueAt,
+      blocksApproval: contributorBlocksApproval,
+    });
+    if (!result.didApply) {
+      setContributorRequestError(result.errorMessage);
+      return;
+    }
+
+    try {
+      await persistCollaborationTransition({
+        task: result.task,
+        notifications: [],
+      });
+      const nextTasks = tasks.map((task) =>
+        task.id === selectedTask.id ? result.task : task,
+      );
+      setTasks(nextTasks);
+      void sendWorkflowEmailNotifications(result.task);
+      void persistWorkspaceSnapshot(
+        buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
+      );
+      setContributorName("");
+      setContributorEmail("");
+      setContributorRequestNote("");
+      setContributorDueAt("");
+      setContributorBlocksApproval(true);
+      setContributorRequestError("");
+    } catch (error) {
+      setContributorRequestError(
+        error instanceof Error
+          ? error.message
+          : "Unable to persist contributor request.",
+      );
+    }
+  }
+
+  async function submitContributorRequestUpload({
+    taskId,
+    collaborationRequestId,
+    requestNote,
+    file,
+  }: {
+    taskId: string;
+    collaborationRequestId: string;
+    requestNote: string;
+    file: File;
+  }) {
+    try {
+      const storage = await uploadWorkspaceAttachmentFile({ file });
+      const pageImages = shouldRenderPdfForVision(file)
+        ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
+        : [];
+      const payload = await parseWorkspaceFile({
+        file,
+        pageImages,
+        adHocFields: [
+          {
+            name: "contributor_response",
+            label: "Contributor",
+            type: "text",
+            required: false,
+            source: "ai",
+            instructions:
+              requestNote ||
+              "Extract the key submitted information from this contributor document.",
+          },
+        ],
+      });
+      const attachment: ApprovalAttachment = {
+        id: `contributor-${Date.now()}-${file.name}`,
+        fileName: file.name,
+        documentType: "Contributor upload",
+        format: "ad_hoc",
+        storagePath: storage.storagePath,
+        publicUrl: storage.publicUrl,
+        uploadedBy: activeUser.email,
+        uploadedAt: new Date().toISOString(),
+      };
+      const task = tasks.find((item) => item.id === taskId);
+      if (!task) {
+        setActionError("Task was not found.");
+        return;
+      }
+      const result = getTaskContributorUploadState({
+        task,
+        collaborationRequestId,
+        actor: activeUser,
+        attachment,
+        extractedFields: payload.fields || {},
+      });
+      if (!result.didApply) {
+        setActionError(result.errorMessage);
+        return;
+      }
+
+      const collaborationNotifications = buildCollaborationNotifications({
+        task: result.task,
+        event: {
+          type: "contributor_submitted",
+          collaborationRequestId,
+        },
+      });
+      await persistCollaborationTransition({
+        task: result.task,
+        notifications: collaborationNotifications,
+      });
+      const nextTasks = tasks.map((item) =>
+        item.id === taskId ? result.task : item,
+      );
+      setTasks(nextTasks);
+      void sendWorkflowEmailNotifications(result.task, collaborationNotifications);
+      void persistWorkspaceSnapshot(
+        buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
+      );
+      setActionError("");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit contributor upload.",
+      );
+    }
+  }
+
+  async function decideSharedFulfillment({
+    taskId,
+    fulfillmentId,
+    decision,
+    note,
+  }: {
+    taskId: string;
+    fulfillmentId: string;
+    decision: "confirm" | "reject";
+    note?: string;
+  }) {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) {
+      setActionError("Task was not found.");
+      return;
+    }
+    const result = getTaskSharedFulfillmentDecisionState({
+      task,
+      fulfillmentId,
+      actor: activeUser,
+      currentOwnerEmail: task.currentOwner,
+      decision,
+      note,
+    });
+    if (!result.didApply) {
+      setActionError(result.errorMessage);
+      return;
+    }
+
+    const notifications = mergeTaskNotifications([
+      ...buildCollaborationNotifications({
+        task: result.task,
+        event: {
+          type: decision === "confirm" ? "shared_confirmed" : "shared_rejected",
+          fulfillmentId,
+        },
+      }),
+      ...(decision === "reject"
+        ? buildCollaborationNotifications({
+            task: result.task,
+            event: {
+              type: "correction_created",
+              correctionRequestId:
+                result.task.sharedFulfillments?.find((item) => item.id === fulfillmentId)
+                  ?.correctionRequestId || "",
+            },
+          })
+        : []),
+    ]);
+
+    try {
+      await persistCollaborationTransition({
+        task: result.task,
+        notifications,
+      });
+      const nextTasks = tasks.map((item) =>
+        item.id === taskId ? result.task : item,
+      );
+      setTasks(nextTasks);
+      void sendWorkflowEmailNotifications(result.task, notifications);
+      void persistWorkspaceSnapshot(
+        buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
+      );
+      setActionError("");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to persist shared fulfillment decision.",
+      );
+    }
+  }
+
+  async function submitCorrectionUpload({
+    taskId,
+    correctionRequestId,
+    file,
+  }: {
+    taskId: string;
+    correctionRequestId: string;
+    file: File;
+  }) {
+    try {
+      const storage = await uploadWorkspaceAttachmentFile({ file });
+      const pageImages = shouldRenderPdfForVision(file)
+        ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
+        : [];
+      const payload = await parseWorkspaceFile({
+        file,
+        pageImages,
+        adHocFields: [
+          {
+            name: "correction_response",
+            label: "Correction",
+            type: "text",
+            required: false,
+            source: "ai",
+            instructions:
+              "Extract the corrected information from this resubmitted document.",
+          },
+        ],
+      });
+      const attachment: ApprovalAttachment = {
+        id: `correction-${Date.now()}-${file.name}`,
+        fileName: file.name,
+        documentType: "Correction upload",
+        format: "ad_hoc",
+        storagePath: storage.storagePath,
+        publicUrl: storage.publicUrl,
+        uploadedBy: activeUser.email,
+        uploadedAt: new Date().toISOString(),
+      };
+      const task = tasks.find((item) => item.id === taskId);
+      if (!task) {
+        setActionError("Task was not found.");
+        return;
+      }
+      const result = getTaskCorrectionUploadState({
+        task,
+        correctionRequestId,
+        actor: activeUser,
+        attachment,
+        extractedFields: payload.fields || {},
+      });
+      if (!result.didApply) {
+        setActionError(result.errorMessage);
+        return;
+      }
+      const correction = result.task.correctionRequests?.find(
+        (item) => item.id === correctionRequestId,
+      );
+      const notifications = mergeTaskNotifications([
+        ...buildCollaborationNotifications({
+          task: result.task,
+          event: {
+            type: "correction_resolved",
+            correctionRequestId,
+          },
+        }),
+        ...(correction?.resolvedByFulfillmentId
+          ? buildCollaborationNotifications({
+              task: result.task,
+              event: {
+                type: "shared_pending_confirmation",
+                fulfillmentId: correction.resolvedByFulfillmentId,
+              },
+            })
+          : []),
+      ]);
+
+      await persistCollaborationTransition({
+        task: result.task,
+        notifications,
+      });
+      const nextTasks = tasks.map((item) =>
+        item.id === taskId ? result.task : item,
+      );
+      setTasks(nextTasks);
+      void sendWorkflowEmailNotifications(result.task, notifications);
+      void persistWorkspaceSnapshot(
+        buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
+      );
+      setActionError("");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit correction upload.",
+      );
+    }
+  }
+
+  async function attachTaskDocument(
+    taskId: string,
+    file: File,
+    documentRequirement: WorkflowDocumentRequirement,
+  ) {
+    try {
+      const storage = await uploadWorkspaceAttachmentFile({
+        file,
+        documentRequirement,
+      });
+      const nextTasks = attachDocumentToTaskState({
+        tasks,
+        templates,
+        taskId,
+        file,
+        documentRequirement,
+        activeUser,
+        storagePath: storage.storagePath,
+        publicUrl: storage.publicUrl,
+      });
+      setTasks(nextTasks);
+      void persistWorkspaceSnapshot(
+        buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
+      );
+      setActionError("");
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Unable to upload document.",
+      );
+    }
+  }
+
+  function runWorkflowAction(taskId: string, action: ApprovalAction) {
+    const nextState = getWorkspaceRunnerTaskActionState({
+      tasks,
+      templates,
+      taskId,
+      action,
+      fallbackEmail: activeUser.email,
+    });
+    if (!nextState.didApply) {
+      return;
+    }
+
+    setTasks(nextState.tasks);
+    const changedTask = nextState.tasks.find((task) => task.id === taskId);
+    if (changedTask) {
+      void sendWorkflowEmailNotifications(changedTask);
+    }
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
+    );
+    if (nextState.selectedTaskId) {
+      setSelectedTaskId(nextState.selectedTaskId);
+    }
+  }
+
+  async function parseFile(
+    file: File,
+    documentRequirement?: WorkflowDocumentRequirement,
+    adHocFields: WorkflowField[] = [],
+  ) {
+    const startState = getWorkspaceParseFileStartState(file);
+    setFileName(startState.fileName);
+    setParseError(startState.parseError);
+    setSubmissionMessage(startState.submissionMessage);
+    setIsParsing(startState.isParsing);
+    setParseResult(startState.parseResult);
+    setEditedFields(startState.editedFields);
+    setDocumentPreviewPages([]);
+    setParsedDocumentId(documentRequirement?.id);
+    let storage: Awaited<ReturnType<typeof uploadWorkspaceAttachmentFile>> | null = null;
+    try {
+      storage = await uploadWorkspaceAttachmentFile({
+        file,
+        documentRequirement,
+      });
+    } catch (error) {
+      setParseError(
+        error instanceof Error ? error.message : "Unable to store document.",
+      );
+      setIsParsing(false);
+      return;
+    }
+
+    const storedAttachmentState = getWorkspaceParseFileStoredAttachmentState({
+      uploadedAttachments: [],
+      selectedTemplate,
+      file,
+      documentRequirement,
+      activeUser,
+      storagePath: storage?.storagePath,
+      publicUrl: storage?.publicUrl,
+    });
+    const storedAttachment = storedAttachmentState.uploadedAttachments[0];
+    if (storedAttachment) {
+      setUploadedAttachments((items) => [...items, storedAttachment]);
+    }
+
+    try {
+      const pdfPreviewImages = isPdfFile(file)
+        ? await renderPdfFileToPageImages(file, getPdfPreviewRenderOptions())
+        : [];
+      const pageImages = shouldRenderPdfForVision(file)
+        ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
+        : [];
+      let nextDocumentPreviewPages: DocumentPreviewPage[] = [];
+      if (pdfPreviewImages.length) {
+        nextDocumentPreviewPages = buildPreviewPagesFromPdfImages(pdfPreviewImages);
+      } else if (file.type.startsWith("image/")) {
+        nextDocumentPreviewPages = [await readImageFileAsPreviewPage(file)];
+      }
+      setDocumentPreviewPages(nextDocumentPreviewPages);
+      const payload = await parseWorkspaceFile({
+        file,
+        documentRequirement,
+        adHocFields,
+        pageImages,
+        extractionExamples: (selectedTemplate?.extractionExamples || []).filter(
+          (example) =>
+            !documentRequirement?.id || example.documentId === documentRequirement.id,
+        ),
+      });
+      const successState = getWorkspaceParseFileSuccessState(payload);
+      setParseResult(successState.parseResult);
+      setEditedFields(successState.editedFields);
+      setIsParsing(successState.isParsing);
+      const nextRow: UploadRequestDraftRow = {
+        id: crypto.randomUUID(),
+        fileName: file.name,
+        parseResult: successState.parseResult,
+        editedFields: successState.editedFields,
+        uploadedAttachments: storedAttachment ? [storedAttachment] : [],
+        parsedDocumentId: documentRequirement?.id,
+        documentPreviewPages: nextDocumentPreviewPages,
+      };
+      setUploadRequestDraftRows((rows) => [...rows, nextRow]);
+      setSelectedUploadRequestDraftRowId(nextRow.id);
     } catch (error) {
       setParseError(error instanceof Error ? error.message : "Unable to parse file.");
     } finally {
@@ -151,621 +1388,825 @@ export default function ApprovalWorkspace({
     }
   }
 
+  async function extractHighlightedRegion(
+    file: File,
+    field: WorkflowField,
+  ) {
+    setIsParsing(true);
+    setParseError("");
+    try {
+      const payload = await parseWorkspaceFile({
+        file,
+        adHocFields: [field],
+        extractionExamples: selectedTemplate?.extractionExamples || [],
+      });
+      const payloadFields = payload.fields || {};
+      setParseResult((current) => {
+        const nextParseResult = {
+        ...(current || payload),
+        fields: {
+          ...(current?.fields || {}),
+          ...payloadFields,
+        },
+        confidence: {
+          ...(current?.confidence || {}),
+          ...(payload.confidence || {}),
+        },
+        evidence: {
+          ...(current?.evidence || {}),
+          ...(payload.evidence || {}),
+        },
+        suggestedFields: current?.suggestedFields || payload.suggestedFields || [],
+        notes: [
+          ...(current?.notes || []),
+          ...(payload.notes || []),
+        ],
+        };
+        if (selectedUploadRequestDraftRowId) {
+          setUploadRequestDraftRows((rows) =>
+            rows.map((row) =>
+              row.id === selectedUploadRequestDraftRowId
+                ? { ...row, parseResult: nextParseResult }
+                : row,
+            ),
+          );
+        }
+        return nextParseResult;
+      });
+      setEditedFields((current) => ({
+        ...current,
+        ...payloadFields,
+      }));
+      if (selectedUploadRequestDraftRowId) {
+        setUploadRequestDraftRows((rows) =>
+          rows.map((row) =>
+            row.id === selectedUploadRequestDraftRowId
+              ? {
+                  ...row,
+                  editedFields: {
+                    ...row.editedFields,
+                    ...payloadFields,
+                  },
+                }
+              : row,
+          ),
+        );
+      }
+      return payload;
+    } catch (error) {
+      setParseError(
+        error instanceof Error
+          ? error.message
+          : "Unable to extract highlighted region.",
+      );
+      throw error;
+    } finally {
+      setIsParsing(false);
+    }
+  }
+
+  async function submitParsedRequest(
+    participantEmails: WorkflowParticipantEmailMap = requestParticipantEmails,
+  ) {
+    const nextState = getWorkspaceRequestSubmissionState({
+      selectedTemplate,
+      participantEmails,
+      parseResult,
+      activeUser,
+      fileName,
+      editedFields,
+      uploadedAttachments,
+      tasks,
+    });
+    if (!nextState.didSubmit) {
+      if (nextState.submissionMessage) {
+        setSubmissionMessage(nextState.submissionMessage);
+      }
+      return;
+    }
+
+    const extractionExamples = selectedTemplate
+      ? buildExtractionTrainingExamples({
+          template: selectedTemplate,
+          documentId: parsedDocumentId,
+          parseFields: parseResult?.fields || {},
+          correctedFields: editedFields,
+          evidence: parseResult?.evidence || {},
+          sourceFileName: fileName,
+          actorEmail: activeUser.email,
+        })
+      : [];
+    const nextTemplates =
+      selectedTemplate && extractionExamples.length
+        ? templates.map((template) =>
+            template.id === selectedTemplate.id
+              ? appendExtractionExamplesToTemplate({
+                  template,
+                  examples: extractionExamples,
+                })
+              : template,
+          )
+        : templates;
+
+    setTasks(nextState.tasks);
+    const submittedTask = nextState.tasks.find(
+      (task) => task.id === nextState.selectedTaskId,
+    );
+    if (submittedTask) {
+      void sendWorkflowEmailNotifications(submittedTask);
+    }
+    if (nextTemplates !== templates) {
+      setTemplates(nextTemplates);
+    }
+    setSelectedTaskId(nextState.selectedTaskId);
+    if (nextState.shouldClearUploadedAttachments) {
+      resetUploadRequestDraftState();
+    }
+    if (selectedUploadDraftId) {
+      void deleteUploadRequestDraft(selectedUploadDraftId);
+    }
+    localStorage.removeItem(uploadRequestDraftStorageKey);
+    const syncResult = await persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({
+        approvalTasks: nextState.tasks,
+        workflowTemplates: nextTemplates,
+      }),
+    );
+    setSubmissionMessage(
+      getWorkspaceRequestSubmissionPersistenceMessage({
+        submissionMessage: nextState.submissionMessage,
+        syncMode: syncResult.mode,
+        syncReason: syncResult.mode === "local" ? syncResult.reason : undefined,
+      }),
+    );
+  }
+
+  async function submitAllParsedRequests(
+    participantEmails: WorkflowParticipantEmailMap = requestParticipantEmails,
+  ) {
+    if (uploadRequestDraftRows.length < 2) {
+      await submitParsedRequest(participantEmails);
+      return;
+    }
+
+    const nextState = getWorkspaceBatchRequestSubmissionState({
+      selectedTemplate,
+      participantEmails,
+      activeUser,
+      drafts: uploadRequestDraftRows.map((row) => ({
+        id: row.id,
+        fileName: row.fileName,
+        parseResult: row.parseResult,
+        editedFields: row.editedFields,
+        uploadedAttachments: row.uploadedAttachments,
+      })),
+      tasks,
+      taskIdPrefix: `APR-BATCH-${Math.floor(Date.now() / 1000)}`,
+    });
+
+    if (!nextState.didSubmit) {
+      setSubmissionMessage(nextState.submissionMessage);
+      return;
+    }
+
+    const extractionExamples = selectedTemplate
+      ? uploadRequestDraftRows.flatMap((row) =>
+          buildExtractionTrainingExamples({
+            template: selectedTemplate,
+            documentId: row.parsedDocumentId,
+            parseFields: row.parseResult?.fields || {},
+            correctedFields: row.editedFields,
+            evidence: row.parseResult?.evidence || {},
+            sourceFileName: row.fileName,
+            actorEmail: activeUser.email,
+          }),
+        )
+      : [];
+    const nextTemplates =
+      selectedTemplate && extractionExamples.length
+        ? templates.map((template) =>
+            template.id === selectedTemplate.id
+              ? appendExtractionExamplesToTemplate({
+                  template,
+                  examples: extractionExamples,
+                })
+              : template,
+          )
+        : templates;
+    const previousTaskIds = new Set(tasks.map((task) => task.id));
+    const submittedTasks = nextState.tasks.filter(
+      (task) => !previousTaskIds.has(task.id),
+    );
+
+    setTasks(nextState.tasks);
+    submittedTasks.forEach((task) => {
+      void sendWorkflowEmailNotifications(task);
+    });
+    if (nextTemplates !== templates) {
+      setTemplates(nextTemplates);
+    }
+    setSelectedTaskId(nextState.selectedTaskId);
+    if (nextState.shouldClearUploadedAttachments) {
+      resetUploadRequestDraftState();
+    }
+    if (selectedUploadDraftId) {
+      void deleteUploadRequestDraft(selectedUploadDraftId);
+    }
+    localStorage.removeItem(uploadRequestDraftStorageKey);
+    const syncResult = await persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({
+        approvalTasks: nextState.tasks,
+        workflowTemplates: nextTemplates,
+      }),
+    );
+    setSubmissionMessage(
+      getWorkspaceRequestSubmissionPersistenceMessage({
+        submissionMessage: nextState.submissionMessage,
+        syncMode: syncResult.mode,
+        syncReason: syncResult.mode === "local" ? syncResult.reason : undefined,
+      }),
+    );
+  }
+
+  async function persistCollaborationTransition({
+    task,
+    notifications,
+  }: {
+    task: ApprovalTask;
+    notifications: TaskNotification[];
+  }) {
+    const response = await fetch("/api/workflow-collaboration", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task, notifications }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.reason || "Collaboration persistence failed.");
+    }
+  }
+
+  async function sendWorkflowEmailNotifications(
+    task: ApprovalTask,
+    notificationsOverride?: TaskNotification[],
+  ) {
+    const taskNotifications = notificationsOverride || buildTaskNotifications([task]);
+    try {
+      const response = await fetch("/api/email/task-notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          notificationsOverride
+            ? { notifications: notificationsOverride }
+            : { task },
+        ),
+      });
+      const result = await response.json();
+      setEmailDeliveryMessage(formatEmailDeliveryMessage(result));
+      setEmailOutboxEntries((entries) =>
+        mergeEmailOutboxEntries(
+          entries,
+          buildEmailOutboxEntries({
+            notifications: taskNotifications,
+            result,
+          }),
+        ),
+      );
+    } catch (error) {
+      setEmailOutboxEntries((entries) =>
+        mergeEmailOutboxEntries(
+          entries,
+          buildEmailOutboxEntries({
+            notifications: taskNotifications,
+            result: {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Email delivery failed.",
+            },
+          }),
+        ),
+      );
+      setEmailDeliveryMessage(
+        error instanceof Error
+          ? `Email delivery failed: ${error.message}`
+          : "Email delivery failed.",
+      );
+    }
+  }
+
+  async function sendTestEmail(to: string) {
+    const confirmed = await requestConfirmation(
+      getLiveEmailConfirmation({ recipientEmail: to }),
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const testNotification = {
+      id: `test-email-${Date.now()}`,
+      title: "Test email",
+      body: "This is a live Approval App email test.",
+      time: new Date().toISOString(),
+      unread: true,
+      requestId: "TEST",
+      recipientEmail: to,
+      kind: "fyi" as const,
+    };
+    try {
+      const response = await fetch("/api/email/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to }),
+      });
+      const result = await response.json();
+      setEmailDeliveryMessage(formatEmailDeliveryMessage(result));
+      setEmailOutboxEntries((entries) =>
+        mergeEmailOutboxEntries(
+          entries,
+          buildEmailOutboxEntries({
+            notifications: [testNotification],
+            result,
+          }),
+        ),
+      );
+    } catch (error) {
+      setEmailOutboxEntries((entries) =>
+        mergeEmailOutboxEntries(
+          entries,
+          buildEmailOutboxEntries({
+            notifications: [testNotification],
+            result: {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Email test failed.",
+            },
+          }),
+        ),
+      );
+      setEmailDeliveryMessage(
+        error instanceof Error
+          ? `Email test failed: ${error.message}`
+          : "Email test failed.",
+      );
+    }
+  }
+
+  async function confirmSignOut() {
+    const confirmed = await requestConfirmation(getSignOutConfirmation());
+    if (confirmed) {
+      window.location.href = "/logout";
+    }
+  }
+
+  function createTemplateRecord(template: WorkflowTemplate) {
+    const action = template.isDraft === false
+      ? "template_published"
+      : template.sourceTemplateId
+        ? "template_duplicated"
+        : "template_created";
+    const nextState = getCreatedTemplateRecordState({
+      templates,
+      template,
+      actor: activeUser,
+      action,
+    });
+    const nextAuditEvents = nextState.auditEvent
+      ? [nextState.auditEvent, ...adminAuditEvents]
+      : adminAuditEvents;
+    setTemplates(nextState.templates);
+    setAdminAuditEvents(nextAuditEvents);
+    setSelectedTemplateId(nextState.selectedTemplateId);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({
+        workflowTemplates: nextState.templates,
+        adminAuditEvents: nextAuditEvents,
+        selectedTemplateId: nextState.selectedTemplateId,
+      }),
+    );
+  }
+
+  function updateTemplateRecord(template: WorkflowTemplate) {
+    const currentTemplate = templates.find((item) => item.id === template.id);
+    const action =
+      currentTemplate?.isDraft !== false && template.isDraft === false
+        ? "template_published"
+        : "template_updated";
+    const nextState = getUpdatedTemplateRecordState({
+      templates,
+      template,
+      actor: activeUser,
+      action,
+    });
+    const nextAuditEvents = nextState.auditEvent
+      ? [nextState.auditEvent, ...adminAuditEvents]
+      : adminAuditEvents;
+    setTemplates(nextState.templates);
+    setAdminAuditEvents(nextAuditEvents);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({
+        workflowTemplates: nextState.templates,
+        adminAuditEvents: nextAuditEvents,
+      }),
+    );
+  }
+
+  function activateTemplateVersionRecord(templateId: string) {
+    const nextState = getActivatedTemplateVersionRecordState({
+      templates,
+      selectedTemplateId,
+      templateId,
+      actor: activeUser,
+    });
+    if (!nextState.didUpdate) {
+      return;
+    }
+
+    const nextAuditEvents = nextState.auditEvent
+      ? [nextState.auditEvent, ...adminAuditEvents]
+      : adminAuditEvents;
+    setTemplates(nextState.templates);
+    setAdminAuditEvents(nextAuditEvents);
+    setSelectedTemplateId(nextState.selectedTemplateId);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({
+        workflowTemplates: nextState.templates,
+        adminAuditEvents: nextAuditEvents,
+        selectedTemplateId: nextState.selectedTemplateId,
+      }),
+    );
+  }
+
+  function updateTemplateVersionCommentRecord(templateId: string, comment: string) {
+    const nextState = getUpdatedTemplateVersionCommentRecordState({
+      templates,
+      templateId,
+      comment,
+      actor: activeUser,
+    });
+    if (!nextState.didUpdate) {
+      return;
+    }
+
+    const nextAuditEvents = nextState.auditEvent
+      ? [nextState.auditEvent, ...adminAuditEvents]
+      : adminAuditEvents;
+    setTemplates(nextState.templates);
+    setAdminAuditEvents(nextAuditEvents);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({
+        workflowTemplates: nextState.templates,
+        adminAuditEvents: nextAuditEvents,
+      }),
+    );
+  }
+
+  async function deleteTemplateRecord(templateId: string) {
+    const template = templates.find((item) => item.id === templateId);
+    const didDeactivate = template
+      ? await deactivateAdminRecord({
+          type: "template",
+          templateKey: template.id,
+          versionNumber: template.version || latestTaskVersionForTemplate(template.id),
+        })
+      : true;
+    if (!didDeactivate) {
+      return;
+    }
+
+    const nextState = getDeletedTemplateRecordState({
+      templates,
+      selectedTemplateId,
+      templateId,
+      actor: activeUser,
+    });
+    const nextAuditEvents = nextState.auditEvent
+      ? [nextState.auditEvent, ...adminAuditEvents]
+      : adminAuditEvents;
+    setTemplates(nextState.templates);
+    setAdminAuditEvents(nextAuditEvents);
+    setSelectedTemplateId(nextState.selectedTemplateId);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({
+        workflowTemplates: nextState.templates,
+        adminAuditEvents: nextAuditEvents,
+        selectedTemplateId: nextState.selectedTemplateId,
+      }),
+    );
+  }
+
+  async function confirmDeleteTemplateRecord(templateId: string) {
+    const template = templates.find((item) => item.id === templateId);
+    const confirmed = await requestConfirmation(
+      getWorkflowTemplateArchiveConfirmation({
+        templateName: template?.name || "this workflow template",
+      }),
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    await deleteTemplateRecord(templateId);
+  }
+
+  async function deactivateAdminRecord(
+    record: Parameters<typeof deactivateRemoteWorkspaceAdminRecord>[0],
+  ) {
+    const syncState = getAdminRecordDeleteSyncState({ workspaceSyncMode });
+    if (!syncState.canContinue) {
+      setAdminRecordError(syncState.error);
+      return false;
+    }
+
+    if (!syncState.shouldDeactivateRemote) {
+      setAdminRecordError("");
+      return true;
+    }
+
+    const result = await deactivateRemoteWorkspaceAdminRecord(record);
+    if (result.mode !== "supabase") {
+      const failureState = getAdminRecordDeleteFailureState({
+        record,
+        reason: result.reason || "",
+      });
+      setAdminRecordError(failureState.error);
+      return failureState.canContinue;
+    }
+
+    setAdminRecordError("");
+    return true;
+  }
+
+  async function confirmDeactivateBusinessRecord(business: BusinessUnit) {
+    const confirmed = await requestConfirmation(
+      getAdminRecordDeleteConfirmation({
+        recordType: "business",
+        recordName: business.name,
+      }),
+    );
+    if (!confirmed) {
+      return false;
+    }
+
+    return deactivateAdminRecord({
+      type: "business",
+      businessId: business.id,
+    });
+  }
+
+  async function confirmDeactivateDepartmentRecord(
+    business: BusinessUnit,
+    departmentName: string,
+  ) {
+    const confirmed = await requestConfirmation(
+      getAdminRecordDeleteConfirmation({
+        recordType: "department",
+        recordName: departmentName,
+      }),
+    );
+    if (!confirmed) {
+      return false;
+    }
+
+    return deactivateAdminRecord({
+      type: "department",
+      businessId: business.id,
+      departmentName,
+    });
+  }
+
+  function latestTaskVersionForTemplate(templateId: string) {
+    return tasks.reduce((version, task) => {
+      if (task.workflowTemplateId !== templateId) {
+        return version;
+      }
+
+      return Math.max(version, task.workflowTemplateVersion || 1);
+    }, 1);
+  }
+
+  function updateRoleAssignmentRecords(
+    updater: (items: UserRoleAssignment[]) => UserRoleAssignment[],
+  ) {
+    const nextState = getUpdatedRoleAssignmentRecordState({
+      roleAssignments: effectiveRoleAssignments,
+      updater,
+    });
+    setRoleAssignments(nextState.roleAssignments);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({ userRoleAssignments: nextState.roleAssignments }),
+    );
+  }
+
+  function updateBusinessDirectoryRecords(
+    updater: (items: BusinessUnit[]) => BusinessUnit[],
+  ) {
+    const nextState = getUpdatedBusinessDirectoryRecordState({
+      businessDirectory,
+      updater,
+    });
+    setBusinessDirectory(nextState.businessDirectory);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({ businessDirectory: nextState.businessDirectory }),
+    );
+  }
+
+  function selectTemplateRecord(templateId: string) {
+    setSelectedTemplateId(templateId);
+    setRequestParticipantEmails({});
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({ selectedTemplateId: templateId }),
+    );
+  }
+
   return (
-    <main className="min-h-screen bg-[#101214] text-neutral-100">
-      <div className="grid min-h-screen grid-cols-[76px_1fr] lg:grid-cols-[244px_1fr]">
-        <aside className="border-r border-white/10 bg-[#171a1d]">
-          <div className="flex h-16 items-center justify-center border-b border-white/10 lg:justify-start lg:px-5">
-            <div className="flex size-10 items-center justify-center rounded-md bg-emerald-500 text-[#101214]">
-              <ShieldCheck size={22} />
-            </div>
-            <div className="ml-3 hidden lg:block">
-              <p className="text-sm font-semibold">Approval App</p>
-              <p className="text-xs text-neutral-400">MVP workspace</p>
-            </div>
-          </div>
-
-          <nav className="space-y-1 p-3">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const active = activeTab === tab.id;
-              return (
-                <Link
-                  key={tab.id}
-                  href={`/?tab=${tab.id}`}
-                  title={tab.label}
-                  className={`flex h-11 w-full items-center justify-center gap-3 rounded-md border px-3 text-sm transition lg:justify-start ${
-                    active
-                      ? "border-emerald-400/40 bg-emerald-400/12 text-emerald-100"
-                      : "border-transparent text-neutral-400 hover:border-white/10 hover:bg-white/5 hover:text-neutral-100"
-                  }`}
-                >
-                  <Icon size={18} />
-                  <span className="hidden lg:inline">{tab.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
-        </aside>
-
-        <section className="min-w-0">
-          <header className="flex min-h-16 flex-col justify-center gap-3 border-b border-white/10 bg-[#15181b] px-4 py-3 md:flex-row md:items-center md:justify-between md:px-6">
-            <div>
-              <h1 className="text-xl font-semibold tracking-normal md:text-2xl">
-                General approval workflow
-              </h1>
-              <p className="text-sm text-neutral-400">
-                Dynamic departments, AI/OCR parsing, approvals, delegation, deadlines, and escalation.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex h-10 items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 text-sm">
-                <Bell size={16} className="text-amber-200" />
-                <span>{unreadCount} unread</span>
-              </div>
-              <div className="hidden h-10 items-center rounded-md border border-white/10 bg-white/[0.03] px-3 text-sm text-neutral-300 md:flex">
-                {sessionUser}
-              </div>
-              <Link
-                href="/logout"
-                title="Sign out"
-                className="flex size-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-neutral-300 transition hover:border-white/20 hover:bg-white/[0.07]"
-              >
-                <LogOut size={16} />
-              </Link>
-              <Link
-                href="/?tab=upload"
-                className="flex h-10 items-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
-              >
-                <Plus size={16} />
-                New request
-              </Link>
-            </div>
-          </header>
-
-          <div className="p-4 md:p-6">
+    <>
+    <WorkspaceShell
+      activeTab={activeTab}
+      sessionUser={sessionUser}
+      sidebarCollapsed={sidebarCollapsed}
+      syncLabel={shellState.syncLabel}
+      draftItemCount={shellState.draftItemCount}
+      unreadCount={shellState.unreadCount}
+      onRequestSignOut={() => void confirmSignOut()}
+      onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
+    >
             {activeTab === "queue" && (
               <QueueView
                 selectedTask={selectedTask}
                 selectedTaskId={selectedTaskId}
                 setSelectedTaskId={setSelectedTaskId}
+                tasks={actionableTasks}
                 comment={comment}
                 setComment={setComment}
-                recordAction={recordAction}
-                activity={activity}
+                targetEmail={targetEmail}
+                setTargetEmail={setTargetEmail}
+                contributorName={contributorName}
+                setContributorName={setContributorName}
+                contributorEmail={contributorEmail}
+                setContributorEmail={setContributorEmail}
+                contributorRequestNote={contributorRequestNote}
+                setContributorRequestNote={setContributorRequestNote}
+                contributorDueAt={contributorDueAt}
+                setContributorDueAt={setContributorDueAt}
+                contributorBlocksApproval={contributorBlocksApproval}
+                setContributorBlocksApproval={setContributorBlocksApproval}
+                contributorRequestError={contributorRequestError}
+                onRequestContributor={requestTaskContributor}
+                recordAction={confirmRecordAction}
+                activeUserEmail={activeUser.email}
+                userDirectory={userDirectory}
+                workflowTemplates={templates}
+                actionError={actionError}
+                missingCurrentDocuments={selectedTaskMissingDocuments}
+                onAttachTaskDocument={(file, documentRequirement) =>
+                  selectedTask &&
+                  attachTaskDocument(selectedTask.id, file, documentRequirement)
+                }
+              />
+            )}
+
+            {activeTab === "tracking" && (
+              <TrackingView
+                tasks={trackingTasks}
+                selectedTaskId={selectedTaskId}
+                setSelectedTaskId={setSelectedTaskId}
+                workflowTemplates={templates}
+                activeUserEmail={activeUser.email}
+                userDirectory={userDirectory}
+                onSubmitContributorUpload={submitContributorRequestUpload}
+                onDecideSharedFulfillment={decideSharedFulfillment}
+                onSubmitCorrectionUpload={submitCorrectionUpload}
               />
             )}
 
             {activeTab === "upload" && (
               <UploadView
+                activeUserEmail={activeUser.email}
                 fileName={fileName}
                 parseResult={parseResult}
                 editedFields={editedFields}
-                setEditedFields={setEditedFields}
+                setEditedFields={updateCurrentEditedFields}
                 isParsing={isParsing}
                 parseError={parseError}
                 parseFile={parseFile}
+                documentPreviewPages={documentPreviewPages}
+                onExtractHighlightedRegion={extractHighlightedRegion}
+                uploadedAttachments={uploadedAttachments}
+                uploadDraftStatus={uploadDraftStatus}
+                savedUploadDrafts={savedUploadDrafts}
+                selectedUploadDraftId={selectedUploadDraftId}
+                uploadDraftTitle={uploadDraftTitle}
+                setUploadDraftTitle={setUploadDraftTitle}
+                uploadDraftMessage={uploadDraftMessage}
+                onSaveRequestDraft={saveCurrentUploadRequestDraft}
+                onLoadRequestDraft={loadUploadRequestDraft}
+                onDeleteRequestDraft={confirmDeleteUploadRequestDraft}
+                uploadDraftRestoreToken={uploadDraftRestoreToken}
+                uploadDraftResetToken={uploadDraftResetToken}
+                restoredHighlightGroups={uploadHighlightGroups}
+                restoredActiveHighlightGroupId={uploadActiveHighlightGroupId}
+                restoredHighlightBoxCounter={uploadHighlightBoxCounter}
+                onHighlightDraftChange={updateUploadHighlightDraft}
+                onClearRequestDraft={confirmClearUploadRequestDraftFromUi}
+                workflowTemplates={templates}
+                selectedTemplateId={selectedTemplate?.id || ""}
+                setSelectedTemplateId={selectTemplateRecord}
+                participantEmails={requestParticipantEmails}
+                setParticipantEmail={updateRequestParticipantEmail}
+                submissionMessage={submissionMessage}
+                onSubmitRequest={submitParsedRequest}
+                requestDrafts={uploadRequestDraftRows}
+                selectedRequestDraftId={selectedUploadRequestDraftRowId}
+                onSelectRequestDraft={selectUploadRequestDraftRow}
+                onSubmitAllRequests={submitAllParsedRequests}
+              />
+            )}
+
+            {activeTab === "drafts" && (
+              <UploadDraftsView
+                currentDraft={currentUploadRequestDraft}
+                uploadDraftStatus={uploadDraftStatus}
+                savedUploadDrafts={savedUploadDrafts}
+                workflowTemplates={templates}
+                selectedUploadDraftId={selectedUploadDraftId}
+                activeUserEmail={activeUser.email}
+                onResumeSavedDraft={resumeUploadRequestDraft}
+                onClearCurrentDraft={confirmClearUploadRequestDraftFromUi}
+                onDeleteRequestDraft={confirmDeleteUploadRequestDraft}
               />
             )}
 
             {activeTab === "workflow" && (
-              <WorkflowView workflowTemplates={workflowTemplates} />
+              <WorkflowView
+                businessDirectory={businessDirectory}
+                tasks={tasks}
+                workflowTemplates={templates}
+                selectedTemplateId={selectedTemplate?.id || ""}
+                setSelectedTemplateId={selectTemplateRecord}
+                onDeleteTemplate={confirmDeleteTemplateRecord}
+                requestConfirmation={requestConfirmation}
+                adminRecordError={adminRecordError}
+                onCreateTemplate={createTemplateRecord}
+                onUpdateTemplate={updateTemplateRecord}
+                onActivateTemplateVersion={activateTemplateVersionRecord}
+                onUpdateTemplateVersionComment={updateTemplateVersionCommentRecord}
+                userDirectory={userDirectory}
+                activeUser={activeUser}
+                onRunWorkflowAction={runWorkflowAction}
+              />
             )}
 
-            {activeTab === "admin" && <AdminView departments={departments} />}
-          </div>
-        </section>
-      </div>
-    </main>
-  );
-}
-
-function QueueView({
-  selectedTask,
-  selectedTaskId,
-  setSelectedTaskId,
-  comment,
-  setComment,
-  recordAction,
-  activity,
-}: {
-  selectedTask: ApprovalTask;
-  selectedTaskId: string;
-  setSelectedTaskId: (id: string) => void;
-  comment: string;
-  setComment: (value: string) => void;
-  recordAction: (action: ApprovalAction) => void;
-  activity: string[];
-}) {
-  return (
-    <div className="grid gap-4 xl:grid-cols-[360px_1fr_320px]">
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
-          <h2 className="font-semibold">Approval queue</h2>
-          <p className="text-sm text-neutral-400">Pending, overdue, and escalated work.</p>
-        </div>
-        <div className="divide-y divide-white/10">
-          {approvalTasks.map((task) => (
-            <button
-              key={task.id}
-              type="button"
-              onClick={() => setSelectedTaskId(task.id)}
-              className={`block w-full p-4 text-left transition ${
-                selectedTaskId === task.id
-                  ? "bg-emerald-400/10"
-                  : "hover:bg-white/[0.04]"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold">{task.title}</p>
-                  <p className="mt-1 text-xs text-neutral-400">
-                    {task.id} - {task.department}
-                  </p>
-                </div>
-                <StatusBadge status={task.status} />
-              </div>
-              <div className="mt-3 flex items-center justify-between text-xs text-neutral-400">
-                <span>{task.currentStep}</span>
-                <span>{task.due}</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="font-semibold">{selectedTask.title}</h2>
-              <p className="text-sm text-neutral-400">
-                {selectedTask.workflow} - requested by {selectedTask.requester}
-              </p>
-            </div>
-            <div className="rounded-md border border-white/10 px-3 py-2 text-sm">
-              {selectedTask.value}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-4 p-4 lg:grid-cols-2">
-          <div>
-            <h3 className="mb-3 text-sm font-semibold text-neutral-300">Extracted draft</h3>
-            <div className="space-y-2">
-              {Object.entries(selectedTask.extractedFields).map(([label, value]) => (
-                <div
-                  key={label}
-                  className="grid min-h-12 grid-cols-[140px_1fr] items-center gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm"
-                >
-                  <span className="text-neutral-400">{label}</span>
-                  <span>{value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <h3 className="mb-3 text-sm font-semibold text-neutral-300">Decision</h3>
-            <textarea
-              value={comment}
-              onChange={(event) => setComment(event.target.value)}
-              placeholder="Comment for approval, rejection, reassignment, or delegation"
-              className="h-32 w-full resize-none rounded-md border border-white/10 bg-[#121518] p-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
-            />
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {(Object.keys(actionConfig) as ApprovalAction[]).map((action) => {
-                const Icon = actionConfig[action].icon;
-                return (
-                  <button
-                    key={action}
-                    type="button"
-                    onClick={() => recordAction(action)}
-                    className={`flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm transition ${actionConfig[action].tone}`}
-                  >
-                    <Icon size={15} />
-                    {actionConfig[action].label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
-          <h2 className="font-semibold">Activity</h2>
-          <p className="text-sm text-neutral-400">Audit events for the selected item.</p>
-        </div>
-        <ol className="space-y-3 p-4">
-          {activity.map((item, index) => (
-            <li key={`${item}-${index}`} className="flex gap-3 text-sm">
-              <span className="mt-1 size-2 rounded-full bg-emerald-300" />
-              <span className="text-neutral-300">{item}</span>
-            </li>
-          ))}
-        </ol>
-      </section>
-    </div>
-  );
-}
-
-function UploadView({
-  fileName,
-  parseResult,
-  editedFields,
-  setEditedFields,
-  isParsing,
-  parseError,
-  parseFile,
-}: {
-  fileName: string;
-  parseResult: ParseResult | null;
-  editedFields: Record<string, string>;
-  setEditedFields: (fields: Record<string, string>) => void;
-  isParsing: boolean;
-  parseError: string;
-  parseFile: (file: File) => void;
-}) {
-  return (
-    <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
-      <section className="rounded-md border border-white/10 bg-white/[0.03] p-5">
-        <h2 className="font-semibold">Upload document</h2>
-        <p className="mt-1 text-sm text-neutral-400">
-          Photos use AI vision, PDFs are routed for OCR, and Excel files are parsed into tables.
-        </p>
-
-        <label className="mt-5 flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-white/20 bg-[#121518] p-6 text-center transition hover:border-emerald-400/60 hover:bg-emerald-400/5">
-          {isParsing ? (
-            <Loader2 className="mb-3 animate-spin text-emerald-200" size={28} />
-          ) : (
-            <Upload className="mb-3 text-neutral-300" size={28} />
-          )}
-          <span className="text-sm font-medium">
-            {isParsing ? "Parsing document" : "Choose a file"}
-          </span>
-          <span className="mt-1 text-xs text-neutral-500">
-            PDF, image, Excel, or CSV
-          </span>
-          <input
-            type="file"
-            className="sr-only"
-            accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.csv"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) {
-                parseFile(file);
-              }
-            }}
-          />
-        </label>
-
-        {fileName && (
-          <div className="mt-4 flex items-center gap-2 rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
-            <FileText size={16} className="text-emerald-200" />
-            <span className="truncate">{fileName}</span>
-          </div>
-        )}
-
-        {parseError && (
-          <div className="mt-4 rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-100">
-            {parseError}
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
-          <h2 className="font-semibold">Extraction draft</h2>
-          <p className="text-sm text-neutral-400">
-            Corrections here become training examples for workflow-specific extraction.
-          </p>
-        </div>
-
-        <div className="p-4">
-          {!parseResult && !isParsing && (
-            <div className="grid min-h-72 place-items-center rounded-md border border-white/10 bg-[#121518] text-center text-sm text-neutral-500">
-              <div>
-                <div className="mb-3 flex justify-center gap-2">
-                  <ImageIcon size={22} />
-                  <FileText size={22} />
-                  <FileSpreadsheet size={22} />
-                </div>
-                Upload a document to create an editable extraction draft.
-              </div>
-            </div>
-          )}
-
-          {parseResult && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="rounded-md border border-white/10 bg-[#121518] px-3 py-1">
-                  Strategy: {parseResult.strategy}
-                </span>
-                {parseResult.notes.map((note) => (
-                  <span
-                    key={note}
-                    className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-amber-100"
-                  >
-                    {note}
-                  </span>
-                ))}
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                {Object.entries(editedFields).map(([label, value]) => (
-                  <label key={label} className="block">
-                    <span className="mb-1 block text-xs text-neutral-400">{label}</span>
-                    <input
-                      value={value}
-                      onChange={(event) =>
-                        setEditedFields({
-                          ...editedFields,
-                          [label]: event.target.value,
-                        })
-                      }
-                      className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none transition focus:border-emerald-400/60"
-                    />
-                  </label>
-                ))}
-              </div>
-
-              {parseResult.tables?.[0] && (
-                <div className="overflow-hidden rounded-md border border-white/10">
-                  <div className="border-b border-white/10 bg-[#121518] px-3 py-2 text-sm">
-                    {parseResult.tables[0].sheetName}
-                  </div>
-                  <div className="max-h-72 overflow-auto">
-                    <table className="w-full min-w-[640px] text-left text-sm">
-                      <tbody>
-                        {parseResult.tables[0].rows.slice(0, 8).map((row, index) => (
-                          <tr key={index} className="border-b border-white/10 last:border-0">
-                            {Object.values(row)
-                              .slice(0, 6)
-                              .map((value, cellIndex) => (
-                                <td key={cellIndex} className="px-3 py-2 text-neutral-300">
-                                  {String(value)}
-                                </td>
-                              ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              <button
-                type="button"
-                className="flex h-10 items-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
-              >
-                <Send size={16} />
-                Submit for review
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function WorkflowView({
-  workflowTemplates,
-}: {
-  workflowTemplates: WorkflowTemplate[];
-}) {
-  const workflow = workflowTemplates[0];
-
-  if (!workflow) {
-    return (
-      <section className="rounded-md border border-white/10 bg-white/[0.03] p-5">
-        <h2 className="font-semibold">No workflow templates</h2>
-        <p className="mt-1 text-sm text-neutral-400">
-          Add a workflow template in Supabase to configure approval routing.
-        </p>
-      </section>
-    );
-  }
-
-  return (
-    <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
-          <h2 className="font-semibold">{workflow.name}</h2>
-          <p className="text-sm text-neutral-400">
-            {workflow.department} - {workflow.documentTypes.join(", ")}
-          </p>
-        </div>
-        <div className="grid gap-4 p-4 lg:grid-cols-2">
-          <div>
-            <h3 className="mb-3 text-sm font-semibold text-neutral-300">
-              Fields to parse
-            </h3>
-            <div className="space-y-2">
-              {workflow.fields.map((field) => (
-                <div
-                  key={field.name}
-                  className="rounded-md border border-white/10 bg-[#121518] p-3"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium">{field.label}</p>
-                    <span className="rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-400">
-                      {field.source}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs text-neutral-400">{field.instructions}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <h3 className="mb-3 text-sm font-semibold text-neutral-300">
-              Approval path
-            </h3>
-            <div className="space-y-3">
-              {workflow.steps.map((step, index) => (
-                <div
-                  key={step.name}
-                  className="rounded-md border border-white/10 bg-[#121518] p-3"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="grid size-7 shrink-0 place-items-center rounded-md bg-emerald-400/15 text-sm text-emerald-100">
-                      {index + 1}
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium">{step.name}</p>
-                      <p className="mt-1 text-xs text-neutral-400">
-                        {step.role} - due in {step.dueInHours}h - escalate to{" "}
-                        {step.escalationRole}
-                      </p>
-                      <p className="mt-2 text-xs text-amber-100">
-                        Branch: {step.condition}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-md border border-white/10 bg-white/[0.03] p-4">
-        <h2 className="font-semibold">Template settings</h2>
-        <div className="mt-4 space-y-3">
-          <label className="block">
-            <span className="mb-1 block text-xs text-neutral-400">Workflow name</span>
-            <input
-              defaultValue={workflow.name}
-              className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs text-neutral-400">Branch rule</span>
-            <input
-              defaultValue="invoice_total >= 10000"
-              className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs text-neutral-400">Default deadline</span>
-            <input
-              defaultValue="48 hours"
-              className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
-            />
-          </label>
-          <button
-            type="button"
-            className="flex h-10 items-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
-          >
-            <Plus size={16} />
-            Add step
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function AdminView({ departments }: { departments: string[] }) {
-  return (
-    <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
-          <h2 className="font-semibold">Departments</h2>
-          <p className="text-sm text-neutral-400">
-            Seeded list now, editable list after Supabase is connected.
-          </p>
-        </div>
-        <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
-          {departments.map((department) => (
-            <div
-              key={department}
-              className="flex h-24 flex-col justify-between rounded-md border border-white/10 bg-[#121518] p-3"
-            >
-              <span className="text-sm font-medium">{department}</span>
-              <span className="text-xs text-neutral-500">Active</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
-          <h2 className="font-semibold">In-app notifications</h2>
-          <div className="mt-3 space-y-2">
-            {notifications.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-md border border-white/10 bg-[#121518] p-3"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium">{item.title}</p>
-                  {item.unread && <span className="size-2 rounded-full bg-amber-300" />}
-                </div>
-                <p className="mt-1 text-xs text-neutral-400">{item.body}</p>
-                <p className="mt-2 text-xs text-neutral-500">{item.time}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
-          <h2 className="font-semibold">Delegation</h2>
-          <div className="mt-3 space-y-3">
-            <label className="block">
-              <span className="mb-1 block text-xs text-neutral-400">Delegate to</span>
-              <input
-                defaultValue="Alex Ho"
-                className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+            {activeTab === "admin" && (
+              <AdminView
+                businessDirectory={businessDirectory}
+                adminRecordError={adminRecordError}
+                setBusinessDirectory={updateBusinessDirectoryRecords}
+                onDeactivateBusinessRecord={confirmDeactivateBusinessRecord}
+                onDeactivateDepartmentRecord={confirmDeactivateDepartmentRecord}
+                legacyDepartments={departments}
+                userDirectory={userDirectory}
+                taskNotifications={taskNotifications}
+                roleAssignments={effectiveRoleAssignments}
+                setRoleAssignments={updateRoleAssignmentRecords}
+                adminAuditEvents={adminAuditEvents}
+                activeUserEmail={activeUser.email}
+                emailDeliveryMessage={emailDeliveryMessage}
+                emailOutboxEntries={emailOutboxEntries}
+                onSendTestEmail={sendTestEmail}
               />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs text-neutral-400">Period</span>
-              <input
-                defaultValue="2026-06-19 to 2026-06-26"
-                className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
-              />
-            </label>
-            <button
-              type="button"
-              className="flex h-10 items-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-3 text-sm text-sky-100 transition hover:bg-sky-400/20"
-            >
-              <CalendarClock size={16} />
-              Save delegation
-            </button>
-          </div>
-        </div>
-      </section>
-    </div>
+            )}
+    </WorkspaceShell>
+    <ConfirmationModal
+      request={confirmationRequest}
+      onCancel={() => resolveConfirmation(false)}
+      onConfirm={() => resolveConfirmation(true)}
+    />
+    </>
   );
 }
 
-function StatusBadge({ status }: { status: ApprovalTask["status"] }) {
-  if (status === "overdue") {
-    return (
-      <span className="flex items-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-100">
-        <AlertTriangle size={12} />
-        Overdue
-      </span>
-    );
+function formatEmailDeliveryMessage(result: {
+  mode?: string;
+  attempted?: number;
+  sent?: number;
+  skipped?: number;
+  failures?: Array<{ message?: string }>;
+  error?: string;
+}) {
+  if (result.error) {
+    return `Email failed: ${result.error}`;
   }
 
-  if (status === "escalated") {
-    return (
-      <span className="flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-100">
-        <RotateCcw size={12} />
-        Escalated
-      </span>
-    );
-  }
+  const attempted = result.attempted || 0;
+  const sent = result.sent || 0;
+  const skipped = result.skipped || 0;
+  const failureCount = result.failures?.length || 0;
+  const mode = result.mode || "unknown";
+  const suffix = failureCount
+    ? ` ${failureCount} failed: ${result.failures?.[0]?.message || "Unknown error"}`
+    : "";
 
-  return (
-    <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-100">
-      Pending
-    </span>
-  );
+  return `Email ${mode}: ${sent} sent, ${skipped} skipped, ${attempted} attempted.${suffix}`;
 }

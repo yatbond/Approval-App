@@ -29,14 +29,14 @@ export default async function LoginPage({
           <div>
             <h1 className="text-lg font-semibold">Approval App</h1>
             <p className="text-sm text-neutral-400">
-              {setupMode ? "Create first admin" : "Sign in with email"}
+              {setupMode ? "Admin setup" : "Sign in"}
             </p>
           </div>
         </div>
 
         {setupMode && (
           <label className="block">
-            <span className="mb-1 block text-xs text-neutral-400">Full name</span>
+            <span className="mb-1 block text-xs text-neutral-400">Name</span>
             <input
               name="fullName"
               autoComplete="name"
@@ -76,7 +76,7 @@ export default async function LoginPage({
 
         {params.message === "check-email" && (
           <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
-            Check your email to confirm the account, then sign in.
+            Confirm email, then sign in.
           </div>
         )}
 
@@ -85,20 +85,20 @@ export default async function LoginPage({
           className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
         >
           {setupMode ? <UserPlus size={16} /> : <LogIn size={16} />}
-          {setupMode ? "Create admin account" : "Sign in"}
+          {setupMode ? "Create admin" : "Sign in"}
         </button>
 
         <div className="mt-4 text-center text-sm text-neutral-400">
           {setupMode ? (
             <a className="text-emerald-200 hover:text-emerald-100" href="/login">
-              I already have an account
+              Sign in
             </a>
           ) : (
             <a
               className="text-emerald-200 hover:text-emerald-100"
               href="/login?mode=setup"
             >
-              First time? Create admin account
+              Create admin
             </a>
           )}
         </div>
