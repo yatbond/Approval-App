@@ -18,6 +18,7 @@ export type UploadRequestDraft = {
   editedFields: Record<string, string>;
   uploadedAttachments: ApprovalAttachment[];
   parsedDocumentId?: string;
+  participantEmails: Record<string, string>;
   highlightGroups: HighlightFieldGroup[];
   activeHighlightGroupId: string;
   highlightBoxCounter: number;
@@ -66,11 +67,13 @@ export function buildUploadRequestDraft({
   editedFields,
   uploadedAttachments,
   parsedDocumentId,
+  participantEmails = {},
   highlightGroups,
   activeHighlightGroupId,
   highlightBoxCounter,
   savedAt = new Date().toISOString(),
-}: Omit<UploadRequestDraft, "version" | "savedAt"> & {
+}: Omit<UploadRequestDraft, "version" | "savedAt" | "participantEmails"> & {
+  participantEmails?: Record<string, string>;
   savedAt?: string;
 }): UploadRequestDraft {
   return {
@@ -81,6 +84,7 @@ export function buildUploadRequestDraft({
     editedFields,
     uploadedAttachments,
     parsedDocumentId,
+    participantEmails,
     highlightGroups,
     activeHighlightGroupId,
     highlightBoxCounter,
@@ -168,6 +172,9 @@ export function parseUploadRequestDraft(value: string): UploadRequestDraft | nul
         typeof parsed.parsedDocumentId === "string"
           ? parsed.parsedDocumentId
           : undefined,
+      participantEmails: isStringRecord(parsed.participantEmails)
+        ? parsed.participantEmails
+        : {},
       highlightGroups: parsed.highlightGroups as HighlightFieldGroup[],
       activeHighlightGroupId: parsed.activeHighlightGroupId,
       highlightBoxCounter: parsed.highlightBoxCounter,
@@ -454,6 +461,7 @@ export function clearUploadRequestDraft() {
     editedFields: {} as Record<string, string>,
     uploadedAttachments: [] as ApprovalAttachment[],
     parsedDocumentId: undefined as string | undefined,
+    participantEmails: {} as Record<string, string>,
     highlightGroups: [] as HighlightFieldGroup[],
     activeHighlightGroupId: "",
     highlightBoxCounter: 1,

@@ -50,6 +50,10 @@ import {
   type SavedUploadRequestDraft,
   type UploadRequestDraftStatus,
 } from "@/lib/upload-request-draft-state";
+import {
+  getWorkflowParticipantEmailFields,
+  type WorkflowParticipantEmailMap,
+} from "@/lib/workflow-participant-assignment-state";
 import type {
   ApprovalAttachment,
   WorkflowDocumentRequirement,
@@ -97,6 +101,8 @@ export function UploadView({
   workflowTemplates,
   selectedTemplateId,
   setSelectedTemplateId,
+  participantEmails,
+  setParticipantEmail,
   submissionMessage,
   onSubmitRequest,
   requestDrafts,
@@ -145,12 +151,14 @@ export function UploadView({
   workflowTemplates: WorkflowTemplate[];
   selectedTemplateId: string;
   setSelectedTemplateId: (id: string) => void;
+  participantEmails: WorkflowParticipantEmailMap;
+  setParticipantEmail: (nodeId: string, email: string) => void;
   submissionMessage: string;
-  onSubmitRequest: () => void;
+  onSubmitRequest: (participantEmails: WorkflowParticipantEmailMap) => void;
   requestDrafts: UploadRequestDraftRowView[];
   selectedRequestDraftId: string;
   onSelectRequestDraft: (rowId: string) => void;
-  onSubmitAllRequests: () => void;
+  onSubmitAllRequests: (participantEmails: WorkflowParticipantEmailMap) => void;
 }) {
   const [selectedPreviewPageId, setSelectedPreviewPageId] = useState("");
   const [selectionStart, setSelectionStart] = useState<Point | null>(null);
@@ -260,6 +268,9 @@ export function UploadView({
   const assignedUploadsHeading = sharedFulfillmentEnabled
     ? "Assigned"
     : "Required";
+  const participantEmailFields = selectedTemplate
+    ? getWorkflowParticipantEmailFields(selectedTemplate)
+    : [];
 
   useEffect(() => {
     if (selectedTemplate && selectedTemplate.id !== selectedTemplateId) {
@@ -572,6 +583,51 @@ export function UploadView({
             ))}
           </select>
         </label>
+
+        {participantEmailFields.length > 0 && (
+          <div className="mt-4 rounded-md border border-white/10 bg-[#121518] p-3">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-neutral-200">
+                Participants
+              </p>
+              <InfoTip label="Template emails are optional. Fill or change unlocked emails before starting this request. Fixed emails come from the template and cannot be changed here." />
+            </div>
+            <div className="mt-3 space-y-3">
+              {participantEmailFields.map((field) => {
+                const value = field.isFixed
+                  ? field.email
+                  : participantEmails[field.nodeId] ?? field.email;
+                return (
+                  <label
+                    key={field.nodeId}
+                    className="block min-w-0 rounded-md border border-white/10 bg-[#101214] p-3"
+                  >
+                    <span className="flex min-w-0 items-center justify-between gap-2 text-xs text-neutral-400">
+                      <span className="min-w-0 break-words">
+                        {field.label} - {field.inputLabel}
+                      </span>
+                      {field.isFixed && (
+                        <span className="shrink-0 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] text-amber-100">
+                          Fixed
+                        </span>
+                      )}
+                    </span>
+                    <input
+                      type="email"
+                      value={value}
+                      disabled={field.isFixed}
+                      placeholder="name@example.com"
+                      onChange={(event) =>
+                        setParticipantEmail(field.nodeId, event.target.value)
+                      }
+                      className="mt-2 h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none transition focus:border-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-65"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <UploadDraftPanel
           uploadDraftStatus={uploadDraftStatus}
@@ -1427,7 +1483,7 @@ export function UploadView({
             <div className="grid gap-2 sm:grid-cols-2">
               <button
                 type="button"
-                onClick={onSubmitRequest}
+                onClick={() => onSubmitRequest(participantEmails)}
                 disabled={missingRequiredDocuments.length > 0}
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-45"
               >
@@ -1437,7 +1493,7 @@ export function UploadView({
               {hasBatchDrafts && (
                 <button
                   type="button"
-                  onClick={onSubmitAllRequests}
+                  onClick={() => onSubmitAllRequests(participantEmails)}
                   disabled={isParsing}
                   className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-sky-500/40 bg-sky-500/10 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-45"
                 >

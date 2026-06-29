@@ -118,6 +118,32 @@ test("round trips a valid upload request draft through storage serialization", (
   assert.deepEqual(restored, draft);
 });
 
+test("round trips request-start participant emails with an upload draft", () => {
+  const draft = buildUploadRequestDraft({
+    selectedTemplateId: "template-finance",
+    fileName: "invoice.pdf",
+    parseResult,
+    editedFields: { Vendor: "Gleneagles Hospital" },
+    uploadedAttachments: [attachment],
+    parsedDocumentId: "invoice-doc",
+    participantEmails: {
+      "submit-node": "submitter@example.com",
+      "approval-node": "approver@example.com",
+    },
+    highlightGroups,
+    activeHighlightGroupId: "highlight-field-1",
+    highlightBoxCounter: 2,
+    savedAt: "2026-06-23T00:01:00.000Z",
+  });
+
+  const restored = parseUploadRequestDraft(serializeUploadRequestDraft(draft));
+
+  assert.deepEqual(restored?.participantEmails, {
+    "submit-node": "submitter@example.com",
+    "approval-node": "approver@example.com",
+  });
+});
+
 test("rejects malformed or obsolete upload request drafts", () => {
   assert.equal(parseUploadRequestDraft("not-json"), null);
   assert.equal(
@@ -176,6 +202,7 @@ test("clears upload request draft state after submit or discard", () => {
     editedFields: {},
     uploadedAttachments: [],
     parsedDocumentId: undefined,
+    participantEmails: {},
     highlightGroups: [],
     activeHighlightGroupId: "",
     highlightBoxCounter: 1,

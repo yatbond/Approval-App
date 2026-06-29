@@ -1224,15 +1224,15 @@ export function WorkflowView({
                       <label className="block">
                         <span className="mb-1 block text-xs text-neutral-400">
                           {selectedGraphNode.kind === "submit_request"
-                            ? "Submitter email"
-                            : "Person email"}
+                            ? "Submitter email (optional)"
+                            : "Person email (optional)"}
                         </span>
                         <input
                           value={selectedGraphNode.assigneeEmail || ""}
                           title={
                             selectedGraphNode.kind === "submit_request"
-                              ? "Email address that can see this submit box's assigned upload requirements."
-                              : "Email address that this workflow step will route to."
+                              ? "Optional default email for this submit position. It can be filled or changed when the request starts."
+                              : "Optional default email for this workflow position. It can be filled or changed when the request starts."
                           }
                           onChange={(event) =>
                             updateSelectedNode({ assigneeEmail: event.target.value })
@@ -1241,6 +1241,27 @@ export function WorkflowView({
                           list="workflow-user-directory"
                           className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
                         />
+                      </label>
+                      <label className="flex items-start gap-2 rounded-md border border-white/10 bg-[#101214] p-3 text-xs text-neutral-300">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={Boolean(selectedGraphNode.assigneeEmailFixed)}
+                          title="Lock this template email so the request starter cannot change it."
+                          onChange={(event) =>
+                            updateSelectedNode({
+                              assigneeEmailFixed: event.target.checked,
+                            })
+                          }
+                        />
+                        <span className="min-w-0">
+                          <span className="block font-medium text-neutral-100">
+                            Fixed email
+                          </span>
+                          <span className="mt-1 block text-neutral-500">
+                            Lock this default email when a real request starts.
+                          </span>
+                        </span>
                       </label>
                     </>
                   )}

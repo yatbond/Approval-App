@@ -111,6 +111,9 @@ import {
   getWorkspaceRequestSubmissionPersistenceMessage,
   getWorkspaceRequestSubmissionState,
 } from "@/lib/workspace-request-submission-state";
+import type {
+  WorkflowParticipantEmailMap,
+} from "@/lib/workflow-participant-assignment-state";
 import { getApprovalWorkspaceTaskState } from "@/lib/approval-workspace-task-state";
 import {
   getTaskContributorRequestState,
@@ -246,6 +249,8 @@ function ApprovalWorkspaceBody({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [uploadedAttachments, setUploadedAttachments] = useState<ApprovalAttachment[]>([]);
   const [parsedDocumentId, setParsedDocumentId] = useState<string | undefined>();
+  const [requestParticipantEmails, setRequestParticipantEmails] =
+    useState<WorkflowParticipantEmailMap>({});
   const [uploadRequestDraftRows, setUploadRequestDraftRows] = useState<
     UploadRequestDraftRow[]
   >([]);
@@ -309,6 +314,7 @@ function ApprovalWorkspaceBody({
         editedFields,
         uploadedAttachments,
         parsedDocumentId,
+        participantEmails: requestParticipantEmails,
         highlightGroups: uploadHighlightGroups,
         activeHighlightGroupId: uploadActiveHighlightGroupId,
         highlightBoxCounter: uploadHighlightBoxCounter,
@@ -319,6 +325,7 @@ function ApprovalWorkspaceBody({
       fileName,
       parseResult,
       parsedDocumentId,
+      requestParticipantEmails,
       selectedTemplate?.id,
       selectedTemplateId,
       uploadActiveHighlightGroupId,
@@ -365,6 +372,7 @@ function ApprovalWorkspaceBody({
       setEditedFields(draft.editedFields);
       setUploadedAttachments(draft.uploadedAttachments);
       setParsedDocumentId(draft.parsedDocumentId);
+      setRequestParticipantEmails(draft.participantEmails);
       const restoredRowId = draft.fileName || draft.parsedDocumentId
         ? `restored-${draft.savedAt}`
         : "";
@@ -390,6 +398,16 @@ function ApprovalWorkspaceBody({
       setUploadDraftRestoreToken(draft.savedAt);
     },
     [setSelectedTemplateId],
+  );
+
+  const updateRequestParticipantEmail = useCallback(
+    (nodeId: string, email: string) => {
+      setRequestParticipantEmails((emails) => ({
+        ...emails,
+        [nodeId]: email,
+      }));
+    },
+    [],
   );
 
   useEffect(() => {
@@ -650,6 +668,7 @@ function ApprovalWorkspaceBody({
     setEditedFields(cleared.editedFields);
     setUploadedAttachments(cleared.uploadedAttachments);
     setParsedDocumentId(cleared.parsedDocumentId);
+    setRequestParticipantEmails(cleared.participantEmails);
     setUploadRequestDraftRows([]);
     setSelectedUploadRequestDraftRowId("");
     setDocumentPreviewPages([]);
@@ -1446,9 +1465,12 @@ function ApprovalWorkspaceBody({
     }
   }
 
-  async function submitParsedRequest() {
+  async function submitParsedRequest(
+    participantEmails: WorkflowParticipantEmailMap = requestParticipantEmails,
+  ) {
     const nextState = getWorkspaceRequestSubmissionState({
       selectedTemplate,
+      participantEmails,
       parseResult,
       activeUser,
       fileName,
@@ -1519,14 +1541,17 @@ function ApprovalWorkspaceBody({
     );
   }
 
-  async function submitAllParsedRequests() {
+  async function submitAllParsedRequests(
+    participantEmails: WorkflowParticipantEmailMap = requestParticipantEmails,
+  ) {
     if (uploadRequestDraftRows.length < 2) {
-      await submitParsedRequest();
+      await submitParsedRequest(participantEmails);
       return;
     }
 
     const nextState = getWorkspaceBatchRequestSubmissionState({
       selectedTemplate,
+      participantEmails,
       activeUser,
       drafts: uploadRequestDraftRows.map((row) => ({
         id: row.id,
@@ -1989,6 +2014,7 @@ function ApprovalWorkspaceBody({
 
   function selectTemplateRecord(templateId: string) {
     setSelectedTemplateId(templateId);
+    setRequestParticipantEmails({});
     void persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({ selectedTemplateId: templateId }),
     );
@@ -2087,6 +2113,8 @@ function ApprovalWorkspaceBody({
                 workflowTemplates={templates}
                 selectedTemplateId={selectedTemplate?.id || ""}
                 setSelectedTemplateId={selectTemplateRecord}
+                participantEmails={requestParticipantEmails}
+                setParticipantEmail={updateRequestParticipantEmail}
                 submissionMessage={submissionMessage}
                 onSubmitRequest={submitParsedRequest}
                 requestDrafts={uploadRequestDraftRows}

@@ -515,25 +515,6 @@ export function validateWorkflowTemplate(
   });
 
   graph.nodes.forEach((node) => {
-    if (
-      (node.kind === "approval" || node.kind === "review") &&
-      !node.assigneeEmail?.trim()
-    ) {
-      issues.push({
-        severity: "error",
-        nodeId: node.id,
-        message: `${node.label}: Person email is required.`,
-      });
-    }
-
-    if (node.kind === "for_information" && !node.assigneeEmail?.trim()) {
-      issues.push({
-        severity: "warning",
-        nodeId: node.id,
-        message: `${node.label}: FYI recipient email is missing.`,
-      });
-    }
-
     (node.documentIds || []).forEach((documentId) => {
       const document = documentById.get(documentId);
 

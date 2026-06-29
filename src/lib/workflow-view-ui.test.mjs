@@ -48,6 +48,9 @@ test("workflow template box details use position names without person-name field
   const source = readFileSync("src/app/workflow-view.tsx", "utf8");
 
   assert.equal(source.includes("Position Name"), true);
+  assert.equal(source.includes("Submitter email (optional)"), true);
+  assert.equal(source.includes("Person email (optional)"), true);
+  assert.equal(source.includes("Fixed email"), true);
   assert.equal(source.includes("Submitter name"), false);
   assert.equal(source.includes("Person name"), false);
   assert.equal(source.includes("assigneeName: event.target.value"), false);

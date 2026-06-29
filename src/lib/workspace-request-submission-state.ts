@@ -9,6 +9,11 @@ import {
   getMissingRequiredSubmissionDocuments,
 } from "./request-builder.ts";
 import { isManualFormRequirement } from "./workflow-documents.ts";
+import {
+  applyWorkflowParticipantEmails,
+  getMissingWorkflowParticipantEmails,
+  type WorkflowParticipantEmailMap,
+} from "./workflow-participant-assignment-state.ts";
 
 type ParseResultLike = {
   fields?: Record<string, string>;
@@ -30,6 +35,7 @@ export function getWorkspaceRequestSubmissionState({
   fileName,
   editedFields,
   uploadedAttachments,
+  participantEmails = {},
   tasks,
   now,
   taskId,
@@ -40,6 +46,7 @@ export function getWorkspaceRequestSubmissionState({
   fileName: string;
   editedFields: Record<string, string>;
   uploadedAttachments: ApprovalAttachment[];
+  participantEmails?: WorkflowParticipantEmailMap;
   tasks: ApprovalTask[];
   now?: Date;
   taskId?: string;
@@ -90,8 +97,24 @@ export function getWorkspaceRequestSubmissionState({
     };
   }
 
-  const missingRequiredDocuments = getMissingRequiredSubmissionDocuments(
+  const assignedTemplate = applyWorkflowParticipantEmails(
     selectedTemplate,
+    participantEmails,
+  );
+  const missingParticipantEmails =
+    getMissingWorkflowParticipantEmails(assignedTemplate);
+  if (missingParticipantEmails.length) {
+    return {
+      didSubmit: false,
+      tasks,
+      selectedTaskId: "",
+      shouldClearUploadedAttachments: false,
+      submissionMessage: `Missing workflow participant email(s): ${missingParticipantEmails.join(", ")}.`,
+    };
+  }
+
+  const missingRequiredDocuments = getMissingRequiredSubmissionDocuments(
+    assignedTemplate,
     uploadedAttachments,
   );
   if (missingRequiredDocuments.length) {
@@ -107,7 +130,7 @@ export function getWorkspaceRequestSubmissionState({
   }
 
   const missingRequiredFields = getMissingRequiredExtractedFields({
-    selectedTemplate,
+    selectedTemplate: assignedTemplate,
     editedFields,
   });
   if (missingRequiredFields.length) {
@@ -138,7 +161,7 @@ export function getWorkspaceRequestSubmissionState({
     id: taskId,
     now,
     requester: activeUser,
-    template: selectedTemplate,
+    template: assignedTemplate,
     sourceFileName: fileName,
     extractedFields: editedFields,
     attachments: uploadedAttachments,
@@ -158,6 +181,7 @@ export function getWorkspaceBatchRequestSubmissionState({
   selectedTemplate,
   activeUser,
   drafts,
+  participantEmails = {},
   tasks,
   now,
   taskIdPrefix,
@@ -165,6 +189,7 @@ export function getWorkspaceBatchRequestSubmissionState({
   selectedTemplate: WorkflowTemplate | null;
   activeUser: ApprovalActor;
   drafts: UploadRequestSubmissionDraft[];
+  participantEmails?: WorkflowParticipantEmailMap;
   tasks: ApprovalTask[];
   now?: Date;
   taskIdPrefix?: string;
@@ -195,6 +220,7 @@ export function getWorkspaceBatchRequestSubmissionState({
       fileName: draft.fileName,
       editedFields: draft.editedFields,
       uploadedAttachments: draft.uploadedAttachments,
+      participantEmails,
       tasks: nextTasks,
       now,
       taskId: batchTaskIdPrefix ? `${batchTaskIdPrefix}-${index + 1}` : undefined,

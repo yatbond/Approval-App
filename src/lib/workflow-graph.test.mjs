@@ -612,14 +612,7 @@ test("validates missing first approver and document extraction fields", () => {
     },
   });
 
-  assert.ok(
-    issues.some(
-      (issue) =>
-        issue.severity === "error" &&
-        issue.nodeId === "approval-1" &&
-        issue.message.includes("Person email"),
-    ),
-  );
+  assert.equal(issues.some((issue) => issue.message.includes("Person email")), false);
   assert.ok(
     issues.some(
       (issue) =>
@@ -803,7 +796,10 @@ test("validates missing edge endpoints, FYI owners, documents, and empty conditi
 
   assert.ok(issues.some((issue) => issue.message.includes("starts from a missing box")));
   assert.ok(issues.some((issue) => issue.message.includes("points to a missing box")));
-  assert.ok(issues.some((issue) => issue.message.includes("FYI recipient email is missing")));
+  assert.equal(
+    issues.some((issue) => issue.message.includes("FYI recipient email is missing")),
+    false,
+  );
   assert.ok(issues.some((issue) => issue.message.includes("missing-document")));
   assert.ok(issues.some((issue) => issue.message.includes("No conditions are configured")));
   assert.ok(issues.some((issue) => issue.message.includes("not extracted by any document")));

@@ -26,15 +26,11 @@ export function getWorkflowCreateNodeState({
   kind: WorkflowNodeKind;
   selectedNodeId?: string | null;
 }): WorkflowCanvasEditState {
-  const ownerBackedKind =
-    kind === "approval" || kind === "review" || kind === "for_information";
   const position = getNewNodePosition(graph, selectedNodeId);
   const nextGraph = addWorkflowNode(graph, kind, {
     x: position.x,
     y: position.y,
     blocking: kind !== "for_information" && kind !== "end",
-    assigneeName: ownerBackedKind ? "New owner" : undefined,
-    assigneeEmail: ownerBackedKind ? "owner@example.com" : undefined,
   });
   const created = nextGraph.nodes.at(-1);
 

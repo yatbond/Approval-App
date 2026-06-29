@@ -147,6 +147,144 @@ test("warns before submitting low confidence extracted values", () => {
   );
 });
 
+test("requires workflow participant emails when a request is submitted", () => {
+  const state = getWorkspaceRequestSubmissionState({
+    selectedTemplate: {
+      ...template,
+      steps: [],
+      graph: {
+        nodes: [
+          { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+          {
+            id: "approval-1",
+            kind: "approval",
+            label: "Finance approval",
+            x: 160,
+            y: 0,
+          },
+        ],
+        edges: [
+          {
+            id: "edge-start-approval",
+            sourceId: "start",
+            targetId: "approval-1",
+            label: "Submit",
+            branchType: "main",
+          },
+        ],
+      },
+    },
+    parseResult,
+    activeUser: actor,
+    fileName: "invoice.pdf",
+    editedFields: parseResult.fields,
+    uploadedAttachments: [makeAttachment("attachment-1")],
+    tasks: [],
+  });
+
+  assert.equal(state.didSubmit, false);
+  assert.equal(
+    state.submissionMessage,
+    "Missing workflow participant email(s): Finance approval.",
+  );
+});
+
+test("applies request-start participant emails before creating a task", () => {
+  const state = getWorkspaceRequestSubmissionState({
+    selectedTemplate: {
+      ...template,
+      steps: [],
+      graph: {
+        nodes: [
+          { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+          {
+            id: "approval-1",
+            kind: "approval",
+            label: "Finance approval",
+            x: 160,
+            y: 0,
+          },
+        ],
+        edges: [
+          {
+            id: "edge-start-approval",
+            sourceId: "start",
+            targetId: "approval-1",
+            label: "Submit",
+            branchType: "main",
+          },
+        ],
+      },
+    },
+    participantEmails: { "approval-1": "finance@example.com" },
+    parseResult,
+    activeUser: actor,
+    fileName: "invoice.pdf",
+    editedFields: parseResult.fields,
+    uploadedAttachments: [makeAttachment("attachment-1")],
+    tasks: [],
+    taskId: "APR-ASSIGNED",
+  });
+
+  assert.equal(state.didSubmit, true);
+  assert.equal(state.tasks[0].currentOwner, "finance@example.com");
+  assert.equal(
+    state.tasks[0].workflowTemplateSnapshot?.graph?.nodes.find(
+      (node) => node.id === "approval-1",
+    )?.assigneeEmail,
+    "finance@example.com",
+  );
+});
+
+test("keeps fixed template participant emails when request-start values try to override them", () => {
+  const state = getWorkspaceRequestSubmissionState({
+    selectedTemplate: {
+      ...template,
+      steps: [],
+      graph: {
+        nodes: [
+          { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+          {
+            id: "approval-1",
+            kind: "approval",
+            label: "Finance approval",
+            x: 160,
+            y: 0,
+            assigneeEmail: "fixed-finance@example.com",
+            assigneeEmailFixed: true,
+          },
+        ],
+        edges: [
+          {
+            id: "edge-start-approval",
+            sourceId: "start",
+            targetId: "approval-1",
+            label: "Submit",
+            branchType: "main",
+          },
+        ],
+      },
+    },
+    participantEmails: { "approval-1": "changed@example.com" },
+    parseResult,
+    activeUser: actor,
+    fileName: "invoice.pdf",
+    editedFields: parseResult.fields,
+    uploadedAttachments: [makeAttachment("attachment-1")],
+    tasks: [],
+    taskId: "APR-FIXED",
+  });
+
+  assert.equal(state.didSubmit, true);
+  assert.equal(state.tasks[0].currentOwner, "fixed-finance@example.com");
+  assert.equal(
+    state.tasks[0].workflowTemplateSnapshot?.graph?.nodes.find(
+      (node) => node.id === "approval-1",
+    )?.assigneeEmail,
+    "fixed-finance@example.com",
+  );
+});
+
 test("creates a task, selects it, clears uploads, and returns a submission message", () => {
   const attachment = {
     id: "attachment-1",

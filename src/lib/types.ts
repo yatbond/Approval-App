@@ -331,6 +331,7 @@ export type WorkflowGraphNode = {
   y: number;
   assigneeName?: string;
   assigneeEmail?: string;
+  assigneeEmailFixed?: boolean;
   dueInHours?: number;
   escalationName?: string;
   escalationEmail?: string;

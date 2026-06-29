@@ -13,7 +13,7 @@ const graph = {
   edges: [],
 };
 
-test("creates an owner-backed canvas box and selects it", () => {
+test("creates an owner-optional canvas box and selects it", () => {
   const result = getWorkflowCreateNodeState({ graph, kind: "approval" });
 
   assert.equal(result.didUpdate, true);
@@ -22,8 +22,8 @@ test("creates an owner-backed canvas box and selects it", () => {
   const created = result.graph.nodes.at(-1);
   assert.equal(result.selectedNodeId, created?.id);
   assert.equal(created?.blocking, true);
-  assert.equal(created?.assigneeName, "New owner");
-  assert.equal(created?.assigneeEmail, "owner@example.com");
+  assert.equal(created?.assigneeName, undefined);
+  assert.equal(created?.assigneeEmail, undefined);
 });
 
 test("places a new box to the right of the selected box", () => {
@@ -77,8 +77,8 @@ test("creates nonblocking for-information and end boxes with the expected defaul
   const end = getWorkflowCreateNodeState({ graph, kind: "end" });
 
   assert.equal(fyi.graph.nodes.at(-1)?.blocking, false);
-  assert.equal(fyi.graph.nodes.at(-1)?.assigneeName, "New owner");
-  assert.equal(fyi.graph.nodes.at(-1)?.assigneeEmail, "owner@example.com");
+  assert.equal(fyi.graph.nodes.at(-1)?.assigneeName, undefined);
+  assert.equal(fyi.graph.nodes.at(-1)?.assigneeEmail, undefined);
   assert.equal(end.graph.nodes.at(-1)?.blocking, false);
   assert.equal(end.graph.nodes.at(-1)?.assigneeName, undefined);
   assert.equal(end.graph.nodes.at(-1)?.assigneeEmail, undefined);
