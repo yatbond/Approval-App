@@ -32,13 +32,16 @@ import { createWorkflowFieldFromRecognition } from "@/lib/template-recognition-s
 import { acceptForDocumentFormat } from "@/lib/workflow-documents";
 import {
   buildWorkflowDocumentSample,
+  clearWorkflowDocumentSampleTrainingDraft,
   getSamplePageImages,
   getSamplePreviewPages,
+  saveWorkflowDocumentSampleTrainingDraft,
 } from "@/lib/workflow-document-sample-state";
 import type {
   ExtractionTrainingExample,
   WorkflowDocumentRequirement,
   WorkflowDocumentSample,
+  WorkflowDocumentSampleTrainingDraft,
   WorkflowField,
   WorkflowTemplate,
 } from "@/lib/types";
@@ -65,6 +68,12 @@ export function TemplateDocumentRecognitionPanel({
   onAddField: (field: WorkflowField, example?: ExtractionTrainingExample) => void;
   onSaveSample: (sample: WorkflowDocumentSample) => void;
 }) {
+  const trainingDraft = document.sample?.trainingDraft;
+  const initialSelectedFieldName =
+    trainingDraft?.selectedFieldName || document.fields[0]?.name || NEW_FIELD_VALUE;
+  const initialSelectedField = document.fields.find(
+    (field) => field.name === initialSelectedFieldName,
+  );
   const [fileName, setFileName] = useState(document.sample?.fileName || "");
   const [sampleFile, setSampleFile] = useState<File | null>(null);
   const [samplePageImages, setSamplePageImages] = useState<
@@ -79,16 +88,18 @@ export function TemplateDocumentRecognitionPanel({
   const [selectedPreviewPageId, setSelectedPreviewPageId] = useState(
     () => getSamplePreviewPages(document.sample)[0]?.id || "",
   );
-  const [selectedFieldName, setSelectedFieldName] = useState(
-    document.fields[0]?.name || NEW_FIELD_VALUE,
+  const [selectedFieldName, setSelectedFieldName] = useState(initialSelectedFieldName);
+  const [newFieldLabel, setNewFieldLabel] = useState(
+    trainingDraft?.newFieldLabel || "",
   );
-  const [newFieldLabel, setNewFieldLabel] = useState("");
   const [fieldInstructions, setFieldInstructions] = useState(
-    document.fields[0]?.instructions || "",
+    trainingDraft?.instructions ?? initialSelectedField?.instructions ?? "",
   );
-  const [fieldValue, setFieldValue] = useState("");
-  const [fieldEvidence, setFieldEvidence] = useState("");
-  const [fieldAnchor, setFieldAnchor] = useState<TrainingAnchor | null>(null);
+  const [fieldValue, setFieldValue] = useState(trainingDraft?.value || "");
+  const [fieldEvidence, setFieldEvidence] = useState(trainingDraft?.evidence || "");
+  const [fieldAnchor, setFieldAnchor] = useState<TrainingAnchor | null>(
+    trainingDraft?.anchor || null,
+  );
   const [savedSampleFields, setSavedSampleFields] = useState<SavedSampleField[]>([]);
   const [isBoxSelectorOpen, setIsBoxSelectorOpen] = useState(false);
   const [boxSelectorZoom, setBoxSelectorZoom] = useState(180);
@@ -139,14 +150,59 @@ export function TemplateDocumentRecognitionPanel({
     (example) => example.documentId === document.id,
   );
 
+  function persistTrainingDraft(
+    overrides: Partial<
+      Omit<WorkflowDocumentSampleTrainingDraft, "anchor"> & {
+        anchor: TrainingAnchor | null;
+      }
+    > = {},
+  ) {
+    if (!document.sample) {
+      return;
+    }
+
+    const nextAnchor =
+      Object.prototype.hasOwnProperty.call(overrides, "anchor")
+        ? overrides.anchor
+        : fieldAnchor;
+    const nextDraft: WorkflowDocumentSampleTrainingDraft = {
+      selectedFieldName: overrides.selectedFieldName ?? effectiveSelectedFieldName,
+      newFieldLabel: overrides.newFieldLabel ?? newFieldLabel,
+      instructions: overrides.instructions ?? fieldInstructions,
+      value: overrides.value ?? fieldValue,
+      ...(overrides.evidence ?? fieldEvidence
+        ? { evidence: overrides.evidence ?? fieldEvidence }
+        : {}),
+      ...(nextAnchor ? { anchor: nextAnchor } : {}),
+    };
+
+    onSaveSample(saveWorkflowDocumentSampleTrainingDraft(document.sample, nextDraft));
+  }
+
+  function clearSampleTrainingDraft() {
+    if (!document.sample) {
+      return;
+    }
+
+    onSaveSample(clearWorkflowDocumentSampleTrainingDraft(document.sample));
+  }
+
   function selectTrainingField(fieldName: string) {
     const selected = document.fields.find((field) => field.name === fieldName);
+    const instructions = selected?.instructions || "";
     setSelectedFieldName(fieldName);
-    setFieldInstructions(selected?.instructions || "");
+    setFieldInstructions(instructions);
     setFieldValue("");
     setFieldEvidence("");
     setFieldAnchor(null);
     setHighlightRect(null);
+    persistTrainingDraft({
+      selectedFieldName: fieldName,
+      instructions,
+      value: "",
+      evidence: "",
+      anchor: null,
+    });
   }
 
   function selectNextUnsavedField(currentFieldName: string) {
@@ -165,6 +221,7 @@ export function TemplateDocumentRecognitionPanel({
     setFieldEvidence("");
     setFieldAnchor(null);
     setHighlightRect(null);
+    clearSampleTrainingDraft();
   }
 
   function pointFromPreviewEvent(event: MouseEvent<HTMLDivElement>) {
@@ -383,6 +440,11 @@ export function TemplateDocumentRecognitionPanel({
       setFieldValue(recognized.value);
       setFieldEvidence(recognized.evidence);
       setFieldAnchor(null);
+      persistTrainingDraft({
+        value: recognized.value,
+        evidence: recognized.evidence,
+        anchor: null,
+      });
       if (!recognized.value) {
         setParseError(getSampleRecognitionFailureMessage(payload));
       }
@@ -421,6 +483,15 @@ export function TemplateDocumentRecognitionPanel({
         pageNumber: selectedPreviewPage.pageNumber,
         rect: highlightRect,
         nearbyText: recognized.evidence,
+      });
+      persistTrainingDraft({
+        value: recognized.value,
+        evidence: recognized.evidence,
+        anchor: {
+          pageNumber: selectedPreviewPage.pageNumber,
+          rect: highlightRect,
+          nearbyText: recognized.evidence,
+        },
       });
       setIsBoxSelectorOpen(false);
     } catch (error) {
@@ -614,7 +685,10 @@ export function TemplateDocumentRecognitionPanel({
             {isNewField && (
               <input
                 value={newFieldLabel}
-                onChange={(event) => setNewFieldLabel(event.target.value)}
+                onChange={(event) => {
+                  setNewFieldLabel(event.target.value);
+                  persistTrainingDraft({ newFieldLabel: event.target.value });
+                }}
                 placeholder="New field name"
                 className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
               />
@@ -626,7 +700,10 @@ export function TemplateDocumentRecognitionPanel({
               </span>
               <input
                 value={fieldInstructions}
-                onChange={(event) => setFieldInstructions(event.target.value)}
+                onChange={(event) => {
+                  setFieldInstructions(event.target.value);
+                  persistTrainingDraft({ instructions: event.target.value });
+                }}
                 placeholder="Instruction"
                 className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
               />
@@ -638,7 +715,10 @@ export function TemplateDocumentRecognitionPanel({
               </span>
               <input
                 value={fieldValue}
-                onChange={(event) => setFieldValue(event.target.value)}
+                onChange={(event) => {
+                  setFieldValue(event.target.value);
+                  persistTrainingDraft({ value: event.target.value });
+                }}
                 placeholder="Sample value"
                 className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
               />

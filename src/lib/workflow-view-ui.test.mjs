@@ -136,3 +136,12 @@ test("sample recognition actions prioritize manual extract before full auto and 
   assert.equal(source.includes("AI Recognize"), false);
   assert.equal(source.includes("Extract box"), false);
 });
+
+test("sample recognition persists in-progress training edits with the sample draft", () => {
+  const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
+
+  assert.equal(source.includes("saveWorkflowDocumentSampleTrainingDraft"), true);
+  assert.equal(source.includes("persistTrainingDraft"), true);
+  assert.equal(source.includes("document.sample?.trainingDraft"), true);
+  assert.equal(source.includes("clearWorkflowDocumentSampleTrainingDraft"), true);
+});

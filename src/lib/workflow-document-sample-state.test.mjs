@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildWorkflowDocumentSample,
+  clearWorkflowDocumentSampleTrainingDraft,
   getSamplePageImages,
   getSamplePreviewPages,
+  saveWorkflowDocumentSampleTrainingDraft,
+  sanitizeWorkflowDocumentSample,
 } from "./workflow-document-sample-state.ts";
 
 test("builds a durable workflow document sample from uploaded PDF preview data", () => {
@@ -149,4 +152,102 @@ test("caps oversized workflow sample OCR page images", () => {
       pageText: "Visible typed text",
     },
   ]);
+});
+
+test("persists the in-progress sample training draft with the uploaded sample", () => {
+  const sample = buildWorkflowDocumentSample({
+    file: {
+      name: "sample.pdf",
+      type: "application/pdf",
+    },
+    previewPages: [],
+    pageImages: [],
+    savedAt: "2026-06-29T01:00:00.000Z",
+  });
+
+  const withDraft = saveWorkflowDocumentSampleTrainingDraft(sample, {
+    selectedFieldName: "payment_amount",
+    newFieldLabel: "",
+    instructions: "extract payment amount",
+    value: "HKD 500,000.00",
+    evidence: "Amount due section",
+    anchor: {
+      pageNumber: 1,
+      rect: {
+        x: 10,
+        y: 20,
+        width: 30,
+        height: 8,
+      },
+      nearbyText: "Amount due section",
+    },
+  });
+
+  assert.deepEqual(withDraft.trainingDraft, {
+    selectedFieldName: "payment_amount",
+    newFieldLabel: "",
+    instructions: "extract payment amount",
+    value: "HKD 500,000.00",
+    evidence: "Amount due section",
+    anchor: {
+      pageNumber: 1,
+      rect: {
+        x: 10,
+        y: 20,
+        width: 30,
+        height: 8,
+      },
+      nearbyText: "Amount due section",
+    },
+  });
+});
+
+test("keeps the sample training draft through sample sanitization", () => {
+  const sample = saveWorkflowDocumentSampleTrainingDraft(
+    {
+      fileName: "sample.pdf",
+      mimeType: "application/pdf",
+      previewPages: [],
+      pageImages: [],
+      savedAt: "2026-06-29T01:00:00.000Z",
+    },
+    {
+      selectedFieldName: "subcontractor_name",
+      newFieldLabel: "",
+      instructions: "extract name of subcontractor",
+      value: "Ming Kee Construction",
+      evidence: "recognized vendor line",
+      anchor: null,
+    },
+  );
+
+  assert.deepEqual(sanitizeWorkflowDocumentSample(sample).trainingDraft, {
+    selectedFieldName: "subcontractor_name",
+    newFieldLabel: "",
+    instructions: "extract name of subcontractor",
+    value: "Ming Kee Construction",
+    evidence: "recognized vendor line",
+  });
+});
+
+test("clears the in-progress training draft after the sample field is saved", () => {
+  const sample = saveWorkflowDocumentSampleTrainingDraft(
+    {
+      fileName: "sample.pdf",
+      mimeType: "application/pdf",
+      previewPages: [],
+      pageImages: [],
+      savedAt: "2026-06-29T01:00:00.000Z",
+    },
+    {
+      selectedFieldName: "payment_amount",
+      newFieldLabel: "",
+      instructions: "extract payment amount",
+      value: "500,000.00",
+      evidence: "",
+      anchor: null,
+    },
+  );
+
+  assert.equal(clearWorkflowDocumentSampleTrainingDraft(sample).trainingDraft, undefined);
 });

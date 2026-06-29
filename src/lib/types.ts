@@ -135,6 +135,16 @@ export type WorkflowDocumentSample = {
   previewPages: WorkflowDocumentSamplePage[];
   pageImages?: WorkflowDocumentSamplePage[];
   savedAt: string;
+  trainingDraft?: WorkflowDocumentSampleTrainingDraft;
+};
+
+export type WorkflowDocumentSampleTrainingDraft = {
+  selectedFieldName: string;
+  newFieldLabel?: string;
+  instructions: string;
+  value: string;
+  evidence?: string;
+  anchor?: ExtractionTrainingExample["anchor"];
 };
 
 export type ApprovalAttachment = {

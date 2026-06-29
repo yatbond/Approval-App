@@ -1,6 +1,10 @@
 import { buildPreviewPagesFromPdfImages, type DocumentPreviewPage } from "./document-preview.ts";
 import type { PdfPageImageInput } from "./parser.ts";
-import type { WorkflowDocumentSample, WorkflowDocumentSamplePage } from "./types.ts";
+import type {
+  WorkflowDocumentSample,
+  WorkflowDocumentSamplePage,
+  WorkflowDocumentSampleTrainingDraft,
+} from "./types.ts";
 
 type FileLike = Pick<File, "name" | "type">;
 
@@ -49,7 +53,28 @@ export function sanitizeWorkflowDocumentSample(
     }),
     pageImages,
     savedAt: sample.savedAt,
+    ...(sample.trainingDraft
+      ? { trainingDraft: sanitizeWorkflowDocumentSampleTrainingDraft(sample.trainingDraft) }
+      : {}),
   };
+}
+
+export function saveWorkflowDocumentSampleTrainingDraft(
+  sample: WorkflowDocumentSample,
+  draft: WorkflowDocumentSampleTrainingDraft,
+): WorkflowDocumentSample {
+  return {
+    ...sample,
+    trainingDraft: sanitizeWorkflowDocumentSampleTrainingDraft(draft),
+  };
+}
+
+export function clearWorkflowDocumentSampleTrainingDraft(
+  sample: WorkflowDocumentSample,
+): WorkflowDocumentSample {
+  const nextSample = { ...sample };
+  delete nextSample.trainingDraft;
+  return nextSample;
 }
 
 export function getSamplePreviewPages(
@@ -124,4 +149,17 @@ function sanitizeSamplePages(
 
 function hasStoredImage(pages: WorkflowDocumentSamplePage[]) {
   return pages.some((page) => Boolean(page.imageBase64));
+}
+
+function sanitizeWorkflowDocumentSampleTrainingDraft(
+  draft: WorkflowDocumentSampleTrainingDraft,
+): WorkflowDocumentSampleTrainingDraft {
+  return {
+    selectedFieldName: draft.selectedFieldName,
+    ...(draft.newFieldLabel !== undefined ? { newFieldLabel: draft.newFieldLabel } : {}),
+    instructions: draft.instructions,
+    value: draft.value,
+    ...(draft.evidence ? { evidence: draft.evidence } : {}),
+    ...(draft.anchor ? { anchor: draft.anchor } : {}),
+  };
 }
