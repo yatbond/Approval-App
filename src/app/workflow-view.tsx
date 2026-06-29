@@ -78,7 +78,12 @@ import {
   getWorkflowConnectNodesState,
   getWorkflowCreateNodeState,
 } from "@/lib/workflow-canvas-edit-state";
-import { getWorkflowAddBoxDocumentState } from "@/lib/workflow-box-document-state";
+import {
+  getWorkflowAddBoxDocumentState,
+  getWorkflowRemoveBoxDocumentState,
+  pruneUnusedWorkflowDocuments,
+} from "@/lib/workflow-box-document-state";
+import { getWorkflowHandoffDocumentOptions } from "@/lib/workflow-handoff-document-options-state";
 import {
   getWorkflowTemplateDocumentState,
   getWorkflowUpdateDocumentRequirementState,
@@ -147,7 +152,6 @@ const handoffFieldVisibilityOptions = [
 
 const handoffDocumentVisibilityOptions = [
   { value: "all", label: "All documents" },
-  { value: "required_for_node", label: "Required here" },
   { value: "selected", label: "Selected documents" },
   { value: "none", label: "No documents" },
 ] as const;
@@ -294,6 +298,16 @@ export function WorkflowView({
   const handoffFieldNames = useMemo(
     () => (workflow ? getWorkflowHandoffFieldNames(workflow) : []),
     [workflow],
+  );
+  const handoffDocumentOptions = useMemo(
+    () =>
+      workflow && selectedGraphNode
+        ? getWorkflowHandoffDocumentOptions({
+            template: workflow,
+            nodeId: selectedGraphNode.id,
+          })
+        : [],
+    [selectedGraphNode, workflow],
   );
   const [canvasViewResetNonce, setCanvasViewResetNonce] = useState(0);
   const canvasInstanceKey = useMemo(
@@ -447,10 +461,11 @@ export function WorkflowView({
     if (!workflow) {
       return;
     }
+    const prunedNextTemplate = pruneUnusedWorkflowDocuments(nextTemplate);
 
     const previewState = getWorkflowTemplateSaveState({
       currentTemplate: workflow,
-      nextTemplate,
+      nextTemplate: prunedNextTemplate,
       label,
       historyById: workflowHistoryById,
       historyId: activeWorkflowHistoryId,
@@ -465,14 +480,14 @@ export function WorkflowView({
     setWorkflowHistoryById((historyById) => {
       const nextState = getWorkflowTemplateSaveState({
         currentTemplate: workflow,
-        nextTemplate,
+        nextTemplate: prunedNextTemplate,
         label,
         historyById,
         historyId: activeWorkflowHistoryId,
       });
       return nextState.historyById;
     });
-    onUpdateTemplate(nextTemplate);
+    onUpdateTemplate(prunedNextTemplate);
     setWorkflowActionMessage(label);
   }
 
@@ -721,6 +736,23 @@ export function WorkflowView({
       documentId,
       patch,
     });
+    saveWorkflowTemplate(nextState.template, nextState.label);
+  }
+
+  function removeBoxDocumentRequirement(documentId: string) {
+    if (!workflow || !selectedGraphNode) {
+      return;
+    }
+
+    const nextState = getWorkflowRemoveBoxDocumentState({
+      template: workflow,
+      nodeId: selectedGraphNode.id,
+      documentId,
+    });
+    if (!nextState.didUpdate) {
+      return;
+    }
+
     saveWorkflowTemplate(nextState.template, nextState.label);
   }
 
@@ -1571,7 +1603,10 @@ export function WorkflowView({
                           <select
                             value={
                               selectedGraphNode.handoffView?.documentVisibility
-                                ?.mode || "all"
+                                ?.mode === "required_for_node"
+                                ? "selected"
+                                : selectedGraphNode.handoffView?.documentVisibility
+                                    ?.mode || "all"
                             }
                             onChange={(event) =>
                               updateSelectedNodeHandoffView({
@@ -1583,8 +1618,11 @@ export function WorkflowView({
                                     >["documentVisibility"]
                                   >["mode"],
                                   documentIds:
-                                    selectedGraphNode.handoffView
-                                      ?.documentVisibility?.documentIds || [],
+                                    selectedGraphNode.handoffView?.documentVisibility
+                                      ?.mode === "required_for_node"
+                                      ? selectedGraphNode.documentIds || []
+                                      : selectedGraphNode.handoffView
+                                          ?.documentVisibility?.documentIds || [],
                                 },
                               })
                             }
@@ -1597,13 +1635,17 @@ export function WorkflowView({
                             ))}
                           </select>
                         </label>
-                        {selectedGraphNode.handoffView?.documentVisibility
-                          ?.mode === "selected" && (
+                        {(["selected", "required_for_node"].includes(
+                          selectedGraphNode.handoffView?.documentVisibility?.mode || "",
+                        )) && (
                           <div className="space-y-2 rounded-md border border-white/10 bg-[#121518] p-2">
-                            {workflow.documents.map((document) => {
+                            {handoffDocumentOptions.map((document) => {
                               const selectedDocumentIds =
-                                selectedGraphNode.handoffView
-                                  ?.documentVisibility?.documentIds || [];
+                                selectedGraphNode.handoffView?.documentVisibility
+                                  ?.mode === "required_for_node"
+                                  ? selectedGraphNode.documentIds || []
+                                  : selectedGraphNode.handoffView
+                                      ?.documentVisibility?.documentIds || [];
                               const isSelected = selectedDocumentIds.includes(
                                 document.id,
                               );
@@ -1633,10 +1675,15 @@ export function WorkflowView({
                                     }
                                     className="mt-0.5"
                                   />
-                                  <span>{document.documentType}</span>
+                                  <span>{document.label}</span>
                                 </label>
                               );
                             })}
+                            {!handoffDocumentOptions.length && (
+                              <p className="text-xs text-neutral-500">
+                                No upstream or current documents yet.
+                              </p>
+                            )}
                           </div>
                         )}
                         <div className="space-y-2 border-t border-white/10 pt-3">
@@ -1903,13 +1950,7 @@ export function WorkflowView({
                                   </div>
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      updateSelectedNode({
-                                        documentIds: (
-                                          selectedGraphNode.documentIds || []
-                                        ).filter((id) => id !== document.id),
-                                      })
-                                    }
+                                    onClick={() => removeBoxDocumentRequirement(document.id)}
                                     title="Remove this document requirement from the selected box."
                                     className="flex size-7 shrink-0 items-center justify-center rounded-md border border-white/10 text-neutral-400 transition hover:border-rose-400/40 hover:text-rose-100"
                                   >

@@ -81,6 +81,15 @@ test("workflow builder does not expose end as a user-created box", () => {
   );
 });
 
+test("handoff document visibility is limited to all selected or none", () => {
+  const source = readFileSync("src/app/workflow-view.tsx", "utf8");
+
+  assert.equal(source.includes('label: "All documents"'), true);
+  assert.equal(source.includes('label: "Selected documents"'), true);
+  assert.equal(source.includes('label: "No documents"'), true);
+  assert.equal(source.includes('label: "Required here"'), false);
+});
+
 test("sample recognition trains existing fields with a large box selector", () => {
   const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
 
