@@ -1224,25 +1224,6 @@ export function WorkflowView({
                       <label className="block">
                         <span className="mb-1 block text-xs text-neutral-400">
                           {selectedGraphNode.kind === "submit_request"
-                            ? "Submitter name"
-                            : "Person name"}
-                        </span>
-                        <input
-                          value={selectedGraphNode.assigneeName || ""}
-                          title={
-                            selectedGraphNode.kind === "submit_request"
-                              ? "Name of the person expected to upload documents or fill information for this submit box."
-                              : "Name of the person responsible for this approval, review, or information step."
-                          }
-                          onChange={(event) =>
-                            updateSelectedNode({ assigneeName: event.target.value })
-                          }
-                          className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="mb-1 block text-xs text-neutral-400">
-                          {selectedGraphNode.kind === "submit_request"
                             ? "Submitter email"
                             : "Person email"}
                         </span>

@@ -44,6 +44,15 @@ test("workflow box details do not show a redundant connect button", () => {
   assert.equal(source.includes("Click target box"), false);
 });
 
+test("workflow template box details use position names without person-name fields", () => {
+  const source = readFileSync("src/app/workflow-view.tsx", "utf8");
+
+  assert.equal(source.includes("Position Name"), true);
+  assert.equal(source.includes("Submitter name"), false);
+  assert.equal(source.includes("Person name"), false);
+  assert.equal(source.includes("assigneeName: event.target.value"), false);
+});
+
 test("sample recognition trains existing fields with a large box selector", () => {
   const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
 
