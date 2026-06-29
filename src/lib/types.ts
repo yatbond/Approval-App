@@ -345,6 +345,7 @@ export type WorkflowGraphNode = {
   dueInHours?: number;
   escalationName?: string;
   escalationEmail?: string;
+  escalationEmailFixed?: boolean;
   documentIds?: string[];
   allowSharedFulfillment?: boolean;
   requireSharedFulfillmentConfirmation?: boolean;

@@ -50,6 +50,9 @@ test("workflow template box details use position names without person-name field
   assert.equal(source.includes("Position Name"), true);
   assert.equal(source.includes("Submitter email (optional)"), true);
   assert.equal(source.includes("Person email (optional)"), true);
+  assert.equal(source.includes("Escalation Position (optional)"), true);
+  assert.equal(source.includes("Escalation Email (optional)"), true);
+  assert.equal(source.includes("Fixed escalation email"), true);
   assert.equal(source.includes("Fixed email"), true);
   assert.equal(source.includes("Submitter name"), false);
   assert.equal(source.includes("Person name"), false);

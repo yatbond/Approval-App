@@ -285,6 +285,78 @@ test("keeps fixed template participant emails when request-start values try to o
   );
 });
 
+test("applies optional request-start escalation email without requiring it", () => {
+  const escalationTemplate = {
+    ...template,
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+        {
+          id: "approval-1",
+          kind: "approval",
+          label: "Finance approval",
+          x: 160,
+          y: 0,
+          assigneeEmail: "finance@example.com",
+          assigneeEmailFixed: true,
+          escalationName: "Finance head",
+        },
+      ],
+      edges: [
+        {
+          id: "edge-start-approval",
+          sourceId: "start",
+          targetId: "approval-1",
+          label: "Submit",
+          branchType: "main",
+        },
+      ],
+    },
+  };
+
+  const stateWithoutEscalationEmail = getWorkspaceRequestSubmissionState({
+    selectedTemplate: escalationTemplate,
+    parseResult,
+    activeUser: actor,
+    fileName: "invoice.pdf",
+    editedFields: parseResult.fields,
+    uploadedAttachments: [makeAttachment("attachment-1")],
+    tasks: [],
+    taskId: "APR-OPTIONAL-ESCALATION",
+  });
+
+  assert.equal(stateWithoutEscalationEmail.didSubmit, true);
+  assert.equal(
+    stateWithoutEscalationEmail.tasks[0].workflowTemplateSnapshot?.graph?.nodes.find(
+      (node) => node.id === "approval-1",
+    )?.escalationEmail,
+    undefined,
+  );
+
+  const stateWithEscalationEmail = getWorkspaceRequestSubmissionState({
+    selectedTemplate: escalationTemplate,
+    participantEmails: {
+      "approval-1:escalation": "finance-head@example.com",
+    },
+    parseResult,
+    activeUser: actor,
+    fileName: "invoice.pdf",
+    editedFields: parseResult.fields,
+    uploadedAttachments: [makeAttachment("attachment-2")],
+    tasks: [],
+    taskId: "APR-ESCALATION-ASSIGNED",
+  });
+
+  assert.equal(stateWithEscalationEmail.didSubmit, true);
+  assert.equal(
+    stateWithEscalationEmail.tasks[0].workflowTemplateSnapshot?.graph?.nodes.find(
+      (node) => node.id === "approval-1",
+    )?.escalationEmail,
+    "finance-head@example.com",
+  );
+});
+
 test("creates a task, selects it, clears uploads, and returns a submission message", () => {
   const attachment = {
     id: "attachment-1",

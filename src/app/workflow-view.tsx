@@ -1353,38 +1353,61 @@ export function WorkflowView({
                           />
                         </label>
                         {["approval", "review"].includes(selectedGraphNode.kind) && (
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <label className="block">
-                              <span className="mb-1 block text-xs text-neutral-400">
-                                Escalation name
-                              </span>
+                          <div className="space-y-3">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <label className="block">
+                                <span className="mb-1 block text-xs text-neutral-400">
+                                  Escalation Position (optional)
+                                </span>
+                                <input
+                                  value={selectedGraphNode.escalationName || ""}
+                                  title="Optional escalation position or role for overdue tasks. It can be filled in this template or later when the request starts."
+                                  onChange={(event) =>
+                                    updateSelectedNode({
+                                      escalationName: event.target.value,
+                                    })
+                                  }
+                                  className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="mb-1 block text-xs text-neutral-400">
+                                  Escalation Email (optional)
+                                </span>
+                                <input
+                                  value={selectedGraphNode.escalationEmail || ""}
+                                  title="Optional email that receives the task when escalation is triggered. It can be filled or changed when the request starts unless fixed."
+                                  onChange={(event) =>
+                                    updateSelectedNode({
+                                      escalationEmail: event.target.value,
+                                    })
+                                  }
+                                  type="email"
+                                  list="workflow-user-directory"
+                                  className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                                />
+                              </label>
+                            </div>
+                            <label className="flex items-start gap-2 rounded-md border border-white/10 bg-[#101214] p-3 text-xs text-neutral-300">
                               <input
-                                value={selectedGraphNode.escalationName || ""}
-                                title="Name of the person who receives the task if this step is overdue."
+                                type="checkbox"
+                                className="mt-0.5"
+                                checked={Boolean(selectedGraphNode.escalationEmailFixed)}
+                                title="Lock this escalation email so the request starter cannot change it."
                                 onChange={(event) =>
                                   updateSelectedNode({
-                                    escalationName: event.target.value,
+                                    escalationEmailFixed: event.target.checked,
                                   })
                                 }
-                                className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
                               />
-                            </label>
-                            <label className="block">
-                              <span className="mb-1 block text-xs text-neutral-400">
-                                Escalation email
+                              <span className="min-w-0">
+                                <span className="block font-medium text-neutral-100">
+                                  Fixed escalation email
+                                </span>
+                                <span className="mt-1 block text-neutral-500">
+                                  Lock this default escalation email when a real request starts.
+                                </span>
                               </span>
-                              <input
-                                value={selectedGraphNode.escalationEmail || ""}
-                                title="Email address that receives the task when escalation is triggered."
-                                onChange={(event) =>
-                                  updateSelectedNode({
-                                    escalationEmail: event.target.value,
-                                  })
-                                }
-                                type="email"
-                                list="workflow-user-directory"
-                                className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
-                              />
                             </label>
                           </div>
                         )}

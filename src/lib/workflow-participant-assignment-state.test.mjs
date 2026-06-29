@@ -25,6 +25,7 @@ const template = {
         y: 0,
         assigneeEmail: "manager@example.com",
         assigneeEmailFixed: true,
+        escalationName: "Department Head",
       },
       { id: "fyi-1", kind: "for_information", label: "Finance FYI", x: 480, y: 0 },
       { id: "end", kind: "end", label: "End", x: 640, y: 0 },
@@ -42,6 +43,7 @@ test("lists editable participant email fields for request start", () => {
       email: "",
       inputLabel: "Submitter email",
       isFixed: false,
+      required: true,
     },
     {
       nodeId: "review-1",
@@ -50,6 +52,16 @@ test("lists editable participant email fields for request start", () => {
       email: "manager@example.com",
       inputLabel: "Person email",
       isFixed: true,
+      required: true,
+    },
+    {
+      nodeId: "review-1:escalation",
+      label: "QS Manager escalation",
+      kind: "review",
+      email: "",
+      inputLabel: "Escalation email (optional)",
+      isFixed: false,
+      required: false,
     },
     {
       nodeId: "fyi-1",
@@ -58,6 +70,7 @@ test("lists editable participant email fields for request start", () => {
       email: "",
       inputLabel: "FYI email",
       isFixed: false,
+      required: true,
     },
   ]);
 });
@@ -66,6 +79,7 @@ test("applies request-start participant email overrides without mutating templat
   const assigned = applyWorkflowParticipantEmails(template, {
     "submit-1": "qs@example.com",
     "review-1": "lead@example.com",
+    "review-1:escalation": "department-head@example.com",
     "fyi-1": "finance@example.com",
   });
 
@@ -78,6 +92,10 @@ test("applies request-start participant email overrides without mutating templat
     "manager@example.com",
   );
   assert.equal(
+    assigned.graph.nodes.find((node) => node.id === "review-1")?.escalationEmail,
+    "department-head@example.com",
+  );
+  assert.equal(
     template.graph.nodes.find((node) => node.id === "submit-1")?.assigneeEmail,
     undefined,
   );
@@ -88,7 +106,7 @@ test("does not list fixed participant emails as editable request-start fields", 
 
   assert.deepEqual(
     fields.map((field) => field.nodeId),
-    ["submit-1", "fyi-1"],
+    ["submit-1", "review-1:escalation", "fyi-1"],
   );
 });
 
@@ -97,4 +115,38 @@ test("finds missing participant emails needed before submission", () => {
     "QS",
     "Finance FYI",
   ]);
+});
+
+test("keeps fixed template escalation emails when request-start values try to override them", () => {
+  const fixedEscalationTemplate = {
+    ...template,
+    graph: {
+      ...template.graph,
+      nodes: template.graph.nodes.map((node) =>
+        node.id === "review-1"
+          ? {
+              ...node,
+              escalationEmail: "fixed-escalation@example.com",
+              escalationEmailFixed: true,
+            }
+          : node,
+      ),
+    },
+  };
+
+  const fields = getWorkflowParticipantEmailFields(fixedEscalationTemplate, {
+    editableOnly: true,
+  });
+  const assigned = applyWorkflowParticipantEmails(fixedEscalationTemplate, {
+    "review-1:escalation": "changed-escalation@example.com",
+  });
+
+  assert.equal(
+    fields.some((field) => field.nodeId === "review-1:escalation"),
+    false,
+  );
+  assert.equal(
+    assigned.graph.nodes.find((node) => node.id === "review-1")?.escalationEmail,
+    "fixed-escalation@example.com",
+  );
 });
