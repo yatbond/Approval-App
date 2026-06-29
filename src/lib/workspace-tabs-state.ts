@@ -18,3 +18,11 @@ export function getInitialWorkspaceTab(requestedTab?: string): WorkspaceTab {
     ? (requestedTab as WorkspaceTab)
     : "queue";
 }
+
+export function getNewRequestHref() {
+  return "/?tab=upload&new=1";
+}
+
+export function isNewRequestStartRequested(value?: string) {
+  return value === "1" || value === "true";
+}

@@ -161,6 +161,7 @@ export type ApprovalWorkspaceProps = {
   departments: string[];
   workflowTemplates: WorkflowTemplate[];
   requestId?: string;
+  startNewRequest?: boolean;
 };
 
 export default function ApprovalWorkspace(props: ApprovalWorkspaceProps) {
@@ -172,14 +173,17 @@ function ApprovalWorkspaceBody({
   departments,
   workflowTemplates,
   requestId = "",
+  startNewRequest = false,
 }: {
   initialTab: Tab;
   sessionUser: string;
   departments: string[];
   workflowTemplates: WorkflowTemplate[];
   requestId?: string;
+  startNewRequest?: boolean;
 }) {
   const activeTab = initialTab;
+  const shouldStartNewUploadRequest = activeTab === "upload" && startNewRequest;
   const activeUser = useMemo(
     () => ({
       name: sessionUser.includes("@") ? sessionUser.split("@")[0] : sessionUser,
@@ -412,6 +416,51 @@ function ApprovalWorkspaceBody({
 
   useEffect(() => {
     let didCancel = false;
+
+    if (shouldStartNewUploadRequest) {
+      const storedAutosaveId =
+        localStorage.getItem(uploadRequestCurrentAutosaveIdStorageKey) || "";
+      const cleared = clearUploadRequestDraft();
+      localStorage.removeItem(uploadRequestDraftStorageKey);
+      localStorage.removeItem(uploadRequestActiveDraftIdStorageKey);
+      localStorage.removeItem(uploadRequestCurrentAutosaveIdStorageKey);
+      if (storedAutosaveId) {
+        void deleteSavedUploadRequestDraft({ draftId: storedAutosaveId }).catch(() => {
+          // A failed remote cleanup should not block starting a clean request.
+        });
+      }
+
+      queueMicrotask(() => {
+        if (didCancel) {
+          return;
+        }
+
+        setFileName(cleared.fileName);
+        setParseResult(cleared.parseResult);
+        setEditedFields(cleared.editedFields);
+        setUploadedAttachments(cleared.uploadedAttachments);
+        setParsedDocumentId(cleared.parsedDocumentId);
+        setRequestParticipantEmails(cleared.participantEmails);
+        setUploadRequestDraftRows([]);
+        setSelectedUploadRequestDraftRowId("");
+        setDocumentPreviewPages([]);
+        setUploadHighlightGroups(cleared.highlightGroups);
+        setUploadActiveHighlightGroupId(cleared.activeHighlightGroupId);
+        setUploadHighlightBoxCounter(cleared.highlightBoxCounter);
+        setUploadDraftResetToken((value) => value + 1);
+        setSelectedUploadDraftId("");
+        setUploadDraftTitle("");
+        setRemoteUploadAutosaveId("");
+        lastRemoteUploadAutosavePayloadRef.current = "";
+        uploadDraftStorageReady.current = true;
+        window.history.replaceState(null, "", "/?tab=upload");
+      });
+
+      return () => {
+        didCancel = true;
+      };
+    }
+
     const savedDraft = localStorage.getItem(uploadRequestDraftStorageKey);
     const parsedDraft = savedDraft ? parseUploadRequestDraft(savedDraft) : null;
 
@@ -435,6 +484,7 @@ function ApprovalWorkspaceBody({
     };
   }, [
     restoreUploadRequestDraft,
+    shouldStartNewUploadRequest,
     uploadRequestCurrentAutosaveIdStorageKey,
     uploadRequestActiveDraftIdStorageKey,
     uploadRequestDraftStorageKey,
@@ -482,6 +532,7 @@ function ApprovalWorkspaceBody({
           localStorage.getItem(uploadRequestDraftStorageKey) || "",
         );
         if (
+          !shouldStartNewUploadRequest &&
           remoteCurrentAutosave &&
           (!localCurrentAutosave ||
             remoteCurrentAutosave.savedAt > localCurrentAutosave.savedAt)
@@ -532,6 +583,7 @@ function ApprovalWorkspaceBody({
   }, [
     activeUser.email,
     restoreUploadRequestDraft,
+    shouldStartNewUploadRequest,
     uploadRequestActiveDraftIdStorageKey,
     uploadRequestCurrentAutosaveIdStorageKey,
     uploadRequestDraftListStorageKey,

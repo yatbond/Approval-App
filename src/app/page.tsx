@@ -4,13 +4,14 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/supabase/server";
 import {
   getInitialWorkspaceTab,
+  isNewRequestStartRequested,
   type WorkspaceTab,
 } from "@/lib/workspace-tabs-state";
 
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; request?: string }>;
+  searchParams: Promise<{ tab?: string; request?: string; new?: string }>;
 }) {
   const params = await searchParams;
   const initialTab: WorkspaceTab = getInitialWorkspaceTab(params.tab);
@@ -32,6 +33,7 @@ export default async function Home({
       departments={departments}
       workflowTemplates={workflowTemplates}
       requestId={params.request || ""}
+      startNewRequest={isNewRequestStartRequested(params.new)}
     />
   );
 }

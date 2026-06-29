@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 import {
+  getNewRequestHref,
   workspaceNavigationTabIds,
   type WorkspaceTab,
 } from "@/lib/workspace-tabs-state";
@@ -150,7 +151,7 @@ export function WorkspaceShell({
                 <LogOut size={16} />
               </button>
               <Link
-                href="/?tab=upload"
+                href={getNewRequestHref()}
                 className="flex min-h-11 items-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
               >
                 <Plus size={16} />

@@ -816,7 +816,7 @@ export function UploadView({
       <section className="rounded-md border border-white/10 bg-white/[0.03]">
         <div className="border-b border-white/10 p-4">
           <div className="flex items-center gap-2">
-            <h2 className="font-semibold">Draft</h2>
+            <h2 className="font-semibold">Current request</h2>
             <InfoTip label="Corrections here become training examples for workflow-specific extraction." />
           </div>
         </div>
