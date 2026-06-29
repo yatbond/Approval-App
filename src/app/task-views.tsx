@@ -39,6 +39,7 @@ import {
   shouldShowQueueReassignActions,
   type QueueActionMode,
 } from "@/lib/queue-advanced-actions-state";
+import { findRequestDisplayValue } from "@/lib/request-builder";
 import { getRejectReturnTargetOptions } from "@/lib/reject-return-routing-state";
 import { getTrackingHandoffPanelState } from "@/lib/tracking-handoff-panel-state";
 import { getCollaborationStatusPanelState } from "@/lib/collaboration-status-panel-state";
@@ -211,6 +212,10 @@ export function QueueView({
   const selectedRejectReturnTarget =
     rejectReturnTargetOptions.find((option) => option.id === rejectReturnTargetId) ||
     rejectReturnTargetOptions[0];
+  const selectedTaskDisplayValue =
+    selectedTask.value === "Pending extraction"
+      ? findRequestDisplayValue(selectedTask.extractedFields || {})
+      : selectedTask.value;
   const actionModeCopy = {
     reassign: {
       title: "Reassign request",
@@ -275,7 +280,7 @@ export function QueueView({
               </p>
             </div>
             <div className="rounded-md border border-white/10 px-3 py-2 text-sm">
-              {selectedTask.value}
+              {selectedTaskDisplayValue}
             </div>
           </div>
         </div>

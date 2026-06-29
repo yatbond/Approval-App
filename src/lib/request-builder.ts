@@ -162,7 +162,7 @@ export function createApprovalTaskFromTemplate({
         : "pending",
     due: formatDue(due),
     dueAt: due.toISOString(),
-    value: findDisplayValue(extractedFields),
+    value: findRequestDisplayValue(extractedFields),
     currentStep: isReturnedAtSubmission
       ? "Originator action required"
       : isApprovedAtSubmission
@@ -244,7 +244,7 @@ function createTaskId(now: Date) {
   return `APR-${Math.floor(now.getTime() / 1000)}`;
 }
 
-function findDisplayValue(fields: Record<string, string>) {
+export function findRequestDisplayValue(fields: Record<string, string>) {
   const entries = Object.entries(fields).filter(([, value]) => value.trim());
   const normalizedEntries = entries.map(([label, value]) => ({
     label,
