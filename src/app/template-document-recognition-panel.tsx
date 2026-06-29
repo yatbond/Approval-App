@@ -24,6 +24,7 @@ import {
 } from "@/lib/pdf-page-images";
 import {
   buildSampleRecognitionPageImages,
+  getSampleRecognitionFailureMessage,
   readRecognizedSampleField,
 } from "@/lib/sample-recognition-state";
 import { parseWorkspaceFile, type ParsedWorkspaceFilePayload } from "@/lib/workspace-file-api";
@@ -383,14 +384,7 @@ export function TemplateDocumentRecognitionPanel({
       setFieldEvidence(recognized.evidence);
       setFieldAnchor(null);
       if (!recognized.value) {
-        setParseError(
-          [
-            "AI did not recognize a value for this field. Adjust the instruction or use Extract box.",
-            formatParseDiagnosticId(payload),
-          ]
-            .filter(Boolean)
-            .join(" "),
-        );
+        setParseError(getSampleRecognitionFailureMessage(payload));
       }
     } catch (error) {
       setParseError(
@@ -820,12 +814,6 @@ function createPlaceholderFileFromSavedSample(sample?: WorkflowDocumentSample) {
   return new File(["Saved workflow sample text"], fileName, {
     type: "application/pdf",
   });
-}
-
-function formatParseDiagnosticId(payload: ParsedWorkspaceFilePayload) {
-  return payload.diagnostics?.requestId
-    ? `Diagnostic ID: ${payload.diagnostics.requestId}.`
-    : "";
 }
 
 function slugify(value: string) {

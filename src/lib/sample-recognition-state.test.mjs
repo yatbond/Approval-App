@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildSampleRecognitionPageImages,
+  getSampleRecognitionFailureMessage,
   readRecognizedSampleField,
 } from "./sample-recognition-state.ts";
 
@@ -105,4 +106,25 @@ test("falls back to stored OCR page images when no preview page is selected", ()
   });
 
   assert.equal(result, samplePageImages);
+});
+
+test("explains provider setup failures instead of reporting low recognition", () => {
+  const result = getSampleRecognitionFailureMessage({
+    fields: {},
+    confidence: {},
+    notes: [
+      "Qwen page OCR: OPENROUTER_API_KEY is not configured yet.",
+      "Main page parser: OPENROUTER_API_KEY is not configured yet.",
+      "OPENROUTER_API_KEY is not configured yet.",
+    ],
+    strategy: "pdf-ocr",
+    diagnostics: {
+      requestId: "parse-123",
+    },
+  });
+
+  assert.equal(
+    result,
+    "AI provider is not configured for this deployment. Missing OPENROUTER_API_KEY. Diagnostic ID: parse-123.",
+  );
 });

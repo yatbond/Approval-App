@@ -55,6 +55,34 @@ export function readRecognizedSampleField(
   };
 }
 
+export function getSampleRecognitionFailureMessage(
+  payload: ParsedWorkspaceFilePayload,
+) {
+  const notes = payload.notes || [];
+  const missingOpenRouterKey = notes.some((note) =>
+    note.includes("OPENROUTER_API_KEY is not configured"),
+  );
+  const diagnosticId = payload.diagnostics?.requestId
+    ? ` Diagnostic ID: ${payload.diagnostics.requestId}.`
+    : "";
+
+  if (missingOpenRouterKey) {
+    return [
+      "AI provider is not configured for this deployment. Missing OPENROUTER_API_KEY.",
+      diagnosticId.trim(),
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  return [
+    "AI did not recognize a value for this field. Adjust the instruction or use Extract box.",
+    diagnosticId.trim(),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function readFromRecord(record: Record<string, string>, field: WorkflowField) {
   const keys = [field.label, field.name].filter(Boolean);
 
