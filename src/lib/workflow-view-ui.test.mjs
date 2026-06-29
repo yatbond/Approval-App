@@ -143,5 +143,13 @@ test("sample recognition persists in-progress training edits with the sample dra
   assert.equal(source.includes("saveWorkflowDocumentSampleTrainingDraft"), true);
   assert.equal(source.includes("persistTrainingDraft"), true);
   assert.equal(source.includes("document.sample?.trainingDraft"), true);
-  assert.equal(source.includes("clearWorkflowDocumentSampleTrainingDraft"), true);
+});
+
+test("sample recognition reloads saved sample values when fields are revisited", () => {
+  const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
+
+  assert.equal(source.includes("findWorkflowDocumentSampleFieldExample"), true);
+  assert.equal(source.includes("buildWorkflowDocumentSavedSampleFields"), true);
+  assert.equal(source.includes("savedExample?.correctedValue || \"\""), true);
+  assert.equal(source.includes("clearSampleTrainingDraft();"), false);
 });

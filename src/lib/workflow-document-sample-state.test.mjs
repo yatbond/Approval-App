@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildWorkflowDocumentSample,
+  buildWorkflowDocumentSavedSampleFields,
   clearWorkflowDocumentSampleTrainingDraft,
+  findWorkflowDocumentSampleFieldExample,
   getSamplePageImages,
   getSamplePreviewPages,
   saveWorkflowDocumentSampleTrainingDraft,
@@ -250,4 +252,85 @@ test("clears the in-progress training draft after the sample field is saved", ()
   );
 
   assert.equal(clearWorkflowDocumentSampleTrainingDraft(sample).trainingDraft, undefined);
+});
+
+test("finds the saved sample example for a selected workflow field", () => {
+  const example = findWorkflowDocumentSampleFieldExample({
+    field: {
+      name: "total_value_of_work_done",
+      label: "Total Value of Work Done",
+      type: "text",
+      required: true,
+      source: "ai",
+      instructions: "extract total value of work done",
+      documentId: "payment-cert",
+    },
+    examples: [
+      {
+        id: "template-sample-payment-cert-total_value_of_work_done-sample",
+        templateId: "template-1",
+        documentId: "payment-cert",
+        documentType: "Payment Cert",
+        fieldLabel: "Total Value of Work Done",
+        originalValue: "",
+        correctedValue: "HKD 1,000,000.00",
+        evidence: "total line",
+        sourceFileName: "sample.pdf",
+        createdByEmail: "owner@example.com",
+        createdAt: "2026-06-29T01:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.equal(example?.correctedValue, "HKD 1,000,000.00");
+  assert.equal(example?.evidence, "total line");
+});
+
+test("builds saved sample field summaries from persisted extraction examples", () => {
+  const savedFields = buildWorkflowDocumentSavedSampleFields({
+    fields: [
+      {
+        name: "payment_amount",
+        label: "Payment Amount",
+        type: "text",
+        required: true,
+        source: "ai",
+        instructions: "extract payment amount",
+        documentId: "payment-cert",
+      },
+    ],
+    examples: [
+      {
+        id: "template-sample-payment-cert-payment_amount-sample",
+        templateId: "template-1",
+        documentId: "payment-cert",
+        documentType: "Payment Cert",
+        fieldLabel: "Payment Amount",
+        originalValue: "",
+        correctedValue: "500,000.00",
+        evidence: "",
+        anchor: {
+          pageNumber: 1,
+          rect: {
+            x: 10,
+            y: 20,
+            width: 30,
+            height: 8,
+          },
+        },
+        sourceFileName: "sample.pdf",
+        createdByEmail: "owner@example.com",
+        createdAt: "2026-06-29T01:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.deepEqual(savedFields, [
+    {
+      fieldName: "payment_amount",
+      label: "Payment Amount",
+      value: "500,000.00",
+      hasAnchor: true,
+    },
+  ]);
 });

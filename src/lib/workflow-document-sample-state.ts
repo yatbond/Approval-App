@@ -1,12 +1,20 @@
 import { buildPreviewPagesFromPdfImages, type DocumentPreviewPage } from "./document-preview.ts";
 import type { PdfPageImageInput } from "./parser.ts";
 import type {
+  ExtractionTrainingExample,
+  WorkflowField,
   WorkflowDocumentSample,
   WorkflowDocumentSamplePage,
   WorkflowDocumentSampleTrainingDraft,
 } from "./types.ts";
 
 type FileLike = Pick<File, "name" | "type">;
+export type WorkflowDocumentSavedSampleField = {
+  fieldName: string;
+  label: string;
+  value: string;
+  hasAnchor: boolean;
+};
 
 const maxSamplePageImageBase64Length = 1_900_000;
 const maxSampleTotalImageBase64Length = 4_250_000;
@@ -75,6 +83,46 @@ export function clearWorkflowDocumentSampleTrainingDraft(
   const nextSample = { ...sample };
   delete nextSample.trainingDraft;
   return nextSample;
+}
+
+export function findWorkflowDocumentSampleFieldExample({
+  field,
+  examples,
+}: {
+  field?: WorkflowField | null;
+  examples: ExtractionTrainingExample[];
+}): ExtractionTrainingExample | undefined {
+  if (!field) {
+    return undefined;
+  }
+
+  return examples.find(
+    (example) =>
+      example.fieldLabel === field.label ||
+      example.id.includes(`-${field.name}-`),
+  );
+}
+
+export function buildWorkflowDocumentSavedSampleFields({
+  fields,
+  examples,
+}: {
+  fields: WorkflowField[];
+  examples: ExtractionTrainingExample[];
+}): WorkflowDocumentSavedSampleField[] {
+  return fields
+    .map((field) => {
+      const example = findWorkflowDocumentSampleFieldExample({ field, examples });
+      return example
+        ? {
+            fieldName: field.name,
+            label: field.label,
+            value: example.correctedValue,
+            hasAnchor: Boolean(example.anchor),
+          }
+        : null;
+    })
+    .filter((field): field is WorkflowDocumentSavedSampleField => Boolean(field));
 }
 
 export function getSamplePreviewPages(
