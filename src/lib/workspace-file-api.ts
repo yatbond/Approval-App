@@ -27,6 +27,10 @@ export type ParsedWorkspaceFilePayload = {
   suggestedFields?: ExtractedFieldSuggestion[];
   notes: string[];
   tables?: { sheetName: string; rows: Record<string, unknown>[] }[];
+  diagnostics?: {
+    requestId?: string;
+    parserPath?: string;
+  };
   [key: string]: unknown;
 };
 

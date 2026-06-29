@@ -289,6 +289,43 @@ export async function extractPdfFields(params: {
   return extractPdfFieldsWithOpenRouter(params);
 }
 
+export async function extractPdfFieldsWithPageImagesAndPdfFallback(params: {
+  pageImages: PdfPageImageInput[];
+  pdfBase64: string;
+  fileName: string;
+  fields: WorkflowField[];
+  languageHint: string;
+  examples?: ExtractionTrainingExample[];
+}): Promise<ParsedDocumentDraft> {
+  const pageResult = await extractPdfFieldsWithQwenPageImages({
+    pageImages: params.pageImages,
+    fields: params.fields,
+    languageHint: params.languageHint,
+    examples: params.examples,
+  });
+
+  if (hasRecognizedValue(pageResult)) {
+    return pageResult;
+  }
+
+  const pdfResult = await extractPdfFields({
+    pdfBase64: params.pdfBase64,
+    fileName: params.fileName,
+    fields: params.fields,
+    languageHint: params.languageHint,
+    examples: params.examples,
+  });
+
+  return {
+    ...pdfResult,
+    notes: [
+      ...pageResult.notes.map((note) => `Qwen page OCR: ${note}`),
+      "Qwen page OCR returned no values; retried full PDF parser.",
+      ...pdfResult.notes,
+    ],
+  };
+}
+
 export async function extractImageFieldsWithOpenRouter(params: {
   imageBase64: string;
   mimeType: string;
@@ -566,6 +603,13 @@ function formatRenderedPageText(pageImages: PdfPageImageInput[]) {
     "Typed text extracted from the rendered PDF pages:",
     ...pageTexts.map((page) => `Page ${page.pageNumber}: ${page.text}`),
   ].join("\n");
+}
+
+function hasRecognizedValue(result: ParsedDocumentDraft) {
+  return (
+    Object.values(result.fields).some((value) => value.trim()) ||
+    result.suggestedFields.some((field) => field.value.trim())
+  );
 }
 
 function fetchOpenRouterChatCompletion({

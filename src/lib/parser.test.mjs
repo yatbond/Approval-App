@@ -7,6 +7,7 @@ import {
   extractImageFieldsWithOpenAI,
   extractImageFieldsWithOpenRouter,
   extractPdfFields,
+  extractPdfFieldsWithPageImagesAndPdfFallback,
   extractPdfFieldsWithQwenPageImages,
   extractPdfFieldsWithOpenRouter,
   normalizeUserCorrections,
@@ -346,6 +347,87 @@ test("extracts PDF fields from rendered page images through OpenRouter Qwen", as
     }
     globalThis.fetch = previousFetch;
   }
+});
+
+test("falls back to the full PDF parser when rendered page OCR returns no values", async () => {
+  await withParserEnvironment(
+    {
+      OPENROUTER_API_KEY: "test-key",
+      OPENROUTER_MODEL: "google/gemini-3-flash-preview",
+      OPENROUTER_VISION_OCR_MODEL: "qwen/qwen3-vl-8b-instruct",
+    },
+    async () => {
+      const capturedBodies = [];
+      globalThis.fetch = async (_url, init) => {
+        const body = JSON.parse(String(init.body));
+        capturedBodies.push(body);
+        if (capturedBodies.length === 1) {
+          return Response.json({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    fields: {
+                      Amount: {
+                        value: "",
+                        confidence: "low",
+                        evidence: "",
+                      },
+                    },
+                    suggestedFields: [],
+                  }),
+                },
+              },
+            ],
+          });
+        }
+
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  fields: {
+                    Amount: {
+                      value: "HKD 8,400",
+                      confidence: "high",
+                      evidence: "Total HKD 8,400",
+                    },
+                  },
+                }),
+              },
+            },
+          ],
+        });
+      };
+
+      const result = await extractPdfFieldsWithPageImagesAndPdfFallback({
+        pageImages: [
+          { pageNumber: 1, mimeType: "image/png", imageBase64: "page-one" },
+        ],
+        pdfBase64: "JVBERi0xLjQ=",
+        fileName: "invoice.pdf",
+        fields,
+        languageHint: "English",
+      });
+
+      assert.equal(capturedBodies.length, 2);
+      assert.equal(capturedBodies[0].model, "qwen/qwen3-vl-8b-instruct");
+      assert.equal(capturedBodies[1].model, "google/gemini-3-flash-preview");
+      assert.deepEqual(capturedBodies[1].messages[0].content[1], {
+        type: "file",
+        file: {
+          filename: "invoice.pdf",
+          file_data: "data:application/pdf;base64,JVBERi0xLjQ=",
+        },
+      });
+      assert.deepEqual(result.fields, { Amount: "HKD 8,400" });
+      assert.match(
+        result.notes.join("\n"),
+        /Qwen page OCR returned no values; retried full PDF parser\./,
+      );
+    },
+  );
 });
 
 test("returns provider setup notes when API keys are missing", async () => {

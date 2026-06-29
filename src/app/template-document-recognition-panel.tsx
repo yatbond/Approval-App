@@ -381,7 +381,12 @@ export function TemplateDocumentRecognitionPanel({
       setFieldAnchor(null);
       if (!recognized.value) {
         setParseError(
-          "AI did not recognize a value for this field. Adjust the instruction or use Extract box.",
+          [
+            "AI did not recognize a value for this field. Adjust the instruction or use Extract box.",
+            formatParseDiagnosticId(payload),
+          ]
+            .filter(Boolean)
+            .join(" "),
         );
       }
     } catch (error) {
@@ -800,6 +805,12 @@ function createPlaceholderFileFromSavedSample(sample?: WorkflowDocumentSample) {
   return new File(["Saved workflow sample text"], fileName, {
     type: "application/pdf",
   });
+}
+
+function formatParseDiagnosticId(payload: ParsedWorkspaceFilePayload) {
+  return payload.diagnostics?.requestId
+    ? `Diagnostic ID: ${payload.diagnostics.requestId}.`
+    : "";
 }
 
 function slugify(value: string) {
