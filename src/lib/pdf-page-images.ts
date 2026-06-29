@@ -12,6 +12,7 @@ export type PdfPageRenderOptions = {
 
 type PdfJsPage = {
   getViewport(input: { scale: number }): { width: number; height: number };
+  getTextContent?: () => Promise<{ items?: { str?: string }[] }>;
   render(input: {
     canvas: HTMLCanvasElement;
     canvasContext: CanvasRenderingContext2D;
@@ -112,16 +113,35 @@ export async function renderPdfFileToPageImages(
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvas, canvasContext: context, viewport }).promise;
+    const pageText = await extractPdfPageText(page);
 
     const imageDataUrl = canvas.toDataURL("image/png");
     images.push({
       pageNumber,
       mimeType: "image/png",
       imageBase64: imageDataUrl.split(",")[1] || "",
+      ...(pageText ? { pageText } : {}),
     });
   }
 
   return images.filter((image) => image.imageBase64);
+}
+
+async function extractPdfPageText(page: PdfJsPage) {
+  if (!page.getTextContent) {
+    return "";
+  }
+
+  try {
+    const textContent = await page.getTextContent();
+    return (textContent.items || [])
+      .map((item) => item.str || "")
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  } catch {
+    return "";
+  }
 }
 
 export function isPdfFile(file: File) {

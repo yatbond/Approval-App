@@ -21,6 +21,7 @@ export type PdfPageImageInput = {
   pageNumber: number;
   mimeType: string;
   imageBase64: string;
+  pageText?: string;
 };
 
 type OpenRouterChatCompletion = {
@@ -489,8 +490,11 @@ export async function extractPdfFieldsWithQwenPageImages(params: {
   const prompt = [
     buildExtractionPrompt(params.fields, params.languageHint, params.examples),
     `The PDF was rendered into ${params.pageImages.length} page image(s).`,
+    formatRenderedPageText(params.pageImages),
     "Read the page images directly and extract only the requested fields.",
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   const response = await fetchOpenRouterChatCompletion({
     apiKey,
@@ -542,6 +546,24 @@ export async function extractPdfFieldsWithQwenPageImages(params: {
       ? [`Parsed rendered PDF pages with OpenRouter model ${model}.`]
       : ["OpenRouter Qwen page-image output could not be parsed as field JSON."],
   };
+}
+
+function formatRenderedPageText(pageImages: PdfPageImageInput[]) {
+  const pageTexts = pageImages
+    .map((page) => ({
+      pageNumber: page.pageNumber,
+      text: page.pageText?.trim() || "",
+    }))
+    .filter((page) => page.text);
+
+  if (!pageTexts.length) {
+    return "";
+  }
+
+  return [
+    "Typed text extracted from the rendered PDF pages:",
+    ...pageTexts.map((page) => `Page ${page.pageNumber}: ${page.text}`),
+  ].join("\n");
 }
 
 function fetchOpenRouterChatCompletion({

@@ -33,7 +33,7 @@ type AddDocumentInput = Omit<WorkflowDocumentRequirement, "id">;
 type UpdateDocumentInput = Partial<
   Pick<
     WorkflowDocumentRequirement,
-    "documentType" | "format" | "inputMode" | "required"
+    "documentType" | "format" | "inputMode" | "required" | "sample"
   >
 >;
 type UpdateConditionCaseInput = Partial<

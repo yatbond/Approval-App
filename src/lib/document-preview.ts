@@ -6,6 +6,7 @@ export type DocumentPreviewPage = {
   mimeType: string;
   imageBase64: string;
   dataUrl: string;
+  pageText?: string;
 };
 
 export type Point = {
@@ -42,6 +43,7 @@ export function buildPreviewPagesFromPdfImages(
     mimeType: page.mimeType,
     imageBase64: page.imageBase64,
     dataUrl: `data:${page.mimeType};base64,${page.imageBase64}`,
+    ...(page.pageText ? { pageText: page.pageText } : {}),
   }));
 }
 
@@ -243,7 +245,7 @@ export async function cropPreviewPageToFile({
   return new File([blob], fileName, { type: "image/png" });
 }
 
-function readFileAsDataUrl(file: File) {
+export function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));

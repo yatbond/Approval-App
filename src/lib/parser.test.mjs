@@ -697,6 +697,58 @@ test("includes corrected extraction examples in the parser prompt", () => {
   assert.match(prompt, /Total HKD 8,000/);
 });
 
+test("includes typed PDF page text when extracting rendered page images", async () => {
+  let capturedBody;
+
+  await withParserEnvironment(
+    {
+      OPENROUTER_API_KEY: "test-key",
+      OPENROUTER_VISION_OCR_MODEL: "qwen/qwen3-vl-8b-instruct",
+    },
+    async () => {
+      globalThis.fetch = async (_url, init) => {
+        capturedBody = JSON.parse(init.body);
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  fields: {
+                    Amount: {
+                      value: "HKD 8,400",
+                      confidence: "high",
+                      evidence: "Total HKD 8,400",
+                    },
+                  },
+                  suggestedFields: [],
+                }),
+              },
+            },
+          ],
+        });
+      };
+
+      await extractPdfFieldsWithQwenPageImages({
+        pageImages: [
+          {
+            pageNumber: 1,
+            mimeType: "image/png",
+            imageBase64: "page-one",
+            pageText: "Typed text: Subcontractor Ming Kee Construction",
+          },
+        ],
+        fields,
+        languageHint: "English",
+      });
+    },
+  );
+
+  assert.match(
+    capturedBody.messages[0].content[0].text,
+    /Typed text: Subcontractor Ming Kee Construction/,
+  );
+});
+
 test("includes sample box anchors as soft extraction hints in the parser prompt", () => {
   const prompt = buildExtractionPrompt(fields, "English", [
     {

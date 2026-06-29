@@ -7,7 +7,7 @@ import { updateWorkflowDocumentRequirement } from "./workflow-graph.ts";
 type UpdateDocumentRequirementInput = Partial<
   Pick<
     WorkflowDocumentRequirement,
-    "documentType" | "format" | "inputMode" | "required"
+    "documentType" | "format" | "inputMode" | "required" | "sample"
   >
 >;
 

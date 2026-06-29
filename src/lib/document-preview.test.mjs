@@ -16,7 +16,12 @@ import {
 test("builds preview pages from rendered PDF page images", () => {
   assert.deepEqual(
     buildPreviewPagesFromPdfImages([
-      { pageNumber: 1, mimeType: "image/png", imageBase64: "page-one" },
+      {
+        pageNumber: 1,
+        mimeType: "image/png",
+        imageBase64: "page-one",
+        pageText: "Typed contractor name",
+      },
     ]),
     [
       {
@@ -25,6 +30,7 @@ test("builds preview pages from rendered PDF page images", () => {
         mimeType: "image/png",
         imageBase64: "page-one",
         dataUrl: "data:image/png;base64,page-one",
+        pageText: "Typed contractor name",
       },
     ],
   );

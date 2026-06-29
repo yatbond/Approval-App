@@ -1946,6 +1946,11 @@ export function WorkflowView({
                                         example,
                                       )
                                     }
+                                    onSaveSample={(sample) =>
+                                      updateBoxDocumentRequirement(document.id, {
+                                        sample,
+                                      })
+                                    }
                                   />
                                 </div>
                               </div>

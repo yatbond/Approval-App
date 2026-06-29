@@ -16,6 +16,9 @@ export function buildSampleRecognitionPageImages({
         pageNumber: selectedPreviewPage.pageNumber,
         mimeType: selectedPreviewPage.mimeType,
         imageBase64: selectedPreviewPage.imageBase64,
+        ...(selectedPreviewPage.pageText
+          ? { pageText: selectedPreviewPage.pageText }
+          : {}),
       },
     ];
   }

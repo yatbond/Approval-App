@@ -10,6 +10,7 @@ import {
   getActiveSelectionRect,
   normalizedRectToPercentStyle,
   normalizeSelectionRect,
+  readFileAsDataUrl,
   readImageFileAsPreviewPage,
   type DocumentPreviewPage,
   type NormalizedRect,
@@ -29,9 +30,15 @@ import {
 import { parseWorkspaceFile, type ParsedWorkspaceFilePayload } from "@/lib/workspace-file-api";
 import { createWorkflowFieldFromRecognition } from "@/lib/template-recognition-state";
 import { acceptForDocumentFormat } from "@/lib/workflow-documents";
+import {
+  buildWorkflowDocumentSample,
+  getSamplePageImages,
+  getSamplePreviewPages,
+} from "@/lib/workflow-document-sample-state";
 import type {
   ExtractionTrainingExample,
   WorkflowDocumentRequirement,
+  WorkflowDocumentSample,
   WorkflowField,
   WorkflowTemplate,
 } from "@/lib/types";
@@ -51,21 +58,27 @@ export function TemplateDocumentRecognitionPanel({
   document,
   template,
   onAddField,
+  onSaveSample,
 }: {
   document: WorkflowDocumentRequirement;
   template: WorkflowTemplate;
   onAddField: (field: WorkflowField, example?: ExtractionTrainingExample) => void;
+  onSaveSample: (sample: WorkflowDocumentSample) => void;
 }) {
-  const [fileName, setFileName] = useState("");
+  const [fileName, setFileName] = useState(document.sample?.fileName || "");
   const [sampleFile, setSampleFile] = useState<File | null>(null);
   const [samplePageImages, setSamplePageImages] = useState<
     Awaited<ReturnType<typeof renderPdfFileToPageImages>>
-  >([]);
+  >(() => getSamplePageImages(document.sample));
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState("");
   const [parseResult, setParseResult] = useState<ParsedWorkspaceFilePayload | null>(null);
-  const [previewPages, setPreviewPages] = useState<DocumentPreviewPage[]>([]);
-  const [selectedPreviewPageId, setSelectedPreviewPageId] = useState("");
+  const [previewPages, setPreviewPages] = useState<DocumentPreviewPage[]>(() =>
+    getSamplePreviewPages(document.sample),
+  );
+  const [selectedPreviewPageId, setSelectedPreviewPageId] = useState(
+    () => getSamplePreviewPages(document.sample)[0]?.id || "",
+  );
   const [selectedFieldName, setSelectedFieldName] = useState(
     document.fields[0]?.name || NEW_FIELD_VALUE,
   );
@@ -225,6 +238,19 @@ export function TemplateDocumentRecognitionPanel({
         extractionExamples: documentExtractionExamples,
       });
       setParseResult(payload);
+      const dataUrl = await readFileAsDataUrl(file);
+      onSaveSample(
+        buildWorkflowDocumentSample({
+          file,
+          dataUrl,
+          previewPages: pdfPreviewImages.length
+            ? buildPreviewPagesFromPdfImages(pdfPreviewImages)
+            : file.type.startsWith("image/")
+              ? [await readImageFileAsPreviewPage(file)]
+              : [],
+          pageImages,
+        }),
+      );
     } catch (error) {
       setParseError(
         error instanceof Error ? error.message : "Unable to parse sample document.",
@@ -334,7 +360,9 @@ export function TemplateDocumentRecognitionPanel({
 
   async function recognizeSampleField() {
     const field = resolveField();
-    if (!sampleFile || !field) {
+    const recognitionFile =
+      sampleFile || createFileFromSavedSample(document.sample);
+    if (!recognitionFile || !field) {
       return;
     }
 
@@ -342,7 +370,7 @@ export function TemplateDocumentRecognitionPanel({
     setParseError("");
     try {
       const payload = await parseWorkspaceFile({
-        file: sampleFile,
+        file: recognitionFile,
         adHocFields: [field],
         pageImages: buildSampleRecognitionPageImages({
           selectedPreviewPage,
@@ -613,7 +641,7 @@ export function TemplateDocumentRecognitionPanel({
               <button
                 type="button"
                 onClick={recognizeSampleField}
-                disabled={!sampleFile || !activeFieldLabel || isParsing}
+                disabled={!(sampleFile || document.sample) || !activeFieldLabel || isParsing}
                 title="Recognize the selected field from the uploaded sample using the current instruction."
                 className="flex min-h-9 items-center justify-center gap-1 whitespace-normal rounded-md border border-violet-400/40 bg-violet-400/12 px-2 py-2 text-center text-xs leading-tight text-violet-100 disabled:opacity-40"
               >
@@ -762,6 +790,29 @@ function createTemplateSampleExampleId(
   fileName: string,
 ) {
   return `template-sample-${documentId}-${fieldName}-${slugify(fileName) || "sample"}`;
+}
+
+function createFileFromSavedSample(sample?: WorkflowDocumentSample) {
+  if (!sample?.dataUrl) {
+    return null;
+  }
+
+  const [metadata, base64 = ""] = sample.dataUrl.split(",");
+  if (!base64) {
+    return null;
+  }
+
+  const mimeType =
+    metadata.match(/^data:([^;]+);base64$/)?.[1] ||
+    sample.mimeType ||
+    "application/octet-stream";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return new File([bytes], sample.fileName || "sample", { type: mimeType });
 }
 
 function slugify(value: string) {

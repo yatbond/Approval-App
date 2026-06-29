@@ -65,6 +65,16 @@ test("renders bounded PDF pages to base64 PNG images with injected PDF.js runtim
               width: pageNumber * 10 * scale,
               height: pageNumber * 5 * scale,
             }),
+            getTextContent: async () => ({
+              items: [
+                {
+                  str:
+                    pageNumber === 1
+                      ? "Subcontractor Ming Kee"
+                      : "Payment amount HKD 500,000",
+                },
+              ],
+            }),
             render: ({ canvas, canvasContext, viewport }) => {
               renderCalls.push({
                 pageNumber,
@@ -117,6 +127,10 @@ test("renders bounded PDF pages to base64 PNG images with injected PDF.js runtim
   assert.deepEqual(
     pages.map((page) => page.imageBase64),
     ["page-1", "page-2"],
+  );
+  assert.deepEqual(
+    pages.map((page) => page.pageText),
+    ["Subcontractor Ming Kee", "Payment amount HKD 500,000"],
   );
   assert.deepEqual(
     renderCalls.map((call) => [call.pageNumber, call.width, call.height, call.fillStyle]),
@@ -209,6 +223,16 @@ function createFakePdfJs({ numPages, getContext, dataUrl }) {
           getViewport: ({ scale }) => ({
             width: pageNumber * 10 * scale,
             height: pageNumber * 5 * scale,
+          }),
+          getTextContent: async () => ({
+            items: [
+              {
+                str:
+                  pageNumber === 1
+                    ? "Subcontractor Ming Kee"
+                    : "Payment amount HKD 500,000",
+              },
+            ],
           }),
           render: () => ({ promise: Promise.resolve() }),
         }),
