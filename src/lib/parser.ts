@@ -304,7 +304,7 @@ export async function extractPdfFieldsWithPageImagesAndPdfFallback(params: {
     examples: params.examples,
   });
 
-  if (hasRecognizedValue(pageResult)) {
+  if (hasRecognizedRequestedValue(pageResult, params.fields)) {
     return pageResult;
   }
 
@@ -605,11 +605,44 @@ function formatRenderedPageText(pageImages: PdfPageImageInput[]) {
   ].join("\n");
 }
 
-function hasRecognizedValue(result: ParsedDocumentDraft) {
+function hasRecognizedRequestedValue(
+  result: ParsedDocumentDraft,
+  fields: WorkflowField[],
+) {
+  return fields.some((field) => {
+    const fieldKeys = [field.label, field.name].filter(Boolean);
+    return (
+      fieldKeys.some((key) => result.fields[key]?.trim()) ||
+      Object.entries(result.fields).some(
+        ([key, value]) =>
+          Boolean(value.trim()) &&
+          fieldKeys.some((fieldKey) => labelsMatch(key, fieldKey)),
+      ) ||
+      result.suggestedFields.some(
+        (suggestion) =>
+          Boolean(suggestion.value.trim()) &&
+          fieldKeys.some((fieldKey) => labelsMatch(suggestion.label, fieldKey)),
+      )
+    );
+  });
+}
+
+function labelsMatch(left: string, right: string) {
+  const normalizedLeft = normalizeLabel(left);
+  const normalizedRight = normalizeLabel(right);
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+
   return (
-    Object.values(result.fields).some((value) => value.trim()) ||
-    result.suggestedFields.some((field) => field.value.trim())
+    normalizedLeft === normalizedRight ||
+    normalizedLeft.includes(normalizedRight) ||
+    normalizedRight.includes(normalizedLeft)
   );
+}
+
+function normalizeLabel(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 function fetchOpenRouterChatCompletion({
