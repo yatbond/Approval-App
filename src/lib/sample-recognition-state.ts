@@ -10,6 +10,17 @@ export function buildSampleRecognitionPageImages({
   selectedPreviewPage?: DocumentPreviewPage | null;
   samplePageImages: PdfPageImageInput[];
 }): PdfPageImageInput[] {
+  const matchingOcrPage = selectedPreviewPage
+    ? samplePageImages.find(
+        (page) =>
+          page.pageNumber === selectedPreviewPage.pageNumber && page.imageBase64,
+      )
+    : null;
+
+  if (matchingOcrPage) {
+    return [matchingOcrPage];
+  }
+
   if (selectedPreviewPage?.imageBase64) {
     return [
       {

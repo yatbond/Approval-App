@@ -64,7 +64,41 @@ test("falls back to a matching suggested field when requested fields are empty",
   });
 });
 
-test("uses the selected preview page image for sample AI recognition", () => {
+test("prefers the selected OCR page image for sample AI recognition", () => {
+  const result = buildSampleRecognitionPageImages({
+    selectedPreviewPage: {
+      id: "pdf-page-2",
+      pageNumber: 2,
+      mimeType: "image/png",
+      imageBase64: "selected-preview-page",
+      dataUrl: "data:image/png;base64,selected-preview-page",
+    },
+    samplePageImages: [
+      {
+        pageNumber: 1,
+        mimeType: "image/png",
+        imageBase64: "ocr-page-one",
+      },
+      {
+        pageNumber: 2,
+        mimeType: "image/png",
+        imageBase64: "ocr-page-two",
+        pageText: "Subcontractor: Ming Kee Construction",
+      },
+    ],
+  });
+
+  assert.deepEqual(result, [
+    {
+      pageNumber: 2,
+      mimeType: "image/png",
+      imageBase64: "ocr-page-two",
+      pageText: "Subcontractor: Ming Kee Construction",
+    },
+  ]);
+});
+
+test("falls back to the selected preview page when no matching OCR page exists", () => {
   const result = buildSampleRecognitionPageImages({
     selectedPreviewPage: {
       id: "pdf-page-2",
