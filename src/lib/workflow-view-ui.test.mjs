@@ -79,6 +79,18 @@ test("sample recognition can AI recognize the selected field before saving", () 
   );
 });
 
+test("sample recognition stays available for restored text-only samples", () => {
+  const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
+
+  assert.equal(source.includes("hasSampleRecognitionSource"), true);
+  assert.equal(source.includes("{hasSampleRecognitionSource && ("), true);
+  assert.equal(source.includes("selectedPreviewPage || samplePageImages.length"), true);
+  assert.equal(
+    source.includes("Saved sample text is available for AI recognition."),
+    true,
+  );
+});
+
 test("sample recognition actions fit inside the narrow workflow side panel", () => {
   const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
 

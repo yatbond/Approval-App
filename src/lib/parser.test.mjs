@@ -349,7 +349,7 @@ test("extracts PDF fields from rendered page images through OpenRouter Qwen", as
   }
 });
 
-test("falls back to the full PDF parser when rendered page OCR returns no values", async () => {
+test("falls back to the full PDF parser when rendered page parsers return no values", async () => {
   await withParserEnvironment(
     {
       OPENROUTER_API_KEY: "test-key",
@@ -361,7 +361,7 @@ test("falls back to the full PDF parser when rendered page OCR returns no values
       globalThis.fetch = async (_url, init) => {
         const body = JSON.parse(String(init.body));
         capturedBodies.push(body);
-        if (capturedBodies.length === 1) {
+        if (capturedBodies.length <= 2) {
           return Response.json({
             choices: [
               {
@@ -411,10 +411,18 @@ test("falls back to the full PDF parser when rendered page OCR returns no values
         languageHint: "English",
       });
 
-      assert.equal(capturedBodies.length, 2);
+      assert.equal(capturedBodies.length, 3);
       assert.equal(capturedBodies[0].model, "qwen/qwen3-vl-8b-instruct");
       assert.equal(capturedBodies[1].model, "google/gemini-3-flash-preview");
+      assert.equal(capturedBodies[1].plugins, undefined);
+      assert.equal(capturedBodies[2].model, "google/gemini-3-flash-preview");
       assert.deepEqual(capturedBodies[1].messages[0].content[1], {
+        type: "image_url",
+        image_url: {
+          url: "data:image/png;base64,page-one",
+        },
+      });
+      assert.deepEqual(capturedBodies[2].messages[0].content[1], {
         type: "file",
         file: {
           filename: "invoice.pdf",
@@ -424,7 +432,7 @@ test("falls back to the full PDF parser when rendered page OCR returns no values
       assert.deepEqual(result.fields, { Amount: "HKD 8,400" });
       assert.match(
         result.notes.join("\n"),
-        /Qwen page OCR returned no values; retried full PDF parser\./,
+        /Rendered page parsers returned no values; retried full PDF parser\./,
       );
     },
   );
@@ -503,7 +511,91 @@ test("falls back when rendered page OCR returns only unrelated suggestions", asy
       assert.deepEqual(result.fields, { Amount: "HKD 8,400" });
       assert.match(
         result.notes.join("\n"),
-        /Qwen page OCR returned no values; retried full PDF parser\./,
+        /Qwen page OCR returned no values; retried rendered page parser with the main model\./,
+      );
+    },
+  );
+});
+
+test("retries rendered PDF pages with the main model before full PDF parsing", async () => {
+  await withParserEnvironment(
+    {
+      OPENROUTER_API_KEY: "test-key",
+      OPENROUTER_MODEL: "google/gemini-3-flash-preview",
+      OPENROUTER_VISION_OCR_MODEL: "qwen/qwen3-vl-8b-instruct",
+    },
+    async () => {
+      const capturedBodies = [];
+      globalThis.fetch = async (_url, init) => {
+        const body = JSON.parse(String(init.body));
+        capturedBodies.push(body);
+        if (capturedBodies.length === 1) {
+          return Response.json({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    fields: {
+                      Amount: {
+                        value: "",
+                        confidence: "low",
+                        evidence: "",
+                      },
+                    },
+                    suggestedFields: [],
+                  }),
+                },
+              },
+            ],
+          });
+        }
+
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  fields: {
+                    Amount: {
+                      value: "HKD 8,400",
+                      confidence: "high",
+                      evidence: "Total HKD 8,400",
+                    },
+                  },
+                }),
+              },
+            },
+          ],
+        });
+      };
+
+      const result = await extractPdfFieldsWithPageImagesAndPdfFallback({
+        pageImages: [
+          {
+            pageNumber: 1,
+            mimeType: "image/png",
+            imageBase64: "page-one",
+            pageText: "Typed text: Total HKD 8,400",
+          },
+        ],
+        pdfBase64: "JVBERi0xLjQ=",
+        fileName: "invoice.pdf",
+        fields,
+        languageHint: "English",
+      });
+
+      assert.equal(capturedBodies.length, 2);
+      assert.equal(capturedBodies[0].model, "qwen/qwen3-vl-8b-instruct");
+      assert.equal(capturedBodies[1].model, "google/gemini-3-flash-preview");
+      assert.equal(capturedBodies[1].plugins, undefined);
+      assert.equal(
+        capturedBodies[1].messages[0].content[1].image_url.url,
+        "data:image/png;base64,page-one",
+      );
+      assert.deepEqual(result.fields, { Amount: "HKD 8,400" });
+      assert.match(
+        result.notes.join("\n"),
+        /retried rendered page parser with the main model/i,
       );
     },
   );
@@ -686,7 +778,7 @@ test("returns a Qwen setup note when no rendered PDF page images are supplied", 
 
     assert.deepEqual(result.fields, {});
     assert.deepEqual(result.notes, [
-      "No rendered PDF page images were supplied for Qwen visual OCR.",
+      "No rendered PDF page images were supplied for Qwen page-image OCR.",
     ]);
   });
 });
@@ -738,7 +830,9 @@ test("reports OpenRouter errors and unparseable outputs", async () => {
         confidence: {},
         evidence: {},
         suggestedFields: [],
-        notes: ["OpenRouter Qwen page-image output could not be parsed as field JSON."],
+        notes: [
+          "OpenRouter Qwen page-image OCR output could not be parsed as field JSON.",
+        ],
       },
     );
   });

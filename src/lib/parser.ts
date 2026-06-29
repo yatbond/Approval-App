@@ -308,6 +308,24 @@ export async function extractPdfFieldsWithPageImagesAndPdfFallback(params: {
     return pageResult;
   }
 
+  const mainPageResult = await extractPdfFieldsWithMainPageImages({
+    pageImages: params.pageImages,
+    fields: params.fields,
+    languageHint: params.languageHint,
+    examples: params.examples,
+  });
+
+  if (hasRecognizedRequestedValue(mainPageResult, params.fields)) {
+    return {
+      ...mainPageResult,
+      notes: [
+        ...pageResult.notes.map((note) => `Qwen page OCR: ${note}`),
+        "Qwen page OCR returned no values; retried rendered page parser with the main model.",
+        ...mainPageResult.notes,
+      ],
+    };
+  }
+
   const pdfResult = await extractPdfFields({
     pdfBase64: params.pdfBase64,
     fileName: params.fileName,
@@ -320,10 +338,26 @@ export async function extractPdfFieldsWithPageImagesAndPdfFallback(params: {
     ...pdfResult,
     notes: [
       ...pageResult.notes.map((note) => `Qwen page OCR: ${note}`),
-      "Qwen page OCR returned no values; retried full PDF parser.",
+      "Qwen page OCR returned no values; retried rendered page parser with the main model.",
+      ...mainPageResult.notes.map((note) => `Main page parser: ${note}`),
+      "Rendered page parsers returned no values; retried full PDF parser.",
       ...pdfResult.notes,
     ],
   };
+}
+
+export async function extractPdfFieldsWithMainPageImages(params: {
+  pageImages: PdfPageImageInput[];
+  fields: WorkflowField[];
+  languageHint: string;
+  examples?: ExtractionTrainingExample[];
+}): Promise<ParsedDocumentDraft> {
+  const model = process.env.OPENROUTER_MODEL || "~openai/gpt-latest";
+  return extractPdfFieldsWithOpenRouterPageImages({
+    ...params,
+    model,
+    parserName: "main rendered page parser",
+  });
 }
 
 export async function extractImageFieldsWithOpenRouter(params: {
@@ -498,6 +532,23 @@ export async function extractPdfFieldsWithQwenPageImages(params: {
   languageHint: string;
   examples?: ExtractionTrainingExample[];
 }): Promise<ParsedDocumentDraft> {
+  const model =
+    process.env.OPENROUTER_VISION_OCR_MODEL || "qwen/qwen3-vl-8b-instruct";
+  return extractPdfFieldsWithOpenRouterPageImages({
+    ...params,
+    model,
+    parserName: "Qwen page-image OCR",
+  });
+}
+
+async function extractPdfFieldsWithOpenRouterPageImages(params: {
+  pageImages: PdfPageImageInput[];
+  fields: WorkflowField[];
+  languageHint: string;
+  examples?: ExtractionTrainingExample[];
+  model: string;
+  parserName: string;
+}): Promise<ParsedDocumentDraft> {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
   if (!apiKey) {
@@ -518,12 +569,10 @@ export async function extractPdfFieldsWithQwenPageImages(params: {
       confidence: {},
       evidence: {},
       suggestedFields: [],
-      notes: ["No rendered PDF page images were supplied for Qwen visual OCR."],
+      notes: [`No rendered PDF page images were supplied for ${params.parserName}.`],
     };
   }
 
-  const model =
-    process.env.OPENROUTER_VISION_OCR_MODEL || "qwen/qwen3-vl-8b-instruct";
   const prompt = [
     buildExtractionPrompt(params.fields, params.languageHint, params.examples),
     `The PDF was rendered into ${params.pageImages.length} page image(s).`,
@@ -536,7 +585,7 @@ export async function extractPdfFieldsWithQwenPageImages(params: {
   const response = await fetchOpenRouterChatCompletion({
     apiKey,
     body: {
-      model,
+      model: params.model,
       messages: [
         {
           role: "user",
@@ -582,8 +631,8 @@ export async function extractPdfFieldsWithQwenPageImages(params: {
     evidence: parsed.success ? parsed.evidence : {},
     suggestedFields: parsed.success ? parsed.suggestedFields : [],
     notes: parsed.success
-      ? [`Parsed rendered PDF pages with OpenRouter model ${model}.`]
-      : ["OpenRouter Qwen page-image output could not be parsed as field JSON."],
+      ? [`Parsed rendered PDF pages with OpenRouter model ${params.model}.`]
+      : [`OpenRouter ${params.parserName} output could not be parsed as field JSON.`],
   };
 }
 

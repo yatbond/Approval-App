@@ -115,6 +115,9 @@ export function TemplateDocumentRecognitionPanel({
   const selectedPreviewPage =
     previewPages.find((page) => page.id === selectedPreviewPageId) ||
     previewPages[0];
+  const hasSampleRecognitionSource = Boolean(
+    selectedPreviewPage || samplePageImages.length || sampleFile || document.sample,
+  );
   const activeSelectionRect = getActiveSelectionRect({
     committedRect: highlightRect,
     selectionStart,
@@ -510,7 +513,7 @@ export function TemplateDocumentRecognitionPanel({
         </div>
       ) : null}
 
-      {selectedPreviewPage && (
+      {hasSampleRecognitionSource && (
         <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-2">
           <div className="mb-3 rounded-md border border-white/10 bg-[#0d1012] p-2">
             <p className="text-xs font-semibold text-neutral-300">
@@ -544,48 +547,60 @@ export function TemplateDocumentRecognitionPanel({
             )}
           </div>
           <p className="text-xs font-semibold text-neutral-300">Add fields</p>
-          {previewPages.length > 1 && (
-            <select
-              value={selectedPreviewPage.id}
-              onChange={(event) => {
-                setSelectedPreviewPageId(event.target.value);
-                setHighlightRect(null);
-                setFieldAnchor(null);
-              }}
-              className="mt-2 h-8 rounded-md border border-white/10 bg-[#0d1012] px-2 text-xs outline-none"
-            >
-              {previewPages.map((page) => (
-                <option key={page.id} value={page.id}>
-                  Page {page.pageNumber}
-                </option>
-              ))}
-            </select>
-          )}
-          <div className="mt-2 max-h-80 overflow-auto rounded-md border border-white/10 bg-black/20 p-2">
-            <div
-              className="relative overflow-hidden"
-              style={{ width: previewImageStyle.width, maxWidth: previewImageStyle.maxWidth }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={selectedPreviewPage.dataUrl}
-                alt={`Template sample page ${selectedPreviewPage.pageNumber}`}
-                draggable={false}
-                className="block select-none"
-                style={{
-                  filter: previewImageStyle.filter,
-                  maxWidth: "none",
-                  width: "100%",
-                }}
-              />
-              {fieldAnchor?.pageNumber === selectedPreviewPage.pageNumber && (
-                <div
-                  className="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-300/20"
-                  style={normalizedRectToPercentStyle(fieldAnchor.rect)}
-                />
+          {selectedPreviewPage ? (
+            <>
+              {previewPages.length > 1 && (
+                <select
+                  value={selectedPreviewPage.id}
+                  onChange={(event) => {
+                    setSelectedPreviewPageId(event.target.value);
+                    setHighlightRect(null);
+                    setFieldAnchor(null);
+                  }}
+                  className="mt-2 h-8 rounded-md border border-white/10 bg-[#0d1012] px-2 text-xs outline-none"
+                >
+                  {previewPages.map((page) => (
+                    <option key={page.id} value={page.id}>
+                      Page {page.pageNumber}
+                    </option>
+                  ))}
+                </select>
               )}
-            </div>
-          </div>
+              <div className="mt-2 max-h-80 overflow-auto rounded-md border border-white/10 bg-black/20 p-2">
+                <div
+                  className="relative overflow-hidden"
+                  style={{
+                    width: previewImageStyle.width,
+                    maxWidth: previewImageStyle.maxWidth,
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={selectedPreviewPage.dataUrl}
+                    alt={`Template sample page ${selectedPreviewPage.pageNumber}`}
+                    draggable={false}
+                    className="block select-none"
+                    style={{
+                      filter: previewImageStyle.filter,
+                      maxWidth: "none",
+                      width: "100%",
+                    }}
+                  />
+                  {fieldAnchor?.pageNumber === selectedPreviewPage.pageNumber && (
+                    <div
+                      className="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-300/20"
+                      style={normalizedRectToPercentStyle(fieldAnchor.rect)}
+                    />
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="mt-2 rounded-md border border-white/10 bg-[#0d1012] px-2 py-2 text-xs text-neutral-400">
+              Saved sample text is available for AI recognition. Upload the
+              sample again to use Extract box.
+            </p>
+          )}
           <div className="mt-2 grid gap-2">
             <label className="grid gap-1 text-xs text-neutral-400">
               <span>Field to train</span>
