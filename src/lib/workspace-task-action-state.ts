@@ -1,4 +1,7 @@
-import { applyTaskAction } from "./approval-state.ts";
+import {
+  applyTaskAction,
+  getTaskActionBlockReason,
+} from "./approval-state.ts";
 import { getMissingRequiredCurrentNodeDocuments } from "./request-builder.ts";
 import { findTemplateForTask } from "./task-display.ts";
 import { getTaskActionPreflightState } from "./task-action-state.ts";
@@ -49,6 +52,21 @@ export function getWorkspaceRecordTaskActionState({
   }
 
   const template = findTemplateForTask(selectedTask, templates);
+  const actionBlockReason = getTaskActionBlockReason({
+    task: selectedTask,
+    action,
+    actorEmail: activeUser.email,
+    template,
+  });
+  if (actionBlockReason) {
+    return {
+      didApply: false,
+      tasks,
+      actionError: actionBlockReason,
+      shouldClearInputs: false,
+    };
+  }
+
   const missingCurrentDocuments =
     template && (action === "approve" || action === "approve_with_comment")
       ? getMissingRequiredCurrentNodeDocuments(selectedTask, template)
@@ -88,6 +106,15 @@ export function getWorkspaceRecordTaskActionState({
     template,
     returnTargetNodeIds,
   });
+
+  if (nextTask === selectedTask) {
+    return {
+      didApply: false,
+      tasks,
+      actionError: "The task did not change. Refresh the Queue and try again.",
+      shouldClearInputs: false,
+    };
+  }
 
   return {
     didApply: true,

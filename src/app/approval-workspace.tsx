@@ -242,6 +242,8 @@ function ApprovalWorkspaceBody({
   const [parseError, setParseError] = useState("");
   const [submissionMessage, setSubmissionMessage] = useState("");
   const [actionError, setActionError] = useState("");
+  const [actionSubmissionTaskId, setActionSubmissionTaskId] = useState("");
+  const actionSubmissionTaskIdRef = useRef("");
   const [emailDeliveryMessage, setEmailDeliveryMessage] = useState("");
   const [emailOutboxEntries, setEmailOutboxEntries] = useState<EmailOutboxEntry[]>([]);
   const [adminRecordError, setAdminRecordError] = useState("");
@@ -938,7 +940,14 @@ function ApprovalWorkspaceBody({
     setSubmissionMessage("");
   }
 
-  function recordAction(action: ApprovalAction, returnTargetNodeIds: string[] = []) {
+  async function recordAction(
+    action: ApprovalAction,
+    returnTargetNodeIds: string[] = [],
+  ) {
+    if (!selectedTask || actionSubmissionTaskIdRef.current) {
+      return;
+    }
+
     const nextState = getWorkspaceRecordTaskActionState({
       tasks,
       selectedTask,
@@ -957,19 +966,35 @@ function ApprovalWorkspaceBody({
       return;
     }
 
+    actionSubmissionTaskIdRef.current = selectedTask.id;
+    setActionSubmissionTaskId(selectedTask.id);
     setTasks(nextState.tasks);
-    const changedTask = nextState.tasks.find((task) => task.id === selectedTask.id);
-    if (changedTask) {
-      void sendWorkflowEmailNotifications(changedTask);
+    try {
+      await persistWorkspaceSnapshot(
+        buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
+      );
+      const changedTask = nextState.tasks.find(
+        (task) => task.id === selectedTask.id,
+      );
+      if (changedTask) {
+        void sendWorkflowEmailNotifications(changedTask);
+      }
+      if (nextState.shouldClearInputs) {
+        setComment("");
+        setTargetEmail("");
+      }
+      setActionError(nextState.actionError);
+    } catch (error) {
+      setTasks(tasks);
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to save this task decision.",
+      );
+    } finally {
+      actionSubmissionTaskIdRef.current = "";
+      setActionSubmissionTaskId("");
     }
-    void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
-    );
-    if (nextState.shouldClearInputs) {
-      setComment("");
-      setTargetEmail("");
-    }
-    setActionError(nextState.actionError);
   }
 
   async function confirmRecordAction(
@@ -985,7 +1010,7 @@ function ApprovalWorkspaceBody({
       return;
     }
 
-    recordAction(action, returnTargetNodeIds);
+    await recordAction(action, returnTargetNodeIds);
   }
 
   async function requestTaskContributor() {
@@ -2111,6 +2136,7 @@ function ApprovalWorkspaceBody({
                 userDirectory={userDirectory}
                 workflowTemplates={templates}
                 actionError={actionError}
+                actionPending={actionSubmissionTaskId === selectedTask?.id}
                 missingCurrentDocuments={selectedTaskMissingDocuments}
                 onAttachTaskDocument={(file, documentRequirement) =>
                   selectedTask &&

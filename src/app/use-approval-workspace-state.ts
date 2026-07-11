@@ -12,6 +12,7 @@ import {
 } from "@/lib/workspace-bootstrap";
 import {
   parseWorkspaceState,
+  sanitizeWorkspaceStateSnapshot,
   serializeWorkspaceState,
   type WorkspaceStateSnapshot,
 } from "@/lib/workspace-persistence";
@@ -158,15 +159,16 @@ export function useApprovalWorkspaceState({
       }
 
       if (result.mode === "supabase" && result.snapshot) {
-        const remoteSnapshot = serializeWorkspaceState(result.snapshot);
+        const repairedSnapshot = sanitizeWorkspaceStateSnapshot(result.snapshot);
+        const remoteSnapshot = serializeWorkspaceState(repairedSnapshot);
         if (!localWorkspaceDirtyRef.current) {
           lastRemoteSnapshotRef.current = remoteSnapshot;
-          setTasks(result.snapshot.approvalTasks);
-          setBusinessDirectory(result.snapshot.businessDirectory);
-          setTemplates(result.snapshot.workflowTemplates);
-          setRoleAssignments(result.snapshot.userRoleAssignments || []);
-          setAdminAuditEvents(result.snapshot.adminAuditEvents || []);
-          setSelectedTemplateId(result.snapshot.selectedTemplateId);
+          setTasks(repairedSnapshot.approvalTasks);
+          setBusinessDirectory(repairedSnapshot.businessDirectory);
+          setTemplates(repairedSnapshot.workflowTemplates);
+          setRoleAssignments(repairedSnapshot.userRoleAssignments || []);
+          setAdminAuditEvents(repairedSnapshot.adminAuditEvents || []);
+          setSelectedTemplateId(repairedSnapshot.selectedTemplateId);
         }
       }
       setWorkspaceSyncMode(result.mode);

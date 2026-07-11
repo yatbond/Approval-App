@@ -176,12 +176,56 @@ test("runs a workflow simulation action with the task owner as actor", () => {
 
   assert.equal(nextState.didApply, true);
   assert.equal(nextState.selectedTaskId, "task-1");
-  assert.equal(nextState.tasks[0].status, "pending");
-  assert.equal(nextState.tasks[0].currentOwner, "next.approver@example.com");
+  assert.equal(nextState.tasks[0].status, "approved");
+  assert.equal(nextState.tasks[0].currentOwner, "");
   assert.ok(
     nextState.tasks[0].auditTrail.some(
       (event) =>
         event.action === "approved" && event.actorEmail === "owner@example.com",
     ),
   );
+});
+
+test("blocks a stale decision after the current workflow node was completed", () => {
+  const selectedTask = makeTask({
+    workflowTemplateId: "finance-invoice",
+    currentNodeId: "review-1",
+    pendingNodeIds: ["review-1"],
+    pendingOwners: [activeUser.email],
+    completedNodeIds: ["review-1"],
+    nodeDecisions: { "review-1": "approved" },
+  });
+  const nextState = getWorkspaceRecordTaskActionState({
+    tasks: [selectedTask],
+    selectedTask,
+    templates: [template],
+    activeUser,
+    action: "approve",
+    comment: "Duplicate click",
+    targetEmail: "",
+  });
+
+  assert.equal(nextState.didApply, false);
+  assert.equal(nextState.tasks[0], selectedTask);
+  assert.match(nextState.actionError, /already been decided/i);
+});
+
+test("blocks decisions from an actor who no longer owns the task", () => {
+  const selectedTask = makeTask({
+    currentOwner: "next@example.com",
+    pendingOwners: [],
+  });
+  const nextState = getWorkspaceRecordTaskActionState({
+    tasks: [selectedTask],
+    selectedTask,
+    templates: [],
+    activeUser,
+    action: "reject",
+    comment: "Stale browser tab",
+    targetEmail: "",
+  });
+
+  assert.equal(nextState.didApply, false);
+  assert.equal(nextState.tasks[0], selectedTask);
+  assert.match(nextState.actionError, /no longer assigned/i);
 });

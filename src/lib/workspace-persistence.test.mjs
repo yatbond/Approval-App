@@ -113,6 +113,55 @@ test("parses older workspace state without saved approval tasks", () => {
   assert.deepEqual(parsed?.adminAuditEvents, []);
 });
 
+test("repairs obsolete next-approver loops when loading saved workspace state", () => {
+  const parsed = parseWorkspaceState(
+    JSON.stringify({
+      selectedTemplateId: "template-1",
+      approvalTasks: [
+        {
+          id: "APR-LOOP",
+          title: "Legacy task",
+          workflow: "Legacy workflow",
+          requester: "Mandy",
+          requesterEmail: "mandy@example.com",
+          department: "Finance",
+          status: "pending",
+          due: "Today",
+          value: "HKD 100",
+          currentStep: "Next approver review",
+          currentOwner: "next.approver@example.com",
+          participants: ["mandy@example.com", "next.approver@example.com"],
+          lastAction: "Approved by Derrick",
+          extractedFields: {},
+          auditTrail: [
+            {
+              id: "APR-LOOP-event-1",
+              action: "approved",
+              actor: "Derrick",
+              actorEmail: "derrick@example.com",
+              timestamp: "2026-06-29 23:32",
+              detail: "Approved and sent to the next approver.",
+            },
+            {
+              id: "APR-LOOP-event-2",
+              action: "assigned",
+              actor: "System",
+              actorEmail: "system@example.com",
+              timestamp: "2026-06-29 23:32",
+              detail: "Assigned to next.approver@example.com for Next approver review.",
+            },
+          ],
+        },
+      ],
+      businessDirectory: [],
+      workflowTemplates: [],
+    }),
+  );
+
+  assert.equal(parsed?.approvalTasks[0].status, "approved");
+  assert.equal(parsed?.approvalTasks[0].auditTrail.length, 1);
+});
+
 test("keeps bounded workflow sample OCR images during workspace persistence", () => {
   const state = {
     selectedTemplateId: "template-1",

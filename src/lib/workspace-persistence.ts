@@ -6,6 +6,7 @@ import type {
   WorkflowTemplate,
 } from "@/lib/types";
 import { sanitizeWorkflowDocumentSample } from "./workflow-document-sample-state.ts";
+import { repairApprovalTaskState } from "./approval-task-repair-state.ts";
 
 export type WorkspaceStateSnapshot = {
   selectedTemplateId: string;
@@ -32,7 +33,7 @@ export function parseWorkspaceState(value: string): WorkspaceStateSnapshot | nul
       return null;
     }
 
-    return {
+    return sanitizeWorkspaceStateSnapshot({
       selectedTemplateId: parsed.selectedTemplateId,
       approvalTasks: Array.isArray(parsed.approvalTasks)
         ? parsed.approvalTasks
@@ -45,17 +46,18 @@ export function parseWorkspaceState(value: string): WorkspaceStateSnapshot | nul
       adminAuditEvents: Array.isArray(parsed.adminAuditEvents)
         ? parsed.adminAuditEvents
         : [],
-    };
+    });
   } catch {
     return null;
   }
 }
 
-function sanitizeWorkspaceStateSnapshot(
+export function sanitizeWorkspaceStateSnapshot(
   snapshot: WorkspaceStateSnapshot,
 ): WorkspaceStateSnapshot {
   return {
     ...snapshot,
+    approvalTasks: snapshot.approvalTasks.map(repairApprovalTaskState),
     workflowTemplates: sanitizeWorkflowTemplates(snapshot.workflowTemplates),
   };
 }

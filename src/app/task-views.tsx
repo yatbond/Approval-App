@@ -135,6 +135,7 @@ export function QueueView({
   userDirectory,
   workflowTemplates,
   actionError,
+  actionPending,
   missingCurrentDocuments,
   onAttachTaskDocument,
 }: {
@@ -163,6 +164,7 @@ export function QueueView({
   userDirectory: UserDirectoryEntry[];
   workflowTemplates: WorkflowTemplate[];
   actionError: string;
+  actionPending: boolean;
   missingCurrentDocuments: WorkflowDocumentRequirement[];
   onAttachTaskDocument: (
     file: File,
@@ -589,7 +591,10 @@ export function QueueView({
                 const needsCurrentDocuments =
                   (action === "approve" || action === "approve_with_comment") &&
                   missingCurrentDocuments.length > 0;
-                const disabled = (needsTarget && !targetEmail.trim()) || needsCurrentDocuments;
+                const disabled =
+                  actionPending ||
+                  (needsTarget && !targetEmail.trim()) ||
+                  needsCurrentDocuments;
                 return (
                   <button
                     key={action}
@@ -606,7 +611,9 @@ export function QueueView({
                     className={`flex min-h-11 items-center justify-center gap-2 rounded-md border px-3 py-2 text-center text-sm leading-tight transition disabled:cursor-not-allowed disabled:opacity-45 ${actionConfig[action].tone}`}
                   >
                     <Icon size={15} className="shrink-0" />
-                    <span className="min-w-0 break-words">{actionConfig[action].label}</span>
+                    <span className="min-w-0 break-words">
+                      {actionPending ? "Saving..." : actionConfig[action].label}
+                    </span>
                   </button>
                 );
               })}

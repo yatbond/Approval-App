@@ -12,6 +12,24 @@ import type {
 import { createWorkflowGraphFromTemplate, findInitialWorkflowRoute } from "./workflow-graph.ts";
 
 const closedStatuses = new Set<ApprovalTask["status"]>(["approved", "cancelled"]);
+const assignedTaskActions = new Set<ApprovalAction>([
+  "approve",
+  "approve_with_comment",
+  "reject",
+  "reject_with_comment",
+  "reassign",
+  "delegate",
+  "accept_reassignment",
+  "decline_reassignment",
+  "amend_resubmit",
+  "cancel",
+]);
+const decisionActions = new Set<ApprovalAction>([
+  "approve",
+  "approve_with_comment",
+  "reject",
+  "reject_with_comment",
+]);
 
 export type TaskActionInput = {
   action: ApprovalAction;
@@ -44,10 +62,56 @@ export function getPendingReassignmentRequest(
   );
 }
 
+export function getTaskActionBlockReason({
+  task,
+  action,
+  actorEmail,
+  template,
+}: {
+  task: ApprovalTask;
+  action: ApprovalAction;
+  actorEmail: string;
+  template?: WorkflowTemplate;
+}) {
+  if (assignedTaskActions.has(action) && !isActionableBy(task, actorEmail)) {
+    return "This task is no longer assigned to you. Refresh the Queue to see its current owner.";
+  }
+
+  if (!decisionActions.has(action)) {
+    return "";
+  }
+
+  const actionTask = taskForActorNode(task, actorEmail, template);
+  if (template && !actionTask.currentNodeId) {
+    return "The current workflow box could not be identified. Refresh the request before deciding it.";
+  }
+
+  if (
+    actionTask.currentNodeId &&
+    (actionTask.nodeDecisions?.[actionTask.currentNodeId] ||
+      actionTask.completedNodeIds?.includes(actionTask.currentNodeId))
+  ) {
+    return "This workflow box has already been decided. Refresh the Queue to continue.";
+  }
+
+  return "";
+}
+
 export function applyTaskAction(
   task: ApprovalTask,
   input: TaskActionInput,
 ): ApprovalTask {
+  if (
+    getTaskActionBlockReason({
+      task,
+      action: input.action,
+      actorEmail: input.actor.email,
+      template: input.template,
+    })
+  ) {
+    return task;
+  }
+
   const comment = input.comment?.trim();
   const targetEmail = input.targetEmail?.trim();
   const participants = addParticipants(task.participants, [
@@ -538,16 +602,27 @@ function routeRejectionToSelectedTargets({
 }
 
 function routeAfterApproval(task: ApprovalTask, template?: WorkflowTemplate) {
-  if (!template || !task.currentNodeId) {
+  if (!template) {
     return {
       task: {
         ...task,
-        status: "pending" as const,
-        currentOwner: "next.approver@example.com",
-        currentStep: "Next approver review",
+        status: "approved" as const,
+        currentOwner: "",
+        currentStep: "Approved",
+        currentNodeId: undefined,
+        pendingNodeIds: [],
+        pendingOwners: [],
       },
-      detail: "Approved and sent to the next approver.",
-      assignedEvent: "Assigned to next.approver@example.com for Next approver review.",
+      detail: "Approved and completed the legacy workflow.",
+      assignedEvent: undefined,
+    };
+  }
+
+  if (!task.currentNodeId) {
+    return {
+      task,
+      detail: "The current workflow box could not be identified.",
+      assignedEvent: undefined,
     };
   }
 
@@ -1037,21 +1112,35 @@ function taskForActorNode(
   actorEmail: string,
   template?: WorkflowTemplate,
 ) {
-  if (!template || !task.pendingNodeIds?.length) {
+  if (!template) {
     return task;
   }
 
   const graph = createWorkflowGraphFromTemplate(template);
-  const actorNode = task.pendingNodeIds
+  const actorNode = (task.pendingNodeIds || [])
     .map((nodeId) => graph.nodes.find((node) => node.id === nodeId))
     .find((node) => node?.assigneeEmail === actorEmail);
+  const inferredCurrentNode = !task.currentNodeId
+    ? graph.nodes.find(
+        (node) =>
+          (node.kind === "approval" || node.kind === "review") &&
+          node.label === task.currentStep,
+      )
+    : undefined;
+  const resolvedNode = actorNode || inferredCurrentNode;
 
-  return actorNode
+  return resolvedNode
     ? {
         ...task,
-        currentNodeId: actorNode.id,
+        currentNodeId: resolvedNode.id,
         currentOwner: actorEmail,
-        currentStep: actorNode.label,
+        currentStep: resolvedNode.label,
+        pendingNodeIds: task.pendingNodeIds?.length
+          ? task.pendingNodeIds
+          : [resolvedNode.id],
+        pendingOwners: task.pendingOwners?.length
+          ? task.pendingOwners
+          : [actorEmail],
       }
     : task;
 }

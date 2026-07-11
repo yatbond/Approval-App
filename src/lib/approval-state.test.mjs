@@ -373,7 +373,7 @@ function makeCreatedTask(template, extractedFields = {}) {
   });
 }
 
-test("approve moves the task out of the actor queue but leaves it trackable", () => {
+test("approve completes a graphless legacy task without inventing another owner", () => {
   const result = applyTaskAction(makeTask(), {
     action: "approve",
     actor,
@@ -382,9 +382,9 @@ test("approve moves the task out of the actor queue but leaves it trackable", ()
 
   assert.equal(isActionableBy(result, actor.email), false);
   assert.equal(isVisibleToParticipant(result, actor.email), true);
-  assert.equal(result.status, "pending");
-  assert.equal(result.currentOwner, "next.approver@example.com");
-  assert.equal(isActionableBy(result, "next.approver@example.com"), true);
+  assert.equal(result.status, "approved");
+  assert.equal(result.currentOwner, "");
+  assert.equal(result.currentStep, "Approved");
   assert.match(result.lastAction, /Approved/);
   assert.ok(result.auditTrail.some((event) => event.detail.includes("Looks fine")));
 });
@@ -1351,6 +1351,44 @@ test("reject follows a configured rejected branch when provided", () => {
   assert.equal(result.currentNodeId, "originator-review");
   assert.equal(result.activeBranchId, "edge-approval-1-rejected");
   assert.ok(result.auditTrail.some((event) => event.detail.includes("Please amend")));
+});
+
+test("repeated approval of a completed legacy task is idempotent", () => {
+  const first = applyTaskAction(makeTask(), {
+    action: "approve",
+    actor,
+  });
+  const repeated = applyTaskAction(first, {
+    action: "approve",
+    actor,
+  });
+
+  assert.equal(repeated, first);
+  assert.equal(repeated.auditTrail.length, first.auditTrail.length);
+});
+
+test("legacy tasks infer the current workflow node from the step label", () => {
+  const legacyTask = makeTask({
+    workflowTemplateId: "finance-invoice",
+    currentStep: "Department review",
+    currentNodeId: undefined,
+    pendingNodeIds: undefined,
+    pendingOwners: undefined,
+  });
+
+  const result = applyTaskAction(legacyTask, {
+    action: "approve",
+    actor,
+    template: makeGraphTemplate(),
+  });
+
+  assert.equal(result.currentNodeId, "approval-2");
+  assert.equal(result.currentStep, "CFO approval");
+  assert.equal(result.nodeDecisions?.["approval-1"], "approved");
+  assert.equal(
+    result.auditTrail.filter((event) => event.action === "approved").length,
+    1,
+  );
 });
 
 test("reject can return to a selected parallel upstream stage and resume forward", () => {
