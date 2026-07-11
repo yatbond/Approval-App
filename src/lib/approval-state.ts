@@ -42,15 +42,15 @@ export type TaskActionInput = {
 
 export function isActionableBy(task: ApprovalTask, userEmail: string) {
   return (
-    (task.currentOwner === userEmail ||
-      Boolean(task.pendingOwners?.includes(userEmail)) ||
+    (emailsMatch(task.currentOwner, userEmail) ||
+      Boolean(task.pendingOwners?.some((email) => emailsMatch(email, userEmail))) ||
       Boolean(getPendingReassignmentRequest(task, userEmail))) &&
     !closedStatuses.has(task.status)
   );
 }
 
 export function isVisibleToParticipant(task: ApprovalTask, userEmail: string) {
-  return task.participants.includes(userEmail);
+  return task.participants.some((email) => emailsMatch(email, userEmail));
 }
 
 export function getPendingReassignmentRequest(
@@ -58,8 +58,12 @@ export function getPendingReassignmentRequest(
   userEmail: string,
 ) {
   return task.reassignmentRequests?.find(
-    (request) => request.toEmail === userEmail && request.status === "requested",
+    (request) => emailsMatch(request.toEmail, userEmail) && request.status === "requested",
   );
+}
+
+export function emailsMatch(left?: string, right?: string) {
+  return Boolean(left && right && left.trim().toLowerCase() === right.trim().toLowerCase());
 }
 
 export function getTaskActionBlockReason({
@@ -1119,7 +1123,7 @@ function taskForActorNode(
   const graph = createWorkflowGraphFromTemplate(template);
   const actorNode = (task.pendingNodeIds || [])
     .map((nodeId) => graph.nodes.find((node) => node.id === nodeId))
-    .find((node) => node?.assigneeEmail === actorEmail);
+    .find((node) => emailsMatch(node?.assigneeEmail, actorEmail));
   const inferredCurrentNode = !task.currentNodeId
     ? graph.nodes.find(
         (node) =>
@@ -1217,7 +1221,7 @@ function replacePendingOwnerOrDefault(
 ) {
   const sourceOwners = owners?.length ? owners : [previousEmail];
   const replaced = sourceOwners.map((email) =>
-    email === previousEmail ? nextEmail : email,
+    emailsMatch(email, previousEmail) ? nextEmail : email,
   );
 
   return addParticipants([], [...replaced, nextEmail]);
@@ -1247,7 +1251,7 @@ function transferReassignmentParticipants({
   requesterEmail: string;
 }) {
   const retainedParticipants = participants.filter(
-    (email) => email !== fromEmail || email === requesterEmail,
+    (email) => !emailsMatch(email, fromEmail) || emailsMatch(email, requesterEmail),
   );
 
   return addParticipants(retainedParticipants, [toEmail, requesterEmail]);
@@ -1258,13 +1262,13 @@ function removeReassignmentCandidateParticipant(
   candidateEmail: string,
 ) {
   const shouldKeepCandidate =
-    task.requesterEmail === candidateEmail ||
-    task.currentOwner === candidateEmail ||
-    Boolean(task.pendingOwners?.includes(candidateEmail));
+    emailsMatch(task.requesterEmail, candidateEmail) ||
+    emailsMatch(task.currentOwner, candidateEmail) ||
+    Boolean(task.pendingOwners?.some((email) => emailsMatch(email, candidateEmail)));
 
   return shouldKeepCandidate
     ? task.participants
-    : task.participants.filter((email) => email !== candidateEmail);
+    : task.participants.filter((email) => !emailsMatch(email, candidateEmail));
 }
 
 function updateReassignmentRequest(
@@ -1377,10 +1381,11 @@ function addParticipants(
   emails: Array<string | undefined>,
 ) {
   return Array.from(
-    new Set([
-      ...existing,
-      ...emails.filter((email): email is string => Boolean(email)),
-    ]),
+    new Set(
+      [...existing, ...emails]
+        .filter((email): email is string => Boolean(email?.trim()))
+        .map((email) => email.trim().toLowerCase()),
+    ),
   );
 }
 

@@ -5,6 +5,7 @@ import type {
   WorkflowGraphNode,
   WorkflowTemplate,
 } from "./types.ts";
+import { emailsMatch } from "./approval-state.ts";
 
 export type PathNodeState =
   | "approved"
@@ -152,15 +153,15 @@ export function getPathNodeProgressTone(
 }
 
 export function formatTaskAccessRole(task: ApprovalTask, activeUserEmail: string) {
-  if (task.requesterEmail === activeUserEmail) {
+  if (emailsMatch(task.requesterEmail, activeUserEmail)) {
     return "originator";
   }
 
-  if (task.currentOwner === activeUserEmail) {
+  if (emailsMatch(task.currentOwner, activeUserEmail)) {
     return "current actor";
   }
 
-  if (task.auditTrail.some((event) => event.actorEmail === activeUserEmail)) {
+  if (task.auditTrail.some((event) => emailsMatch(event.actorEmail, activeUserEmail))) {
     return "previous actor";
   }
 
@@ -209,7 +210,7 @@ function isPathNodeHistoryEvent(
     return true;
   }
 
-  if (node.assigneeEmail && event.targetEmail === node.assigneeEmail) {
+  if (node.assigneeEmail && emailsMatch(event.targetEmail, node.assigneeEmail)) {
     return true;
   }
 

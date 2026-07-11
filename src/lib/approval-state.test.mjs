@@ -41,6 +41,19 @@ function makeTask() {
   };
 }
 
+test("matches task ownership and visibility without email case sensitivity", () => {
+  const task = {
+    ...makeTask(),
+    currentOwner: "Derrick@Example.com",
+    pendingOwners: ["Derrick@Example.com"],
+    participants: ["Mandy@Example.com", "Derrick@Example.com"],
+  };
+
+  assert.equal(isActionableBy(task, "derrick@example.com"), true);
+  assert.equal(isVisibleToParticipant(task, "derrick@example.com"), true);
+  assert.equal(isVisibleToParticipant(task, "mandy@example.com"), true);
+});
+
 function makeGraphTemplate() {
   return {
     id: "finance-invoice",
