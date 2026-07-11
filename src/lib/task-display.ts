@@ -127,10 +127,13 @@ export function getPathNodeState(
 export function getPathNodeHistoryEvents(
   task: ApprovalTask,
   node: WorkflowGraphNode,
-  { isFirstPathNode = false }: { isFirstPathNode?: boolean } = {},
+  {
+    isFirstPathNode = false,
+    workflowNodes = [],
+  }: { isFirstPathNode?: boolean; workflowNodes?: WorkflowGraphNode[] } = {},
 ): AuditEvent[] {
   return task.auditTrail.filter((event) =>
-    isPathNodeHistoryEvent(event, node, isFirstPathNode),
+    isPathNodeHistoryEvent(event, node, isFirstPathNode, workflowNodes),
   );
 }
 
@@ -190,6 +193,7 @@ function isPathNodeHistoryEvent(
   event: AuditEvent,
   node: WorkflowGraphNode,
   isFirstPathNode: boolean,
+  workflowNodes: WorkflowGraphNode[],
 ) {
   if (
     isFirstPathNode &&
@@ -210,7 +214,23 @@ function isPathNodeHistoryEvent(
     return true;
   }
 
-  if (node.assigneeEmail && emailsMatch(event.targetEmail, node.assigneeEmail)) {
+  const explicitlyReferencedNode = workflowNodes.some((workflowNode) => {
+    const label = normalizeSearchText(workflowNode.label);
+    const id = normalizeSearchText(workflowNode.id);
+    return (label && eventText.includes(label)) || (id && eventText.includes(id));
+  });
+  if (explicitlyReferencedNode) {
+    return false;
+  }
+
+  const nodesWithTargetEmail = workflowNodes.filter((workflowNode) =>
+    emailsMatch(workflowNode.assigneeEmail, event.targetEmail),
+  );
+  if (
+    node.assigneeEmail &&
+    emailsMatch(event.targetEmail, node.assigneeEmail) &&
+    (!workflowNodes.length || nodesWithTargetEmail.length === 1)
+  ) {
     return true;
   }
 

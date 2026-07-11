@@ -278,6 +278,49 @@ test("assigns audit history by target email when text does not name the path box
   );
 });
 
+test("does not copy target-only history across positions sharing one email", () => {
+  const firstNode = {
+    id: "manager",
+    kind: "approval",
+    label: "Manager",
+    x: 0,
+    y: 0,
+    assigneeEmail: "same@example.com",
+  };
+  const secondNode = {
+    id: "director",
+    kind: "approval",
+    label: "Director",
+    x: 200,
+    y: 0,
+    assigneeEmail: "Same@Example.com",
+  };
+  const task = {
+    ...baseTask,
+    auditTrail: [
+      {
+        id: "target-only",
+        actor: "System",
+        actorEmail: "system@example.com",
+        action: "assigned",
+        detail: "Assigned to the next owner.",
+        timestamp: "2026-06-21 10:00",
+        targetEmail: "same@example.com",
+      },
+    ],
+  };
+  const workflowNodes = [firstNode, secondNode];
+
+  assert.deepEqual(
+    getPathNodeHistoryEvents(task, firstNode, { workflowNodes }),
+    [],
+  );
+  assert.deepEqual(
+    getPathNodeHistoryEvents(task, secondNode, { workflowNodes }),
+    [],
+  );
+});
+
 test("formats task access role for visible participants", () => {
   assert.equal(formatTaskAccessRole(baseTask, "originator@example.com"), "originator");
   assert.equal(formatTaskAccessRole(baseTask, "approver@example.com"), "current actor");

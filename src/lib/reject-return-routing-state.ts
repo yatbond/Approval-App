@@ -47,10 +47,12 @@ export function getRejectReturnTargetOptions({
     .filter((node) => isRejectReturnTargetNode(node))
     .filter((node) => distanceByNodeId.has(node.id))
     .filter((node) => wasNodeReached(task, node.id));
-  const directUpstreamNodes = graph.edges
-    .filter((edge) => edge.targetId === currentNode.id && edge.branchType !== "for_information")
-    .map((edge) => eligibleNodes.find((node) => node.id === edge.sourceId))
-    .filter((node): node is WorkflowGraphNode => Boolean(node));
+  const directUpstreamNodes = uniqueNodes(
+    graph.edges
+      .filter((edge) => edge.targetId === currentNode.id && edge.branchType !== "for_information")
+      .map((edge) => eligibleNodes.find((node) => node.id === edge.sourceId))
+      .filter((node): node is WorkflowGraphNode => Boolean(node)),
+  );
   const stageOptions =
     directUpstreamNodes.length > 1
       ? [
@@ -76,6 +78,12 @@ export function getRejectReturnTargetOptions({
     }));
 
   return [originatorOption, ...stageOptions, ...individualOptions];
+}
+
+function uniqueNodes(nodes: WorkflowGraphNode[]) {
+  const nodeById = new Map<string, WorkflowGraphNode>();
+  nodes.forEach((node) => nodeById.set(node.id, node));
+  return Array.from(nodeById.values());
 }
 
 function getUpstreamDistanceByNodeId(graph: WorkflowGraph, currentNodeId: string) {

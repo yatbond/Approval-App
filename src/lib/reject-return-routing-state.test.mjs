@@ -72,6 +72,7 @@ function makeParallelTemplate() {
         { id: "edge-qs-director", sourceId: "qs", targetId: "commercial-director", label: "Main", branchType: "main" },
         { id: "edge-manager-supervisor", sourceId: "qs-manager", targetId: "supervisor", label: "Main", branchType: "main" },
         { id: "edge-director-supervisor", sourceId: "commercial-director", targetId: "supervisor", label: "Main", branchType: "main" },
+        { id: "edge-manager-supervisor-copy", sourceId: "qs-manager", targetId: "supervisor", label: "Main", branchType: "main" },
         { id: "edge-supervisor-cfo", sourceId: "supervisor", targetId: "cfo", label: "Main", branchType: "main" },
         { id: "edge-supervisor-chairman", sourceId: "supervisor", targetId: "chairman", label: "Main", branchType: "main" },
         { id: "edge-cfo-end", sourceId: "cfo", targetId: "end", label: "Main", branchType: "main" },

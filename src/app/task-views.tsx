@@ -48,6 +48,7 @@ import type {
   ApprovalTask,
   TaskCollaborationRequest,
   WorkflowDocumentRequirement,
+  WorkflowGraphNode,
   WorkflowTemplate,
 } from "@/lib/types";
 import type { UserDirectoryEntry } from "@/lib/user-directory";
@@ -1059,6 +1060,7 @@ function TaskPathAndHistory({
     ? buildWorkflowPathStages(createWorkflowGraphFromTemplate(template))
     : [];
   const firstPathNodeId = stages[0]?.nodes[0]?.id;
+  const workflowNodes = stages.flatMap((stage) => stage.nodes);
 
   return (
     <div className="border-t border-white/10 p-4">
@@ -1096,6 +1098,7 @@ function TaskPathAndHistory({
                     task={task}
                     node={node}
                     isFirstPathNode={node.id === firstPathNodeId}
+                    workflowNodes={workflowNodes}
                   />
                 ))}
               </div>
@@ -1115,14 +1118,19 @@ function PathStageCard({
   task,
   node,
   isFirstPathNode,
+  workflowNodes,
 }: {
   task: ApprovalTask;
   node: ReturnType<typeof buildWorkflowPathStages>[number]["nodes"][number];
   isFirstPathNode: boolean;
+  workflowNodes: WorkflowGraphNode[];
 }) {
   const state = getPathNodeState(task, node);
   const tone = getPathNodeProgressTone(state);
-  const historyEvents = getPathNodeHistoryEvents(task, node, { isFirstPathNode });
+  const historyEvents = getPathNodeHistoryEvents(task, node, {
+    isFirstPathNode,
+    workflowNodes,
+  });
   const toneClassName =
     tone === "current"
       ? "border-yellow-400/45 bg-yellow-400/10"
