@@ -100,3 +100,35 @@ test("leaves legitimate workflow tasks unchanged", () => {
   assert.equal(repairApprovalTaskState(currentNodeTask), currentNodeTask);
   assert.equal(repairApprovalTaskState(assignedTask), assignedTask);
 });
+
+test("repairs completed local copies that contain stale fallback children", () => {
+  const completedCopy = makeTask({
+    status: "approved",
+    currentStep: "Approved",
+    currentOwner: "",
+    auditTrail: [
+      ...makeTask().auditTrail,
+      {
+        id: "APR-1048-event-13",
+        action: "approved",
+        actor: "dpang",
+        actorEmail: "dpang@example.com",
+        timestamp: "2026-06-29 23:32",
+        detail: "Approved and completed the legacy workflow.",
+      },
+    ],
+  });
+
+  const repaired = repairApprovalTaskState(completedCopy);
+
+  assert.deepEqual(
+    repaired.auditTrail.map((event) => event.id),
+    ["APR-1048-event-1", "APR-1048-event-2", "APR-1048-event-4"],
+  );
+  assert.equal(
+    repaired.auditTrail.some((event) =>
+      event.detail.includes("next.approver@example.com"),
+    ),
+    false,
+  );
+});
