@@ -815,6 +815,22 @@ function findNextActionableRoute(
 ) {
   const notifiedNodes: WorkflowGraphNode[] = [];
   let activeBranchId: string | undefined;
+  collectOutgoingNotifications(graph, fromNodeId, notifiedNodes);
+  const parallelTargets = findParallelOutgoingActionNodes(
+    graph,
+    fromNodeId,
+    preferredBranchType,
+  );
+  if (parallelTargets.length > 1) {
+    return {
+      currentNode: parallelTargets[0],
+      currentNodes: parallelTargets,
+      notifiedNodes,
+      activeBranchId: graph.edges.find(
+        (edge) => edge.sourceId === fromNodeId && edge.targetId === parallelTargets[0].id,
+      )?.id,
+    };
+  }
   let nextEdge = chooseNextEdge(
     graph,
     fromNodeId,
@@ -824,8 +840,6 @@ function findNextActionableRoute(
   let currentId: string | undefined = nextEdge?.targetId;
   activeBranchId = nextEdge?.id;
   const visited = new Set<string>();
-
-  collectOutgoingNotifications(graph, fromNodeId, notifiedNodes);
 
   while (currentId && !visited.has(currentId)) {
     visited.add(currentId);
@@ -880,6 +894,22 @@ function findNextActionableRoute(
       }
       currentId = conditionTarget?.targetNodeId;
       continue;
+    }
+
+    const nestedParallelTargets = findParallelOutgoingActionNodes(
+      graph,
+      node.id,
+      "approved",
+    );
+    if (nestedParallelTargets.length > 1) {
+      return {
+        currentNode: nestedParallelTargets[0],
+        currentNodes: nestedParallelTargets,
+        notifiedNodes,
+        activeBranchId: graph.edges.find(
+          (edge) => edge.sourceId === node.id && edge.targetId === nestedParallelTargets[0].id,
+        )?.id,
+      };
     }
 
     nextEdge = chooseNextEdge(graph, node.id, extractedFields, "approved");
@@ -1147,6 +1177,29 @@ function taskForActorNode(
           : [actorEmail],
       }
     : task;
+}
+
+function findParallelOutgoingActionNodes(
+  graph: WorkflowGraph,
+  sourceId: string,
+  preferredBranchType: WorkflowGraphEdge["branchType"],
+) {
+  const outgoing = graph.edges.filter(
+    (edge) => edge.sourceId === sourceId && edge.branchType !== "for_information",
+  );
+  const preferredEdges = outgoing.filter(
+    (edge) => edge.branchType === preferredBranchType,
+  );
+  const routeEdges = preferredEdges.length
+    ? preferredEdges
+    : preferredBranchType === "approved"
+      ? outgoing.filter((edge) => edge.branchType === "main")
+      : [];
+
+  return routeEdges
+    .map((edge) => graph.nodes.find((node) => node.id === edge.targetId))
+    .filter((node): node is WorkflowGraphNode => Boolean(node))
+    .filter(isActionableRouteNode);
 }
 
 function buildParallelWaitTask({

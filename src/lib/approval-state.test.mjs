@@ -1478,6 +1478,19 @@ test("reject can return to a selected parallel upstream stage and resume forward
   assert.equal(directorApproved.currentOwner, "supervisor@example.com");
   assert.deepEqual(directorApproved.pendingNodeIds, ["supervisor"]);
   assert.equal(directorApproved.nodeDecisions?.supervisor, undefined);
+
+  const supervisorApproved = applyTaskAction(directorApproved, {
+    action: "approve",
+    actor: { name: "Supervisor", email: "supervisor@example.com" },
+    template,
+  });
+
+  assert.equal(supervisorApproved.status, "pending");
+  assert.deepEqual(supervisorApproved.pendingNodeIds, ["cfo", "chairman"]);
+  assert.deepEqual(supervisorApproved.pendingOwners, [
+    "cfo@example.com",
+    "chairman@example.com",
+  ]);
 });
 
 test("reassign requests acceptance before transferring ownership", () => {
