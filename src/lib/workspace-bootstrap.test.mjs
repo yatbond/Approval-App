@@ -63,7 +63,7 @@ test("resolves selected task from request id, saved state, then seed fallback", 
   );
 });
 
-test("loads remote workspace only after local readiness and without saved local state", () => {
+test("loads remote workspace after local readiness even when a local snapshot exists", () => {
   assert.equal(shouldLoadRemoteWorkspace({ localWorkspaceReady: false, savedWorkspaceState: null }), false);
   assert.equal(
     shouldLoadRemoteWorkspace({
@@ -75,7 +75,7 @@ test("loads remote workspace only after local readiness and without saved local 
         workflowTemplates,
       }),
     }),
-    false,
+    true,
   );
   assert.equal(shouldLoadRemoteWorkspace({ localWorkspaceReady: true, savedWorkspaceState: null }), true);
 });

@@ -72,12 +72,11 @@ export function getInitialSelectedTaskId({
 
 export function shouldLoadRemoteWorkspace({
   localWorkspaceReady,
-  savedWorkspaceState,
 }: {
   localWorkspaceReady: boolean;
   savedWorkspaceState: WorkspaceStateSnapshot | null;
 }) {
-  return localWorkspaceReady && !savedWorkspaceState;
+  return localWorkspaceReady;
 }
 
 export function createWorkspaceSnapshotPatch(
