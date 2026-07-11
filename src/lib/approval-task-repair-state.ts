@@ -23,6 +23,14 @@ export function repairApprovalTaskState(task: ApprovalTask): ApprovalTask {
 
   const repairedAuditTrail = task.auditTrail
     .slice(0, firstLegacyApprovalIndex + 1)
+    .filter(
+      (event) =>
+        !(
+          event.action === "assigned" &&
+          (event.targetEmail === legacyNextOwner ||
+            event.detail.includes(`Assigned to ${legacyNextOwner}`))
+        ),
+    )
     .map(repairLegacyApprovalEvent);
   const approvalEvent = repairedAuditTrail.at(-1);
 

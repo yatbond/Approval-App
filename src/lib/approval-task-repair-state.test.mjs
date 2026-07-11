@@ -43,6 +43,15 @@ function makeTask(overrides = {}) {
       },
       {
         id: "APR-1048-event-3",
+        action: "assigned",
+        actor: "System",
+        actorEmail: "system@example.com",
+        timestamp: "2026-06-29 23:32",
+        targetEmail: "next.approver@example.com",
+        detail: "Assigned to next.approver@example.com for Next approver review.",
+      },
+      {
+        id: "APR-1048-event-4",
         action: "approved",
         actor: "dpang",
         actorEmail: "dpang@example.com",
@@ -50,7 +59,7 @@ function makeTask(overrides = {}) {
         detail: "Approved and sent to the next approver. Comment: Looks fine",
       },
       {
-        id: "APR-1048-event-4",
+        id: "APR-1048-event-5",
         action: "assigned",
         actor: "System",
         actorEmail: "system@example.com",
@@ -58,7 +67,7 @@ function makeTask(overrides = {}) {
         detail: "Assigned to next.approver@example.com for Next approver review.",
       },
       {
-        id: "APR-1048-event-5",
+        id: "APR-1048-event-6",
         action: "approved",
         actor: "dpang",
         actorEmail: "dpang@example.com",

@@ -26,22 +26,28 @@ export function getApprovalWorkspaceTaskState({
   const trackingTasks = tasks.filter((task) =>
     isVisibleToParticipant(task, activeUserEmail),
   );
-  const selectedTask =
+  const selectedActionableTask =
     actionableTasks.find((task) => task.id === selectedTaskId) ||
-    actionableTasks[0] ||
+    actionableTasks[0];
+  const selectedTask =
+    selectedActionableTask ||
     trackingTasks.find((task) => task.id === selectedTaskId) ||
     trackingTasks[0];
   const selectedTaskTemplate = selectedTask
     ? findTemplateForTask(selectedTask, templates)
     : undefined;
   const selectedTaskMissingDocuments =
-    selectedTask && selectedTaskTemplate
-      ? getMissingRequiredCurrentNodeDocuments(selectedTask, selectedTaskTemplate)
+    selectedActionableTask && selectedTaskTemplate
+      ? getMissingRequiredCurrentNodeDocuments(
+          selectedActionableTask,
+          selectedTaskTemplate,
+        )
       : [];
 
   return {
     actionableTasks,
     trackingTasks,
+    selectedActionableTask,
     selectedTask,
     selectedTaskTemplate,
     selectedTaskMissingDocuments,

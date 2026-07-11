@@ -142,6 +142,7 @@ test("honors a selected tracking-only task when nothing is actionable", () => {
   });
 
   assert.deepEqual(state.actionableTasks, []);
+  assert.equal(state.selectedActionableTask, undefined);
   assert.equal(state.selectedTask?.id, "tracking-only");
 });
 

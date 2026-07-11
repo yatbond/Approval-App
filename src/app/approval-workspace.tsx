@@ -348,6 +348,7 @@ function ApprovalWorkspaceBody({
 
   const {
     actionableTasks,
+    selectedActionableTask,
     selectedTask,
     selectedTaskMissingDocuments,
     trackingTasks,
@@ -2111,7 +2112,7 @@ function ApprovalWorkspaceBody({
     >
             {activeTab === "queue" && (
               <QueueView
-                selectedTask={selectedTask}
+                selectedTask={selectedActionableTask}
                 selectedTaskId={selectedTaskId}
                 setSelectedTaskId={setSelectedTaskId}
                 tasks={actionableTasks}
@@ -2136,11 +2137,17 @@ function ApprovalWorkspaceBody({
                 userDirectory={userDirectory}
                 workflowTemplates={templates}
                 actionError={actionError}
-                actionPending={actionSubmissionTaskId === selectedTask?.id}
+                actionPending={
+                  actionSubmissionTaskId === selectedActionableTask?.id
+                }
                 missingCurrentDocuments={selectedTaskMissingDocuments}
                 onAttachTaskDocument={(file, documentRequirement) =>
-                  selectedTask &&
-                  attachTaskDocument(selectedTask.id, file, documentRequirement)
+                  selectedActionableTask &&
+                  attachTaskDocument(
+                    selectedActionableTask.id,
+                    file,
+                    documentRequirement,
+                  )
                 }
               />
             )}
