@@ -101,6 +101,14 @@ async function verifyTrackedRequest(page, request) {
   await expectText(page, request.id, 20_000);
   await expectText(page, "Approved");
 
+  const showHandoff = page.getByRole("switch", {
+    name: "Show handoff and visibility",
+    exact: true,
+  });
+  if ((await showHandoff.count()) === 1) {
+    await showHandoff.click();
+  }
+
   for (const text of request.expectedText) {
     await expectText(page, text);
   }
