@@ -59,7 +59,7 @@ export function WorkflowRuntimePanel({
   return (
     <>
       <div className="mb-3 flex flex-col gap-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 text-xs text-neutral-400 lg:flex-row lg:items-center lg:justify-between">
-        <span>Runtime: {getRuntimeStatusLabel(runtimeTask)}</span>
+        <span>Test request: {getRuntimeStatusLabel(runtimeTask)}</span>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           {workflowTasks.length > 0 && (
             <select
@@ -190,7 +190,7 @@ export function WorkflowRuntimePanel({
                 Route
               </h3>
               <span className="rounded-md border border-[#e6e6e6] px-2 py-1 text-xs text-neutral-400">
-                Autosaved
+                Saved
               </span>
             </div>
             <div className="mt-3 space-y-2 text-xs text-neutral-400">
@@ -230,7 +230,7 @@ export function WorkflowRuntimePanel({
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-semibold text-neutral-300">
-                    Runner
+                    Test controls
                   </h3>
                   <InfoTip label="Simulate the selected request through this template using the same routing engine as the approval queue." />
                 </div>

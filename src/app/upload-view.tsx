@@ -1383,19 +1383,27 @@ export function UploadView({
 
           {parseResult && (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="rounded-md border border-[#e6e6e6] bg-white px-3 py-1">
-                  Strategy: {parseResult.strategy}
-                </span>
-                {parseResult.notes.map((note, index) => (
-                  <span
-                    key={`${note}-${index}`}
-                    className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-amber-100"
-                  >
-                    {note}
+              <details className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 text-sm">
+                <summary
+                  className="cursor-pointer font-medium text-neutral-300"
+                  title="Open technical details about how the uploaded document was processed."
+                >
+                  Extraction details
+                </summary>
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="rounded-md border border-[#e6e6e6] bg-white px-3 py-1">
+                    Method: {parseResult.strategy}
                   </span>
-                ))}
-              </div>
+                  {parseResult.notes.map((note, index) => (
+                    <span
+                      key={`${note}-${index}`}
+                      className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-amber-100"
+                    >
+                      {note}
+                    </span>
+                  ))}
+                </div>
+              </details>
 
               <div>
                 <p className="mb-2 text-sm font-semibold text-neutral-200">

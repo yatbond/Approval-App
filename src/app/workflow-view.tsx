@@ -1385,7 +1385,14 @@ export function WorkflowView({
                           />
                         </label>
                         {["approval", "review"].includes(selectedGraphNode.kind) && (
-                          <div className="space-y-3">
+                          <details className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
+                            <summary
+                              className="cursor-pointer text-xs font-semibold text-neutral-300"
+                              title="Optional overdue routing and escalation contact."
+                            >
+                              Escalation (optional)
+                            </summary>
+                          <div className="mt-3 space-y-3">
                             <div className="grid gap-3 sm:grid-cols-2">
                               <label className="block">
                                 <span className="mb-1 block text-xs text-neutral-400">
@@ -1442,6 +1449,7 @@ export function WorkflowView({
                               </span>
                             </label>
                           </div>
+                          </details>
                         )}
                       </>
                     )}
@@ -1464,18 +1472,17 @@ export function WorkflowView({
                     ["approval", "review", "for_information"].includes(
                       selectedGraphNode.kind,
                     ) && (
-                      <div className="space-y-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="text-xs font-semibold text-neutral-300">
-                              Handoff
-                            </p>
-                            <InfoTip label="Default is all values and documents in a standard summary." />
-                          </div>
+                      <details className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
+                        <summary
+                          className="cursor-pointer text-xs font-semibold text-neutral-300"
+                          title="Choose which values and documents the next participant receives. The default passes everything."
+                        >
+                          Information sharing (advanced)
+                        </summary>
+                        <div className="mt-3 space-y-3">
                           <p className="mt-2 rounded-md border border-amber-400/25 bg-amber-400/10 px-2 py-1 text-xs text-amber-100">
-                            Display only. Access still needs server rules.
+                            Preview only. Actual access follows server permissions.
                           </p>
-                        </div>
                         <datalist id="workflow-handoff-field-names">
                           {handoffFieldNames.map((fieldName) => (
                             <option key={fieldName} value={fieldName} />
@@ -1806,7 +1813,8 @@ export function WorkflowView({
                             ),
                           )}
                         </div>
-                      </div>
+                        </div>
+                      </details>
                     )}
                   {selectedGraphNode.kind === "condition" && workflow && (
                     <ConditionBoxDetails
@@ -1836,19 +1844,17 @@ export function WorkflowView({
                   {["submit_request", "approval", "review"].includes(
                     selectedGraphNode.kind,
                   ) && (
-                      <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs font-semibold text-neutral-400">
-                            Recognition
-                          </p>
-                          <InfoTip
-                            label={
-                              selectedGraphNode.kind === "submit_request"
-                                ? "Documents configured here are shown on the Upload page before submission."
-                                : "Documents configured here are requested when this workflow box is active."
-                            }
-                          />
-                        </div>
+                      <details className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
+                        <summary
+                          className="cursor-pointer text-xs font-semibold text-neutral-400"
+                          title={
+                            selectedGraphNode.kind === "submit_request"
+                              ? "Configure documents and fields shown when the request starts."
+                              : "Configure documents and fields required at this approval step."
+                          }
+                        >
+                          Documents and data extraction
+                        </summary>
                         <div className="mt-2 space-y-2">
                           {workflow.documents
                             .filter((document) =>
@@ -2133,7 +2139,7 @@ export function WorkflowView({
                             Add requirement
                           </button>
                         </div>
-                      </div>
+                      </details>
                   )}
                     </div>
                   )}
@@ -2153,7 +2159,7 @@ export function WorkflowView({
                 users={userDirectory}
               />
             </div>
-            <div className="mt-4 flex justify-end border-t border-[#e6e6e6] pt-4">
+            <div className="sticky bottom-0 z-30 mt-4 flex justify-end border-t border-[#e6e6e6] bg-white/95 py-4 backdrop-blur-sm">
               <button
                 type="button"
                 onClick={publishSelectedTemplate}

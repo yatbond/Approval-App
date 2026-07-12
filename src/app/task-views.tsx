@@ -39,6 +39,12 @@ import {
   shouldShowQueueReassignActions,
   type QueueActionMode,
 } from "@/lib/queue-advanced-actions-state";
+import {
+  filterQueueTasks,
+  getQueueFilterCounts,
+  queueFilters,
+  type QueueFilter,
+} from "@/lib/queue-filter-state";
 import { findRequestDisplayValue } from "@/lib/request-builder";
 import { getRejectReturnTargetOptions } from "@/lib/reject-return-routing-state";
 import { getTrackingHandoffPanelState } from "@/lib/tracking-handoff-panel-state";
@@ -61,7 +67,7 @@ const actionConfig: Record<
   approve: {
     label: "Approve",
     icon: Check,
-    tone: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20",
+    tone: "border-[#f7941d] bg-[#f7941d] text-[#231f20] hover:bg-[#e78310]",
   },
   approve_with_comment: {
     label: "Approve + note",
@@ -176,6 +182,13 @@ export function QueueView({
     useState<QueueActionMode>("normal");
   const [contributorRequestExpanded, setContributorRequestExpanded] = useState(false);
   const [rejectReturnTargetId, setRejectReturnTargetId] = useState("originator");
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
+  const filteredTasks = filterQueueTasks({
+    tasks,
+    filter: queueFilter,
+    activeUserEmail,
+  });
+  const queueFilterCounts = getQueueFilterCounts({ tasks, activeUserEmail });
 
   if (!selectedTask) {
     return (
@@ -238,13 +251,56 @@ export function QueueView({
     <div className="grid gap-4 xl:grid-cols-[360px_1fr_320px]">
       <section className="rounded-md border border-[#e6e6e6] bg-white">
         <div className="border-b border-[#e6e6e6] p-4">
-          <div className="flex items-center gap-2">
-            <h2 className="font-semibold">Queue</h2>
-            <InfoTip label="Pending, overdue, and escalated work." />
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <h2 className="font-semibold">Queue</h2>
+              <InfoTip label="Work currently waiting for your action." />
+            </div>
+            <span className="text-xs text-neutral-500">
+              {filteredTasks.length} of {tasks.length}
+            </span>
+          </div>
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Queue filters">
+            {queueFilters.map((filter) => {
+              const count = queueFilterCounts[filter.id];
+              const isActive = queueFilter === filter.id;
+              return (
+                <button
+                  key={filter.id}
+                  type="button"
+                  title={filter.description}
+                  disabled={filter.id !== "all" && count === 0}
+                  onClick={() => {
+                    setQueueFilter(filter.id);
+                    const nextTasks = filterQueueTasks({
+                      tasks,
+                      filter: filter.id,
+                      activeUserEmail,
+                    });
+                    if (
+                      nextTasks.length &&
+                      !nextTasks.some((task) => task.id === selectedTaskId)
+                    ) {
+                      setSelectedTaskId(nextTasks[0].id);
+                    }
+                  }}
+                  className={`flex min-h-9 shrink-0 items-center gap-2 rounded-md border px-3 text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                    isActive
+                      ? "border-[#f7941d] bg-[#fff4e5] text-[#9b5200]"
+                      : "border-[#e6e6e6] bg-white text-neutral-400 hover:border-[#d2d2d2]"
+                  }`}
+                >
+                  {filter.label}
+                  <span className="rounded-md bg-[#f2f2f2] px-1.5 py-0.5 text-[11px] text-neutral-500">
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
         <div className="divide-y divide-white/10">
-          {tasks.map((task) => (
+          {filteredTasks.map((task) => (
             <button
               key={task.id}
               type="button"
@@ -264,12 +320,23 @@ export function QueueView({
                 </div>
                 <StatusBadge status={task.status} />
               </div>
-              <div className="mt-3 flex items-center justify-between text-xs text-neutral-400">
-                <span>{task.currentStep}</span>
-                <span>{task.due}</span>
+              <div className="mt-3 grid grid-cols-[1fr_auto] gap-3 text-xs text-neutral-400">
+                <span className="min-w-0 break-words">
+                  <span className="text-neutral-500">Step: </span>
+                  {task.currentStep}
+                </span>
+                <span className="text-right">
+                  <span className="text-neutral-500">Due: </span>
+                  {task.due}
+                </span>
               </div>
             </button>
           ))}
+          {!filteredTasks.length && (
+            <div className="p-5 text-center text-sm text-neutral-500">
+              No work matches this filter.
+            </div>
+          )}
         </div>
       </section>
 
@@ -336,6 +403,16 @@ export function QueueView({
               </div>
             )}
             {!originatorAction && !pendingReassignmentRequest && (
+              <details className="mt-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
+                <summary
+                  className="cursor-pointer text-sm font-medium text-neutral-200"
+                  title="Open secondary collaboration and ownership actions."
+                >
+                  More actions
+                </summary>
+                <p className="mt-2 text-xs text-neutral-500">
+                  Reassign ownership, delegate this task, or request supporting input.
+                </p>
               <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] gap-2">
                 <label
                   className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-sm text-neutral-200"
@@ -429,6 +506,7 @@ export function QueueView({
                   </span>
                 </label>
               </div>
+              </details>
             )}
             {pendingReassignmentRequest && (
               <div className="mt-3 rounded-md border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
@@ -624,13 +702,26 @@ export function QueueView({
       </section>
 
       <section className="rounded-md border border-[#e6e6e6] bg-white">
-        <div className="border-b border-[#e6e6e6] p-4">
-          <div className="flex items-center gap-2">
-            <h2 className="font-semibold">Audit</h2>
-            <InfoTip label="Everyone involved can track this item." />
+        <details className="xl:hidden">
+          <summary
+            className="cursor-pointer p-4 font-semibold"
+            title="Open the complete history for this request."
+          >
+            History ({selectedTask.auditTrail.length})
+          </summary>
+          <div className="border-t border-[#e6e6e6]">
+            <AuditTrail task={selectedTask} />
           </div>
+        </details>
+        <div className="hidden xl:block">
+          <div className="border-b border-[#e6e6e6] p-4">
+            <div className="flex items-center gap-2">
+              <h2 className="font-semibold">History</h2>
+              <InfoTip label="Everyone involved can track this request's history." />
+            </div>
+          </div>
+          <AuditTrail task={selectedTask} />
         </div>
-        <AuditTrail task={selectedTask} />
       </section>
     </div>
   );
@@ -890,22 +981,39 @@ function HandoffSummary({
   const handoff = buildTaskHandoffView({ task, template });
 
   return (
-    <div
-      className={`${className} rounded-md border border-[#e6e6e6] bg-white p-3 text-sm`}
-    >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-neutral-200">Handoff</h3>
-            <InfoTip label={`${handoff.nodeLabel} - ${handoff.policyLabel}`} />
-          </div>
+    <>
+      <details
+        className={`${className} rounded-md border border-[#e6e6e6] bg-white text-sm md:hidden`}
+      >
+        <summary
+          className="cursor-pointer p-3 font-semibold text-neutral-200"
+          title={`${handoff.nodeLabel} - ${handoff.policyLabel}`}
+        >
+          Request information ({handoff.fields.length} values, {handoff.attachments.length} documents)
+        </summary>
+        <div className="border-t border-[#e6e6e6] p-3">
+          <HandoffDetailSections handoff={handoff} />
         </div>
-        <span className="self-start rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-1 text-xs text-neutral-300">
-          {formatStatusText(handoff.layout)}
-        </span>
+      </details>
+      <div
+        className={`${className} hidden rounded-md border border-[#e6e6e6] bg-white p-3 text-sm md:block`}
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-neutral-200">
+                Request information
+              </h3>
+              <InfoTip label={`${handoff.nodeLabel} - ${handoff.policyLabel}`} />
+            </div>
+          </div>
+          <span className="self-start rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-1 text-xs text-neutral-300">
+            {formatStatusText(handoff.layout)}
+          </span>
+        </div>
+        <HandoffDetailSections handoff={handoff} />
       </div>
-      <HandoffDetailSections handoff={handoff} />
-    </div>
+    </>
   );
 }
 
