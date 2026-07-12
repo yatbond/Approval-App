@@ -121,7 +121,9 @@ export default function WorkflowCanvas({
         panOnDrag
         panOnScroll={false}
         zoomOnScroll
-        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+        fitView
+        fitViewOptions={{ padding: 0.18, maxZoom: 1.1 }}
+        minZoom={0.25}
         onNodeClick={(_, node) => {
           if (onOutcomeTargetClick(node.id)) {
             return;
