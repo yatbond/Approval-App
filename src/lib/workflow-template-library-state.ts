@@ -46,7 +46,7 @@ export function getWorkflowTemplateLibraryItems({
       template,
       isSelected: template.id === selectedTemplate?.id,
       businessDepartmentLabel: `${template.business} - ${template.department}`,
-      countsLabel: `${template.documents.length} document(s), ${template.fields.length} field(s), ${template.steps.length} step(s)`,
+      countsLabel: `${template.documents.length} document(s), ${template.fields.length} field(s), ${getWorkflowTemplateStepCount(template)} step(s)`,
       versionLabel: `v${template.version || 1}`,
       versionComment: template.versionComment || "",
       statusLabel: formatTemplateStatus(template, isActiveVersion),
@@ -65,6 +65,16 @@ export function getWorkflowTemplateLibraryItems({
       commentActionLabel: "Save note",
     };
   });
+}
+
+export function getWorkflowTemplateStepCount(template: WorkflowTemplate) {
+  const graphNodes = template.graph?.nodes || [];
+  if (!graphNodes.length) {
+    return template.steps.length;
+  }
+
+  return graphNodes.filter((node) => node.kind !== "start" && node.kind !== "end")
+    .length;
 }
 
 function isTemplateVisibleInSection(

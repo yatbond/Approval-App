@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getWorkflowTemplateLibraryItems } from "./workflow-template-library-state.ts";
+import {
+  getWorkflowTemplateLibraryItems,
+  getWorkflowTemplateStepCount,
+} from "./workflow-template-library-state.ts";
 
 const templates = [
   {
@@ -79,6 +82,34 @@ test("summarizes template library cards with counts and active state", () => {
       commentActionLabel: "Save note",
     },
   ]);
+});
+
+test("counts functional graph boxes instead of legacy steps", () => {
+  const graphTemplate = {
+    ...templates[1],
+    id: "graph-workflow",
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+        { id: "submit", kind: "submit_request", label: "Submit", x: 100, y: 0 },
+        { id: "approval", kind: "approval", label: "Approval", x: 200, y: 0 },
+        { id: "condition", kind: "condition", label: "Condition", x: 300, y: 0 },
+        { id: "fyi", kind: "for_information", label: "FYI", x: 400, y: 0 },
+        { id: "end", kind: "end", label: "End", x: 500, y: 0 },
+      ],
+      edges: [],
+    },
+  };
+
+  assert.equal(getWorkflowTemplateStepCount(graphTemplate), 4);
+  assert.equal(
+    getWorkflowTemplateLibraryItems({
+      workflowTemplates: [graphTemplate],
+      selectedTemplateId: graphTemplate.id,
+    })[0].countsLabel,
+    "0 document(s), 0 field(s), 4 step(s)",
+  );
 });
 
 test("falls back to the first template as selected when selected id is missing", () => {
