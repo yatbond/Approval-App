@@ -58,14 +58,14 @@ export function WorkflowRuntimePanel({
 
   return (
     <>
-      <div className="mb-3 flex flex-col gap-2 rounded-md border border-white/10 bg-[#101214] p-3 text-xs text-neutral-400 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mb-3 flex flex-col gap-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 text-xs text-neutral-400 lg:flex-row lg:items-center lg:justify-between">
         <span>Runtime: {getRuntimeStatusLabel(runtimeTask)}</span>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           {workflowTasks.length > 0 && (
             <select
               value={runtimeTask?.id || selectedRuntimeTaskId}
               onChange={(event) => onSelectRuntimeTask(event.target.value)}
-              className="h-9 rounded-md border border-white/10 bg-[#121518] px-2 text-xs text-neutral-200 outline-none focus:border-emerald-400/60"
+              className="h-9 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs text-neutral-200 outline-none focus:border-emerald-400/60"
             >
               {workflowTasks.map((task) => (
                 <option key={task.id} value={task.id}>
@@ -83,7 +83,7 @@ export function WorkflowRuntimePanel({
                 ? `Undo ${workflowUndoStack.at(-1)?.label}. Keyboard: Ctrl+Z.`
                 : "Nothing to undo."
             }
-            className="flex min-h-9 items-center justify-center gap-1 rounded-md border border-white/10 bg-[#121518] px-2 text-xs text-neutral-200 transition hover:border-emerald-400/50 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-white/10"
+            className="flex min-h-9 items-center justify-center gap-1 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs text-neutral-200 transition hover:border-emerald-400/50 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-[#e6e6e6]"
           >
             <RotateCcw size={13} />
             Undo
@@ -97,7 +97,7 @@ export function WorkflowRuntimePanel({
                 ? `Redo ${workflowRedoStack.at(-1)?.label}. Keyboard: Ctrl+Shift+Z or Ctrl+Y.`
                 : "Nothing to redo."
             }
-            className="flex min-h-9 items-center justify-center gap-1 rounded-md border border-white/10 bg-[#121518] px-2 text-xs text-neutral-200 transition hover:border-emerald-400/50 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-white/10"
+            className="flex min-h-9 items-center justify-center gap-1 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs text-neutral-200 transition hover:border-emerald-400/50 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-[#e6e6e6]"
           >
             <ArrowRightLeft size={13} />
             Redo
@@ -105,7 +105,7 @@ export function WorkflowRuntimePanel({
           <button
             type="button"
             onClick={onResetView}
-            className="flex min-h-9 items-center justify-center gap-1 rounded-md border border-white/10 bg-[#121518] px-2 text-xs text-neutral-200 transition hover:border-emerald-400/50"
+            className="flex min-h-9 items-center justify-center gap-1 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs text-neutral-200 transition hover:border-emerald-400/50"
           >
             <RotateCcw size={13} />
             Reset
@@ -134,7 +134,7 @@ export function WorkflowRuntimePanel({
 
       {workflowSimulation && (
         <div className="mb-3 grid gap-3 xl:grid-cols-2">
-          <div className="rounded-md border border-white/10 bg-[#101214] p-3">
+          <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-neutral-300">
                 Validation
@@ -184,12 +184,12 @@ export function WorkflowRuntimePanel({
             </div>
           </div>
 
-          <div className="rounded-md border border-white/10 bg-[#101214] p-3">
+          <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-neutral-300">
                 Route
               </h3>
-              <span className="rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-400">
+              <span className="rounded-md border border-[#e6e6e6] px-2 py-1 text-xs text-neutral-400">
                 Autosaved
               </span>
             </div>
@@ -225,7 +225,7 @@ export function WorkflowRuntimePanel({
             </div>
           </div>
 
-          <div className="rounded-md border border-white/10 bg-[#101214] p-3 xl:col-span-2">
+          <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 xl:col-span-2">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -236,25 +236,25 @@ export function WorkflowRuntimePanel({
                 </div>
                 {runtimeTask ? (
                   <div className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
-                    <div className="rounded-md border border-white/10 bg-[#121518] p-2">
+                    <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
                       <p className="text-neutral-500">Status</p>
                       <p className="mt-1 break-words text-neutral-200">
                         {runtimeTask.status}
                       </p>
                     </div>
-                    <div className="rounded-md border border-white/10 bg-[#121518] p-2">
+                    <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
                       <p className="text-neutral-500">Owner</p>
                       <p className="mt-1 break-words text-neutral-200">
                         {runtimeTask.currentOwner || "Closed"}
                       </p>
                     </div>
-                    <div className="rounded-md border border-white/10 bg-[#121518] p-2">
+                    <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
                       <p className="text-neutral-500">Node</p>
                       <p className="mt-1 break-words text-neutral-200">
                         {runtimeTask.currentNodeId || "none"}
                       </p>
                     </div>
-                    <div className="rounded-md border border-white/10 bg-[#121518] p-2">
+                    <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
                       <p className="text-neutral-500">Last</p>
                       <p className="mt-1 break-words text-neutral-200">
                         {runtimeTask.auditTrail.at(-1)?.detail || runtimeTask.lastAction}
@@ -276,7 +276,7 @@ export function WorkflowRuntimePanel({
                       disabled={item.disabled}
                       title={item.title}
                       onClick={() => onRunWorkflowAction(runtimeTask.id, item.action)}
-                      className="min-h-9 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-xs text-neutral-200 transition hover:border-emerald-400/50 disabled:cursor-not-allowed disabled:opacity-45"
+                      className="min-h-9 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-xs text-neutral-200 transition hover:border-emerald-400/50 disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       {item.label}
                     </button>

@@ -523,7 +523,7 @@ export function UploadView({
     return (
       <label
         key={document.id}
-        className="block cursor-pointer rounded-md border border-white/10 bg-[#121518] p-3 transition hover:border-emerald-400/60"
+        className="block cursor-pointer rounded-md border border-[#e6e6e6] bg-white p-3 transition hover:border-emerald-400/60"
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
@@ -539,7 +539,7 @@ export function UploadView({
               <p className="mt-1 text-xs text-sky-200/75">{helperText}</p>
             )}
           </div>
-          <span className="self-start rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-400">
+          <span className="self-start rounded-md border border-[#e6e6e6] px-2 py-1 text-xs text-neutral-400">
             {uploadedDocumentIds.has(document.id) ? "Attached" : "Upload"}
           </span>
         </div>
@@ -560,7 +560,7 @@ export function UploadView({
 
   return (
     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-      <section className="min-w-0 rounded-md border border-white/10 bg-white/[0.03] p-4 sm:p-5">
+      <section className="min-w-0 rounded-md border border-[#e6e6e6] bg-white p-4 sm:p-5">
         <div className="flex items-center gap-2">
           <h2 className="font-semibold">Request</h2>
           <InfoTip label="Choose a template, then upload each required or optional document." />
@@ -571,7 +571,7 @@ export function UploadView({
           <select
             value={selectedTemplate?.id || ""}
             onChange={(event) => setSelectedTemplateId(event.target.value)}
-            className="min-h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+            className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
           >
             {requestTemplates.length === 0 && (
               <option value="">No templates</option>
@@ -585,7 +585,7 @@ export function UploadView({
         </label>
 
         {participantEmailFields.length > 0 && (
-          <div className="mt-4 rounded-md border border-white/10 bg-[#121518] p-3">
+          <div className="mt-4 rounded-md border border-[#e6e6e6] bg-white p-3">
             <div className="flex items-center gap-2">
               <p className="text-sm font-semibold text-neutral-200">
                 Participants
@@ -600,7 +600,7 @@ export function UploadView({
                 return (
                   <label
                     key={field.nodeId}
-                    className="block min-w-0 rounded-md border border-white/10 bg-[#101214] p-3"
+                    className="block min-w-0 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3"
                   >
                     <span className="flex min-w-0 items-center justify-between gap-2 text-xs text-neutral-400">
                       <span className="min-w-0 break-words">
@@ -620,7 +620,7 @@ export function UploadView({
                       onChange={(event) =>
                         setParticipantEmail(field.nodeId, event.target.value)
                       }
-                      className="mt-2 h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none transition focus:border-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-65"
+                      className="mt-2 h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none transition focus:border-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-65"
                     />
                   </label>
                 );
@@ -671,7 +671,7 @@ export function UploadView({
               </div>
             )}
             {!uploadDocuments.length && !manualFormDocuments.length && (
-              <div className="rounded-md border border-white/10 bg-[#121518] p-3 text-sm text-neutral-400">
+              <div className="rounded-md border border-[#e6e6e6] bg-white p-3 text-sm text-neutral-400">
                 No requirements.
               </div>
             )}
@@ -700,13 +700,13 @@ export function UploadView({
         )}
 
         {uploadedAttachments.length > 0 && (
-          <div className="mt-4 rounded-md border border-white/10 bg-[#121518] p-3">
+          <div className="mt-4 rounded-md border border-[#e6e6e6] bg-white p-3">
             <p className="text-sm font-semibold text-neutral-200">Files</p>
             <div className="mt-2 space-y-2">
               {uploadedAttachments.map((attachment) => (
                 <div
                   key={attachment.id}
-                  className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs"
+                  className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2 text-xs"
                 >
                   <p className="break-words text-neutral-200">{attachment.fileName}</p>
                   <p className="mt-1 text-neutral-500">
@@ -727,7 +727,7 @@ export function UploadView({
         )}
 
         {requestDrafts.length > 0 && (
-          <div className="mt-4 rounded-md border border-white/10 bg-[#121518] p-3">
+          <div className="mt-4 rounded-md border border-[#e6e6e6] bg-white p-3">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-neutral-200">
@@ -735,7 +735,7 @@ export function UploadView({
                 </p>
                 <InfoTip label="Each uploaded document will submit as a separate request." />
               </div>
-              <span className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-400">
+              <span className="shrink-0 rounded-md border border-[#e6e6e6] px-2 py-1 text-xs text-neutral-400">
                 {requestDrafts.length}
               </span>
             </div>
@@ -751,7 +751,7 @@ export function UploadView({
                     className={`w-full rounded-md border p-2 text-left text-xs transition ${
                       isSelected
                         ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50"
-                        : "border-white/10 bg-[#101214] text-neutral-300 hover:border-white/20"
+                        : "border-[#e6e6e6] bg-[#f7f7f5] text-neutral-300 hover:border-[#d2d2d2]"
                     }`}
                   >
                     <span className="block truncate font-medium">
@@ -776,7 +776,7 @@ export function UploadView({
           </div>
         )}
 
-        <label className="mt-4 flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-white/20 bg-[#121518] p-6 text-center transition hover:border-emerald-400/60 hover:bg-emerald-400/5">
+        <label className="mt-4 flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-[#d2d2d2] bg-white p-6 text-center transition hover:border-emerald-400/60 hover:bg-emerald-400/5">
           {isParsing ? (
             <Loader2 className="mb-3 animate-spin text-emerald-200" size={28} />
           ) : (
@@ -800,7 +800,7 @@ export function UploadView({
         </label>
 
         {fileName && (
-          <div className="mt-4 flex items-center gap-2 rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
+          <div className="mt-4 flex items-center gap-2 rounded-md border border-[#e6e6e6] bg-white p-3 text-sm">
             <FileText size={16} className="text-emerald-200" />
             <span className="truncate">{fileName}</span>
           </div>
@@ -813,8 +813,8 @@ export function UploadView({
         )}
       </section>
 
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
+      <section className="rounded-md border border-[#e6e6e6] bg-white">
+        <div className="border-b border-[#e6e6e6] p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Current request</h2>
             <InfoTip label="Corrections here become training examples for workflow-specific extraction." />
@@ -823,7 +823,7 @@ export function UploadView({
 
         <div className="p-4">
           {selectedPreviewPage && (
-            <div className="mb-4 rounded-md border border-white/10 bg-[#121518] p-3">
+            <div className="mb-4 rounded-md border border-[#e6e6e6] bg-white p-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-sm font-semibold text-neutral-200">
@@ -840,7 +840,7 @@ export function UploadView({
                       setSelectionStart(null);
                       setSelectionCurrent(null);
                     }}
-                    className="h-9 rounded-md border border-white/10 bg-[#101214] px-3 text-xs outline-none focus:border-emerald-400/60"
+                    className="h-9 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-xs outline-none focus:border-emerald-400/60"
                   >
                     {documentPreviewPages.map((page) => (
                       <option key={page.id} value={page.id}>
@@ -851,7 +851,7 @@ export function UploadView({
                 )}
               </div>
 
-              <div className="mt-3 grid gap-3 rounded-md border border-white/10 bg-[#101214] p-3 md:grid-cols-4">
+              <div className="mt-3 grid gap-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 md:grid-cols-4">
                 <label className="block">
                   <span className="mb-1 block text-xs text-neutral-400">
                     Preview mode
@@ -861,7 +861,7 @@ export function UploadView({
                     onChange={(event) =>
                       setPreviewEnhancementMode(event.target.value as PreviewEnhancementMode)
                     }
-                    className="h-9 w-full rounded-md border border-white/10 bg-[#0d1012] px-3 text-xs text-neutral-100 outline-none focus:border-emerald-400/60"
+                    className="h-9 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-xs text-neutral-100 outline-none focus:border-emerald-400/60"
                   >
                     <option value="black-text">Black</option>
                     <option value="enhanced">Enhanced</option>
@@ -928,7 +928,7 @@ export function UploadView({
               )}
 
               <div
-                className="mt-3 max-h-[70vh] overflow-auto rounded-md border border-white/10 bg-neutral-950 p-3"
+                className="mt-3 max-h-[70vh] overflow-auto rounded-md border border-[#e6e6e6] bg-neutral-950 p-3"
               >
                 <div
                   className="relative inline-block"
@@ -1022,7 +1022,7 @@ export function UploadView({
                       className={`min-h-9 rounded-md border px-3 py-2 text-xs font-medium transition ${
                         fieldInputMode === mode
                           ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-100"
-                          : "border-white/10 bg-[#101214] text-neutral-300 hover:bg-white/10"
+                          : "border-[#e6e6e6] bg-[#f7f7f5] text-neutral-300 hover:bg-[#eeeeec]"
                       }`}
                     >
                       {label}
@@ -1045,7 +1045,7 @@ export function UploadView({
                       return (
                       <div
                         key={suggestionKey}
-                        className="rounded-md border border-white/10 bg-[#101214] p-3"
+                        className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -1064,7 +1064,7 @@ export function UploadView({
                               Box if needed.
                             </p>
                           </div>
-                          <span className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-300">
+                          <span className="shrink-0 rounded-md border border-[#e6e6e6] px-2 py-1 text-xs text-neutral-300">
                             {suggestion.confidence}
                           </span>
                         </div>
@@ -1089,7 +1089,7 @@ export function UploadView({
                               suggestionKey,
                             ])
                           }
-                          className="mt-2 flex h-8 w-full items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.03] text-xs font-medium text-neutral-300 transition hover:bg-white/10"
+                          className="mt-2 flex h-8 w-full items-center justify-center gap-2 rounded-md border border-[#e6e6e6] bg-white text-xs font-medium text-neutral-300 transition hover:bg-[#eeeeec]"
                         >
                           <X size={13} />
                           Dismiss
@@ -1099,7 +1099,7 @@ export function UploadView({
                     })}
                   </div>
                 ) : (
-                  <p className="mt-3 rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-xs text-neutral-400">
+                  <p className="mt-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 py-2 text-xs text-neutral-400">
                     No suggestions.
                   </p>
                 )}
@@ -1108,7 +1108,7 @@ export function UploadView({
               </div>
 
               {fieldInputMode !== "suggested" && (
-          <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-3">
+          <div className="mt-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-neutral-200">
@@ -1135,7 +1135,7 @@ export function UploadView({
                         Add to {activeHighlightGroup.fieldLabel.trim() || "active field"}
                       </button>
                     ) : fieldInputMode === "boxed" ? (
-                      <span className="flex min-h-9 items-center rounded-md border border-white/10 px-3 text-xs text-neutral-500">
+                      <span className="flex min-h-9 items-center rounded-md border border-[#e6e6e6] px-3 text-xs text-neutral-500">
                         Draw a box first.
                       </span>
                     ) : null}
@@ -1166,7 +1166,7 @@ export function UploadView({
                         className={`rounded-md border p-3 ${
                           group.id === activeHighlightGroup?.id
                             ? "border-emerald-400/50 bg-emerald-400/5"
-                            : "border-white/10 bg-[#0d1012]"
+                            : "border-[#e6e6e6] bg-[#f7f7f5]"
                         }`}
                       >
                         <div className="grid gap-2 lg:grid-cols-[1fr_1.2fr_auto]">
@@ -1187,7 +1187,7 @@ export function UploadView({
                                 );
                               }}
                               placeholder={`Field ${groupIndex + 1}, e.g. variation order`}
-                              className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition focus:border-emerald-400/60"
+                              className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none transition focus:border-emerald-400/60"
                             />
                           </label>
                           <label className="block">
@@ -1208,7 +1208,7 @@ export function UploadView({
                               }}
                               placeholder="One per line"
                               rows={Math.max(2, Math.min(5, group.boxes.length || 2))}
-                              className="min-h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-sm outline-none transition focus:border-emerald-400/60"
+                              className="min-h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 py-2 text-sm outline-none transition focus:border-emerald-400/60"
                             />
                           </label>
                           {fieldInputMode === "boxed" && (
@@ -1234,14 +1234,14 @@ export function UploadView({
                         {fieldInputMode === "boxed" && (
                           <div className="mt-3 space-y-2">
                           {group.boxes.length === 0 ? (
-                            <p className="rounded-md border border-dashed border-white/10 px-3 py-2 text-xs text-neutral-500">
+                            <p className="rounded-md border border-dashed border-[#e6e6e6] px-3 py-2 text-xs text-neutral-500">
                               Draw box, then add.
                             </p>
                           ) : (
                             group.boxes.map((box, boxIndex) => (
                               <div
                                 key={box.id}
-                                className="grid gap-2 rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-300 sm:grid-cols-[1fr_auto]"
+                                className="grid gap-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2 text-xs text-neutral-300 sm:grid-cols-[1fr_auto]"
                               >
                                 <div className="min-w-0">
                                   <p className="font-medium text-neutral-200">
@@ -1311,13 +1311,13 @@ export function UploadView({
                 {manualFormDocuments.map((document) => (
                   <div
                     key={document.id}
-                    className="rounded-md border border-white/10 bg-[#101214] p-3"
+                    className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-semibold text-neutral-100">
                         {document.documentType}
                       </p>
-                      <span className="rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-400">
+                      <span className="rounded-md border border-[#e6e6e6] px-2 py-1 text-xs text-neutral-400">
                         {document.required ? "Required" : "Optional"}
                       </span>
                     </div>
@@ -1346,7 +1346,7 @@ export function UploadView({
                               }
                               placeholder={field.instructions || "Enter value"}
                               rows={2}
-                              className="min-h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
+                              className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
                             />
                             {field.instructions && (
                               <p className="mt-1 text-xs text-neutral-500">
@@ -1358,7 +1358,7 @@ export function UploadView({
                       })}
                     </div>
                     {!document.fields.length && (
-                      <p className="mt-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-xs text-neutral-500">
+                      <p className="mt-3 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-xs text-neutral-500">
                         No fields yet.
                       </p>
                     )}
@@ -1369,7 +1369,7 @@ export function UploadView({
           )}
 
           {!parseResult && !isParsing && !hasManualFormDocuments && (
-            <div className="grid min-h-72 place-items-center rounded-md border border-white/10 bg-[#121518] text-center text-sm text-neutral-500">
+            <div className="grid min-h-72 place-items-center rounded-md border border-[#e6e6e6] bg-white text-center text-sm text-neutral-500">
               <div>
                 <div className="mb-3 flex justify-center gap-2">
                   <ImageIcon size={22} />
@@ -1384,7 +1384,7 @@ export function UploadView({
           {parseResult && (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="rounded-md border border-white/10 bg-[#121518] px-3 py-1">
+                <span className="rounded-md border border-[#e6e6e6] bg-white px-3 py-1">
                   Strategy: {parseResult.strategy}
                 </span>
                 {parseResult.notes.map((note, index) => (
@@ -1408,7 +1408,7 @@ export function UploadView({
                       <span className="flex min-w-0 flex-wrap items-center gap-2">
                         <span>{label}</span>
                         <span
-                          className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-0.5 text-neutral-300"
+                          className="rounded-md border border-[#e6e6e6] bg-white px-2 py-0.5 text-neutral-300"
                         >
                           {getExtractionFieldSourceLabel({
                             label,
@@ -1439,10 +1439,10 @@ export function UploadView({
                           [label]: event.target.value,
                         })
                       }
-                      className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none transition focus:border-emerald-400/60"
+                      className="h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none transition focus:border-emerald-400/60"
                     />
                     {parseResult.evidence?.[label] && (
-                      <p className="mt-1 rounded-md border border-white/10 bg-[#101214] px-2 py-1 text-xs text-neutral-500">
+                      <p className="mt-1 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-1 text-xs text-neutral-500">
                         Evidence: {parseResult.evidence[label]}
                       </p>
                     )}
@@ -1452,15 +1452,15 @@ export function UploadView({
               </div>
 
               {parseResult.tables?.[0] && (
-                <div className="overflow-hidden rounded-md border border-white/10">
-                  <div className="border-b border-white/10 bg-[#121518] px-3 py-2 text-sm">
+                <div className="overflow-hidden rounded-md border border-[#e6e6e6]">
+                  <div className="border-b border-[#e6e6e6] bg-white px-3 py-2 text-sm">
                     {parseResult.tables[0].sheetName}
                   </div>
                   <div className="max-h-72 overflow-auto">
                     <table className="w-full min-w-[640px] text-left text-sm">
                       <tbody>
                         {parseResult.tables[0].rows.slice(0, 8).map((row, index) => (
-                          <tr key={index} className="border-b border-white/10 last:border-0">
+                          <tr key={index} className="border-b border-[#e6e6e6] last:border-0">
                             {Object.values(row)
                               .slice(0, 6)
                               .map((value, cellIndex) => (
@@ -1553,7 +1553,7 @@ function UploadDraftPanel({
   });
 
   return (
-    <div className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3">
+    <div className="mt-3 rounded-md border border-[#e6e6e6] bg-white p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <p className="text-sm font-semibold text-neutral-200">
@@ -1561,12 +1561,12 @@ function UploadDraftPanel({
           </p>
           <InfoTip label="Autosave keeps the current screen. Save a named draft when you want to return later." />
         </div>
-        <span className="shrink-0 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-neutral-400">
+        <span className="shrink-0 rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-xs text-neutral-400">
           {workInProgressItems.length} item(s)
         </span>
       </div>
 
-      <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-3">
+      <div className="mt-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
@@ -1594,7 +1594,7 @@ function UploadDraftPanel({
                 value={uploadDraftTitle}
                 onChange={(event) => setUploadDraftTitle(event.target.value)}
                 placeholder="Example: Gleneagles final account"
-                className="min-h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none transition focus:border-emerald-400/60"
+                className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none transition focus:border-emerald-400/60"
               />
             </label>
             <button
@@ -1610,7 +1610,7 @@ function UploadDraftPanel({
       </div>
 
       {uploadDraftMessage && (
-        <p className="mt-2 rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-xs text-neutral-300">
+        <p className="mt-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 py-2 text-xs text-neutral-300">
           {uploadDraftMessage}
         </p>
       )}
@@ -1620,7 +1620,7 @@ function UploadDraftPanel({
           Saved
         </p>
         {savedUploadDrafts.length === 0 ? (
-          <p className="mt-2 rounded-md border border-dashed border-white/10 bg-[#101214] px-3 py-2 text-xs text-neutral-500">
+          <p className="mt-2 rounded-md border border-dashed border-[#e6e6e6] bg-[#f7f7f5] px-3 py-2 text-xs text-neutral-500">
             No drafts.
           </p>
         ) : (
@@ -1633,7 +1633,7 @@ function UploadDraftPanel({
                   className={`rounded-md border p-3 text-sm ${
                     draft.id === selectedUploadDraftId
                       ? "border-emerald-400/50 bg-emerald-400/5"
-                      : "border-white/10 bg-[#101214]"
+                      : "border-[#e6e6e6] bg-[#f7f7f5]"
                   }`}
                 >
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">

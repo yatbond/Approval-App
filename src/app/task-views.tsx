@@ -179,7 +179,7 @@ export function QueueView({
 
   if (!selectedTask) {
     return (
-      <section className="rounded-md border border-white/10 bg-white/[0.03] p-5">
+      <section className="rounded-md border border-[#e6e6e6] bg-white p-5">
         <div className="flex items-center gap-2">
           <h2 className="font-semibold">Empty</h2>
           <InfoTip label="Use Tracking to follow requests you submitted, approved, reassigned, or delegated." />
@@ -236,8 +236,8 @@ export function QueueView({
 
   return (
     <div className="grid gap-4 xl:grid-cols-[360px_1fr_320px]">
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
+      <section className="rounded-md border border-[#e6e6e6] bg-white">
+        <div className="border-b border-[#e6e6e6] p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Queue</h2>
             <InfoTip label="Pending, overdue, and escalated work." />
@@ -252,7 +252,7 @@ export function QueueView({
               className={`block w-full p-4 text-left transition ${
                 selectedTaskId === task.id
                   ? "bg-emerald-400/10"
-                  : "hover:bg-white/[0.04]"
+                  : "hover:bg-[#f7f7f5]"
               }`}
             >
               <div className="flex items-start justify-between gap-3">
@@ -273,8 +273,8 @@ export function QueueView({
         </div>
       </section>
 
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
+      <section className="rounded-md border border-[#e6e6e6] bg-white">
+        <div className="border-b border-[#e6e6e6] p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="font-semibold">{selectedTask.title}</h2>
@@ -282,7 +282,7 @@ export function QueueView({
                 {selectedTask.workflow} - requested by {selectedTask.requester}
               </p>
             </div>
-            <div className="rounded-md border border-white/10 px-3 py-2 text-sm">
+            <div className="rounded-md border border-[#e6e6e6] px-3 py-2 text-sm">
               {selectedTaskDisplayValue}
             </div>
           </div>
@@ -299,7 +299,7 @@ export function QueueView({
               value={comment}
               onChange={(event) => setComment(event.target.value)}
               placeholder="Comment"
-              className="h-32 w-full resize-none rounded-md border border-white/10 bg-[#121518] p-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
+              className="h-32 w-full resize-none rounded-md border border-[#e6e6e6] bg-white p-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
             />
             {missingCurrentDocuments.length > 0 && (
               <div className="mt-3 rounded-md border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
@@ -309,7 +309,7 @@ export function QueueView({
                     <label
                       key={document.id}
                       title="Upload this document before approving the current box."
-                      className="flex cursor-pointer flex-col gap-2 rounded-md border border-amber-300/20 bg-[#121518] p-2 transition hover:border-amber-300/50"
+                      className="flex cursor-pointer flex-col gap-2 rounded-md border border-amber-300/20 bg-white p-2 transition hover:border-amber-300/50"
                     >
                       <span className="text-xs">
                         {document.documentType} - {formatDocumentFormat(document.format)}
@@ -338,7 +338,7 @@ export function QueueView({
             {!originatorAction && !pendingReassignmentRequest && (
               <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] gap-2">
                 <label
-                  className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
+                  className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-sm text-neutral-200"
                   title="Ask another person to become the task owner. Ownership changes only after they accept."
                 >
                   <span className="min-w-0 flex-1 break-words font-medium leading-tight">
@@ -363,14 +363,14 @@ export function QueueView({
                     className={`flex h-6 w-11 shrink-0 items-center rounded-full border p-0.5 transition peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-emerald-300 ${
                       queueActionMode === "reassign"
                         ? "justify-end border-amber-400/40 bg-amber-400/20 text-amber-100"
-                        : "justify-start border-white/10 bg-black/20 text-neutral-500"
+                        : "justify-start border-[#e6e6e6] bg-[#f2f2f2] text-neutral-500"
                     }`}
                   >
                     <span className="size-4 rounded-full bg-current" />
                   </span>
                 </label>
                 <label
-                  className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
+                  className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-sm text-neutral-200"
                   title="Let another person act while you remain the owner and keep visibility."
                 >
                   <span className="min-w-0 flex-1 break-words font-medium leading-tight">
@@ -395,14 +395,14 @@ export function QueueView({
                     className={`flex h-6 w-11 shrink-0 items-center rounded-full border p-0.5 transition peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-emerald-300 ${
                       queueActionMode === "delegate"
                         ? "justify-end border-violet-400/40 bg-violet-400/20 text-violet-100"
-                        : "justify-start border-white/10 bg-black/20 text-neutral-500"
+                        : "justify-start border-[#e6e6e6] bg-[#f2f2f2] text-neutral-500"
                     }`}
                   >
                     <span className="size-4 rounded-full bg-current" />
                   </span>
                 </label>
                 <label
-                  className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-white/10 bg-[#121518] px-3 py-2 text-sm text-neutral-200"
+                  className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-sm text-neutral-200"
                   title="Ask another person for supporting input."
                 >
                   <span className="min-w-0 flex-1 break-words font-medium leading-tight">
@@ -422,7 +422,7 @@ export function QueueView({
                     className={`flex h-6 w-11 shrink-0 items-center rounded-full border p-0.5 transition peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-emerald-300 ${
                       contributorRequestExpanded
                         ? "justify-end border-sky-400/40 bg-sky-400/20 text-sky-100"
-                        : "justify-start border-white/10 bg-black/20 text-neutral-500"
+                        : "justify-start border-[#e6e6e6] bg-[#f2f2f2] text-neutral-500"
                     }`}
                   >
                     <span className="size-4 rounded-full bg-current" />
@@ -442,7 +442,7 @@ export function QueueView({
             {(showReassignActions || showContributorRequest) && (
               <div className="mt-3 space-y-3">
                 {showReassignActions && (
-                  <div className="rounded-md border border-white/10 bg-[#121518] p-3">
+                  <div className="rounded-md border border-[#e6e6e6] bg-white p-3">
                     <p className="text-xs font-semibold text-neutral-300">
                       {actionModeCopy.title}
                     </p>
@@ -459,14 +459,14 @@ export function QueueView({
                         value={targetEmail}
                         onChange={(event) => setTargetEmail(event.target.value)}
                         placeholder="colleague@example.com"
-                        className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
+                        className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
                       />
                       <UserDirectoryDatalist id="queue-user-directory" users={userDirectory} />
                     </label>
                   </div>
                 )}
                 {showContributorRequest && (
-                  <div className="rounded-md border border-white/10 bg-[#121518] p-3">
+                  <div className="rounded-md border border-[#e6e6e6] bg-white p-3">
                     <p className="text-xs font-semibold text-neutral-300">
                       Contributor
                     </p>
@@ -479,7 +479,7 @@ export function QueueView({
                         value={contributorName}
                         onChange={(event) => setContributorName(event.target.value)}
                         placeholder="Optional"
-                        className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
+                        className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
                       />
                     </label>
                     <label className="block">
@@ -492,7 +492,7 @@ export function QueueView({
                         value={contributorEmail}
                         onChange={(event) => setContributorEmail(event.target.value)}
                         placeholder="person@example.com"
-                        className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
+                        className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
                       />
                     </label>
                     </div>
@@ -502,7 +502,7 @@ export function QueueView({
                         type="datetime-local"
                         value={contributorDueAt}
                         onChange={(event) => setContributorDueAt(event.target.value)}
-                        className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none transition focus:border-emerald-400/60"
+                        className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none transition focus:border-emerald-400/60"
                       />
                     </label>
                     <label className="mt-2 block">
@@ -515,7 +515,7 @@ export function QueueView({
                           setContributorRequestNote(event.target.value)
                         }
                         placeholder="Needed docs/info"
-                        className="h-20 w-full resize-none rounded-md border border-white/10 bg-[#101214] p-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
+                        className="h-20 w-full resize-none rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
                       />
                     </label>
                     <label className="mt-2 flex items-start gap-2 text-xs text-neutral-300">
@@ -556,7 +556,7 @@ export function QueueView({
               />
             ) : null}
             {!originatorAction && !pendingReassignmentRequest && rejectReturnTargetOptions.length > 1 && (
-              <details className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3">
+              <details className="mt-3 rounded-md border border-[#e6e6e6] bg-white p-3">
                 <summary className="cursor-pointer text-sm font-medium text-neutral-200">
                   Return to...
                 </summary>
@@ -567,7 +567,7 @@ export function QueueView({
                   <select
                     value={selectedRejectReturnTarget?.id || "originator"}
                     onChange={(event) => setRejectReturnTargetId(event.target.value)}
-                    className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                    className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
                   >
                     {rejectReturnTargetOptions.map((option) => (
                       <option key={option.id} value={option.id}>
@@ -623,8 +623,8 @@ export function QueueView({
         </div>
       </section>
 
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
+      <section className="rounded-md border border-[#e6e6e6] bg-white">
+        <div className="border-b border-[#e6e6e6] p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Audit</h2>
             <InfoTip label="Everyone involved can track this item." />
@@ -680,8 +680,8 @@ export function TrackingView({
 
   return (
     <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
+      <section className="rounded-md border border-[#e6e6e6] bg-white">
+        <div className="border-b border-[#e6e6e6] p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Tracking</h2>
             <InfoTip label="Requests you submitted, approved, reassigned, delegated, or received." />
@@ -694,7 +694,7 @@ export function TrackingView({
               type="button"
               onClick={() => setSelectedTaskId(task.id)}
               className={`block w-full p-4 text-left transition ${
-                selectedTask?.id === task.id ? "bg-emerald-400/10" : "hover:bg-white/[0.04]"
+                selectedTask?.id === task.id ? "bg-emerald-400/10" : "hover:bg-[#f7f7f5]"
               }`}
             >
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -715,10 +715,10 @@ export function TrackingView({
         </div>
       </section>
 
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
+      <section className="rounded-md border border-[#e6e6e6] bg-white">
         {selectedTask ? (
           <>
-            <div className="border-b border-white/10 p-4">
+            <div className="border-b border-[#e6e6e6] p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h2 className="font-semibold">{selectedTask.title}</h2>
@@ -735,23 +735,23 @@ export function TrackingView({
                 <StatusBadge status={selectedTask.status} />
               </div>
               <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-                <div className="rounded-md border border-white/10 bg-[#121518] p-3">
+                <div className="rounded-md border border-[#e6e6e6] bg-white p-3">
                   <p className="text-xs text-neutral-500">Owner</p>
                   <p className="mt-1 break-words text-neutral-200">
                     {selectedTask.currentOwner || "Closed"}
                   </p>
                 </div>
-                <div className="rounded-md border border-white/10 bg-[#121518] p-3">
+                <div className="rounded-md border border-[#e6e6e6] bg-white p-3">
                   <p className="text-xs text-neutral-500">Step</p>
                   <p className="mt-1 break-words text-neutral-200">{selectedTask.currentStep}</p>
                 </div>
-                <div className="rounded-md border border-white/10 bg-[#121518] p-3">
+                <div className="rounded-md border border-[#e6e6e6] bg-white p-3">
                   <p className="text-xs text-neutral-500">Last</p>
                   <p className="mt-1 break-words text-neutral-200">{selectedTask.lastAction}</p>
                 </div>
               </div>
               {selectedTask.pendingOwners?.length ? (
-                <div className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
+                <div className="mt-3 rounded-md border border-[#e6e6e6] bg-white p-3 text-sm">
                   <p className="text-xs text-neutral-500">Pending</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {selectedTask.pendingOwners.map((owner) => (
@@ -824,7 +824,7 @@ function HandoffVisibilityPanel({
 
   return (
     <div
-      className={`${className} rounded-md border border-white/10 bg-[#121518] p-3 text-sm`}
+      className={`${className} rounded-md border border-[#e6e6e6] bg-white p-3 text-sm`}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
@@ -839,7 +839,7 @@ function HandoffVisibilityPanel({
           </p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-center">
-          <span className="rounded-md border border-white/10 bg-[#101214] px-2 py-1 text-xs text-neutral-300">
+          <span className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-1 text-xs text-neutral-300">
             {formatStatusText(handoff.layout)}
           </span>
           <button
@@ -851,14 +851,14 @@ function HandoffVisibilityPanel({
             className={`flex min-h-9 items-center gap-2 rounded-md border px-2 py-1 text-xs transition ${
               panelState.isVisible
                 ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-100"
-                : "border-white/10 bg-[#101214] text-neutral-300 hover:bg-white/[0.04]"
+                : "border-[#e6e6e6] bg-[#f7f7f5] text-neutral-300 hover:bg-[#f7f7f5]"
             }`}
           >
             <span
               className={`flex h-5 w-9 items-center rounded-full border p-0.5 transition ${
                 panelState.isVisible
                   ? "justify-end border-emerald-400/40 bg-emerald-400/20"
-                  : "justify-start border-white/10 bg-black/20"
+                  : "justify-start border-[#e6e6e6] bg-[#f2f2f2]"
               }`}
             >
               <span className="size-3 rounded-full bg-current" />
@@ -869,7 +869,7 @@ function HandoffVisibilityPanel({
       </div>
 
       {panelState.isVisible ? (
-        <div className="mt-3 border-t border-white/10 pt-3">
+        <div className="mt-3 border-t border-[#e6e6e6] pt-3">
           <VisibilityChips task={task} userByEmail={userByEmail} />
           <HandoffDetailSections handoff={handoff} />
         </div>
@@ -891,7 +891,7 @@ function HandoffSummary({
 
   return (
     <div
-      className={`${className} rounded-md border border-white/10 bg-[#121518] p-3 text-sm`}
+      className={`${className} rounded-md border border-[#e6e6e6] bg-white p-3 text-sm`}
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -900,7 +900,7 @@ function HandoffSummary({
             <InfoTip label={`${handoff.nodeLabel} - ${handoff.policyLabel}`} />
           </div>
         </div>
-        <span className="self-start rounded-md border border-white/10 bg-[#101214] px-2 py-1 text-xs text-neutral-300">
+        <span className="self-start rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-1 text-xs text-neutral-300">
           {formatStatusText(handoff.layout)}
         </span>
       </div>
@@ -922,7 +922,7 @@ function HandoffDetailSections({
           handoff.fields.map((field) => (
             <div
               key={field.label}
-              className="grid min-h-11 grid-cols-1 gap-1 rounded-md border border-white/10 bg-[#101214] px-3 py-2 text-sm sm:grid-cols-[140px_1fr] sm:items-center sm:gap-3"
+              className="grid min-h-11 grid-cols-1 gap-1 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 py-2 text-sm sm:grid-cols-[140px_1fr] sm:items-center sm:gap-3"
             >
               <span className="break-words text-neutral-400">{field.label}</span>
               <span className="min-w-0 break-words text-neutral-100">
@@ -931,7 +931,7 @@ function HandoffDetailSections({
             </div>
           ))
         ) : (
-          <p className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
+          <p className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2 text-xs text-neutral-500">
             No values.
           </p>
         )}
@@ -952,7 +952,7 @@ function HandoffDetailSections({
                     ? "border-amber-400/30 bg-amber-400/10 text-amber-100"
                     : process.tone === "info"
                       ? "border-sky-400/30 bg-sky-400/10 text-sky-100"
-                      : "border-white/10 bg-[#101214] text-neutral-300"
+                      : "border-[#e6e6e6] bg-[#f7f7f5] text-neutral-300"
               }`}
             >
               <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
@@ -973,7 +973,7 @@ function HandoffDetailSections({
           handoff.attachments.map((attachment) => (
             <div
               key={attachment.id}
-              className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs"
+              className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2 text-xs"
             >
               <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
@@ -1006,14 +1006,14 @@ function HandoffDetailSections({
             </div>
           ))
         ) : (
-          <p className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
+          <p className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2 text-xs text-neutral-500">
             No documents.
           </p>
         )}
       </div>
 
       {handoff.hiddenFieldCount || handoff.hiddenAttachmentCount ? (
-        <p className="mt-3 rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
+        <p className="mt-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2 text-xs text-neutral-500">
           Hidden: {handoff.hiddenFieldCount} value(s),{" "}
           {handoff.hiddenAttachmentCount} document(s).
         </p>
@@ -1036,7 +1036,7 @@ function VisibilityChips({
         {task.participants.map((participant) => (
           <span
             key={participant}
-            className="rounded-md border border-white/10 bg-[#101214] px-2 py-1 text-xs text-neutral-300"
+            className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-1 text-xs text-neutral-300"
           >
             {participant}
             {userByEmail.get(participant)?.role
@@ -1063,7 +1063,7 @@ function TaskPathAndHistory({
   const workflowNodes = stages.flatMap((stage) => stage.nodes);
 
   return (
-    <div className="border-t border-white/10 p-4">
+    <div className="border-t border-[#e6e6e6] p-4">
       <div className="mb-4">
         <h3 className="text-sm font-semibold text-neutral-300">Path and history</h3>
         <p className="mt-1 text-xs text-neutral-500">
@@ -1106,7 +1106,7 @@ function TaskPathAndHistory({
           ))}
         </div>
       ) : (
-        <p className="rounded-md border border-white/10 bg-[#121518] p-3 text-sm text-neutral-500">
+        <p className="rounded-md border border-[#e6e6e6] bg-white p-3 text-sm text-neutral-500">
           No workflow path.
         </p>
       )}
@@ -1135,18 +1135,18 @@ function PathStageCard({
     tone === "current"
       ? "border-yellow-400/45 bg-yellow-400/10"
       : tone === "done"
-        ? "border-emerald-400/35 bg-emerald-400/10"
+        ? "border-sky-400/35 bg-sky-400/10"
         : tone === "rejected"
           ? "border-rose-400/35 bg-rose-400/10"
-          : "border-white/10 bg-[#121518] opacity-75";
+          : "border-[#e6e6e6] bg-white opacity-75";
   const badgeClassName =
     tone === "current"
       ? "border-yellow-400/30 bg-yellow-400/10 text-yellow-100"
       : tone === "done"
-        ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+        ? "border-sky-400/30 bg-sky-400/10 text-sky-100"
         : tone === "rejected"
           ? "border-rose-400/30 bg-rose-400/10 text-rose-100"
-          : "border-white/10 bg-black/15 text-neutral-500";
+          : "border-[#e6e6e6] bg-[#f2f2f2] text-neutral-500";
 
   return (
     <div
@@ -1154,7 +1154,7 @@ function PathStageCard({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 gap-3">
-          <span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-black/20 px-2 text-xs font-semibold text-neutral-200">
+          <span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-[#e6e6e6] bg-[#f2f2f2] px-2 text-xs font-semibold text-neutral-200">
             {node.pathLabel}
           </span>
           <div className="min-w-0">
@@ -1178,7 +1178,7 @@ function PathStageCard({
           {node.documentIds.length} document requirement(s)
         </p>
       ) : null}
-      <div className="mt-3 border-t border-white/10 pt-3 pl-10">
+      <div className="mt-3 border-t border-[#e6e6e6] pt-3 pl-10">
         <p className="text-xs font-semibold text-neutral-500">History</p>
         {historyEvents.length ? (
           <ol className="mt-2 space-y-2">
@@ -1240,7 +1240,7 @@ function CollaborationStatusPanel({
   }
 
   return (
-    <div className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
+    <div className="mt-3 rounded-md border border-[#e6e6e6] bg-white p-3 text-sm">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-center gap-2">
           <p className="text-xs font-semibold text-neutral-300">Collab</p>
@@ -1298,7 +1298,7 @@ function CollaborationStatusPanel({
                       }))
                     }
                     placeholder="Rejection note"
-                    className="h-9 w-full rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-rose-400/60"
+                    className="h-9 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none focus:border-rose-400/60"
                   />
                   <button
                     type="button"
@@ -1325,7 +1325,7 @@ function CollaborationStatusPanel({
         {state.corrections.map((item) => (
           <div
             key={item.id}
-            className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs"
+            className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2 text-xs"
           >
             <StatusPanelRow item={item} />
             {item.canAct ? (
@@ -1386,7 +1386,7 @@ function StatusPanelGroup({
       {rows.map((item) => (
         <div
           key={item.id}
-          className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs"
+          className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2 text-xs"
         >
           <StatusPanelRow item={item} />
         </div>
@@ -1424,7 +1424,7 @@ function StatusPanelRow({
           <p className="mt-1 break-words text-neutral-500">Due {item.dueAt}</p>
         ) : null}
       </div>
-      <span className="self-start rounded-md border border-white/10 px-2 py-1 text-xs text-neutral-300">
+      <span className="self-start rounded-md border border-[#e6e6e6] px-2 py-1 text-xs text-neutral-300">
         {formatStatusText(item.status)}
       </span>
     </div>
@@ -1455,7 +1455,7 @@ function ContributorRequestList({
   }) => void;
 }) {
   return (
-    <div className="mt-3 rounded-md border border-white/10 bg-[#121518] p-3 text-sm">
+    <div className="mt-3 rounded-md border border-[#e6e6e6] bg-white p-3 text-sm">
       <p className="text-xs font-semibold text-neutral-300">
         Contributors
       </p>
@@ -1473,7 +1473,7 @@ function ContributorRequestList({
           return (
             <div
               key={request.id}
-              className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs"
+              className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2 text-xs"
             >
               <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
@@ -1507,7 +1507,7 @@ function ContributorRequestList({
                 </p>
               ) : null}
               {extractedFieldEntries.length ? (
-                <div className="mt-2 space-y-1 rounded-md border border-white/10 bg-[#121518] p-2">
+                <div className="mt-2 space-y-1 rounded-md border border-[#e6e6e6] bg-white p-2">
                   {extractedFieldEntries.map(([field, value]) => (
                     <div
                       key={field}
@@ -1648,7 +1648,7 @@ function StatusBadge({ status }: { status: ApprovalTask["status"] }) {
 
   if (status === "approved") {
     return (
-      <span className="flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-100">
+      <span className="flex items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-xs text-sky-100">
         <Check size={12} />
         Approved
       </span>

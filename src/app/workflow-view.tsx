@@ -137,7 +137,7 @@ import { InfoTip } from "./ui-hint";
 
 const WorkflowCanvas = dynamic(() => import("@/app/workflow-canvas"), {
   loading: () => (
-    <div className="grid h-[68vh] min-h-[420px] place-items-center rounded-md border border-white/10 bg-[#0d1013] text-sm text-neutral-500 lg:h-[calc(100vh-250px)] lg:min-h-[640px]">
+    <div className="grid h-[68vh] min-h-[420px] place-items-center rounded-md border border-[#e6e6e6] bg-[#f7f7f5] text-sm text-neutral-500 lg:h-[calc(100vh-250px)] lg:min-h-[640px]">
       Loading canvas...
     </div>
   ),
@@ -1008,8 +1008,8 @@ export function WorkflowView({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
+      <section className="rounded-md border border-[#e6e6e6] bg-white">
+        <div className="border-b border-[#e6e6e6] p-4">
           <h2 className="font-semibold">
             {workflow ? workflow.name : "No templates"}
           </h2>
@@ -1022,7 +1022,7 @@ export function WorkflowView({
           )}
           {workflow && (
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-              <span className="rounded-md border border-white/10 bg-[#121518] px-2 py-1 text-neutral-300">
+              <span className="rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-neutral-300">
                 Version {workflow.version || 1}
               </span>
               <span
@@ -1033,7 +1033,7 @@ export function WorkflowView({
                 {workflowLifecycle.statusLabel}
               </span>
               {workflow.publishedAt && (
-                <span className="rounded-md border border-white/10 bg-[#121518] px-2 py-1 text-neutral-400">
+                <span className="rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-neutral-400">
                   Published {new Date(workflow.publishedAt).toLocaleString()}
                 </span>
               )}
@@ -1047,7 +1047,7 @@ export function WorkflowView({
               const activeClasses =
                 workflowEditorTab === tab.id
                   ? "border-emerald-400/40 bg-emerald-400/12 text-emerald-100"
-                  : "border-white/10 bg-[#121518] text-neutral-300 hover:border-white/20";
+                  : "border-[#e6e6e6] bg-white text-neutral-300 hover:border-[#d2d2d2]";
               if (tab.mobileDisabled) {
                 return (
                   <div key={tab.id} className="contents">
@@ -1055,7 +1055,7 @@ export function WorkflowView({
                       type="button"
                       disabled
                       title="Canvas editing is available on tablet and desktop screens."
-                      className="min-h-11 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-neutral-500 md:hidden"
+                      className="min-h-11 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-sm text-neutral-500 md:hidden"
                     >
                       {tab.label}
                       <span className="ml-1 text-xs">desktop</span>
@@ -1126,7 +1126,7 @@ export function WorkflowView({
                 onResetView={resetCanvasView}
                 onRunWorkflowAction={onRunWorkflowAction}
               />
-              <div className="mb-3 flex flex-col gap-2 rounded-md border border-white/10 bg-[#121518] p-3 sm:flex-row sm:items-end">
+              <div className="mb-3 flex flex-col gap-2 rounded-md border border-[#e6e6e6] bg-white p-3 sm:flex-row sm:items-end">
                 <label className="min-w-0 flex-1">
                   <span className="mb-1 block text-xs text-neutral-400">
                     Copy from
@@ -1134,7 +1134,7 @@ export function WorkflowView({
                   <select
                     value={copySourceTemplateSelectValue}
                     onChange={(event) => setCopySourceTemplateId(event.target.value)}
-                    className="h-10 w-full rounded-md border border-white/10 bg-[#0d1013] px-3 text-sm outline-none focus:border-emerald-400/60"
+                    className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
                   >
                     <option value="">Blank workflow</option>
                     {copySourceTemplates.map((template) => (
@@ -1179,7 +1179,7 @@ export function WorkflowView({
               />
 
               {(selectedGraphNode || selectedGraphEdge) && (
-                <aside className="fixed inset-x-3 bottom-3 top-24 z-40 overflow-y-auto rounded-md border border-white/10 bg-[#121518] p-4 shadow-2xl md:absolute md:inset-y-4 md:left-auto md:right-4 md:w-[380px]">
+                <aside className="fixed inset-x-3 bottom-3 top-24 z-40 overflow-y-auto rounded-md border border-[#e6e6e6] bg-white p-4 shadow-2xl md:absolute md:inset-y-4 md:left-auto md:right-4 md:w-[380px]">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-sm font-semibold text-neutral-300">
                       {selectedGraphNode ? "Box details" : "Branch details"}
@@ -1208,7 +1208,7 @@ export function WorkflowView({
                           setSelectedEdgeId(null);
                         }}
                         title="Close the details panel."
-                        className="flex size-8 items-center justify-center rounded-md border border-white/10 text-neutral-300 transition hover:bg-white/5"
+                        className="flex size-8 items-center justify-center rounded-md border border-[#e6e6e6] text-neutral-300 transition hover:bg-[#f2f2f2]"
                       >
                         <X size={15} />
                       </button>
@@ -1237,7 +1237,7 @@ export function WorkflowView({
                             event.target.value !== "end",
                         })
                       }
-                      className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                      className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
                     >
                       <option value="start">Start</option>
                       {selectedGraphNode.id === "end" && (
@@ -1258,7 +1258,7 @@ export function WorkflowView({
                       value={selectedGraphNode.label}
                       title="Position or role name shown inside this workflow box on the canvas."
                       onChange={(event) => updateSelectedNode({ label: event.target.value })}
-                      className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                      className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
                     />
                   </label>
                   {["submit_request", "approval", "review", "for_information"].includes(
@@ -1283,10 +1283,10 @@ export function WorkflowView({
                           }
                           type="email"
                           list="workflow-user-directory"
-                          className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                          className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
                         />
                       </label>
-                      <label className="flex items-start gap-2 rounded-md border border-white/10 bg-[#101214] p-3 text-xs text-neutral-300">
+                      <label className="flex items-start gap-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 text-xs text-neutral-300">
                         <input
                           type="checkbox"
                           className="mt-0.5"
@@ -1381,7 +1381,7 @@ export function WorkflowView({
                               })
                             }
                             inputMode="numeric"
-                            className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                            className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
                           />
                         </label>
                         {["approval", "review"].includes(selectedGraphNode.kind) && (
@@ -1399,7 +1399,7 @@ export function WorkflowView({
                                       escalationName: event.target.value,
                                     })
                                   }
-                                  className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                                  className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
                                 />
                               </label>
                               <label className="block">
@@ -1416,11 +1416,11 @@ export function WorkflowView({
                                   }
                                   type="email"
                                   list="workflow-user-directory"
-                                  className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                                  className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
                                 />
                               </label>
                             </div>
-                            <label className="flex items-start gap-2 rounded-md border border-white/10 bg-[#101214] p-3 text-xs text-neutral-300">
+                            <label className="flex items-start gap-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 text-xs text-neutral-300">
                               <input
                                 type="checkbox"
                                 className="mt-0.5"
@@ -1464,7 +1464,7 @@ export function WorkflowView({
                     ["approval", "review", "for_information"].includes(
                       selectedGraphNode.kind,
                     ) && (
-                      <div className="space-y-3 rounded-md border border-white/10 bg-[#101214] p-3">
+                      <div className="space-y-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
                         <div>
                           <div className="flex items-center gap-2">
                             <p className="text-xs font-semibold text-neutral-300">
@@ -1506,7 +1506,7 @@ export function WorkflowView({
                                   },
                                 })
                               }
-                              className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+                              className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
                             >
                               {handoffFieldVisibilityOptions.map((option) => (
                                 <option key={option.value} value={option.value}>
@@ -1529,7 +1529,7 @@ export function WorkflowView({
                                   >["layout"],
                                 })
                               }
-                              className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+                              className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
                             >
                               {handoffLayoutOptions.map((option) => (
                                 <option key={option.value} value={option.value}>
@@ -1542,7 +1542,7 @@ export function WorkflowView({
                         {selectedGraphNode.handoffView?.fieldVisibility?.mode &&
                           selectedGraphNode.handoffView.fieldVisibility.mode !==
                             "all" && (
-                            <div className="space-y-2 rounded-md border border-white/10 bg-[#121518] p-2">
+                            <div className="space-y-2 rounded-md border border-[#e6e6e6] bg-white p-2">
                               <p className="text-xs font-semibold text-neutral-400">
                                 {selectedGraphNode.handoffView.fieldVisibility
                                   .mode === "hidden"
@@ -1554,7 +1554,7 @@ export function WorkflowView({
                                   {handoffFieldNames.map((fieldName) => (
                                     <label
                                       key={fieldName}
-                                      className="flex min-h-9 items-start gap-2 rounded-md border border-white/10 bg-[#101214] px-2 py-2 text-xs text-neutral-300"
+                                      className="flex min-h-9 items-start gap-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-2 text-xs text-neutral-300"
                                     >
                                       <input
                                         type="checkbox"
@@ -1589,7 +1589,7 @@ export function WorkflowView({
                                   ))}
                                 </div>
                               ) : (
-                                <p className="rounded-md border border-dashed border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
+                                <p className="rounded-md border border-dashed border-[#e6e6e6] bg-[#f7f7f5] p-2 text-xs text-neutral-500">
                                   Add workflow fields or document extraction
                                   fields first.
                                 </p>
@@ -1626,7 +1626,7 @@ export function WorkflowView({
                                 },
                               })
                             }
-                            className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+                            className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
                           >
                             {handoffDocumentVisibilityOptions.map((option) => (
                               <option key={option.value} value={option.value}>
@@ -1638,7 +1638,7 @@ export function WorkflowView({
                         {(["selected", "required_for_node"].includes(
                           selectedGraphNode.handoffView?.documentVisibility?.mode || "",
                         )) && (
-                          <div className="space-y-2 rounded-md border border-white/10 bg-[#121518] p-2">
+                          <div className="space-y-2 rounded-md border border-[#e6e6e6] bg-white p-2">
                             {handoffDocumentOptions.map((document) => {
                               const selectedDocumentIds =
                                 selectedGraphNode.handoffView?.documentVisibility
@@ -1686,7 +1686,7 @@ export function WorkflowView({
                             )}
                           </div>
                         )}
-                        <div className="space-y-2 border-t border-white/10 pt-3">
+                        <div className="space-y-2 border-t border-[#e6e6e6] pt-3">
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-xs font-semibold text-neutral-400">
                               Checks
@@ -1704,7 +1704,7 @@ export function WorkflowView({
                             (process) => (
                               <div
                                 key={process.id}
-                                className="space-y-2 rounded-md border border-white/10 bg-[#121518] p-2"
+                                className="space-y-2 rounded-md border border-[#e6e6e6] bg-white p-2"
                               >
                                 <div className="grid gap-2 sm:grid-cols-[1fr_150px_auto]">
                                   <input
@@ -1714,7 +1714,7 @@ export function WorkflowView({
                                         label: event.target.value,
                                       })
                                     }
-                                    className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                                    className="h-9 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none focus:border-emerald-400/60"
                                   />
                                   <select
                                     value={process.type}
@@ -1724,7 +1724,7 @@ export function WorkflowView({
                                           .value as WorkflowHandoffProcess["type"],
                                       })
                                     }
-                                    className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                                    className="h-9 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none focus:border-emerald-400/60"
                                   >
                                     {handoffProcessTypeOptions.map((option) => (
                                       <option key={option.value} value={option.value}>
@@ -1737,7 +1737,7 @@ export function WorkflowView({
                                     onClick={() =>
                                       removeSelectedNodeHandoffProcess(process.id)
                                     }
-                                    className="flex h-9 items-center justify-center rounded-md border border-white/10 px-2 text-neutral-400 transition hover:border-rose-400/40 hover:text-rose-100"
+                                    className="flex h-9 items-center justify-center rounded-md border border-[#e6e6e6] px-2 text-neutral-400 transition hover:border-rose-400/40 hover:text-rose-100"
                                   >
                                     <X size={13} />
                                   </button>
@@ -1751,7 +1751,7 @@ export function WorkflowView({
                                         leftField: event.target.value,
                                       })
                                     }
-                                    className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                                    className="h-9 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none focus:border-emerald-400/60"
                                   />
                                   {process.type === "calculation" ? (
                                     <select
@@ -1762,7 +1762,7 @@ export function WorkflowView({
                                             .value as WorkflowHandoffCalculation,
                                         })
                                       }
-                                      className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                                      className="h-9 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none focus:border-emerald-400/60"
                                     >
                                       {handoffCalculationOptions.map((option) => (
                                         <option
@@ -1782,7 +1782,7 @@ export function WorkflowView({
                                             .value as WorkflowRuleOperator,
                                         })
                                       }
-                                      className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                                      className="h-9 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none focus:border-emerald-400/60"
                                     >
                                       {handoffComparisonOperators.map((operator) => (
                                         <option key={operator} value={operator}>
@@ -1799,7 +1799,7 @@ export function WorkflowView({
                                         rightField: event.target.value,
                                       })
                                     }
-                                    className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                                    className="h-9 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none focus:border-emerald-400/60"
                                   />
                                 </div>
                               </div>
@@ -1836,7 +1836,7 @@ export function WorkflowView({
                   {["submit_request", "approval", "review"].includes(
                     selectedGraphNode.kind,
                   ) && (
-                      <div className="rounded-md border border-white/10 bg-[#101214] p-3">
+                      <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
                         <div className="flex items-center gap-2">
                           <p className="text-xs font-semibold text-neutral-400">
                             Recognition
@@ -1860,7 +1860,7 @@ export function WorkflowView({
                               return (
                                 <div
                                   key={document.id}
-                                  className="rounded-md border border-white/10 bg-[#121518] p-2"
+                                  className="rounded-md border border-[#e6e6e6] bg-white p-2"
                                 >
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="min-w-0 flex-1 space-y-2">
@@ -1876,7 +1876,7 @@ export function WorkflowView({
                                             documentType: event.target.value,
                                           })
                                         }
-                                        className="h-9 w-full rounded-md border border-white/10 bg-[#101214] px-2 text-sm outline-none focus:border-emerald-400/60"
+                                        className="h-9 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-sm outline-none focus:border-emerald-400/60"
                                       />
                                     </label>
                                     <label className="block">
@@ -1891,7 +1891,7 @@ export function WorkflowView({
                                             inputMode: event.target.value as WorkflowDocumentInputMode,
                                           })
                                         }
-                                        className="h-9 w-full rounded-md border border-white/10 bg-[#101214] px-2 text-sm outline-none focus:border-emerald-400/60"
+                                        className="h-9 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-sm outline-none focus:border-emerald-400/60"
                                       >
                                         {documentInputModeOptions.map((option) => (
                                           <option
@@ -1918,7 +1918,7 @@ export function WorkflowView({
                                               format: event.target.value as DocumentFormat,
                                             })
                                           }
-                                          className="h-9 w-full rounded-md border border-white/10 bg-[#101214] px-2 text-sm outline-none focus:border-emerald-400/60"
+                                          className="h-9 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-sm outline-none focus:border-emerald-400/60"
                                         >
                                           {documentFormatOptions.map((option) => (
                                             <option
@@ -1944,7 +1944,7 @@ export function WorkflowView({
                                         {isManualForm ? "Required form" : "Required"}
                                       </label>
                                     </div>
-                                    <p className="rounded-md border border-white/10 bg-[#101214] px-2 py-1 text-xs text-neutral-500">
+                                    <p className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-1 text-xs text-neutral-500">
                                       {formatDocumentInputMode(document.inputMode || "upload")}
                                     </p>
                                   </div>
@@ -1952,12 +1952,12 @@ export function WorkflowView({
                                     type="button"
                                     onClick={() => removeBoxDocumentRequirement(document.id)}
                                     title="Remove this document requirement from the selected box."
-                                    className="flex size-7 shrink-0 items-center justify-center rounded-md border border-white/10 text-neutral-400 transition hover:border-rose-400/40 hover:text-rose-100"
+                                    className="flex size-7 shrink-0 items-center justify-center rounded-md border border-[#e6e6e6] text-neutral-400 transition hover:border-rose-400/40 hover:text-rose-100"
                                   >
                                     <X size={13} />
                                   </button>
                                 </div>
-                                <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
+                                <div className="mt-3 space-y-3 border-t border-[#e6e6e6] pt-3">
                                   <div className="rounded-md border border-sky-500/20 bg-sky-500/10 p-2">
                                     <p className="text-xs font-semibold text-sky-100">
                                       Fields
@@ -1982,7 +1982,7 @@ export function WorkflowView({
                                   {document.fields.map((field, fieldIndex) => (
                                     <div
                                       key={`${document.id}-${field.name}-${fieldIndex}`}
-                                      className="space-y-2 rounded-md border border-white/10 bg-[#101214] p-2"
+                                      className="space-y-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2"
                                     >
                                       <div className="flex items-center gap-2">
                                         <input
@@ -1995,7 +1995,7 @@ export function WorkflowView({
                                               { label: event.target.value },
                                             )
                                           }
-                                          className="h-9 min-w-0 flex-1 rounded-md border border-white/10 bg-[#121518] px-2 text-sm outline-none focus:border-emerald-400/60"
+                                          className="h-9 min-w-0 flex-1 rounded-md border border-[#e6e6e6] bg-white px-2 text-sm outline-none focus:border-emerald-400/60"
                                         />
                                         <button
                                           type="button"
@@ -2022,7 +2022,7 @@ export function WorkflowView({
                                           )
                                         }
                                         placeholder="Instruction"
-                                        className="h-9 w-full rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
+                                        className="h-9 w-full rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
                                       />
                                       <label className="flex items-center gap-2 text-xs text-neutral-400">
                                         <input
@@ -2072,13 +2072,13 @@ export function WorkflowView({
                             </p>
                           )}
                         </div>
-                        <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+                        <div className="mt-3 space-y-2 border-t border-[#e6e6e6] pt-3">
                           <input
                             value={boxDocumentType}
                             title="Name the new document requirement to add to this box."
                             onChange={(event) => setBoxDocumentType(event.target.value)}
                             placeholder="Type, e.g. Doctor slip"
-                            className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
+                            className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
                           />
                           <select
                             value={boxDocumentInputMode}
@@ -2088,7 +2088,7 @@ export function WorkflowView({
                                 event.target.value as WorkflowDocumentInputMode,
                               )
                             }
-                            className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+                            className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
                           >
                             {documentInputModeOptions.map((option) => (
                               <option key={option.value} value={option.value}>
@@ -2102,7 +2102,7 @@ export function WorkflowView({
                             onChange={(event) =>
                               setBoxDocumentFormat(event.target.value as DocumentFormat)
                             }
-                            className="h-10 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+                            className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
                           >
                             {documentFormatOptions.map((option) => (
                               <option key={option.value} value={option.value}>
@@ -2153,7 +2153,7 @@ export function WorkflowView({
                 users={userDirectory}
               />
             </div>
-            <div className="mt-4 flex justify-end border-t border-white/10 pt-4">
+            <div className="mt-4 flex justify-end border-t border-[#e6e6e6] pt-4">
               <button
                 type="button"
                 onClick={publishSelectedTemplate}
@@ -2211,7 +2211,7 @@ function workflowLifecycleToneClassName(statusTone: string) {
     return "border-neutral-500/30 bg-neutral-500/10 text-neutral-300";
   }
   if (statusTone === "empty") {
-    return "border-white/10 bg-white/[0.04] text-neutral-400";
+    return "border-[#e6e6e6] bg-[#f7f7f5] text-neutral-400";
   }
   return "border-amber-400/30 bg-amber-400/10 text-amber-100";
 }

@@ -63,7 +63,7 @@ async function signIn(page) {
     page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 20_000 }),
     page.getByRole("button", { name: "Sign in", exact: true }).click(),
   ]);
-  await expectText(page, "Approvals");
+  await expectText(page, "Queue");
 }
 
 async function verifyPrimaryNavigation(page) {

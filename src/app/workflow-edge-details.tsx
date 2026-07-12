@@ -46,7 +46,7 @@ export function WorkflowEdgeDetails({
               branchType: event.target.value as WorkflowBranchType,
             })
           }
-          className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+          className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
         >
           {branchTypeOptions.map((option) => (
             <option key={option.value} value={option.value}>
@@ -60,7 +60,7 @@ export function WorkflowEdgeDetails({
         <input
           value={edge.label}
           onChange={(event) => onUpdateEdge({ label: event.target.value })}
-          className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+          className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
         />
       </label>
       {state.showsRuleBuilder && (
@@ -74,7 +74,7 @@ export function WorkflowEdgeDetails({
               onChange={(event) =>
                 onUpdateEdgeRule("field", event.target.value)
               }
-              className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+              className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
             >
               {workflowFields.map((field) => (
                 <option key={field.name} value={field.name}>
@@ -87,7 +87,7 @@ export function WorkflowEdgeDetails({
               onChange={(event) =>
                 onUpdateEdgeRule("operator", event.target.value)
               }
-              className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+              className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
             >
               {ruleOperatorOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -101,7 +101,7 @@ export function WorkflowEdgeDetails({
                 onUpdateEdgeRule("value", event.target.value)
               }
               placeholder="Value"
-              className="h-10 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
+              className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
             />
           </div>
         </div>

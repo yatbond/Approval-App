@@ -68,7 +68,7 @@ export function ConditionBoxDetails({
         <InfoTip label="Build each rule as: if this approval or numeric result is true, route to these outcome boxes." />
       </div>
       <div className="mt-3 space-y-3">
-        <div className="rounded-md border border-white/10 bg-[#101214] p-2">
+        <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2">
           <p className="text-xs font-semibold text-neutral-400">
             Upstream
           </p>
@@ -77,7 +77,7 @@ export function ConditionBoxDetails({
               {context.upstreamNodes.map((node) => (
                 <span
                   key={node.id}
-                  className="rounded-md border border-white/10 bg-[#121518] px-2 py-1 text-xs text-neutral-300"
+                  className="rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-xs text-neutral-300"
                 >
                   {node.label}
                 </span>
@@ -90,7 +90,7 @@ export function ConditionBoxDetails({
           )}
         </div>
 
-        <div className="rounded-md border border-white/10 bg-[#101214] p-2">
+        <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2">
           <p className="text-xs font-semibold text-neutral-400">
             Outcomes
           </p>
@@ -99,7 +99,7 @@ export function ConditionBoxDetails({
               {context.downstreamNodes.map(({ edge, node }) => (
                 <span
                   key={`${edge.id}-${node.id}`}
-                  className="rounded-md border border-white/10 bg-[#121518] px-2 py-1 text-xs text-neutral-300"
+                  className="rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-xs text-neutral-300"
                 >
                   {node.label}
                 </span>
@@ -112,7 +112,7 @@ export function ConditionBoxDetails({
           )}
         </div>
 
-        <div className="rounded-md border border-white/10 bg-[#101214] p-2">
+        <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2">
           <p className="text-xs font-semibold text-neutral-400">
             Numbers
           </p>
@@ -121,7 +121,7 @@ export function ConditionBoxDetails({
               {context.numericFields.map((field) => (
                 <span
                   key={field.name}
-                  className="rounded-md border border-white/10 bg-[#121518] px-2 py-1 text-xs text-neutral-300"
+                  className="rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-xs text-neutral-300"
                 >
                   {field.label}
                 </span>
@@ -172,13 +172,13 @@ export function ConditionBoxDetails({
             conditionCases.map((conditionCase) => (
               <div
                 key={conditionCase.id}
-                className="space-y-2 rounded-md border border-white/10 bg-[#101214] p-2"
+                className="space-y-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div
                       title="Condition names are assigned automatically so the list stays easy to count."
-                      className="flex h-8 w-full items-center rounded-md border border-white/10 bg-[#121518] px-2 text-xs font-semibold text-neutral-200"
+                      className="flex h-8 w-full items-center rounded-md border border-[#e6e6e6] bg-white px-2 text-xs font-semibold text-neutral-200"
                     >
                       {getConditionDisplayName(conditionCases, conditionCase)}
                       {getConditionNickname(conditionCase)
@@ -197,7 +197,7 @@ export function ConditionBoxDetails({
                           })
                         }
                         placeholder="Nickname (optional)"
-                        className="mt-2 h-8 w-full rounded-md border border-white/10 bg-[#121518] px-2 text-xs text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
+                        className="mt-2 h-8 w-full rounded-md border border-[#e6e6e6] bg-white px-2 text-xs text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
                       />
                     )}
                     <p className="text-xs text-neutral-500">
@@ -274,7 +274,7 @@ export function ConditionBoxDetails({
                           },
                         });
                       }}
-                      className="h-9 w-full rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none focus:border-emerald-400/60"
+                      className="h-9 w-full rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none focus:border-emerald-400/60"
                     >
                       <option value="none">No approval</option>
                       <option value="specific">Named</option>
@@ -286,7 +286,7 @@ export function ConditionBoxDetails({
                 {!conditionCase.isFallback &&
                   conditionCase.approvalRule &&
                   context.upstreamNodes.length > 0 && (
-                  <div className="rounded-md border border-white/10 bg-[#121518] p-2">
+                  <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
                     {conditionCase.isApprovalCount ? (
                       <div className="space-y-3">
                         <div>
@@ -355,7 +355,7 @@ export function ConditionBoxDetails({
                                 },
                               })
                             }
-                            className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                            className="h-9 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none focus:border-emerald-400/60"
                           >
                             <option value="at_least">At least</option>
                             <option value="exactly">Exactly</option>
@@ -386,9 +386,9 @@ export function ConditionBoxDetails({
                                 },
                               });
                             }}
-                            className="h-9 rounded-md border border-white/10 bg-[#101214] px-2 text-xs outline-none focus:border-emerald-400/60"
+                            className="h-9 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none focus:border-emerald-400/60"
                           />
-                          <div className="flex min-h-9 items-center rounded-md border border-white/10 bg-[#101214] px-2 text-xs text-neutral-300">
+                          <div className="flex min-h-9 items-center rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs text-neutral-300">
                             approved reviewer(s)
                           </div>
                         </div>
@@ -462,7 +462,7 @@ export function ConditionBoxDetails({
                           : undefined,
                       })
                     }
-                    className="h-9 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none focus:border-emerald-400/60"
+                    className="h-9 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none focus:border-emerald-400/60"
                   >
                     <option value="">Numeric field</option>
                     {context.numericFields.map((field) => (
@@ -486,7 +486,7 @@ export function ConditionBoxDetails({
                         },
                       })
                     }
-                    className="h-9 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none focus:border-emerald-400/60"
+                    className="h-9 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none focus:border-emerald-400/60"
                   >
                     {ruleOperatorOptions.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -511,7 +511,7 @@ export function ConditionBoxDetails({
                     }
                     inputMode="decimal"
                     placeholder="Value"
-                    className="h-9 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
+                    className="h-9 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
                   />
                 </div>
                 </div>
@@ -526,7 +526,7 @@ export function ConditionBoxDetails({
                       join: event.target.value as "and" | "or",
                     })
                   }
-                  className="h-9 w-full rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none focus:border-emerald-400/60"
+                  className="h-9 w-full rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none focus:border-emerald-400/60"
                 >
                   <option value="and">Both match</option>
                   <option value="or">Either matches</option>
@@ -539,7 +539,7 @@ export function ConditionBoxDetails({
                   </div>
                 )}
 
-                <div className="rounded-md border border-white/10 bg-[#121518] p-2">
+                <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
                   <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-xs font-semibold text-neutral-400">
                       Route to
@@ -605,7 +605,7 @@ export function ConditionBoxDetails({
               </div>
             ))
           ) : (
-            <p className="rounded-md border border-white/10 bg-[#101214] p-2 text-xs text-neutral-500">
+            <p className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2 text-xs text-neutral-500">
               Add condition, then route.
             </p>
           )}

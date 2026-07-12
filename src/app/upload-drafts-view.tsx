@@ -46,8 +46,8 @@ export function UploadDraftsView({
   const savedDraftById = new Map(savedUploadDrafts.map((draft) => [draft.id, draft]));
 
   return (
-    <section className="rounded-md border border-white/10 bg-white/[0.03]">
-      <div className="flex flex-col gap-3 border-b border-white/10 p-5 md:flex-row md:items-start md:justify-between">
+    <section className="rounded-md border border-[#e6e6e6] bg-white">
+      <div className="flex flex-col gap-3 border-b border-[#e6e6e6] p-5 md:flex-row md:items-start md:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">Drafts</h2>
@@ -65,7 +65,7 @@ export function UploadDraftsView({
 
       {resumeItems.length === 0 ? (
         <div className="p-5">
-          <div className="rounded-md border border-dashed border-white/10 bg-[#121518] p-6 text-center">
+          <div className="rounded-md border border-dashed border-[#e6e6e6] bg-white p-6 text-center">
             <FileText className="mx-auto text-neutral-500" size={28} />
             <p className="mt-3 text-sm font-medium text-neutral-200">
               Empty
@@ -85,7 +85,7 @@ export function UploadDraftsView({
                 className={`rounded-md border p-4 ${
                   item.id === selectedUploadDraftId
                     ? "border-emerald-400/50 bg-emerald-400/5"
-                    : "border-white/10 bg-[#121518]"
+                    : "border-[#e6e6e6] bg-white"
                 }`}
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -94,10 +94,10 @@ export function UploadDraftsView({
                       <p className="break-words text-sm font-semibold text-neutral-100">
                         {item.title}
                       </p>
-                      <span className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-neutral-400">
+                      <span className="rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-xs text-neutral-400">
                         {item.type === "current" ? "Autosave" : "Saved draft"}
                       </span>
-                      <span className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-neutral-400">
+                      <span className="rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-xs text-neutral-400">
                         {item.accessLabel}
                       </span>
                     </div>
@@ -128,7 +128,7 @@ export function UploadDraftsView({
                         type="button"
                         onClick={onClearCurrentDraft}
                         disabled={!item.canDelete}
-                        className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500 sm:flex-none"
+                        className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-[#e6e6e6] disabled:bg-white disabled:text-neutral-500 sm:flex-none"
                       >
                         <Trash2 size={15} />
                         Clear
@@ -141,7 +141,7 @@ export function UploadDraftsView({
                         item.canResume && savedDraft && onResumeSavedDraft(savedDraft)
                       }
                       disabled={!item.canResume}
-                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500"
+                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:border-[#e6e6e6] disabled:bg-white disabled:text-neutral-500"
                     >
                       <RotateCcw size={15} />
                       Resume
@@ -152,7 +152,7 @@ export function UploadDraftsView({
                       type="button"
                       onClick={() => item.canDelete && onDeleteRequestDraft(item.id)}
                       disabled={!item.canDelete}
-                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-neutral-500 sm:flex-none"
+                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-[#e6e6e6] disabled:bg-white disabled:text-neutral-500 sm:flex-none"
                     >
                       <Trash2 size={15} />
                       Delete

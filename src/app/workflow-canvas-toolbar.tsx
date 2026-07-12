@@ -47,7 +47,7 @@ export function WorkflowCanvasToolbar({
               key={option.kind}
               type="button"
               onClick={() => onCreateNode(option.kind)}
-              className="flex min-h-8 items-center justify-center gap-1 rounded-md border border-white/10 bg-[#121518] px-2 py-1 text-xs text-neutral-200 transition hover:border-emerald-400/50"
+              className="flex min-h-8 items-center justify-center gap-1 rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-xs text-neutral-200 transition hover:border-emerald-400/50"
             >
               <Plus size={13} />
               {option.label}

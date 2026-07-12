@@ -74,14 +74,14 @@ export function WorkflowTemplateLibrary({
           </h3>
           <p className="mt-1 text-xs text-neutral-500">{sectionDescription}</p>
         </div>
-        <div className="grid grid-cols-3 gap-2 rounded-md border border-white/10 bg-[#101214] p-1 text-sm sm:w-auto">
+        <div className="grid grid-cols-3 gap-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-1 text-sm sm:w-auto">
           <button
             type="button"
             onClick={() => setSection("library")}
             className={`min-h-11 rounded px-3 transition ${
               section === "library"
                 ? "bg-emerald-400/15 text-emerald-100"
-                : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
+                : "text-neutral-400 hover:bg-[#f7f7f5] hover:text-neutral-200"
             }`}
           >
             Active ({libraryCount})
@@ -92,7 +92,7 @@ export function WorkflowTemplateLibrary({
             className={`min-h-11 rounded px-3 transition ${
               section === "versions"
                 ? "bg-sky-400/15 text-sky-100"
-                : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
+                : "text-neutral-400 hover:bg-[#f7f7f5] hover:text-neutral-200"
             }`}
           >
             Versions ({versionsCount})
@@ -103,7 +103,7 @@ export function WorkflowTemplateLibrary({
             className={`min-h-11 rounded px-3 transition ${
               section === "archive"
                 ? "bg-amber-400/15 text-amber-100"
-                : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
+                : "text-neutral-400 hover:bg-[#f7f7f5] hover:text-neutral-200"
             }`}
           >
             Archived ({archiveCount})
@@ -117,7 +117,7 @@ export function WorkflowTemplateLibrary({
             className={`rounded-md border p-3 text-left transition ${
               item.isSelected
                 ? "border-emerald-400/40 bg-emerald-400/10"
-                : "border-white/10 bg-[#121518] hover:border-white/20"
+                : "border-[#e6e6e6] bg-white hover:border-[#d2d2d2]"
             }`}
           >
             <button
@@ -145,19 +145,19 @@ export function WorkflowTemplateLibrary({
                 {item.countsLabel}
               </p>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-neutral-300">
+                <span className="rounded border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-1 text-neutral-300">
                   {item.versionLabel}
                 </span>
                 <span className={`rounded border px-2 py-1 ${statusToneClassName(item.statusTone)}`}>
                   {item.statusLabel}
                 </span>
-                <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-neutral-400">
+                <span className="rounded border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-1 text-neutral-400">
                   {item.ownershipLabel}
                 </span>
               </div>
             </button>
             {isVersions && (
-              <div className="mt-3 space-y-2 rounded-md border border-white/10 bg-[#0d1013] p-2">
+              <div className="mt-3 space-y-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2">
                 <label className="block">
                   <span className="mb-1 block text-xs text-neutral-500">
                     Version note
@@ -178,7 +178,7 @@ export function WorkflowTemplateLibrary({
                         ? "Document why this workflow version exists."
                         : "Only superusers or the workflow creator can edit version notes."
                     }
-                    className="w-full resize-y rounded-md border border-white/10 bg-[#121518] px-2 py-2 text-sm text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="w-full resize-y rounded-md border border-[#e6e6e6] bg-white px-2 py-2 text-sm text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-50"
                   />
                 </label>
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -261,7 +261,7 @@ export function WorkflowTemplateLibrary({
           </div>
         ))}
         {!templateItems.length && (
-          <div className="rounded-md border border-white/10 bg-[#121518] p-4 text-sm text-neutral-400 lg:col-span-2">
+          <div className="rounded-md border border-[#e6e6e6] bg-white p-4 text-sm text-neutral-400 lg:col-span-2">
             {isArchive
               ? "No archived workflows."
               : isVersions
@@ -276,7 +276,7 @@ export function WorkflowTemplateLibrary({
 
 function statusToneClassName(statusTone: string) {
   if (statusTone === "active") {
-    return "border-emerald-400/30 bg-emerald-400/10 text-emerald-100";
+    return "border-sky-400/30 bg-sky-400/10 text-sky-100";
   }
   if (statusTone === "inactive") {
     return "border-sky-400/30 bg-sky-400/10 text-sky-100";

@@ -107,7 +107,7 @@ export default function WorkflowCanvas({
   }
 
   return (
-    <div className="h-[68vh] min-h-[420px] min-w-0 overflow-hidden rounded-md border border-white/10 bg-[#0d1013] lg:h-[calc(100vh-250px)] lg:min-h-[640px]">
+    <div className="h-[68vh] min-h-[420px] min-w-0 overflow-hidden rounded-md border border-[#e6e6e6] bg-[#f7f7f5] lg:h-[calc(100vh-250px)] lg:min-h-[640px]">
       <ReactFlow
         key={canvasInstanceKey}
         nodes={nodes}
@@ -136,9 +136,9 @@ export default function WorkflowCanvas({
         }}
         onEdgeClick={(_, edge) => onEdgeSelect(edge.id)}
         onPaneClick={onClearSelection}
-        colorMode="dark"
+        colorMode="light"
       >
-        <Background color="#27313a" gap={18} />
+        <Background color="#d9d9d9" gap={18} />
         <Controls />
       </ReactFlow>
     </div>
@@ -163,7 +163,7 @@ function toFlowNodes(
               {node.label}
             </p>
             {getNodeRuntimeStatus(node, runtimeTask) && (
-              <span className="shrink-0 rounded border border-white/15 bg-black/20 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-normal">
+              <span className="shrink-0 rounded border border-[#d9d9d9] bg-[#f2f2f2] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-normal">
                 {formatRuntimeStatus(getNodeRuntimeStatus(node, runtimeTask))}
               </span>
             )}
@@ -198,16 +198,16 @@ function toFlowEdges(graph: WorkflowGraph, selectedEdgeId?: string | null): Flow
     style: {
       stroke:
         selectedEdgeId === edge.id
-          ? "#f8fafc"
+          ? "#231f20"
           : edge.branchType === "for_information"
-            ? "#38bdf8"
+            ? "#7b791c"
             : edge.branchType === "condition"
-              ? "#f59e0b"
-              : "#6ee7b7",
+              ? "#f7941d"
+              : "#7b791c",
       strokeWidth: selectedEdgeId === edge.id ? 4 : 2,
     },
-    labelStyle: { fill: "#e5e7eb", fontSize: 12 },
-    labelBgStyle: { fill: "#121518", fillOpacity: 0.92 },
+    labelStyle: { fill: "#231f20", fontSize: 12 },
+    labelBgStyle: { fill: "#ffffff", fillOpacity: 0.96 },
   }));
 }
 
@@ -284,39 +284,39 @@ function getWorkflowNodeStyle(
   highlighted = false,
 ): React.CSSProperties {
   const palette: Record<WorkflowNodeKind, { bg: string; border: string; color: string }> = {
-    start: { bg: "#0f172a", border: "#64748b", color: "#f8fafc" },
-    submit_request: { bg: "#1e3a8a", border: "#60a5fa", color: "#dbeafe" },
-    approval: { bg: "#064e3b", border: "#34d399", color: "#d1fae5" },
-    review: { bg: "#312e81", border: "#a5b4fc", color: "#e0e7ff" },
-    for_information: { bg: "#164e63", border: "#38bdf8", color: "#cffafe" },
-    condition: { bg: "#713f12", border: "#fbbf24", color: "#fef3c7" },
-    return_reject: { bg: "#4c0519", border: "#fb7185", color: "#ffe4e6" },
-    end: { bg: "#3f3f46", border: "#a1a1aa", color: "#fafafa" },
+    start: { bg: "#f2f2f2", border: "#8a8a8a", color: "#231f20" },
+    submit_request: { bg: "#ffffff", border: "#f7941d", color: "#231f20" },
+    approval: { bg: "#ffffff", border: "#7b791c", color: "#231f20" },
+    review: { bg: "#ffffff", border: "#7b791c", color: "#231f20" },
+    for_information: { bg: "#f7f7f5", border: "#7b791c", color: "#231f20" },
+    condition: { bg: "#fff8ef", border: "#f7941d", color: "#231f20" },
+    return_reject: { bg: "#fff7f7", border: "#be4455", color: "#5c1721" },
+    end: { bg: "#f2f2f2", border: "#8a8a8a", color: "#231f20" },
   };
   const tone = palette[node.kind];
   const statusBorder =
     highlighted
-      ? "#f8fafc"
+      ? "#231f20"
       : status === "current"
-        ? "#facc15"
+        ? "#f7941d"
         : status === "completed"
-          ? "#22c55e"
+          ? "#7b791c"
           : status === "notified"
-            ? "#38bdf8"
+            ? "#7b791c"
             : tone.border;
 
   return {
     background: tone.bg,
     border: `2px solid ${statusBorder}`,
     color: tone.color,
-    borderRadius: 8,
+    borderRadius: 6,
     padding: 12,
     width: 190,
     boxShadow: highlighted
-      ? "0 0 0 4px rgba(248, 250, 252, 0.18), 0 10px 24px rgba(0,0,0,0.24)"
+      ? "0 0 0 3px rgba(35, 31, 32, 0.12), 0 4px 12px rgba(35,31,32,0.10)"
       : status === "current"
-        ? "0 0 0 3px rgba(250, 204, 21, 0.14), 0 10px 24px rgba(0,0,0,0.24)"
-        : "0 10px 24px rgba(0,0,0,0.24)",
+        ? "0 0 0 3px rgba(247, 148, 29, 0.14), 0 4px 12px rgba(35,31,32,0.10)"
+        : "0 4px 12px rgba(35,31,32,0.10)",
   };
 }
 

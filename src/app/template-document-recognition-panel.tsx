@@ -509,7 +509,7 @@ export function TemplateDocumentRecognitionPanel({
   }
 
   return (
-    <div className="mt-3 rounded-md border border-white/10 bg-[#0d1012] p-3">
+    <div className="mt-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -550,7 +550,7 @@ export function TemplateDocumentRecognitionPanel({
             {parseResult.suggestedFields.map((suggestion, index) => (
               <div
                 key={`${suggestion.name}-${index}`}
-                className="rounded-md border border-white/10 bg-[#101214] p-2"
+                className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -584,8 +584,8 @@ export function TemplateDocumentRecognitionPanel({
       ) : null}
 
       {hasSampleRecognitionSource && (
-        <div className="mt-3 rounded-md border border-white/10 bg-[#101214] p-2">
-          <div className="mb-3 rounded-md border border-white/10 bg-[#0d1012] p-2">
+        <div className="mt-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2">
+          <div className="mb-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2">
             <p className="text-xs font-semibold text-neutral-300">
               Saved sample fields
             </p>
@@ -627,7 +627,7 @@ export function TemplateDocumentRecognitionPanel({
                     setHighlightRect(null);
                     setFieldAnchor(null);
                   }}
-                  className="mt-2 h-8 rounded-md border border-white/10 bg-[#0d1012] px-2 text-xs outline-none"
+                  className="mt-2 h-8 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none"
                 >
                   {previewPages.map((page) => (
                     <option key={page.id} value={page.id}>
@@ -636,7 +636,7 @@ export function TemplateDocumentRecognitionPanel({
                   ))}
                 </select>
               )}
-              <div className="mt-2 max-h-80 overflow-auto rounded-md border border-white/10 bg-black/20 p-2">
+              <div className="mt-2 max-h-80 overflow-auto rounded-md border border-[#e6e6e6] bg-[#f2f2f2] p-2">
                 <div
                   className="relative overflow-hidden"
                   style={{
@@ -666,7 +666,7 @@ export function TemplateDocumentRecognitionPanel({
               </div>
             </>
           ) : (
-            <p className="mt-2 rounded-md border border-white/10 bg-[#0d1012] px-2 py-2 text-xs text-neutral-400">
+            <p className="mt-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-2 text-xs text-neutral-400">
               Saved sample text is available for AI recognition. Upload the
               sample again to use Manual Extract.
             </p>
@@ -677,7 +677,7 @@ export function TemplateDocumentRecognitionPanel({
               <select
                 value={effectiveSelectedFieldName}
                 onChange={(event) => selectTrainingField(event.target.value)}
-                className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs text-neutral-100 outline-none"
+                className="h-8 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs text-neutral-100 outline-none"
               >
                 {document.fields.map((field) => (
                   <option key={field.name} value={field.name}>
@@ -695,7 +695,7 @@ export function TemplateDocumentRecognitionPanel({
                   persistTrainingDraft({ newFieldLabel: event.target.value });
                 }}
                 placeholder="New field name"
-                className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
+                className="h-8 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none"
               />
             )}
             <label className="grid gap-1 text-xs text-neutral-400">
@@ -710,7 +710,7 @@ export function TemplateDocumentRecognitionPanel({
                   persistTrainingDraft({ instructions: event.target.value });
                 }}
                 placeholder="Instruction"
-                className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
+                className="h-8 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none"
               />
             </label>
             <label className="grid gap-1 text-xs text-neutral-400">
@@ -725,7 +725,7 @@ export function TemplateDocumentRecognitionPanel({
                   persistTrainingDraft({ value: event.target.value });
                 }}
                 placeholder="Sample value"
-                className="h-8 rounded-md border border-white/10 bg-[#121518] px-2 text-xs outline-none"
+                className="h-8 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none"
               />
             </label>
             {fieldAnchor && (
@@ -774,8 +774,8 @@ export function TemplateDocumentRecognitionPanel({
           aria-label="Large extraction selector"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
         >
-          <div className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-md border border-white/10 bg-[#101214] shadow-2xl">
-            <div className="flex items-start justify-between gap-3 border-b border-white/10 p-3">
+          <div className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-md border border-[#e6e6e6] bg-[#f7f7f5] shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-[#e6e6e6] p-3">
               <div>
                 <p className="text-sm font-semibold text-neutral-100">
                   Large extraction selector
@@ -787,12 +787,12 @@ export function TemplateDocumentRecognitionPanel({
               <button
                 type="button"
                 onClick={() => setIsBoxSelectorOpen(false)}
-                className="flex size-8 shrink-0 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:bg-white/5"
+                className="flex size-8 shrink-0 items-center justify-center rounded-md border border-[#e6e6e6] text-neutral-300 hover:bg-[#f2f2f2]"
               >
                 <X size={14} />
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-3 border-b border-white/10 p-3">
+            <div className="flex flex-wrap items-center gap-3 border-b border-[#e6e6e6] p-3">
               {previewPages.length > 1 && (
                 <select
                   value={selectedPreviewPage.id}
@@ -800,7 +800,7 @@ export function TemplateDocumentRecognitionPanel({
                     setSelectedPreviewPageId(event.target.value);
                     setHighlightRect(null);
                   }}
-                  className="h-8 rounded-md border border-white/10 bg-[#0d1012] px-2 text-xs outline-none"
+                  className="h-8 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none"
                 >
                   {previewPages.map((page) => (
                     <option key={page.id} value={page.id}>
@@ -855,11 +855,11 @@ export function TemplateDocumentRecognitionPanel({
                 )}
               </div>
             </div>
-            <div className="grid gap-2 border-t border-white/10 p-3 sm:grid-cols-2">
+            <div className="grid gap-2 border-t border-[#e6e6e6] p-3 sm:grid-cols-2">
               <button
                 type="button"
                 onClick={() => setIsBoxSelectorOpen(false)}
-                className="flex h-9 items-center justify-center rounded-md border border-white/10 text-xs text-neutral-200 hover:bg-white/5"
+                className="flex h-9 items-center justify-center rounded-md border border-[#e6e6e6] text-xs text-neutral-200 hover:bg-[#f2f2f2]"
               >
                 Cancel
               </button>

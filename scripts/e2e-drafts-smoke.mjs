@@ -19,7 +19,7 @@ try {
   if (!email || !password) {
     await page.goto(`${appUrl}/?tab=drafts`, { waitUntil: "domcontentloaded" });
     await page.waitForURL(/\/login/, { timeout: 10_000 });
-    await expectText(page, "Approval App");
+    await expectText(page, "Approvals");
     console.log("Drafts smoke auth gate passed. Set E2E_EMAIL and E2E_PASSWORD for authenticated flow.");
     process.exitCode = 0;
   } else {

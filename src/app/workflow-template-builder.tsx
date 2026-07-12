@@ -41,7 +41,7 @@ export function WorkflowTemplateBuilder({
     });
 
   return (
-    <section className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+    <section className="rounded-md border border-[#e6e6e6] bg-white p-4">
       <div className="flex items-center gap-2">
         <h2 className="font-semibold">Builder</h2>
         <InfoTip label="Add boxes on the Canvas tab, then select a box to set people, due hours, escalation, and documents." />
@@ -52,7 +52,7 @@ export function WorkflowTemplateBuilder({
           <input
             value={templateName}
             onChange={(event) => setTemplateName(event.target.value)}
-            className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+            className="h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
           />
         </label>
         <label className="block">
@@ -65,7 +65,7 @@ export function WorkflowTemplateBuilder({
                 getDepartmentForBusiness(businessDirectory, event.target.value),
               );
             }}
-            className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+            className="h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
           >
             {businessDirectory.map((business) => (
               <option key={business.id} value={business.id}>
@@ -80,7 +80,7 @@ export function WorkflowTemplateBuilder({
             <select
               value={departmentName}
               onChange={(event) => setDepartmentName(event.target.value)}
-              className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+              className="h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
             >
               {departmentOptions.map((department) => (
                 <option key={department} value={department}>
@@ -93,7 +93,7 @@ export function WorkflowTemplateBuilder({
               value={departmentName}
               onChange={(event) => setDepartmentName(event.target.value)}
               placeholder="Add department"
-              className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
+              className="h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
             />
           )}
         </label>
@@ -102,7 +102,7 @@ export function WorkflowTemplateBuilder({
           <select
             value={baseTemplateId}
             onChange={(event) => setBaseTemplateId(event.target.value)}
-            className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+            className="h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
           >
             <option value="">Blank workflow</option>
             {baseTemplates.map((template) => (

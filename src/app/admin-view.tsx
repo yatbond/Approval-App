@@ -165,8 +165,8 @@ export function AdminView({
 
   return (
     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(260px,320px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)_minmax(280px,340px)]">
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
+      <section className="rounded-md border border-[#e6e6e6] bg-white">
+        <div className="border-b border-[#e6e6e6] p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Businesses</h2>
             <InfoTip label="Superuser master list for workflow template ownership." />
@@ -186,7 +186,7 @@ export function AdminView({
               className={`block min-h-11 w-full rounded-md border p-3 text-left text-sm transition ${
                 selectedBusiness?.id === business.id
                   ? "border-emerald-400/40 bg-emerald-400/10"
-                  : "border-white/10 bg-[#121518] hover:border-white/20"
+                  : "border-[#e6e6e6] bg-white hover:border-[#d2d2d2]"
               }`}
             >
               <span className="block break-words font-medium">{business.name}</span>
@@ -200,7 +200,7 @@ export function AdminView({
               value={newBusinessName}
               onChange={(event) => setNewBusinessName(event.target.value)}
               placeholder="New"
-              className="min-h-11 min-w-0 rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
+              className="min-h-11 min-w-0 rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
             />
             <button
               type="button"
@@ -214,8 +214,8 @@ export function AdminView({
         </div>
       </section>
 
-      <section className="rounded-md border border-white/10 bg-white/[0.03]">
-        <div className="border-b border-white/10 p-4">
+      <section className="rounded-md border border-[#e6e6e6] bg-white">
+        <div className="border-b border-[#e6e6e6] p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Departments</h2>
             <InfoTip
@@ -233,7 +233,7 @@ export function AdminView({
               <input
                 value={businessNameDraft}
                 onChange={(event) => setBusinessNameDraft(event.target.value)}
-                className="min-h-11 min-w-0 rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+                className="min-h-11 min-w-0 rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
               />
               <button
                 type="button"
@@ -257,7 +257,7 @@ export function AdminView({
               {selectedBusiness.departments.map((department, index) => (
                 <div
                   key={`${selectedBusiness.id}-${department}-${index}`}
-                  className="grid gap-2 rounded-md border border-white/10 bg-[#121518] p-3 md:grid-cols-[1fr_auto]"
+                  className="grid gap-2 rounded-md border border-[#e6e6e6] bg-white p-3 md:grid-cols-[1fr_auto]"
                 >
                   <input
                     defaultValue={department}
@@ -271,7 +271,7 @@ export function AdminView({
                         ),
                       )
                     }
-                    className="min-h-11 min-w-0 rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                    className="min-h-11 min-w-0 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
                   />
                   <button
                     type="button"
@@ -290,7 +290,7 @@ export function AdminView({
                 value={newDepartmentName}
                 onChange={(event) => setNewDepartmentName(event.target.value)}
                 placeholder="New"
-                className="min-h-11 min-w-0 rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
+                className="min-h-11 min-w-0 rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
               />
               <button
                 type="button"
@@ -306,7 +306,7 @@ export function AdminView({
       </section>
 
       <section className="space-y-4">
-        <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+        <div className="rounded-md border border-[#e6e6e6] bg-white p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Users</h2>
             <InfoTip label="Lightweight roles inferred from requests and workflow templates." />
@@ -315,7 +315,7 @@ export function AdminView({
             {userDirectory.slice(0, 10).map((user) => (
               <div
                 key={user.email}
-                className="rounded-md border border-white/10 bg-[#121518] p-2 text-sm"
+                className="rounded-md border border-[#e6e6e6] bg-white p-2 text-sm"
               >
                 <p className="break-words text-neutral-200">{user.name}</p>
                 <p className="mt-1 break-words text-xs text-neutral-500">
@@ -325,7 +325,7 @@ export function AdminView({
             ))}
           </div>
         </div>
-        <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+        <div className="rounded-md border border-[#e6e6e6] bg-white p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Roles</h2>
             <InfoTip label="Assign business, department, and workflow role for routing." />
@@ -339,7 +339,7 @@ export function AdminView({
               return (
                 <div
                   key={assignment.email}
-                  className="space-y-2 rounded-md border border-white/10 bg-[#121518] p-3"
+                  className="space-y-2 rounded-md border border-[#e6e6e6] bg-white p-3"
                 >
                   <p className="break-words text-sm font-medium text-neutral-200">
                     {assignment.name}
@@ -362,7 +362,7 @@ export function AdminView({
                         ),
                       )
                     }
-                    className="min-h-11 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                    className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
                   >
                     {userRoleOptions.map((role) => (
                       <option key={role} value={role}>
@@ -389,7 +389,7 @@ export function AdminView({
                         ),
                       );
                     }}
-                    className="min-h-11 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                    className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
                   >
                     {businessDirectory.map((business) => (
                       <option key={business.id} value={business.id}>
@@ -409,7 +409,7 @@ export function AdminView({
                         ),
                       )
                     }
-                    className="min-h-11 w-full rounded-md border border-white/10 bg-[#101214] px-3 text-sm outline-none focus:border-emerald-400/60"
+                    className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
                   >
                     {(assignedBusiness?.departments || []).map((department) => (
                       <option key={department} value={department}>
@@ -422,7 +422,7 @@ export function AdminView({
             })}
           </div>
         </div>
-        <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+        <div className="rounded-md border border-[#e6e6e6] bg-white p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Legacy</h2>
             <InfoTip label="Existing department labels still available to older mock data." />
@@ -431,7 +431,7 @@ export function AdminView({
             {legacyDepartments.length} label(s)
           </p>
         </div>
-        <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+        <div className="rounded-md border border-[#e6e6e6] bg-white p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Email</h2>
             <InfoTip label="Send a test email before routing workflow tasks to real inboxes." />
@@ -444,7 +444,7 @@ export function AdminView({
               value={testEmail}
               onChange={(event) => setTestEmail(event.target.value)}
               placeholder="recipient@example.com"
-              className="min-h-11 rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+              className="min-h-11 rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
             />
             <button
               type="button"
@@ -464,7 +464,7 @@ export function AdminView({
             </button>
           </div>
           {emailDeliveryMessage ? (
-            <p className="mt-3 break-words rounded-md border border-white/10 bg-[#121518] p-3 text-xs text-neutral-300">
+            <p className="mt-3 break-words rounded-md border border-[#e6e6e6] bg-white p-3 text-xs text-neutral-300">
               {emailDeliveryMessage}
             </p>
           ) : null}
@@ -479,7 +479,7 @@ export function AdminView({
               {emailOutboxEntries.slice(0, 10).map((entry) => (
                 <div
                   key={entry.id}
-                  className="rounded-md border border-white/10 bg-[#121518] p-3 text-xs"
+                  className="rounded-md border border-[#e6e6e6] bg-white p-3 text-xs"
                 >
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
@@ -493,7 +493,7 @@ export function AdminView({
                     <span
                       className={`w-fit rounded border px-2 py-1 ${
                         entry.status === "sent"
-                          ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+                          ? "border-sky-400/30 bg-sky-400/10 text-sky-100"
                           : entry.status === "failed"
                             ? "border-rose-400/30 bg-rose-400/10 text-rose-100"
                             : "border-yellow-400/30 bg-yellow-400/10 text-yellow-100"
@@ -509,21 +509,21 @@ export function AdminView({
                 </div>
               ))}
               {!emailOutboxEntries.length && (
-                <p className="rounded-md border border-white/10 bg-[#121518] p-3 text-xs text-neutral-500">
+                <p className="rounded-md border border-[#e6e6e6] bg-white p-3 text-xs text-neutral-500">
                   No emails yet.
                 </p>
               )}
             </div>
           </div>
         </div>
-        <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+        <div className="rounded-md border border-[#e6e6e6] bg-white p-4">
           <h2 className="font-semibold">Alerts</h2>
           <div className="mt-3 space-y-2">
             {taskNotifications.slice(0, 12).map((item) => (
               <Link
                 key={item.id}
                 href={`/?tab=tracking&request=${encodeURIComponent(item.requestId)}`}
-                className="block rounded-md border border-white/10 bg-[#121518] p-3 transition hover:border-sky-400/40"
+                className="block rounded-md border border-[#e6e6e6] bg-white p-3 transition hover:border-sky-400/40"
               >
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-medium">{item.title}</p>
@@ -538,7 +538,7 @@ export function AdminView({
             {notifications.map((item) => (
               <div
                 key={item.id}
-                className="rounded-md border border-white/10 bg-[#121518] p-3"
+                className="rounded-md border border-[#e6e6e6] bg-white p-3"
               >
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-medium">{item.title}</p>
@@ -551,7 +551,7 @@ export function AdminView({
           </div>
         </div>
 
-        <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+        <div className="rounded-md border border-[#e6e6e6] bg-white p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Audit</h2>
             <InfoTip label="Recent template create, publish, duplicate, and archive actions." />
@@ -560,7 +560,7 @@ export function AdminView({
             {adminAuditEvents.slice(0, 8).map((event) => (
               <div
                 key={event.id}
-                className="rounded-md border border-white/10 bg-[#121518] p-3"
+                className="rounded-md border border-[#e6e6e6] bg-white p-3"
               >
                 <p className="break-words text-sm font-medium text-neutral-200">
                   {event.detail}
@@ -571,28 +571,28 @@ export function AdminView({
               </div>
             ))}
             {!adminAuditEvents.length && (
-              <p className="rounded-md border border-white/10 bg-[#121518] p-3 text-sm text-neutral-500">
+              <p className="rounded-md border border-[#e6e6e6] bg-white p-3 text-sm text-neutral-500">
                 No audit yet.
               </p>
             )}
           </div>
         </div>
 
-        <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+        <div className="rounded-md border border-[#e6e6e6] bg-white p-4">
           <h2 className="font-semibold">Delegation</h2>
           <div className="mt-3 space-y-3">
             <label className="block">
               <span className="mb-1 block text-xs text-neutral-400">To</span>
               <input
                 defaultValue="Alex Ho"
-                className="min-h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+                className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
               />
             </label>
             <label className="block">
               <span className="mb-1 block text-xs text-neutral-400">Period</span>
               <input
                 defaultValue="2026-06-19 to 2026-06-26"
-                className="min-h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none focus:border-emerald-400/60"
+                className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
               />
             </label>
             <button

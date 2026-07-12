@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Approval App",
-  description: "Configurable approval workflow platform",
+  title: "Chun Wo Approvals",
+  description: "Chun Wo approval workflow platform",
 };
 
 export default function RootLayout({
