@@ -10,7 +10,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/*.test.mjs",
-    "e2e:drafts": "node scripts/e2e-drafts-smoke.mjs"
+    "e2e:drafts": "node scripts/e2e-drafts-smoke.mjs",
+    "e2e:regression": "node scripts/e2e-regression.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
