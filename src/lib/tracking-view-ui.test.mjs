@@ -7,9 +7,11 @@ const taskViewsSource = await readFile(
   "utf8",
 );
 
-test("tracking detail control jumps to path and history", () => {
-  assert.match(taskViewsSource, /#tracking-path-history/);
-  assert.match(taskViewsSource, /View path &amp; history/);
+test("tracking detail control expands and collapses path history", () => {
+  assert.match(taskViewsSource, /expandedHistoryTaskId/);
+  assert.match(taskViewsSource, /aria-expanded=\{historyExpanded\}/);
+  assert.match(taskViewsSource, /"View history"/);
+  assert.match(taskViewsSource, /"Hide history"/);
   assert.match(taskViewsSource, /id="tracking-path-history"/);
   assert.doesNotMatch(taskViewsSource, />\s*Open detail\s*</);
 });

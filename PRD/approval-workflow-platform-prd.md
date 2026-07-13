@@ -604,7 +604,7 @@ The request detail combines path and history:
 - rejected activity is shown in red history;
 - unreached or reset downstream boxes are visually neutral;
 - relevant audit events appear within or alongside the stage they describe.
-- **View path & history** scrolls directly to this combined section for the selected request.
+- **View history** expands the selected request's combined workflow path and audit history; **Hide history** collapses it again.
 
 History records actor, timestamp, event type, message, notes, assignment changes, contributions, corrections, and relevant routing outcomes.
 

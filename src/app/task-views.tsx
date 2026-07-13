@@ -5,6 +5,8 @@ import {
   AlertTriangle,
   ArrowRightLeft,
   Check,
+  ChevronDown,
+  ChevronUp,
   MessageSquare,
   RotateCcw,
   Send,
@@ -12,7 +14,6 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
-import Link from "next/link";
 import {
   acceptForDocumentFormat,
   formatDocumentFormat,
@@ -768,6 +769,8 @@ export function TrackingView({
     : undefined;
   const userByEmail = new Map(userDirectory.map((user) => [user.email, user]));
   const [handoffPanelExpanded, setHandoffPanelExpanded] = useState(false);
+  const [expandedHistoryTaskId, setExpandedHistoryTaskId] = useState("");
+  const historyExpanded = expandedHistoryTaskId === selectedTask?.id;
 
   return (
     <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
@@ -783,7 +786,10 @@ export function TrackingView({
             <button
               key={task.id}
               type="button"
-              onClick={() => setSelectedTaskId(task.id)}
+              onClick={() => {
+                setExpandedHistoryTaskId("");
+                setSelectedTaskId(task.id);
+              }}
               className={`block w-full p-4 text-left transition ${
                 selectedTask?.id === task.id ? "bg-emerald-400/10" : "hover:bg-[#f7f7f5]"
               }`}
@@ -816,13 +822,19 @@ export function TrackingView({
                   <p className="text-sm text-neutral-400">
                     {selectedTask.workflow} - requested by {selectedTask.requester}
                   </p>
-                  <Link
-                    href={`/?tab=tracking&request=${encodeURIComponent(selectedTask.id)}#tracking-path-history`}
-                    title="Jump to this request's workflow path and audit history"
-                    className="mt-2 inline-flex min-h-11 items-center rounded-md border border-sky-400/40 bg-sky-400/12 px-3 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20"
+                  <button
+                    type="button"
+                    aria-controls="tracking-path-history"
+                    aria-expanded={historyExpanded}
+                    title={historyExpanded ? "Hide workflow history" : "View workflow history"}
+                    onClick={() =>
+                      setExpandedHistoryTaskId(historyExpanded ? "" : selectedTask.id)
+                    }
+                    className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-md border border-[#d2d2d2] bg-white px-3 py-2 text-sm font-medium text-neutral-200 transition hover:border-[#f7941d] hover:bg-[#fff4e5]"
                   >
-                    View path &amp; history
-                  </Link>
+                    {historyExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    {historyExpanded ? "Hide history" : "View history"}
+                  </button>
                 </div>
                 <StatusBadge status={selectedTask.status} />
               </div>
@@ -881,7 +893,13 @@ export function TrackingView({
                 onSubmitCorrectionUpload={onSubmitCorrectionUpload}
               />
             </div>
-            <TaskPathAndHistory task={selectedTask} template={selectedTemplate} />
+            {historyExpanded ? (
+              <TaskPathAndHistory
+                task={selectedTask}
+                template={selectedTemplate}
+                onCollapse={() => setExpandedHistoryTaskId("")}
+              />
+            ) : null}
           </>
         ) : (
           <div className="p-5 text-sm text-neutral-400">No tracked requests.</div>
@@ -1161,9 +1179,11 @@ function VisibilityChips({
 function TaskPathAndHistory({
   task,
   template,
+  onCollapse,
 }: {
   task: ApprovalTask;
   template?: WorkflowTemplate;
+  onCollapse: () => void;
 }) {
   const stages = template
     ? buildWorkflowPathStages(createWorkflowGraphFromTemplate(template))
@@ -1173,11 +1193,22 @@ function TaskPathAndHistory({
 
   return (
     <div id="tracking-path-history" className="scroll-mt-4 border-t border-[#e6e6e6] p-4">
-      <div className="mb-4">
-        <h3 className="text-sm font-semibold text-neutral-300">Path and history</h3>
-        <p className="mt-1 text-xs text-neutral-500">
-          Each box shows its workflow status and related history.
-        </p>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-neutral-300">History</h3>
+          <p className="mt-1 text-xs text-neutral-500">
+            Each workflow box shows its status and related history.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onCollapse}
+          title="Hide workflow history"
+          className="inline-flex min-h-10 items-center justify-center gap-2 self-start rounded-md border border-[#d2d2d2] bg-white px-3 py-2 text-sm font-medium text-neutral-200 transition hover:border-[#f7941d] hover:bg-[#fff4e5]"
+        >
+          <ChevronUp size={16} />
+          Hide history
+        </button>
       </div>
 
       {stages.length ? (
