@@ -19,6 +19,55 @@ export type AttachmentUploadPayload = {
   publicUrl?: string;
 };
 
+export async function downloadWorkspaceAttachmentFile({
+  storagePath,
+  fileName,
+  fetcher = fetch,
+}: {
+  storagePath: string;
+  fileName: string;
+  fetcher?: WorkspaceFetch;
+}) {
+  const response = await fetcher(
+    `/api/attachments/file?path=${encodeURIComponent(storagePath)}`,
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: string;
+    };
+    throw new Error(payload.error || "Unable to reopen the stored document.");
+  }
+
+  const blob = await response.blob();
+  return new File([blob], fileName, {
+    type:
+      blob.type ||
+      response.headers.get("content-type") ||
+      "application/octet-stream",
+  });
+}
+
+export async function deleteWorkspaceAttachmentFile({
+  storagePath,
+  fetcher = fetch,
+}: {
+  storagePath: string;
+  fetcher?: WorkspaceFetch;
+}) {
+  const response = await fetcher(
+    `/api/attachments/file?path=${encodeURIComponent(storagePath)}`,
+    { method: "DELETE" },
+  );
+  const payload = (await response.json().catch(() => ({}))) as {
+    error?: string;
+  };
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Unable to delete the stored document.");
+  }
+}
+
 export type ParsedWorkspaceFilePayload = {
   strategy: string;
   fields: Record<string, string>;

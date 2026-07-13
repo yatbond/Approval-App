@@ -11,6 +11,7 @@ import {
   Plus,
   Send,
   Save,
+  ScanSearch,
   Trash2,
   X,
   Upload,
@@ -159,6 +160,8 @@ export function UploadView({
   documentPreviewPages,
   onExtractHighlightedRegion,
   uploadedAttachments,
+  onEditAttachment,
+  onRemoveAttachment,
   uploadDraftStatus,
   savedUploadDrafts,
   selectedUploadDraftId,
@@ -205,6 +208,8 @@ export function UploadView({
     field: WorkflowField,
   ) => Promise<ParsedWorkspaceFilePayload>;
   uploadedAttachments: ApprovalAttachment[];
+  onEditAttachment: (attachment: ApprovalAttachment) => Promise<boolean>;
+  onRemoveAttachment: (attachment: ApprovalAttachment) => Promise<void>;
   uploadDraftStatus: UploadRequestDraftStatus;
   savedUploadDrafts: SavedUploadRequestDraft[];
   selectedUploadDraftId: string;
@@ -266,6 +271,8 @@ export function UploadView({
   const [fieldInputMode, setFieldInputMode] = useState<
     "suggested" | "boxed" | "manual"
   >("suggested");
+  const [openingAttachmentId, setOpeningAttachmentId] = useState("");
+  const currentRequestInformationRef = useRef<HTMLElement>(null);
   const lastRestoredDraftToken = useRef("");
   const lastResetToken = useRef(uploadDraftResetToken);
   const [enhancedPreview, setEnhancedPreview] = useState({
@@ -609,6 +616,25 @@ export function UploadView({
     }
   }
 
+  async function editAttachmentExtraction(attachment: ApprovalAttachment) {
+    setOpeningAttachmentId(attachment.id);
+    try {
+      const didOpen = await onEditAttachment(attachment);
+      if (!didOpen) {
+        return;
+      }
+      setFieldInputMode("boxed");
+      window.setTimeout(() => {
+        currentRequestInformationRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 0);
+    } finally {
+      setOpeningAttachmentId("");
+    }
+  }
+
   function renderUploadDocumentRequirement(
     document: WorkflowDocumentRequirement,
     helperText?: string,
@@ -814,18 +840,50 @@ export function UploadView({
                   key={attachment.id}
                   className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2 text-xs"
                 >
-                  <p className="break-words text-neutral-200">{attachment.fileName}</p>
-                  <p className="mt-1 text-neutral-500">
-                    {attachment.documentType}
-                    {attachment.workflowNodeId
-                      ? ` - ${attachment.workflowNodeId}`
-                      : ""}
-                  </p>
-                  {attachment.storagePath && (
-                    <p className="mt-1 break-words text-emerald-200">
-                      Stored: {attachment.storagePath}
-                    </p>
-                  )}
+                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="break-words text-neutral-200">
+                        {attachment.fileName}
+                      </p>
+                      <p className="mt-1 text-neutral-500">
+                        {attachment.documentType}
+                        {attachment.workflowNodeId
+                          ? ` - ${attachment.workflowNodeId}`
+                          : ""}
+                      </p>
+                      {attachment.storagePath && (
+                        <p className="mt-1 break-words text-emerald-200">
+                          Stored: {attachment.storagePath}
+                        </p>
+                      )}
+                    </div>
+                    <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex">
+                      <button
+                        type="button"
+                        title="Reopen the stored document and edit its extraction boxes."
+                        onClick={() => void editAttachmentExtraction(attachment)}
+                        disabled={Boolean(openingAttachmentId)}
+                        className="flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-500/40 bg-sky-500/10 px-3 font-medium text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {openingAttachmentId === attachment.id ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <ScanSearch size={14} />
+                        )}
+                        Edit extraction
+                      </button>
+                      <button
+                        type="button"
+                        title="Remove this document and its extracted values from the draft."
+                        onClick={() => void onRemoveAttachment(attachment)}
+                        disabled={Boolean(openingAttachmentId)}
+                        className="flex min-h-9 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 font-medium text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Trash2 size={14} />
+                        Remove
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -919,7 +977,10 @@ export function UploadView({
         )}
       </section>
 
-      <section className="rounded-md border border-[#e6e6e6] bg-white">
+      <section
+        ref={currentRequestInformationRef}
+        className="scroll-mt-40 rounded-md border border-[#e6e6e6] bg-white"
+      >
         <div className="border-b border-[#e6e6e6] p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Current request information</h2>

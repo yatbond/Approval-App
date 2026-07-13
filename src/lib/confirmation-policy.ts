@@ -96,6 +96,19 @@ export function getDraftDeleteConfirmation({
   };
 }
 
+export function getDraftAttachmentRemoveConfirmation({
+  fileName,
+}: {
+  fileName: string;
+}): ConfirmationRequest {
+  return {
+    title: "Remove document?",
+    message: `This will remove ${quoted(fileName)} and its extracted fields from the current draft.`,
+    confirmLabel: "Remove document",
+    tone: "danger",
+  };
+}
+
 export function getWorkflowTemplateArchiveConfirmation({
   templateName,
 }: {

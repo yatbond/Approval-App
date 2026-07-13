@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   defaultParseLanguageHint,
+  deleteWorkspaceAttachmentFile,
+  downloadWorkspaceAttachmentFile,
   parseWorkspaceFile,
   uploadWorkspaceAttachmentFile,
 } from "./workspace-file-api.ts";
@@ -17,6 +19,66 @@ const documentRequirement = {
   required: true,
   fields: [],
 };
+
+test("reopens a private stored attachment as a browser file", async () => {
+  let capturedUrl = "";
+  const file = await downloadWorkspaceAttachmentFile({
+    storagePath: "user/ad-hoc/final-account.pdf",
+    fileName: "Final account.pdf",
+    fetcher: async (url) => {
+      capturedUrl = String(url);
+      return new Response(new Blob(["pdf-data"], { type: "application/pdf" }));
+    },
+  });
+
+  assert.equal(
+    capturedUrl,
+    "/api/attachments/file?path=user%2Fad-hoc%2Ffinal-account.pdf",
+  );
+  assert.equal(file.name, "Final account.pdf");
+  assert.equal(file.type, "application/pdf");
+  assert.equal(await file.text(), "pdf-data");
+});
+
+test("deletes a private stored attachment through the authenticated API", async () => {
+  let capturedUrl = "";
+  let capturedInit;
+  await deleteWorkspaceAttachmentFile({
+    storagePath: "user/ad-hoc/final-account.pdf",
+    fetcher: async (url, init) => {
+      capturedUrl = String(url);
+      capturedInit = init;
+      return Response.json({ ok: true });
+    },
+  });
+
+  assert.equal(
+    capturedUrl,
+    "/api/attachments/file?path=user%2Fad-hoc%2Ffinal-account.pdf",
+  );
+  assert.equal(capturedInit?.method, "DELETE");
+});
+
+test("reports stored attachment retrieval and deletion errors", async () => {
+  await assert.rejects(
+    downloadWorkspaceAttachmentFile({
+      storagePath: "user/ad-hoc/missing.pdf",
+      fileName: "missing.pdf",
+      fetcher: async () =>
+        Response.json({ error: "Stored document was not found." }, { status: 404 }),
+    }),
+    /Stored document was not found/,
+  );
+
+  await assert.rejects(
+    deleteWorkspaceAttachmentFile({
+      storagePath: "user/ad-hoc/missing.pdf",
+      fetcher: async () =>
+        Response.json({ error: "Delete was denied." }, { status: 403 }),
+    }),
+    /Delete was denied/,
+  );
+});
 
 test("uploads an attachment with document metadata", async () => {
   let capturedUrl = "";

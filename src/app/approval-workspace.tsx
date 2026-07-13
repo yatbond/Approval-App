@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  deleteWorkspaceAttachmentFile,
+  downloadWorkspaceAttachmentFile,
   parseWorkspaceFile,
   type ParsedWorkspaceFilePayload,
   uploadWorkspaceAttachmentFile,
@@ -90,6 +92,7 @@ import {
 import {
   getAdminRecordDeleteConfirmation,
   getApprovalActionConfirmation,
+  getDraftAttachmentRemoveConfirmation,
   getDraftDeleteConfirmation,
   getLiveEmailConfirmation,
   getSignOutConfirmation,
@@ -157,6 +160,18 @@ const uploadRequestCurrentAutosaveIdStoragePrefix =
 const uploadRequestActiveDraftIdStoragePrefix =
   "approval-upload-active-draft-id-v1";
 const remoteUploadAutosaveDelayMs = 12_000;
+
+async function buildDocumentPreviewPages(file: File) {
+  if (isPdfFile(file)) {
+    return buildPreviewPagesFromPdfImages(
+      await renderPdfFileToPageImages(file, getPdfPreviewRenderOptions()),
+    );
+  }
+  if (file.type.startsWith("image/")) {
+    return [await readImageFileAsPreviewPage(file)];
+  }
+  return [];
+}
 
 export type ApprovalWorkspaceProps = {
   initialTab: Tab;
@@ -952,6 +967,130 @@ function ApprovalWorkspaceBody({
     setSubmissionMessage("");
   }
 
+  async function openUploadAttachmentForEditing(
+    attachment: ApprovalAttachment,
+  ) {
+    const row = uploadRequestDraftRows.find((item) =>
+      item.uploadedAttachments.some(
+        (itemAttachment) => itemAttachment.id === attachment.id,
+      ),
+    );
+    if (row?.documentPreviewPages.length) {
+      selectUploadRequestDraftRow(row.id);
+      return true;
+    }
+    if (!attachment.storagePath) {
+      setParseError("This saved document has no stored file reference to reopen.");
+      return false;
+    }
+
+    setIsParsing(true);
+    setParseError("");
+    setSubmissionMessage("");
+    try {
+      const storedFile = await downloadWorkspaceAttachmentFile({
+        storagePath: attachment.storagePath,
+        fileName: attachment.fileName,
+      });
+      const previewPages = await buildDocumentPreviewPages(storedFile);
+      if (!previewPages.length) {
+        throw new Error("Extraction boxes are available for PDF and image documents.");
+      }
+
+      if (row) {
+        const nextRow = { ...row, documentPreviewPages: previewPages };
+        setUploadRequestDraftRows((rows) =>
+          rows.map((item) => (item.id === row.id ? nextRow : item)),
+        );
+        setSelectedUploadRequestDraftRowId(nextRow.id);
+        setFileName(nextRow.fileName);
+        setParseResult(nextRow.parseResult);
+        setEditedFields(nextRow.editedFields);
+        setUploadedAttachments(nextRow.uploadedAttachments);
+        setParsedDocumentId(nextRow.parsedDocumentId);
+      } else {
+        setFileName(attachment.fileName);
+      }
+      setDocumentPreviewPages(previewPages);
+      setUploadDraftMessage(
+        `Opened "${attachment.fileName}" for extraction editing.`,
+      );
+      return true;
+    } catch (error) {
+      setParseError(
+        error instanceof Error
+          ? error.message
+          : "Unable to reopen the stored document.",
+      );
+      return false;
+    } finally {
+      setIsParsing(false);
+    }
+  }
+
+  async function removeUploadAttachment(attachment: ApprovalAttachment) {
+    const confirmed = await requestConfirmation(
+      getDraftAttachmentRemoveConfirmation({ fileName: attachment.fileName }),
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const removedRow = uploadRequestDraftRows.find((row) =>
+      row.uploadedAttachments.some((item) => item.id === attachment.id),
+    );
+    const remainingRows = removedRow
+      ? uploadRequestDraftRows.filter((row) => row.id !== removedRow.id)
+      : uploadRequestDraftRows;
+    setUploadRequestDraftRows(remainingRows);
+
+    if (removedRow?.id === selectedUploadRequestDraftRowId) {
+      const nextRow = remainingRows[0];
+      if (nextRow) {
+        setSelectedUploadRequestDraftRowId(nextRow.id);
+        setFileName(nextRow.fileName);
+        setParseResult(nextRow.parseResult);
+        setEditedFields(nextRow.editedFields);
+        setUploadedAttachments(nextRow.uploadedAttachments);
+        setParsedDocumentId(nextRow.parsedDocumentId);
+        setDocumentPreviewPages(nextRow.documentPreviewPages);
+      } else {
+        setSelectedUploadRequestDraftRowId("");
+        setFileName("");
+        setParseResult(null);
+        setEditedFields({});
+        setUploadedAttachments([]);
+        setParsedDocumentId(undefined);
+        setDocumentPreviewPages([]);
+        setUploadHighlightGroups([]);
+        setUploadActiveHighlightGroupId("");
+        setUploadHighlightBoxCounter(1);
+        setUploadDraftResetToken((value) => value + 1);
+      }
+    } else {
+      setUploadedAttachments((items) =>
+        items.filter((item) => item.id !== attachment.id),
+      );
+    }
+
+    setUploadDraftMessage(`Removed "${attachment.fileName}" from this draft.`);
+    if (!attachment.storagePath) {
+      return;
+    }
+
+    try {
+      await deleteWorkspaceAttachmentFile({
+        storagePath: attachment.storagePath,
+      });
+    } catch (error) {
+      setUploadDraftMessage(
+        error instanceof Error
+          ? `Removed from the draft. Stored file cleanup failed: ${error.message}`
+          : "Removed from the draft. Stored file cleanup failed.",
+      );
+    }
+  }
+
   async function recordAction(
     action: ApprovalAction,
     returnTargetNodeIds: string[] = [],
@@ -1432,18 +1571,10 @@ function ApprovalWorkspaceBody({
     }
 
     try {
-      const pdfPreviewImages = isPdfFile(file)
-        ? await renderPdfFileToPageImages(file, getPdfPreviewRenderOptions())
-        : [];
       const pageImages = shouldRenderPdfForVision(file)
         ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
         : [];
-      let nextDocumentPreviewPages: DocumentPreviewPage[] = [];
-      if (pdfPreviewImages.length) {
-        nextDocumentPreviewPages = buildPreviewPagesFromPdfImages(pdfPreviewImages);
-      } else if (file.type.startsWith("image/")) {
-        nextDocumentPreviewPages = [await readImageFileAsPreviewPage(file)];
-      }
+      const nextDocumentPreviewPages = await buildDocumentPreviewPages(file);
       setDocumentPreviewPages(nextDocumentPreviewPages);
       const payload = await parseWorkspaceFile({
         file,
@@ -2190,6 +2321,8 @@ function ApprovalWorkspaceBody({
                 documentPreviewPages={documentPreviewPages}
                 onExtractHighlightedRegion={extractHighlightedRegion}
                 uploadedAttachments={uploadedAttachments}
+                onEditAttachment={openUploadAttachmentForEditing}
+                onRemoveAttachment={removeUploadAttachment}
                 uploadDraftStatus={uploadDraftStatus}
                 savedUploadDrafts={savedUploadDrafts}
                 selectedUploadDraftId={selectedUploadDraftId}

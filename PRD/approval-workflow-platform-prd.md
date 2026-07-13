@@ -239,6 +239,7 @@ Manual-form workflows may submit without an uploaded file when their required ma
 - Uploaded document references, parsed values, training drafts, selected field, instruction, sample value, and saved sample examples must survive refresh.
 - The Drafts page is the primary location for resuming incomplete requests.
 - Resuming a draft opens the request editor while keeping **Drafts** highlighted in navigation. A compact **Draft controls** bar below the workflow map shows autosave status and a **Drafts (n)** dropdown for opening named drafts, saving a new draft, deleting saved drafts, or discarding current work.
+- Each saved attachment exposes **Edit extraction** and **Remove** actions. Edit extraction securely reloads the private stored original, restores its preview and saved extraction boxes, and opens boxed-field editing. Remove requires confirmation and clears the associated attachment, extracted values, and prepared request item from the same draft.
 
 ### 9.5 Multi-Document and Batch Behavior
 
@@ -739,6 +740,7 @@ The current application saves:
 | `/api/auth/sign-up` | POST | Account creation and confirmation flow |
 | `/logout` | GET | Session sign-out |
 | `/api/attachments/upload` | POST | Private attachment upload |
+| `/api/attachments/file` | GET, DELETE | Owner-scoped private attachment retrieval and deletion |
 | `/api/parse` | POST | Document parsing and extraction |
 | `/api/upload-drafts` | GET, POST, DELETE | Creator-owned request draft persistence |
 | `/api/workspace` | GET, POST, PATCH | Load/save workspace and soft-deactivate entities |

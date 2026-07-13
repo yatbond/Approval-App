@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   getAdminRecordDeleteConfirmation,
   getApprovalActionConfirmation,
+  getDraftAttachmentRemoveConfirmation,
   getDraftDeleteConfirmation,
   getLiveEmailConfirmation,
   getSignOutConfirmation,
@@ -76,6 +77,16 @@ test("destructive records, drafts, templates, canvas edits, and email sends requ
       action: "delete",
     }).message,
     /Gleneagles final account/,
+  );
+  assert.deepEqual(
+    getDraftAttachmentRemoveConfirmation({ fileName: "Final account.pdf" }),
+    {
+      title: "Remove document?",
+      message:
+        'This will remove "Final account.pdf" and its extracted fields from the current draft.',
+      confirmLabel: "Remove document",
+      tone: "danger",
+    },
   );
   assert.equal(
     getWorkflowTemplateArchiveConfirmation({

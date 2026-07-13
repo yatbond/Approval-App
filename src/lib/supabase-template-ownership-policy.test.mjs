@@ -18,6 +18,10 @@ const attachmentStorageReadMigration = readFileSync(
   "supabase/migrations/20260623061935_allow_request_participant_storage_reads.sql",
   "utf8",
 );
+const attachmentStorageDeleteMigration = readFileSync(
+  "supabase/migrations/20260713145231_allow_owner_attachment_deletes.sql",
+  "utf8",
+);
 const consolidatedTemplatePolicyMigration = readFileSync(
   "supabase/migrations/20260623113043_consolidate_workflow_template_version_policies.sql",
   "utf8",
@@ -81,6 +85,20 @@ test("migration lets request participants read submitted attachment storage obje
   assert.match(attachmentStorageReadMigration, /public\.approval_requests/i);
   assert.match(attachmentStorageReadMigration, /a\.storage_path = storage\.objects\.name/i);
   assert.match(attachmentStorageReadMigration, /= any\(r\.participants\)/i);
+});
+
+test("migration lets attachment owners delete their own stored draft files", () => {
+  assert.match(
+    attachmentStorageDeleteMigration,
+    /create policy "approval document owners delete"/i,
+  );
+  assert.match(attachmentStorageDeleteMigration, /on storage\.objects for delete/i);
+  assert.match(attachmentStorageDeleteMigration, /to authenticated/i);
+  assert.match(attachmentStorageDeleteMigration, /bucket_id = 'approval-documents'/i);
+  assert.match(
+    attachmentStorageDeleteMigration,
+    /owner_id = \(select auth\.uid\(\)::text\)/i,
+  );
 });
 
 test("migration consolidates workflow template version policies", () => {
