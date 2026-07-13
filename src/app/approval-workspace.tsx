@@ -2,9 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  notifications,
-} from "@/lib/mock-data";
-import {
   parseWorkspaceFile,
   type ParsedWorkspaceFilePayload,
   uploadWorkspaceAttachmentFile,
@@ -83,7 +80,10 @@ import {
 import { UploadDraftsView } from "@/app/upload-drafts-view";
 import { ConfirmationModal } from "@/app/confirmation-modal";
 import type { WorkspaceTab } from "@/lib/workspace-tabs-state";
-import { getWorkspaceShellState } from "@/lib/workspace-shell-state";
+import {
+  getUserWorkspaceNotifications,
+  getWorkspaceShellState,
+} from "@/lib/workspace-shell-state";
 import {
   getAdminRecordDeleteConfirmation,
   getApprovalActionConfirmation,
@@ -355,16 +355,20 @@ function ApprovalWorkspaceBody({
   } = taskState;
 
   const taskNotifications = useMemo(() => buildTaskNotifications(tasks), [tasks]);
+  const userTaskNotifications = useMemo(
+    () => getUserWorkspaceNotifications(taskNotifications, activeUser.email),
+    [activeUser.email, taskNotifications],
+  );
   const shellState = useMemo(
     () =>
       getWorkspaceShellState({
-        baseNotifications: notifications,
+        baseNotifications: [],
         draftItemCount:
           (uploadDraftStatus.hasDraft ? 1 : 0) + savedUploadDrafts.length,
-        taskNotifications,
+        taskNotifications: userTaskNotifications,
         workspaceSyncMode,
       }),
-    [savedUploadDrafts.length, taskNotifications, uploadDraftStatus.hasDraft, workspaceSyncMode],
+    [savedUploadDrafts.length, uploadDraftStatus.hasDraft, userTaskNotifications, workspaceSyncMode],
   );
 
   const restoreUploadRequestDraft = useCallback(
@@ -2106,7 +2110,7 @@ function ApprovalWorkspaceBody({
       sidebarCollapsed={sidebarCollapsed}
       syncLabel={shellState.syncLabel}
       draftItemCount={shellState.draftItemCount}
-      unreadCount={shellState.unreadCount}
+      notifications={userTaskNotifications}
       onRequestSignOut={() => void confirmSignOut()}
       onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
     >

@@ -61,6 +61,13 @@ test("keeps sign out as the rightmost header action", () => {
   assert.ok(signOutIndex > newRequestIndex);
 });
 
+test("header notifications open a user-actionable menu", () => {
+  assert.match(shellSource, /title="Open notifications"/);
+  assert.match(shellSource, /aria-label="Notifications"/);
+  assert.match(shellSource, /Mark all read/);
+  assert.match(shellSource, /notification\.requestId/);
+});
+
 test("keeps intermediate-width panels readable", async () => {
   const taskViewsSource = await readFile(
     new URL("../app/task-views.tsx", import.meta.url),

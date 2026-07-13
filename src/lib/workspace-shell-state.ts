@@ -2,7 +2,23 @@ type UnreadNotification = {
   unread: boolean;
 };
 
+type RecipientNotification = UnreadNotification & {
+  recipientEmail: string;
+};
+
 export type WorkspaceSyncMode = "loading" | "supabase" | "local";
+
+export function getUserWorkspaceNotifications<T extends RecipientNotification>(
+  notifications: T[],
+  userEmail: string,
+) {
+  const normalizedUserEmail = userEmail.trim().toLowerCase();
+
+  return notifications.filter(
+    (notification) =>
+      notification.recipientEmail.trim().toLowerCase() === normalizedUserEmail,
+  );
+}
 
 export function getWorkspaceShellState({
   baseNotifications,

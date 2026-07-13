@@ -133,7 +133,7 @@ The signed-in application contains five primary destinations:
 
 The header also contains:
 
-- unread notification count;
+- a clickable, user-specific unread notification count and notification menu;
 - signed-in user identity;
 - save/sync state;
 - sign-out action with confirmation;
@@ -171,13 +171,15 @@ There is no user-facing Upload tab. **+ New** opens the internal request-creatio
 
 1. The user presses **+ New**.
 2. The user selects an active published workflow.
-3. The user supplies participant and escalation emails that were not fixed by the template.
-4. The user uploads required documents or completes manual fields.
-5. The application parses supported documents and displays extracted values, evidence, and confidence.
-6. The user corrects values as needed.
-7. Validation blocks submission until required assignments, documents, and fields are complete.
-8. The request is created with a workflow snapshot and assigned to the first actionable stage.
-9. Tracking and notification records are created.
+3. A compact workflow map shows the request route and highlights the box whose participant, document, or field information is being entered.
+4. The user supplies participant and escalation emails that were not fixed by the template.
+5. The user uploads required documents or completes manual fields.
+6. The application parses supported documents and displays extracted values, evidence, and confidence.
+7. Document preview starts in Original mode at 100% zoom, 100% contrast, and 100% brightness; users may adjust these controls when needed.
+8. The user corrects values as needed.
+9. Validation blocks submission until required assignments, documents, and fields are complete.
+10. The request is created with a workflow snapshot and assigned to the first actionable stage.
+11. Tracking and notification records are created.
 
 ### 8.3 Act on a Request
 
@@ -602,6 +604,7 @@ The request detail combines path and history:
 - rejected activity is shown in red history;
 - unreached or reset downstream boxes are visually neutral;
 - relevant audit events appear within or alongside the stage they describe.
+- **View path & history** scrolls directly to this combined section for the selected request.
 
 History records actor, timestamp, event type, message, notes, assignment changes, contributions, corrections, and relevant routing outcomes.
 
@@ -621,7 +624,7 @@ The application creates targeted notifications for:
 - contributor and correction activity;
 - shared fulfillment confirmation.
 
-Unread count appears in the header.
+The header count includes only notifications addressed to the signed-in user. Selecting the count opens a menu with the notification title, request context, time, and a direct link to the applicable Queue or Tracking request. Users can mark individual notifications or all notifications as read, with read state retained in the browser.
 
 ### 17.2 Email Modes
 
@@ -867,7 +870,7 @@ Important environment groups include:
 
 ## 25. Validation and Test Coverage
 
-The codebase currently contains 599 automated tests covering 94 test files. Coverage includes:
+The codebase currently contains 607 automated tests covering 96 test files. Coverage includes:
 
 - graph validation and routing;
 - sequential and parallel approval state;

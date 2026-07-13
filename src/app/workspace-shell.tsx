@@ -1,6 +1,9 @@
+"use client";
+
 import {
   ArrowRightLeft,
   Bell,
+  CheckCheck,
   ClipboardList,
   History,
   LogOut,
@@ -8,10 +11,12 @@ import {
   ReceiptText,
   Settings,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { TaskNotification } from "@/lib/workflow-system";
 import { ThemeToggle } from "./theme-toggle";
 import {
   getNewRequestHref,
@@ -40,7 +45,7 @@ export function WorkspaceShell({
   sessionUser,
   sidebarCollapsed,
   syncLabel,
-  unreadCount,
+  notifications,
   onRequestSignOut,
   onToggleSidebar,
 }: {
@@ -50,10 +55,71 @@ export function WorkspaceShell({
   sessionUser: string;
   sidebarCollapsed: boolean;
   syncLabel: string;
-  unreadCount: number;
+  notifications: TaskNotification[];
   onRequestSignOut: () => void;
   onToggleSidebar: () => void;
 }) {
+  const notificationMenuRef = useRef<HTMLDivElement>(null);
+  const notificationStorageKey = useMemo(
+    () => `approval-notifications-read:${sessionUser.trim().toLowerCase()}`,
+    [sessionUser],
+  );
+  const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
+  const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
+  const readNotificationIdSet = useMemo(
+    () => new Set(readNotificationIds),
+    [readNotificationIds],
+  );
+  const unreadCount = notifications.filter(
+    (notification) => notification.unread && !readNotificationIdSet.has(notification.id),
+  ).length;
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      try {
+        const savedIds = JSON.parse(window.localStorage.getItem(notificationStorageKey) || "[]");
+        setReadNotificationIds(Array.isArray(savedIds) ? savedIds.filter((id) => typeof id === "string") : []);
+      } catch {
+        setReadNotificationIds([]);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [notificationStorageKey]);
+
+  useEffect(() => {
+    if (!notificationMenuOpen) {
+      return;
+    }
+
+    function closeNotificationMenu(event: PointerEvent) {
+      if (!notificationMenuRef.current?.contains(event.target as Node)) {
+        setNotificationMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", closeNotificationMenu);
+    return () => document.removeEventListener("pointerdown", closeNotificationMenu);
+  }, [notificationMenuOpen]);
+
+  function saveReadNotificationIds(nextIds: string[]) {
+    const uniqueIds = Array.from(new Set(nextIds));
+    setReadNotificationIds(uniqueIds);
+    window.localStorage.setItem(notificationStorageKey, JSON.stringify(uniqueIds));
+  }
+
+  function markNotificationRead(notificationId: string) {
+    saveReadNotificationIds([...readNotificationIds, notificationId]);
+    setNotificationMenuOpen(false);
+  }
+
+  function markAllNotificationsRead() {
+    saveReadNotificationIds([
+      ...readNotificationIds,
+      ...notifications.filter((notification) => notification.unread).map((notification) => notification.id),
+    ]);
+  }
+
   return (
     <main className="min-h-screen bg-[#f7f7f5] text-[#231f20]">
       <div
@@ -132,9 +198,81 @@ export function WorkspaceShell({
         <section className="min-w-0">
           <header className="flex min-h-16 items-center justify-end border-b border-t-[3px] border-b-[#e6e6e6] border-t-[#f7941d] bg-white px-4 py-3 md:px-6">
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <div title="Unread notifications" className="flex min-h-10 items-center gap-2 rounded-md border border-[#e6e6e6] bg-white px-3 text-sm">
-                <Bell size={16} className="text-[#7b791c]" />
-                <span>{unreadCount} unread</span>
+              <div ref={notificationMenuRef} className="relative">
+                <button
+                  type="button"
+                  title="Open notifications"
+                  aria-expanded={notificationMenuOpen}
+                  aria-haspopup="dialog"
+                  onClick={() => setNotificationMenuOpen((open) => !open)}
+                  className="flex min-h-10 items-center gap-2 rounded-md border border-[#e6e6e6] bg-white px-3 text-sm transition hover:border-[#f7941d] hover:bg-[#fff8ef]"
+                >
+                  <Bell size={16} className="text-[#7b791c]" />
+                  <span>{unreadCount} unread</span>
+                </button>
+                {notificationMenuOpen && (
+                  <div
+                    role="dialog"
+                    aria-label="Notifications"
+                    className="fixed inset-x-3 top-3 z-50 w-auto overflow-hidden rounded-md border border-[#e6e6e6] bg-white text-[#231f20] shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 sm:w-[min(22rem,calc(100vw-1.5rem))]"
+                  >
+                    <div className="flex items-center justify-between gap-3 border-b border-[#e6e6e6] px-4 py-3">
+                      <div>
+                        <p className="text-sm font-semibold">Notifications</p>
+                        <p className="text-xs text-[#666162]">Requests requiring your attention or tracking.</p>
+                      </div>
+                      <button
+                        type="button"
+                        title="Close notifications"
+                        onClick={() => setNotificationMenuOpen(false)}
+                        className="flex size-9 shrink-0 items-center justify-center rounded-md border border-[#e6e6e6] bg-white"
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+                    {notifications.length ? (
+                      <div className="max-h-[24rem] overflow-y-auto">
+                        {notifications.map((notification) => {
+                          const unread = notification.unread && !readNotificationIdSet.has(notification.id);
+                          const destinationTab = notification.kind === "action_required" || notification.kind === "escalation"
+                            ? "queue"
+                            : "tracking";
+                          return (
+                            <Link
+                              key={notification.id}
+                              href={`/?tab=${destinationTab}&request=${encodeURIComponent(notification.requestId)}`}
+                              onClick={() => markNotificationRead(notification.id)}
+                              className="block border-b border-[#e6e6e6] px-4 py-3 transition last:border-b-0 hover:bg-[#fff8ef]"
+                            >
+                              <span className="flex items-start gap-3">
+                                <span className={`mt-1.5 size-2 shrink-0 rounded-full ${unread ? "bg-[#f7941d]" : "bg-[#d9d9d9]"}`} />
+                                <span className="min-w-0">
+                                  <span className="block text-sm font-semibold">{notification.title}</span>
+                                  <span className="mt-1 block break-words text-xs text-[#666162]">{notification.body}</span>
+                                  <span className="mt-1 block text-[11px] text-[#8a8a8a]">{notification.time}</span>
+                                </span>
+                              </span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="px-4 py-6 text-center text-sm text-[#666162]">No notifications.</p>
+                    )}
+                    {unreadCount > 0 && (
+                      <div className="border-t border-[#e6e6e6] p-2">
+                        <button
+                          type="button"
+                          onClick={markAllNotificationsRead}
+                          className="flex min-h-10 w-full items-center justify-center gap-2 rounded-md text-sm font-medium text-[#713d00] transition hover:bg-[#fff8ef]"
+                        >
+                          <CheckCheck size={16} />
+                          Mark all read
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="hidden min-h-10 items-center rounded-md border border-[#e6e6e6] bg-white px-3 text-sm text-[#4b4647] md:flex">
                 {sessionUser}
