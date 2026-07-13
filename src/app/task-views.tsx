@@ -248,7 +248,7 @@ export function QueueView({
   }[queueActionMode === "normal" ? "reassign" : queueActionMode];
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[360px_1fr_320px]">
+    <div className="grid min-w-0 gap-4 2xl:grid-cols-[360px_minmax(0,1fr)_320px]">
       <section className="rounded-md border border-[#e6e6e6] bg-white">
         <div className="border-b border-[#e6e6e6] p-4">
           <div className="flex items-center justify-between gap-2">
@@ -1196,7 +1196,7 @@ function TaskPathAndHistory({
               <div
                 className={
                   stage.isParallel
-                    ? "grid gap-2 md:grid-cols-2 xl:grid-cols-3"
+                    ? "grid grid-cols-[repeat(auto-fit,minmax(min(100%,24rem),1fr))] gap-3"
                     : "grid gap-2"
                 }
               >
@@ -1258,35 +1258,33 @@ function PathStageCard({
 
   return (
     <div
-      className={`rounded-md border p-3 ${toneClassName}`}
+      className={`min-w-0 rounded-md border p-3 ${toneClassName}`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 gap-3">
-          <span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-[#e6e6e6] bg-[#f2f2f2] px-2 text-xs font-semibold text-neutral-200">
-            {node.pathLabel}
-          </span>
-          <div className="min-w-0">
-            <p className="break-words text-sm font-medium text-neutral-100">
-              {node.label}
-            </p>
-            <p className="mt-1 text-xs text-neutral-500">{formatNodeKind(node.kind)}</p>
-          </div>
+      <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2">
+        <span className="row-span-2 flex h-7 min-w-7 shrink-0 items-center justify-center self-start rounded-md border border-[#e6e6e6] bg-[#f2f2f2] px-2 text-xs font-semibold text-neutral-200">
+          {node.pathLabel}
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-neutral-100">
+            {node.label}
+          </p>
+          <p className="mt-1 text-xs text-neutral-500">{formatNodeKind(node.kind)}</p>
         </div>
-        <span className={`shrink-0 rounded border px-2 py-1 text-xs ${badgeClassName}`}>
+        <span className={`w-fit rounded border px-2 py-1 text-xs ${badgeClassName}`}>
           {formatPathNodeState(state)}
         </span>
       </div>
       {node.assigneeEmail && (
-        <p className="mt-2 break-words pl-10 text-xs text-neutral-400">
+        <p className="mt-3 [overflow-wrap:anywhere] text-xs text-neutral-400 sm:pl-10">
           {node.assigneeEmail}
         </p>
       )}
       {node.documentIds?.length ? (
-        <p className="mt-2 pl-10 text-xs text-neutral-500">
+        <p className="mt-2 text-xs text-neutral-500 sm:pl-10">
           {node.documentIds.length} document requirement(s)
         </p>
       ) : null}
-      <div className="mt-3 border-t border-[#e6e6e6] pt-3 pl-10">
+      <div className="mt-3 min-w-0 border-t border-[#e6e6e6] pt-3 sm:pl-10">
         <p className="text-xs font-semibold text-neutral-500">History</p>
         {historyEvents.length ? (
           <ol className="mt-2 space-y-2">

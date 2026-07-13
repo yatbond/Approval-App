@@ -8,11 +8,57 @@
   --cw-light-gray: #e6e6e6;
   --cw-mid-gray: #8a8a8a;
   --cw-paper: #f7f7f5;
+  --cw-surface: #ffffff;
+  --cw-surface-muted: #f7f7f5;
+  --cw-surface-subtle: #f2f2f2;
+  --cw-border: #e6e6e6;
   --background: var(--cw-paper);
   --foreground: var(--cw-charcoal);
+  color-scheme: light;
 }
 
-@theme inline {
+html[data-theme="dark"] {
+  --cw-paper: #151414;
+  --cw-surface: #211f20;
+  --cw-surface-muted: #1a1919;
+  --cw-surface-subtle: #2b2829;
+  --cw-border: #403c3d;
+  --background: var(--cw-paper);
+  --foreground: #f5f3f3;
+  --color-neutral-100: #f5f3f3;
+  --color-neutral-200: #e6e2e3;
+  --color-neutral-300: #cbc6c7;
+  --color-neutral-400: #aaa4a5;
+  --color-neutral-500: #8d8688;
+  --color-neutral-600: #756e70;
+  --color-neutral-700: #4d4749;
+  --color-neutral-800: #383335;
+  --color-neutral-900: #2b2829;
+  --color-neutral-950: #211f20;
+  --color-emerald-100: #ffd7aa;
+  --color-emerald-200: #ffc47e;
+  --color-emerald-300: #faab4b;
+  --color-emerald-400: #f7941d;
+  --color-emerald-500: #e6810c;
+  --color-sky-100: #e5e69e;
+  --color-sky-200: #cbcc73;
+  --color-sky-300: #a7a83e;
+  --color-sky-400: #8f9028;
+  --color-sky-500: #7b791c;
+  --color-amber-100: #ffd7aa;
+  --color-amber-200: #ffc47e;
+  --color-amber-300: #faab4b;
+  --color-amber-400: #f7941d;
+  --color-amber-500: #e6810c;
+  --color-yellow-100: #ffd7aa;
+  --color-yellow-400: #f7941d;
+  --color-violet-100: #e5e69e;
+  --color-violet-400: #8f9028;
+  --color-violet-500: #7b791c;
+  color-scheme: dark;
+}
+
+@theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-neutral-100: #231f20;
@@ -62,6 +108,119 @@ body {
   line-height: 1.5;
 }
 
+html[data-theme="dark"] .bg-white {
+  background-color: var(--cw-surface);
+}
+
+html[data-theme="dark"] .bg-\[\#f7f7f5\] {
+  background-color: var(--cw-surface-muted);
+}
+
+html[data-theme="dark"] .bg-\[\#f2f2f2\] {
+  background-color: var(--cw-surface-subtle);
+}
+
+html[data-theme="dark"] .border-\[\#e6e6e6\] {
+  border-color: var(--cw-border);
+}
+
+html[data-theme="dark"] .border-\[\#d2d2d2\],
+html[data-theme="dark"] .border-\[\#d9d9d9\] {
+  border-color: #565052;
+}
+
+html[data-theme="dark"] .text-\[\#231f20\] {
+  color: var(--foreground);
+}
+
+html[data-theme="dark"] .text-\[\#4b4647\] {
+  color: #cbc6c7;
+}
+
+html[data-theme="dark"] .text-\[\#666162\],
+html[data-theme="dark"] .text-\[\#8a8a8a\] {
+  color: #aaa4a5;
+}
+
+html[data-theme="dark"] .text-\[\#7b791c\],
+html[data-theme="dark"] .text-\[\#4d4c10\] {
+  color: #dfe18f;
+}
+
+html[data-theme="dark"] .text-\[\#653a08\],
+html[data-theme="dark"] .text-\[\#713d00\],
+html[data-theme="dark"] .text-\[\#9b5200\] {
+  color: #ffd5a3;
+}
+
+html[data-theme="dark"] .bg-\[\#fff4e6\],
+html[data-theme="dark"] .bg-\[\#fff4e5\] {
+  background-color: #3b2918;
+}
+
+html[data-theme="dark"] .hover\:bg-\[\#fff8ef\]:hover {
+  background-color: #352719;
+}
+
+html[data-theme="dark"] .hover\:bg-\[\#f7f7f5\]:hover,
+html[data-theme="dark"] .hover\:bg-\[\#f2f2f2\]:hover,
+html[data-theme="dark"] .hover\:bg-\[\#eeeeec\]:hover {
+  background-color: #302c2d;
+}
+
+html[data-theme="dark"] .bg-\[\#f7941d\].text-\[\#231f20\] {
+  color: #231f20;
+}
+
+html[data-theme="dark"] .bg-rose-50 {
+  background-color: #3a191f;
+}
+
+html[data-theme="dark"] .text-rose-800 {
+  color: #ffd6dd;
+}
+
+html[data-theme="dark"] [data-brand-lockup],
+html[data-theme="dark"] [data-brand-logo] {
+  background-color: #ffffff;
+}
+
+.validation-error {
+  border-color: #fda4af;
+  background-color: #fff1f2;
+  color: #881337;
+}
+
+.validation-warning {
+  border-color: #fdba74;
+  background-color: #fff7ed;
+  color: #7c2d12;
+}
+
+.validation-ready {
+  border-color: #a4a64f;
+  background-color: #f5f6df;
+  color: #45460d;
+}
+
+html[data-theme="dark"] .validation-error {
+  border-color: #9f3f51;
+  background-color: #3a191f;
+  color: #ffd6dd;
+}
+
+html[data-theme="dark"] .validation-warning {
+  border-color: #9c6429;
+  background-color: #392617;
+  color: #ffdbaf;
+}
+
+html[data-theme="dark"] .validation-ready {
+  border-color: #77792d;
+  background-color: #292a12;
+  color: #e8eaa3;
+}
+
 button,
 input,
 select,
@@ -69,6 +228,23 @@ textarea {
   color: inherit;
   font: inherit;
   letter-spacing: 0;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  border-color: #d2d2d2;
+  background-color: #f2f2f2;
+  color: #666162;
+  opacity: 1;
+}
+
+html[data-theme="dark"] input:disabled,
+html[data-theme="dark"] select:disabled,
+html[data-theme="dark"] textarea:disabled {
+  border-color: #565052;
+  background-color: #343031;
+  color: #cbc6c7;
 }
 
 ::selection {

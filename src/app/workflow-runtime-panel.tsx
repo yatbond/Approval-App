@@ -133,7 +133,7 @@ export function WorkflowRuntimePanel({
       </div>
 
       {workflowSimulation && (
-        <div className="mb-3 grid gap-3 xl:grid-cols-2">
+        <div className="mb-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,24rem),1fr))] gap-3">
           <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-neutral-300">
@@ -142,8 +142,8 @@ export function WorkflowRuntimePanel({
               <span
                 className={`rounded-md border px-2 py-1 text-xs ${
                   validationErrors.length
-                    ? "border-rose-400/40 bg-rose-400/10 text-rose-100"
-                    : "border-emerald-400/40 bg-emerald-400/10 text-emerald-100"
+                    ? "validation-error"
+                    : "validation-ready"
                 }`}
               >
                 {validationErrors.length
@@ -158,8 +158,8 @@ export function WorkflowRuntimePanel({
                     key={`${issue.nodeId || issue.edgeId || "template"}-${issueIndex}`}
                     className={`flex gap-2 rounded-md border p-2 ${
                       issue.severity === "error"
-                        ? "border-rose-400/30 bg-rose-400/10 text-rose-100"
-                        : "border-amber-400/30 bg-amber-400/10 text-amber-100"
+                        ? "validation-error"
+                        : "validation-warning"
                     }`}
                   >
                     <AlertTriangle className="mt-0.5 shrink-0" size={14} />
@@ -177,7 +177,7 @@ export function WorkflowRuntimePanel({
                 </p>
               )}
               {!validationErrors.length && validationWarnings.length > 0 && (
-                <p className="text-amber-100">
+                <p className="validation-warning rounded-md border p-2">
                   {validationWarnings.length} warning(s) should be reviewed.
                 </p>
               )}
@@ -235,7 +235,7 @@ export function WorkflowRuntimePanel({
                   <InfoTip label="Simulate the selected request through this template using the same routing engine as the approval queue." />
                 </div>
                 {runtimeTask ? (
-                  <div className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
+                  <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,8.5rem),1fr))] gap-2 text-xs">
                     <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
                       <p className="text-neutral-500">Status</p>
                       <p className="mt-1 break-words text-neutral-200">

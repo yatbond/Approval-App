@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { LogIn, UserPlus } from "lucide-react";
 import Image from "next/image";
+import { ThemeToggle } from "@/app/theme-toggle";
 
 export default async function LoginPage({
   searchParams,
@@ -17,21 +18,24 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="grid min-h-screen place-items-center border-t-4 border-[#f7941d] bg-[#f7f7f5] p-4 text-[#231f20]">
+    <main className="relative grid min-h-screen place-items-center border-t-4 border-[#f7941d] bg-[#f7f7f5] p-4 text-[#231f20]">
+      <ThemeToggle className="absolute right-4 top-4" />
       <form
         action={setupMode ? "/api/auth/sign-up" : "/api/auth/sign-in"}
         method="post"
         className="w-full max-w-sm rounded-md border border-[#d2d2d2] bg-white p-6 shadow-[0_12px_30px_rgba(35,31,32,0.08)]"
       >
         <div className="mb-6 border-b border-[#e6e6e6] pb-5">
-          <Image
-            src="/chunwo-logo.svg"
-            alt="Chun Wo"
-            width={180}
-            height={48}
-            priority
-            className="h-auto w-[180px]"
-          />
+          <span data-brand-logo className="inline-flex rounded-sm bg-white p-1">
+            <Image
+              src="/chunwo-logo.svg"
+              alt="Chun Wo"
+              width={180}
+              height={48}
+              priority
+              className="h-auto w-[180px]"
+            />
+          </span>
           <div className="mt-5 border-l-2 border-[#f7941d] pl-3">
             <h1 className="text-lg font-bold">Approvals</h1>
             <p className="text-sm text-[#666162]">

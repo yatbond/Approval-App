@@ -750,7 +750,7 @@ export function UploadView({
                     onClick={() => onSelectRequestDraft(draft.id)}
                     className={`w-full rounded-md border p-2 text-left text-xs transition ${
                       isSelected
-                        ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50"
+                        ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-100"
                         : "border-[#e6e6e6] bg-[#f7f7f5] text-neutral-300 hover:border-[#d2d2d2]"
                     }`}
                   >
@@ -851,7 +851,7 @@ export function UploadView({
                 )}
               </div>
 
-              <div className="mt-3 grid gap-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 md:grid-cols-4">
+              <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
                 <label className="block">
                   <span className="mb-1 block text-xs text-neutral-400">
                     Preview mode
@@ -1169,7 +1169,7 @@ export function UploadView({
                             : "border-[#e6e6e6] bg-[#f7f7f5]"
                         }`}
                       >
-                        <div className="grid gap-2 lg:grid-cols-[1fr_1.2fr_auto]">
+                        <div className="grid gap-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto]">
                           <label className="block">
                             <span className="mb-1 block text-xs text-neutral-400">
                               Field name

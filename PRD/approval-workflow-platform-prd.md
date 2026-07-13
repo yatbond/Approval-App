@@ -147,6 +147,7 @@ There is no user-facing Upload tab. **+ New** opens the internal request-creatio
 
 - Desktop uses a collapsible sidebar and compact header.
 - Mobile uses a compact five-item navigation treatment and responsive action layout.
+- Intermediate window widths use available panel width, not viewport width alone, so nested cards stack before their text or controls become cramped.
 - Long labels wrap or truncate without crossing control boundaries.
 - Tooltips explain unfamiliar controls.
 - Workflow Canvas editing is disabled on mobile with a concise desktop/tablet notice.
@@ -787,6 +788,8 @@ The interface follows the supplied Chun Wo brand guide:
 
 The product should not become a one-color orange interface. Orange identifies action and brand; status colors retain semantic meaning.
 
+The interface supports light and dark modes. The user can change theme from the login screen or workspace header. The explicit choice persists in the browser; system preference supplies the initial default when no choice has been saved. Form surfaces, disabled controls, validation states, Canvas controls, and semantic status colors must retain readable contrast in both themes.
+
 ### 22.2 Interaction Requirements
 
 - Familiar icons are used for icon actions.
@@ -804,7 +807,7 @@ The product should not become a one-color orange interface. Orange identifies ac
 - Keyboard access for common controls and Canvas editing where supported;
 - visible focus state;
 - semantic labels for form controls;
-- sufficient contrast in light surfaces and status states;
+- sufficient contrast in light and dark surfaces, form controls, helper text, validation messages, and status states;
 - touch targets suitable for mobile;
 - no reliance on color alone for workflow state;
 - readable labels at zoom and narrow widths.
@@ -864,7 +867,7 @@ Important environment groups include:
 
 ## 25. Validation and Test Coverage
 
-The codebase currently contains 595 automated tests covering 93 test files. Coverage includes:
+The codebase currently contains 599 automated tests covering 94 test files. Coverage includes:
 
 - graph validation and routing;
 - sequential and parallel approval state;
@@ -877,7 +880,7 @@ The codebase currently contains 595 automated tests covering 93 test files. Cove
 - sample training persistence;
 - PDF and spreadsheet parsing;
 - upload/request workspace behavior;
-- Queue, Tracking, Workflow, and mobile UI behavior;
+- Queue, Tracking, Workflow, intermediate-width, mobile, and light/dark UI behavior;
 - email delivery modes and notification targeting;
 - Supabase persistence and normalized records;
 - security and row-level policy expectations.

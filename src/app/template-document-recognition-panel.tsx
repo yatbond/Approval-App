@@ -599,7 +599,7 @@ export function TemplateDocumentRecognitionPanel({
                     <p className="text-xs font-medium text-emerald-100">
                       {field.label}
                     </p>
-                    <p className="mt-0.5 break-words text-xs text-emerald-50/80">
+                    <p className="mt-0.5 break-words text-xs text-emerald-100/80">
                       {field.value}
                     </p>
                     {field.hasAnchor && (

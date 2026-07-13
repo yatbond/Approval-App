@@ -1317,7 +1317,7 @@ export function WorkflowView({
                         </p>
                         <InfoTip label="The person or team required to complete this submit box's documents or form fields." />
                       </div>
-                      <label className="flex items-start gap-2 text-xs text-sky-50">
+                      <label className="flex items-start gap-2 text-xs text-sky-100">
                         <input
                           type="checkbox"
                           className="mt-0.5"
@@ -1339,7 +1339,7 @@ export function WorkflowView({
                         </span>
                       </label>
                       {selectedGraphNode.allowSharedFulfillment && (
-                        <label className="flex items-start gap-2 text-xs text-sky-50">
+                        <label className="flex items-start gap-2 text-xs text-sky-100">
                           <input
                             type="checkbox"
                             className="mt-0.5"

@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import Image from "next/image";
 import type { ReactNode } from "react";
+import { ThemeToggle } from "./theme-toggle";
 import {
   getNewRequestHref,
   workspaceNavigationTabIds,
@@ -62,6 +63,7 @@ export function WorkspaceShell({
       >
         <aside className="max-w-full overflow-hidden border-b border-[#e6e6e6] bg-white lg:sticky lg:top-0 lg:h-screen lg:overflow-visible lg:border-b-0 lg:border-r">
           <div
+            data-brand-lockup
             className={`flex min-h-20 items-center gap-3 border-b border-[#e6e6e6] px-4 ${
               sidebarCollapsed ? "lg:justify-center" : "lg:justify-start lg:px-5"
             }`}
@@ -140,6 +142,7 @@ export function WorkspaceShell({
               <div className="hidden min-h-10 items-center rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-xs text-[#666162] xl:flex">
                 {syncLabel}
               </div>
+              <ThemeToggle />
               <button
                 type="button"
                 onClick={onRequestSignOut}
@@ -159,7 +162,7 @@ export function WorkspaceShell({
             </div>
           </header>
 
-          <div className="p-3 sm:p-4 md:p-6">{children}</div>
+          <div className="min-w-0 p-3 sm:p-4 md:p-6">{children}</div>
         </section>
       </div>
     </main>

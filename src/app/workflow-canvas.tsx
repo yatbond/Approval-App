@@ -15,6 +15,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo } from "react";
+import { useAppTheme } from "./use-app-theme";
 import type {
   ApprovalTask,
   WorkflowBranchType,
@@ -71,6 +72,7 @@ export default function WorkflowCanvas({
   onClearSelection,
   onOutcomeTargetClick,
 }: WorkflowCanvasProps) {
+  const { theme } = useAppTheme();
   const highlightedNodes = useMemo(
     () => new Set(highlightedNodeIds),
     [highlightedNodeIds],
@@ -138,9 +140,9 @@ export default function WorkflowCanvas({
         }}
         onEdgeClick={(_, edge) => onEdgeSelect(edge.id)}
         onPaneClick={onClearSelection}
-        colorMode="light"
+        colorMode={theme}
       >
-        <Background color="#d9d9d9" gap={18} />
+        <Background color={theme === "dark" ? "#4b4647" : "#d9d9d9"} gap={18} />
         <Controls />
       </ReactFlow>
     </div>
