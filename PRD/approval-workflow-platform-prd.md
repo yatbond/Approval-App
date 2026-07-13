@@ -238,6 +238,7 @@ Manual-form workflows may submit without an uploaded file when their required ma
 - The current implementation uses local-first state with Supabase draft persistence when available.
 - Uploaded document references, parsed values, training drafts, selected field, instruction, sample value, and saved sample examples must survive refresh.
 - The Drafts page is the primary location for resuming incomplete requests.
+- Resuming a draft opens the request editor while keeping **Drafts** highlighted in navigation. The editor's **Draft progress** panel contains the current autosave and named draft controls.
 
 ### 9.5 Multi-Document and Batch Behavior
 

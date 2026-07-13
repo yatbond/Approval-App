@@ -26,3 +26,13 @@ export function getNewRequestHref() {
 export function isNewRequestStartRequested(value?: string) {
   return value === "1" || value === "true";
 }
+
+export function getWorkspaceNavigationActiveTab({
+  activeTab,
+  isNewRequest,
+}: {
+  activeTab: WorkspaceTab;
+  isNewRequest: boolean;
+}): WorkspaceTab {
+  return activeTab === "upload" && !isNewRequest ? "drafts" : activeTab;
+}

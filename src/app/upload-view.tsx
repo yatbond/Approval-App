@@ -1677,12 +1677,12 @@ function UploadDraftPanel({
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <p className="text-sm font-semibold text-neutral-200">
-            Work
+            Draft progress
           </p>
-          <InfoTip label="Autosave keeps the current screen. Save a named draft when you want to return later." />
+          <InfoTip label="Your current request is autosaved here. Give it a name and select Save to keep a draft you can resume from Drafts." />
         </div>
         <span className="shrink-0 rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-xs text-neutral-400">
-          {workInProgressItems.length} item(s)
+          {workInProgressItems.length} {workInProgressItems.length === 1 ? "draft" : "drafts"}
         </span>
       </div>
 

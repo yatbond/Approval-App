@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   getNewRequestHref,
   getInitialWorkspaceTab,
+  getWorkspaceNavigationActiveTab,
   isNewRequestStartRequested,
   workspaceNavigationTabIds,
   workspaceTabIds,
@@ -43,4 +44,19 @@ test("marks plus new as a fresh request instead of a draft resume", () => {
   assert.equal(isNewRequestStartRequested("true"), true);
   assert.equal(isNewRequestStartRequested("0"), false);
   assert.equal(isNewRequestStartRequested(), false);
+});
+
+test("keeps Drafts highlighted while editing a resumed draft", () => {
+  assert.equal(
+    getWorkspaceNavigationActiveTab({ activeTab: "upload", isNewRequest: false }),
+    "drafts",
+  );
+  assert.equal(
+    getWorkspaceNavigationActiveTab({ activeTab: "upload", isNewRequest: true }),
+    "upload",
+  );
+  assert.equal(
+    getWorkspaceNavigationActiveTab({ activeTab: "tracking", isNewRequest: false }),
+    "tracking",
+  );
 });

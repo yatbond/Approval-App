@@ -79,7 +79,10 @@ import {
 } from "@/app/workspace-shell";
 import { UploadDraftsView } from "@/app/upload-drafts-view";
 import { ConfirmationModal } from "@/app/confirmation-modal";
-import type { WorkspaceTab } from "@/lib/workspace-tabs-state";
+import {
+  getWorkspaceNavigationActiveTab,
+  type WorkspaceTab,
+} from "@/lib/workspace-tabs-state";
 import {
   getUserWorkspaceNotifications,
   getWorkspaceShellState,
@@ -184,6 +187,10 @@ function ApprovalWorkspaceBody({
 }) {
   const activeTab = initialTab;
   const shouldStartNewUploadRequest = activeTab === "upload" && startNewRequest;
+  const navigationActiveTab = getWorkspaceNavigationActiveTab({
+    activeTab,
+    isNewRequest: shouldStartNewUploadRequest,
+  });
   const activeUser = useMemo(
     () => ({
       name: sessionUser.includes("@") ? sessionUser.split("@")[0] : sessionUser,
@@ -2105,7 +2112,7 @@ function ApprovalWorkspaceBody({
   return (
     <>
     <WorkspaceShell
-      activeTab={activeTab}
+      activeTab={navigationActiveTab}
       sessionUser={sessionUser}
       sidebarCollapsed={sidebarCollapsed}
       syncLabel={shellState.syncLabel}
