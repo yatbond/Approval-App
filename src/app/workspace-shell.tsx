@@ -143,14 +143,6 @@ export function WorkspaceShell({
                 {syncLabel}
               </div>
               <ThemeToggle />
-              <button
-                type="button"
-                onClick={onRequestSignOut}
-                title="Sign out"
-                className="flex size-10 items-center justify-center rounded-md border border-[#e6e6e6] bg-white text-[#4b4647] transition hover:border-[#f7941d] hover:bg-[#fff8ef]"
-              >
-                <LogOut size={16} />
-              </button>
               <Link
                 href={getNewRequestHref()}
                 title="Create a new approval request"
@@ -159,6 +151,14 @@ export function WorkspaceShell({
                 <Plus size={16} />
                 New
               </Link>
+              <button
+                type="button"
+                onClick={onRequestSignOut}
+                title="Sign out"
+                className="flex size-10 items-center justify-center rounded-md border border-[#e6e6e6] bg-white text-[#4b4647] transition hover:border-[#f7941d] hover:bg-[#fff8ef]"
+              >
+                <LogOut size={16} />
+              </button>
             </div>
           </header>
 

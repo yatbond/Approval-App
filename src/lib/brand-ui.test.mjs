@@ -53,6 +53,14 @@ test("supports a persistent dark theme across login, workspace, and canvas", () 
   assert.doesNotMatch(canvasSource, /background:\s*"#0f172a"/);
 });
 
+test("keeps sign out as the rightmost header action", () => {
+  const newRequestIndex = shellSource.indexOf('title="Create a new approval request"');
+  const signOutIndex = shellSource.indexOf('title="Sign out"');
+
+  assert.ok(newRequestIndex >= 0);
+  assert.ok(signOutIndex > newRequestIndex);
+});
+
 test("keeps intermediate-width panels readable", async () => {
   const taskViewsSource = await readFile(
     new URL("../app/task-views.tsx", import.meta.url),
