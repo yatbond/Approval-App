@@ -941,17 +941,22 @@ export function UploadView({
         )}
 
         <label className="mt-4 flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-[#d2d2d2] bg-white p-6 text-center transition hover:border-emerald-400/60 hover:bg-emerald-400/5">
-          {isParsing ? (
+          {isParsing || openingAttachmentId ? (
             <Loader2 className="mb-3 animate-spin text-emerald-200" size={28} />
           ) : (
             <Upload className="mb-3 text-neutral-300" size={28} />
           )}
           <span className="text-sm font-medium">
-            {isParsing ? "Parsing" : "Choose file"}
+            {openingAttachmentId
+              ? "Opening saved file"
+              : isParsing
+                ? "Parsing"
+                : "Choose file"}
           </span>
           <span className="mt-1 text-xs text-neutral-500">PDF, image, Excel, or CSV</span>
           <input
             type="file"
+            disabled={isParsing || Boolean(openingAttachmentId)}
             className="sr-only"
             accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.csv"
             onChange={(event) => {

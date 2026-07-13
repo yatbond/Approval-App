@@ -20,6 +20,7 @@ test("saved draft files expose extraction editing and confirmed removal", () => 
   assert.match(uploadViewSource, /Remove/);
   assert.match(uploadViewSource, /editAttachmentExtraction\(attachment\)/);
   assert.match(uploadViewSource, /currentRequestInformationRef\.current\?\.scrollIntoView/);
+  assert.match(uploadViewSource, /Opening saved file/);
   assert.match(workspaceSource, /openUploadAttachmentForEditing/);
   assert.match(workspaceSource, /getDraftAttachmentRemoveConfirmation/);
   assert.match(workspaceSource, /setUploadRequestDraftRows\(remainingRows\)/);
