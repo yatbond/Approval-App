@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-test("request upload panel puts workflow template before draft recovery", () => {
+test("request upload panel keeps compact draft controls above request content", () => {
   const source = readFileSync(new URL("../app/upload-view.tsx", import.meta.url), "utf8");
 
   assert.ok(
-    source.indexOf(">Template</span>") < source.indexOf("<UploadDraftPanel"),
-    "Workflow template selector should render before the draft recovery panel",
+    source.indexOf("<UploadDraftControls") < source.indexOf(">Request setup<"),
+    "Draft controls should render before request setup",
+  );
+  assert.ok(
+    source.indexOf(">Files<") < source.indexOf(">Current request information<"),
+    "Files should render before current request information",
   );
 });
 

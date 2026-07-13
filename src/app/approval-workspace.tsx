@@ -777,7 +777,7 @@ function ApprovalWorkspaceBody({
     return namedVisibleDrafts;
   }
 
-  async function saveCurrentUploadRequestDraft() {
+  async function saveCurrentUploadRequestDraft(options?: { asNew?: boolean }) {
     const nextStatus = createEmptyUploadRequestDraftStatus(currentUploadRequestDraft);
     if (!nextStatus.hasDraft) {
       setUploadDraftMessage("Add document/field first.");
@@ -786,7 +786,7 @@ function ApprovalWorkspaceBody({
 
     const savedDraft = buildSavedUploadRequestDraft({
       draft: currentUploadRequestDraft,
-      id: selectedUploadDraftId || crypto.randomUUID(),
+      id: options?.asNew ? crypto.randomUUID() : selectedUploadDraftId || crypto.randomUUID(),
       title: uploadDraftTitle,
       createdByEmail: activeUser.email,
       savedAt: new Date().toISOString(),

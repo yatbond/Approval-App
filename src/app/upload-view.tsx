@@ -2,13 +2,16 @@
 
 import {
   ArrowRight,
+  ChevronDown,
   FileSpreadsheet,
   FileText,
+  FolderOpen,
   Image as ImageIcon,
   Loader2,
   Plus,
   Send,
   Save,
+  Trash2,
   X,
   Upload,
 } from "lucide-react";
@@ -208,7 +211,7 @@ export function UploadView({
   uploadDraftTitle: string;
   setUploadDraftTitle: (title: string) => void;
   uploadDraftMessage: string;
-  onSaveRequestDraft: () => void;
+  onSaveRequestDraft: (options?: { asNew?: boolean }) => void;
   onLoadRequestDraft: (draft: SavedUploadRequestDraft) => void;
   onDeleteRequestDraft: (draftId: string) => void;
   uploadDraftRestoreToken: string;
@@ -658,9 +661,21 @@ export function UploadView({
           onSelectNode={setActiveWorkflowNodeId}
         />
       )}
+      <UploadDraftControls
+        uploadDraftStatus={uploadDraftStatus}
+        savedUploadDrafts={savedUploadDrafts}
+        selectedUploadDraftId={selectedUploadDraftId}
+        uploadDraftTitle={uploadDraftTitle}
+        setUploadDraftTitle={setUploadDraftTitle}
+        uploadDraftMessage={uploadDraftMessage}
+        onSaveRequestDraft={onSaveRequestDraft}
+        onLoadRequestDraft={onLoadRequestDraft}
+        onDeleteRequestDraft={onDeleteRequestDraft}
+        onClearRequestDraft={onClearRequestDraft}
+      />
       <section className="min-w-0 rounded-md border border-[#e6e6e6] bg-white p-4 sm:p-5">
         <div className="flex items-center gap-2">
-          <h2 className="font-semibold">Request</h2>
+          <h2 className="font-semibold">Request setup</h2>
           <InfoTip label="Choose a template, then upload each required or optional document." />
         </div>
 
@@ -732,19 +747,6 @@ export function UploadView({
             </div>
           </div>
         )}
-
-        <UploadDraftPanel
-          uploadDraftStatus={uploadDraftStatus}
-          savedUploadDrafts={savedUploadDrafts}
-          selectedUploadDraftId={selectedUploadDraftId}
-          uploadDraftTitle={uploadDraftTitle}
-          setUploadDraftTitle={setUploadDraftTitle}
-          uploadDraftMessage={uploadDraftMessage}
-          onSaveRequestDraft={onSaveRequestDraft}
-          onLoadRequestDraft={onLoadRequestDraft}
-          onDeleteRequestDraft={onDeleteRequestDraft}
-          onClearRequestDraft={onClearRequestDraft}
-        />
 
         {selectedTemplate && (
           <div className="mt-4 space-y-3">
@@ -835,7 +837,7 @@ export function UploadView({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-neutral-200">
-                  Drafts
+                  Requests in this upload
                 </p>
                 <InfoTip label="Each uploaded document will submit as a separate request." />
               </div>
@@ -920,7 +922,7 @@ export function UploadView({
       <section className="rounded-md border border-[#e6e6e6] bg-white">
         <div className="border-b border-[#e6e6e6] p-4">
           <div className="flex items-center gap-2">
-            <h2 className="font-semibold">Current request</h2>
+            <h2 className="font-semibold">Current request information</h2>
             <InfoTip label="Corrections here become training examples for workflow-specific extraction." />
           </div>
         </div>
@@ -1608,7 +1610,7 @@ export function UploadView({
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <Send size={16} />
-                Submit current
+                Submit request
               </button>
               {hasBatchDrafts && (
                 <button
@@ -1643,7 +1645,7 @@ export function UploadView({
   );
 }
 
-function UploadDraftPanel({
+function UploadDraftControls({
   uploadDraftStatus,
   savedUploadDrafts,
   selectedUploadDraftId,
@@ -1661,7 +1663,7 @@ function UploadDraftPanel({
   uploadDraftTitle: string;
   setUploadDraftTitle: (title: string) => void;
   uploadDraftMessage: string;
-  onSaveRequestDraft: () => void;
+  onSaveRequestDraft: (options?: { asNew?: boolean }) => void;
   onLoadRequestDraft: (draft: SavedUploadRequestDraft) => void;
   onDeleteRequestDraft: (draftId: string) => void;
   onClearRequestDraft: () => void;
@@ -1671,123 +1673,159 @@ function UploadDraftPanel({
     currentDraftStatus: uploadDraftStatus,
     savedDrafts: savedUploadDrafts,
   });
+  const draftMenuRef = useRef<HTMLDetailsElement>(null);
+  const autosaveDetail = uploadDraftStatus.label.replace(/^Autosaved\s*/, "");
 
   return (
-    <div className="mt-3 rounded-md border border-[#e6e6e6] bg-white p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold text-neutral-200">
-            Draft progress
+    <section className="relative min-w-0 rounded-md border border-[#e6e6e6] bg-white p-3 shadow-sm xl:col-span-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-neutral-200">Draft controls</h2>
+            <InfoTip label="This request is saved automatically. Open the draft list to switch drafts, save a named copy, or discard the current work." />
+          </div>
+          <p className="mt-1 break-words text-xs text-neutral-500">
+            {uploadDraftStatus.hasDraft
+              ? `Saved automatically - ${autosaveDetail}`
+              : "Your progress will be saved automatically after you add information."}
           </p>
-          <InfoTip label="Your current request is autosaved here. Give it a name and select Save to keep a draft you can resume from Drafts." />
-        </div>
-        <span className="shrink-0 rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-xs text-neutral-400">
-          {workInProgressItems.length} {workInProgressItems.length === 1 ? "draft" : "drafts"}
-        </span>
-      </div>
-
-      <div className="mt-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-              Autosave
-            </p>
-            <p className="mt-1 text-sm text-neutral-200">{uploadDraftStatus.label}</p>
-          </div>
-          {uploadDraftStatus.hasDraft && (
-            <button
-              type="button"
-              onClick={onClearRequestDraft}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20"
-            >
-              <X size={13} />
-              Clear
-            </button>
-          )}
         </div>
 
-        {uploadDraftStatus.hasDraft && (
-          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-            <label className="block">
-              <span className="mb-1 block text-xs text-neutral-400">Name</span>
-              <input
-                value={uploadDraftTitle}
-                onChange={(event) => setUploadDraftTitle(event.target.value)}
-                placeholder="Example: Gleneagles final account"
-                className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none transition focus:border-emerald-400/60"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={onSaveRequestDraft}
-              className="mt-auto inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/20"
-            >
-              <Save size={13} />
-              Save
-            </button>
+        <details ref={draftMenuRef} className="relative w-full sm:w-auto">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-[#d2d2d2] bg-white px-3 text-sm font-medium text-neutral-200 transition hover:border-[#f7941d] hover:bg-[#fff4e5] sm:min-w-32">
+            Drafts ({workInProgressItems.length})
+            <ChevronDown size={16} />
+          </summary>
+          <div className="absolute right-0 z-40 mt-2 w-[min(30rem,calc(100vw-2rem))] rounded-md border border-[#d2d2d2] bg-white p-3 shadow-xl">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-neutral-200">Available drafts</h3>
+              <span className="text-xs text-neutral-500">
+                {workInProgressItems.length} total
+              </span>
+            </div>
+
+            <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+              {workInProgressItems.length === 0 ? (
+                <p className="rounded-md border border-dashed border-[#e6e6e6] bg-[#f7f7f5] px-3 py-2 text-sm text-neutral-500">
+                  No draft content yet.
+                </p>
+              ) : null}
+
+              {workInProgressItems.some((item) => item.type === "current") ? (
+                <div className="rounded-md border border-[#f7941d]/50 bg-[#fff4e5] p-3 text-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-medium text-neutral-100">Current work</p>
+                      <p className="mt-1 break-words text-xs text-neutral-500">
+                        {uploadDraftStatus.label}
+                      </p>
+                    </div>
+                    <span className="rounded-md border border-[#f7941d]/40 bg-white px-2 py-1 text-xs font-medium text-[#713d00]">
+                      Currently open
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+
+              {savedUploadDrafts.map((draft) => {
+                const summary = workInProgressItems.find((item) => item.id === draft.id);
+                const isOpen = draft.id === selectedUploadDraftId;
+                return (
+                  <div
+                    key={draft.id}
+                    className={`rounded-md border p-3 text-sm ${
+                      isOpen
+                        ? "border-[#f7941d]/50 bg-[#fff4e5]"
+                        : "border-[#e6e6e6] bg-[#f7f7f5]"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="break-words font-medium text-neutral-100">
+                            {draft.title}
+                          </p>
+                          <span className="rounded-md border border-[#d2d2d2] bg-white px-2 py-0.5 text-[11px] text-neutral-500">
+                            Saved draft
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-neutral-500">{summary?.detail}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {isOpen ? (
+                          <span className="rounded-md border border-[#f7941d]/40 bg-white px-2 py-1 text-xs font-medium text-[#713d00]">
+                            Currently open
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onLoadRequestDraft(draft);
+                              draftMenuRef.current?.removeAttribute("open");
+                            }}
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20"
+                          >
+                            <FolderOpen size={15} />
+                            Open
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          title={`Delete saved draft ${draft.title}`}
+                          aria-label={`Delete saved draft ${draft.title}`}
+                          onClick={() => onDeleteRequestDraft(draft.id)}
+                          className="inline-flex size-10 items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 text-rose-100 transition hover:bg-rose-500/20"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {uploadDraftStatus.hasDraft ? (
+              <div className="mt-3 border-t border-[#e6e6e6] pt-3">
+                <h3 className="text-sm font-semibold text-neutral-200">Save as new draft</h3>
+                <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <label className="block">
+                    <span className="sr-only">New draft name</span>
+                    <input
+                      value={uploadDraftTitle}
+                      onChange={(event) => setUploadDraftTitle(event.target.value)}
+                      placeholder="Draft name"
+                      className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none transition focus:border-emerald-400/60"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => onSaveRequestDraft({ asNew: true })}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/20"
+                  >
+                    <Save size={15} />
+                    Save as new
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={onClearRequestDraft}
+                  className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20"
+                >
+                  <X size={15} />
+                  Discard current work
+                </button>
+              </div>
+            ) : null}
           </div>
-        )}
+        </details>
       </div>
 
-      {uploadDraftMessage && (
+      {uploadDraftMessage ? (
         <p className="mt-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 py-2 text-xs text-neutral-300">
           {uploadDraftMessage}
         </p>
-      )}
-
-      <div className="mt-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-          Saved
-        </p>
-        {savedUploadDrafts.length === 0 ? (
-          <p className="mt-2 rounded-md border border-dashed border-[#e6e6e6] bg-[#f7f7f5] px-3 py-2 text-xs text-neutral-500">
-            No drafts.
-          </p>
-        ) : (
-          <div className="mt-2 space-y-2">
-            {savedUploadDrafts.map((draft) => {
-              const summary = workInProgressItems.find((item) => item.id === draft.id);
-              return (
-                <div
-                  key={draft.id}
-                  className={`rounded-md border p-3 text-sm ${
-                    draft.id === selectedUploadDraftId
-                      ? "border-emerald-400/50 bg-emerald-400/5"
-                      : "border-[#e6e6e6] bg-[#f7f7f5]"
-                  }`}
-                >
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="break-words font-medium text-neutral-100">
-                        {draft.title}
-                      </p>
-                      <p className="mt-1 text-neutral-500">
-                        {summary?.detail}
-                      </p>
-                    </div>
-                    <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex">
-                      <button
-                        type="button"
-                        onClick={() => onLoadRequestDraft(draft)}
-                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-sky-500/30 bg-sky-500/10 px-3 font-medium text-sky-100 transition hover:bg-sky-500/20"
-                      >
-                        Load
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteRequestDraft(draft.id)}
-                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3 font-medium text-rose-100 transition hover:bg-rose-500/20"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
+      ) : null}
+    </section>
   );
 }
