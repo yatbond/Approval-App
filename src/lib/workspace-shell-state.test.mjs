@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getWorkspaceShellState } from "./workspace-shell-state.ts";
+import {
+  getUserWorkspaceNotifications,
+  getWorkspaceShellState,
+} from "./workspace-shell-state.ts";
+
+test("shows only notifications addressed to the signed-in user", () => {
+  const notifications = getUserWorkspaceNotifications(
+    [
+      { id: "mine", recipientEmail: "DPang@ChunWo.com", unread: true },
+      { id: "other", recipientEmail: "other@example.com", unread: true },
+    ],
+    "dpang@chunwo.com",
+  );
+
+  assert.deepEqual(notifications.map((notification) => notification.id), ["mine"]);
+});
 
 test("combines seed and workflow notification unread counts", () => {
   const state = getWorkspaceShellState({

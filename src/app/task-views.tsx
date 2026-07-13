@@ -817,10 +817,11 @@ export function TrackingView({
                     {selectedTask.workflow} - requested by {selectedTask.requester}
                   </p>
                   <Link
-                    href={`/?tab=tracking&request=${encodeURIComponent(selectedTask.id)}`}
+                    href={`/?tab=tracking&request=${encodeURIComponent(selectedTask.id)}#tracking-path-history`}
+                    title="Jump to this request's workflow path and audit history"
                     className="mt-2 inline-flex min-h-11 items-center rounded-md border border-sky-400/40 bg-sky-400/12 px-3 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20"
                   >
-                    Open detail
+                    View path &amp; history
                   </Link>
                 </div>
                 <StatusBadge status={selectedTask.status} />
@@ -1171,7 +1172,7 @@ function TaskPathAndHistory({
   const workflowNodes = stages.flatMap((stage) => stage.nodes);
 
   return (
-    <div className="border-t border-[#e6e6e6] p-4">
+    <div id="tracking-path-history" className="scroll-mt-4 border-t border-[#e6e6e6] p-4">
       <div className="mb-4">
         <h3 className="text-sm font-semibold text-neutral-300">Path and history</h3>
         <p className="mt-1 text-xs text-neutral-500">

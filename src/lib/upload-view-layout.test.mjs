@@ -6,7 +6,25 @@ test("request upload panel puts workflow template before draft recovery", () => 
   const source = readFileSync(new URL("../app/upload-view.tsx", import.meta.url), "utf8");
 
   assert.ok(
-    source.indexOf("Workflow template") < source.indexOf("<UploadDraftPanel"),
+    source.indexOf(">Template</span>") < source.indexOf("<UploadDraftPanel"),
     "Workflow template selector should render before the draft recovery panel",
   );
+});
+
+test("document previews start unmodified at one hundred percent", () => {
+  const source = readFileSync(new URL("../app/upload-view.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /useState<PreviewEnhancementMode>\("original"\)/);
+  assert.match(source, /\[previewZoom, setPreviewZoom\] = useState\(100\)/);
+  assert.match(source, /\[previewContrast, setPreviewContrast\] = useState\(100\)/);
+  assert.match(source, /\[previewBrightness, setPreviewBrightness\] = useState\(100\)/);
+});
+
+test("new requests show a contextual workflow map", () => {
+  const source = readFileSync(new URL("../app/upload-view.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /Workflow map/);
+  assert.match(source, /Current box:/);
+  assert.match(source, /getWorkflowMapNodeIdForParticipantField\(field\.nodeId\)/);
+  assert.match(source, /buildRequestWorkflowMapState/);
 });
