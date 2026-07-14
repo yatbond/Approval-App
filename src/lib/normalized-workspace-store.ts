@@ -124,6 +124,7 @@ type AttachmentDbRow = {
   document_format: NormalizedApprovalRequestAttachmentRow["documentFormat"];
   workflow_node_id?: string | null;
   storage_path?: string | null;
+  public_url?: string | null;
   uploaded_by_email: string;
   created_at: string;
 };
@@ -307,7 +308,7 @@ export async function loadNormalizedWorkspaceState(
         supabase
           .from("approval_request_attachments")
           .select(
-            "approval_request_id,attachment_key,file_name,document_id,document_type,document_format,workflow_node_id,storage_path,uploaded_by_email,created_at",
+            "approval_request_id,attachment_key,file_name,document_id,document_type,document_format,workflow_node_id,storage_path,public_url,uploaded_by_email,created_at",
           )
           .in("approval_request_id", requestIds)
           .order("created_at"),
@@ -360,6 +361,7 @@ export async function loadNormalizedWorkspaceState(
       documentFormat: attachment.document_format,
       ...(attachment.workflow_node_id ? { workflowNodeId: attachment.workflow_node_id } : {}),
       ...(attachment.storage_path ? { storagePath: attachment.storage_path } : {}),
+      ...(attachment.public_url ? { publicUrl: attachment.public_url } : {}),
       uploadedByEmail: attachment.uploaded_by_email,
       createdAt: attachment.created_at,
     })),
@@ -656,6 +658,7 @@ async function upsertApprovalRequestAttachments(
             document_format: row.documentFormat,
             workflow_node_id: row.workflowNodeId || null,
             storage_path: row.storagePath || null,
+            public_url: row.publicUrl || null,
             uploaded_by: row.uploadedByEmail === user.email ? user.id : null,
             uploaded_by_email: row.uploadedByEmail,
             created_at: row.createdAt,

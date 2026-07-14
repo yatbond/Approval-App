@@ -1702,7 +1702,9 @@ export function UploadView({
                               Complete in Microsoft Forms
                             </p>
                             <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
-                              The mapped values below remain available for review or manual fallback until automatic response delivery is connected.
+                              {document.formLibraryRef.responseMode === "start_workflow"
+                                ? "Submitting this form starts the linked workflow after automatic response delivery is connected."
+                                : "For an existing request, include its Approval Request Reference in the form response. The mapped values below remain available as a manual fallback."}
                             </p>
                           </div>
                           {document.formLibraryRef.responseUrl && (

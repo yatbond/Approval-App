@@ -254,3 +254,72 @@ test("keeps bounded workflow sample OCR images during workspace persistence", ()
     },
   });
 });
+
+test("keeps pinned reusable form metadata through workspace persistence", () => {
+  const state = {
+    selectedTemplateId: "template-form",
+    approvalTasks: [],
+    businessDirectory: [],
+    workflowTemplates: [
+      {
+        id: "template-form",
+        name: "Form workflow",
+        business: "Chun Wo",
+        department: "Finance",
+        documentTypes: ["Payment form"],
+        documents: [
+          {
+            id: "form-document",
+            documentType: "Payment form",
+            format: "text",
+            inputMode: "manual_form",
+            required: true,
+            fields: [],
+            formLibraryRef: {
+              definitionId: "payment-form-v2",
+              formKey: "payment-form",
+              version: 2,
+              source: "microsoft_forms",
+              responseMode: "complete_node",
+              responseUrl: "https://forms.cloud.microsoft/r/form-id",
+              externalFormId: "form-id",
+              schemaFingerprint: "schema-v2",
+              completionRequired: true,
+              selectedFieldNames: ["amount"],
+              selectedAttachmentNames: ["invoice"],
+            },
+          },
+        ],
+        languages: ["English"],
+        fields: [],
+        steps: [],
+      },
+    ],
+    userRoleAssignments: [],
+    adminAuditEvents: [],
+    formLibrary: [
+      {
+        id: "payment-form-v2",
+        formKey: "payment-form",
+        name: "Payment form",
+        source: "microsoft_forms",
+        version: 2,
+        status: "ready",
+        fields: [],
+        responseMode: "complete_node",
+        externalFormId: "form-id",
+        schemaFingerprint: "schema-v2",
+        createdByEmail: "owner@example.com",
+        createdAt: "2026-07-14T00:00:00.000Z",
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      },
+    ],
+  };
+
+  const parsed = parseWorkspaceState(serializeWorkspaceState(state));
+  const reference = parsed?.workflowTemplates[0].documents[0].formLibraryRef;
+  assert.equal(reference?.definitionId, "payment-form-v2");
+  assert.equal(reference?.externalFormId, "form-id");
+  assert.equal(reference?.schemaFingerprint, "schema-v2");
+  assert.equal(parsed?.formLibrary[0].version, 2);
+});

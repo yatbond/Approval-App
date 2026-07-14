@@ -34,11 +34,13 @@ const participantSourceOptions: {
 export function FormLibrary({
   definitions,
   workflowTemplates,
+  workspaceOwnerEmail,
   onSave,
   onArchive,
 }: {
   definitions: FormLibraryDefinition[];
   workflowTemplates: WorkflowTemplate[];
+  workspaceOwnerEmail: string;
   onSave: (draft: FormLibraryDraft, existingDefinition: FormLibraryDefinition | null) => void;
   onArchive: (definitionId: string) => void;
 }) {
@@ -295,6 +297,30 @@ export function FormLibrary({
             <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100">
               Power Automate must send each response to the Approval App webhook. Until that connection is enabled, the mapped fields remain available as an in-app fallback.
             </p>
+            {selectedDefinition?.source === "microsoft_forms" && (
+              <details className="mt-3 rounded-md border border-[#d2d2d2] bg-[#f7f7f5] p-3 text-sm dark:border-neutral-700 dark:bg-neutral-900">
+                <summary className="cursor-pointer font-medium text-neutral-900 dark:text-neutral-100">
+                  Power Automate setup values
+                </summary>
+                <dl className="mt-3 grid min-w-0 gap-2 text-xs sm:grid-cols-[150px_minmax(0,1fr)]">
+                  <dt className="text-neutral-500">Webhook</dt>
+                  <dd className="min-w-0 break-all font-mono">/api/form-intake</dd>
+                  <dt className="text-neutral-500">Workspace owner</dt>
+                  <dd className="min-w-0 break-all font-mono">{workspaceOwnerEmail}</dd>
+                  <dt className="text-neutral-500">Form key</dt>
+                  <dd className="min-w-0 break-all font-mono">{selectedDefinition.formKey}</dd>
+                  <dt className="text-neutral-500">Form version</dt>
+                  <dd className="font-mono">{selectedDefinition.version}</dd>
+                  <dt className="text-neutral-500">Schema fingerprint</dt>
+                  <dd className="max-h-24 min-w-0 overflow-auto break-all rounded-md border border-[#e6e6e6] bg-white p-2 font-mono dark:border-neutral-700 dark:bg-neutral-950">
+                    {selectedDefinition.schemaFingerprint}
+                  </dd>
+                </dl>
+                <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
+                  Send only mapped questions in <span className="font-mono">answers</span>. For an existing request, also send its Approval Request Reference.
+                </p>
+              </details>
+            )}
           </div>
         )}
 

@@ -7,10 +7,13 @@ import {
 
 const payload = {
   provider: "microsoft_forms",
+  workspaceOwnerEmail: "owner@example.com",
   formKey: "world-cup-survey",
+  formVersion: 1,
   externalFormId: "5raJmEfjPA",
   externalResponseId: "response-42",
   responseMode: "start_workflow",
+  schemaFingerprint: "fingerprint-v1",
   respondentEmail: "user@example.com",
   answers: {
     input_date: "2026-07-14",

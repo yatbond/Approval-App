@@ -255,11 +255,20 @@ A Submit or Approval box can attach a ready library form. The workflow stores bo
 Microsoft Forms can be configured in two modes:
 
 1. **Start a new approval request**: one registered form version identifies one active published workflow version. Participant emails resolve from fixed template values, the respondent, mapped email fields, the company position directory, or manual intake resolution.
-2. **Complete an existing workflow box**: the external response must carry an opaque correlation token that identifies the request and form instance.
+2. **Complete an existing workflow box**: the external response must carry the Approval Request Reference and match a form version pinned to that request's workflow snapshot.
 
 The request screen opens a linked Microsoft Form in a new tab and retains mapped in-app fields as a review/manual fallback. Automatic response delivery requires a Microsoft Power Automate flow.
 
-The secure endpoint is `POST /api/form-intake`. It requires a bearer secret, validates a bounded structured payload, deduplicates by provider/form/response ID, and stores responses in `external_form_submissions`. The endpoint refuses delivery if its secret or server-side Supabase credentials are unavailable. Stored responses enter `pending_mapping`; a production response processor is still required to resolve the pinned form version, map participants, create or update the request, and attach Microsoft 365 files.
+The secure endpoint is `POST /api/form-intake`. It requires a bearer secret, validates a bounded structured payload, and deduplicates by provider/form/response ID. Each payload identifies the workspace owner, pinned form key and version, external Form ID, schema fingerprint, response mode, and external response ID.
+
+The response processor is server-side and synchronous:
+
+- **Start workflow** resolves the registered active workflow, maps respondent/form/template participant emails, validates required values and uploads, creates one request, and routes it normally.
+- **Complete node** locates the referenced request, verifies the pinned form version, adds mapped values and Microsoft 365 attachment links, and records an audit event. It does not approve the box; the current owner still decides.
+- Processing updates both the normalized workspace and the owner snapshot so browser reloads retain the result.
+- Results and failures remain in `external_form_submissions` for diagnosis.
+
+The Power Automate runbook and payload contract are in `docs/microsoft-forms-power-automate.md`.
 
 Schema drift policy:
 
@@ -268,6 +277,8 @@ Schema drift policy:
 - new requests can only use forms in **Ready** status;
 - existing workflows and requests remain pinned to their original form schema;
 - changed, broken, and archived status values are reserved for connection monitoring and lifecycle control.
+- unknown questions, missing required questions/uploads, external Form ID mismatch, and fingerprint mismatch are rejected as `schema_changed` before request data changes;
+- duplicate external response IDs return the existing stored result without repeating workflow actions.
 
 ### 9.5 Required Inputs
 
@@ -1037,9 +1048,9 @@ Release verification must include:
 - Enterprise SSO and user provisioning.
 - Teams or Slack notifications.
 - ERP/procurement integrations.
-- Configure the Microsoft Forms Power Automate flow and production webhook secret.
-- Add the response processor that converts accepted form intake rows into new requests or completed workflow-box form instances.
-- Add automated Microsoft Forms schema checks and Changed/Broken lifecycle transitions.
+- Complete tenant-side Power Automate setup for each registered Microsoft Form and monitor failed flow runs.
+- Add an administrative inbox for `schema_changed` and failed external form submissions.
+- Add scheduled Microsoft Forms metadata checks so the library can proactively mark Changed/Broken before the next response.
 - Microsoft Forms is the only planned external form platform. Google Forms, Typeform, and Jotform are out of scope unless the product decision is revisited.
 - Search, reporting, SLA analytics, and export.
 - Read-only workflow visualization optimized for mobile.
@@ -1075,7 +1086,7 @@ The current product direction is:
 - request-time participant completion;
 - native forms can be built inline or reused from the versioned Form Library and share the workflow field model;
 - Microsoft Forms is the sole external form connector because the organization uses Microsoft 365;
-- Microsoft Forms responses enter through Power Automate and the authenticated idempotent intake endpoint; automatic request creation remains gated on the response processor and participant preflight;
+- Microsoft Forms responses enter through Power Automate and the authenticated idempotent intake endpoint; the server processor applies valid responses only after pinned-version, schema, required-input, request-reference, and participant preflight checks;
 - all/selected/none document handoff;
 - checkbox-based value and document selection;
 - simple default handoff with advanced controls collapsed;

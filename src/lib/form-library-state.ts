@@ -214,6 +214,8 @@ export function attachLibraryFormToWorkflow({
       responseMode: definition.responseMode,
       responseUrl: definition.responseUrl,
       embedUrl: definition.embedUrl,
+      externalFormId: definition.externalFormId,
+      schemaFingerprint: definition.schemaFingerprint,
       completionRequired,
       selectedFieldNames: definition.fields.map((field) => field.name),
       selectedAttachmentNames: (definition.attachmentFields || []).map((field) => field.name),

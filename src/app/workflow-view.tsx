@@ -1241,7 +1241,7 @@ export function WorkflowView({
               />
 
               {(selectedGraphNode || selectedGraphEdge) && (
-                <aside className="fixed inset-x-3 bottom-3 top-24 z-40 overflow-y-auto rounded-md border border-[#e6e6e6] bg-white p-4 shadow-2xl md:absolute md:inset-y-4 md:left-auto md:right-4 md:w-[380px]">
+                <aside className="fixed inset-x-2 bottom-2 top-20 z-40 min-w-0 overflow-x-hidden overflow-y-auto rounded-md border border-[#e6e6e6] bg-white p-4 shadow-2xl dark:border-neutral-700 dark:bg-neutral-950 md:absolute md:inset-y-4 md:left-auto md:right-2 md:w-[min(420px,calc(100%-1rem))]">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-sm font-semibold text-neutral-300">
                       {selectedGraphNode ? "Box details" : "Branch details"}
@@ -2411,6 +2411,7 @@ export function WorkflowView({
           <FormLibrary
             definitions={formLibrary}
             workflowTemplates={workflowTemplates}
+            workspaceOwnerEmail={activeUser.email}
             onSave={onSaveFormLibrary}
             onArchive={onArchiveFormLibrary}
           />

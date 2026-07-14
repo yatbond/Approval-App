@@ -8,6 +8,7 @@ import {
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
 import { parseWorkspaceState, serializeWorkspaceState } from "@/lib/workspace-persistence";
 import type { WorkspaceStateSnapshot } from "@/lib/workspace-persistence";
+import { mergeExternalFormWorkspaceState } from "@/lib/external-form-workspace-merge";
 
 type WorkspaceRouteUser = {
   id: string;
@@ -118,13 +119,24 @@ export async function POST(request: NextRequest) {
 
   const body = (await request.json()) as { snapshot?: unknown };
   const serializedSnapshot = JSON.stringify(body.snapshot);
-  const snapshot = serializedSnapshot ? parseWorkspaceState(serializedSnapshot) : null;
-  if (!snapshot) {
+  const incomingSnapshot = serializedSnapshot ? parseWorkspaceState(serializedSnapshot) : null;
+  if (!incomingSnapshot) {
     return NextResponse.json(
       { mode: "local", reason: "Invalid workspace snapshot" },
       { status: 400 },
     );
   }
+
+  let persistedSnapshot: WorkspaceStateSnapshot | null = null;
+  try {
+    persistedSnapshot = await loadNormalizedWorkspaceState(
+      supabase,
+      incomingSnapshot.selectedTemplateId,
+    );
+  } catch {
+    // The normal save path below still reports database failures.
+  }
+  const snapshot = mergeExternalFormWorkspaceState(incomingSnapshot, persistedSnapshot);
 
   const snapshotSave = await saveWorkspaceSnapshot(supabase, user, snapshot);
 

@@ -10,10 +10,15 @@ const externalFormAttachmentSchema = z.object({
 
 export const externalFormIntakeSchema = z.object({
   provider: z.literal("microsoft_forms"),
+  workspaceOwnerEmail: z.string().email().max(500),
   formKey: z.string().trim().min(1).max(200),
+  formVersion: z.number().int().positive(),
   externalFormId: z.string().trim().min(1).max(500),
   externalResponseId: z.string().trim().min(1).max(500),
   responseMode: z.enum(["start_workflow", "complete_node"]),
+  schemaFingerprint: z.string().trim().min(1).max(20_000),
+  approvalRequestNo: z.string().trim().min(1).max(500).optional(),
+  formModifiedAt: z.string().datetime({ offset: true }).optional(),
   correlationToken: z.string().trim().max(500).optional(),
   respondentName: z.string().trim().max(300).optional(),
   respondentEmail: z.string().email().max(500).optional(),

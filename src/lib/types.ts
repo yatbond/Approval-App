@@ -158,9 +158,25 @@ export type WorkflowFormLibraryReference = {
   responseMode: FormLibraryResponseMode;
   responseUrl?: string;
   embedUrl?: string;
+  externalFormId?: string;
+  schemaFingerprint?: string;
   completionRequired: boolean;
   selectedFieldNames: string[];
   selectedAttachmentNames: string[];
+};
+
+export type ExternalFormResponseRecord = {
+  provider: "microsoft_forms";
+  formKey: string;
+  formVersion: number;
+  definitionId: string;
+  externalResponseId: string;
+  responseMode: "start_workflow" | "complete_node";
+  status: "received" | "applied";
+  answers: Record<string, string>;
+  attachmentIds: string[];
+  respondentEmail?: string;
+  submittedAt: string;
 };
 
 export type ExtractionTrainingExample = {
@@ -528,6 +544,7 @@ export type ApprovalTask = {
   lastAction: string;
   extractedFields: Record<string, string>;
   attachments?: ApprovalAttachment[];
+  externalFormResponses?: ExternalFormResponseRecord[];
   collaborationRequests?: TaskCollaborationRequest[];
   sharedFulfillments?: TaskSharedFulfillment[];
   correctionRequests?: TaskCorrectionRequest[];

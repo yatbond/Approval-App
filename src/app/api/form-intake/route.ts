@@ -3,6 +3,9 @@ import {
   isAuthorizedFormIntake,
   parseExternalFormIntake,
 } from "@/lib/external-form-intake";
+import { processExternalFormIntake } from "@/lib/external-form-processing";
+import { saveNormalizedWorkspaceState } from "@/lib/normalized-workspace-store";
+import { parseWorkspaceState, serializeWorkspaceState } from "@/lib/workspace-persistence";
 
 export async function GET() {
   const configured = Boolean(
@@ -62,14 +65,29 @@ export async function POST(request: Request) {
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  const markSubmissionFailed = async (
+    submissionId: string,
+    status: "failed" | "schema_changed",
+    message: string,
+  ) => {
+    await supabase
+      .from("external_form_submissions")
+      .update({ status, error_message: message, processed_at: new Date().toISOString() })
+      .eq("id", submissionId);
+  };
   const { data, error } = await supabase
     .from("external_form_submissions")
     .insert({
       provider: intake.provider,
+      workspace_owner_email: intake.workspaceOwnerEmail,
       form_key: intake.formKey,
+      form_version: intake.formVersion,
       external_form_id: intake.externalFormId,
       external_response_id: intake.externalResponseId,
       response_mode: intake.responseMode,
+      schema_fingerprint: intake.schemaFingerprint,
+      approval_request_no: intake.approvalRequestNo || null,
+      form_modified_at: intake.formModifiedAt || null,
       correlation_token: intake.correlationToken || null,
       respondent_name: intake.respondentName || null,
       respondent_email: intake.respondentEmail || null,
@@ -80,7 +98,14 @@ export async function POST(request: Request) {
     .single();
 
   if (error?.code === "23505") {
-    return Response.json({ accepted: true, duplicate: true });
+    const { data: existing } = await supabase
+      .from("external_form_submissions")
+      .select("id,status,error_message,result")
+      .eq("provider", intake.provider)
+      .eq("external_form_id", intake.externalFormId)
+      .eq("external_response_id", intake.externalResponseId)
+      .maybeSingle();
+    return Response.json({ accepted: true, duplicate: true, submission: existing || null });
   }
   if (error) {
     return Response.json(
@@ -88,8 +113,81 @@ export async function POST(request: Request) {
       { status: 503 },
     );
   }
-  return Response.json(
-    { accepted: true, submissionId: data.id, status: data.status },
-    { status: 202 },
-  );
+  const { data: workspaceRow, error: workspaceError } = await supabase
+    .from("workspace_snapshots")
+    .select("owner_user_id,owner_email,snapshot")
+    .eq("owner_email", intake.workspaceOwnerEmail)
+    .maybeSingle();
+  const snapshot = workspaceRow?.snapshot
+    ? parseWorkspaceState(JSON.stringify(workspaceRow.snapshot))
+    : null;
+  if (workspaceError || !workspaceRow || !snapshot) {
+    await markSubmissionFailed(
+      data.id,
+      "failed",
+      workspaceError?.message || "The target workspace could not be loaded.",
+    );
+    return Response.json(
+      { accepted: false, submissionId: data.id, reason: "The target workspace could not be loaded." },
+      { status: 422 },
+    );
+  }
+
+  const result = processExternalFormIntake({ snapshot, intake });
+  if (!result.success) {
+    await markSubmissionFailed(data.id, result.status, result.message);
+    return Response.json(
+      {
+        accepted: false,
+        submissionId: data.id,
+        status: result.status,
+        reason: result.message,
+      },
+      { status: 422 },
+    );
+  }
+
+  try {
+    await saveNormalizedWorkspaceState(supabase, result.snapshot, {
+      id: workspaceRow.owner_user_id,
+      email: workspaceRow.owner_email,
+    });
+    const { error: snapshotError } = await supabase
+      .from("workspace_snapshots")
+      .update({
+        snapshot: JSON.parse(serializeWorkspaceState(result.snapshot)),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("owner_email", workspaceRow.owner_email);
+    if (snapshotError) throw snapshotError;
+  } catch (processingError) {
+    const message =
+      processingError instanceof Error
+        ? processingError.message
+        : "The form response could not update the approval workspace.";
+    await markSubmissionFailed(data.id, "failed", message);
+    return Response.json(
+      { accepted: false, submissionId: data.id, status: "failed", reason: message },
+      { status: 503 },
+    );
+  }
+
+  const processedAt = new Date().toISOString();
+  await supabase
+    .from("external_form_submissions")
+    .update({
+      status: "processed",
+      approval_request_no: result.requestNo,
+      result: { requestNo: result.requestNo, message: result.message },
+      error_message: null,
+      processed_at: processedAt,
+    })
+    .eq("id", data.id);
+  return Response.json({
+    accepted: true,
+    submissionId: data.id,
+    status: "processed",
+    requestNo: result.requestNo,
+    message: result.message,
+  });
 }
