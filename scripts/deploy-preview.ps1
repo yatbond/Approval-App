@@ -99,8 +99,14 @@ function Get-ReadyGithubDeploymentForCommit {
   foreach ($deployment in $deployments.deployments) {
     $commitShaProperty = $deployment.meta.PSObject.Properties["githubCommitSha"]
     $commitRefProperty = $deployment.meta.PSObject.Properties["githubCommitRef"]
-    $commitSha = if ($null -eq $commitShaProperty) { $null } else { $commitShaProperty.Value }
-    $commitRef = if ($null -eq $commitRefProperty) { $null } else { $commitRefProperty.Value }
+    $commitSha = $null
+    $commitRef = $null
+    if ($null -ne $commitShaProperty) {
+      $commitSha = $commitShaProperty.Value
+    }
+    if ($null -ne $commitRefProperty) {
+      $commitRef = $commitRefProperty.Value
+    }
     if (
       $deployment.state -eq "READY" -and
       $commitSha -eq $CommitSha -and
