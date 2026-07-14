@@ -235,6 +235,14 @@ Supported field types are:
 
 Each field can define a label, optional help text, optional placeholder, required status, and choices where applicable. Dropdown and single-choice fields must contain at least one choice before publication. Required native fields block request submission until completed.
 
+Each request data field has one explicit input source:
+
+- **User entry in Approval App** for a native form control;
+- **Microsoft Forms answer** for an exact question label delivered by Power Automate; or
+- **AI from attachment** for a value extracted from a registered file-upload question.
+
+AI-derived fields select the attachment question to parse and can provide an optional extraction instruction. The extracted result is written into the same editable request field map as manual answers, so the submitter or box owner can review and correct it before submission or approval. Required extracted values block progression when extraction does not produce a value.
+
 Native form values use the same request field map as AI/OCR values. They therefore participate in draft autosave, conditions, handoff visibility, tracking, and audit behavior without a separate form data model. Existing templates stored with `inputMode: manual_form` remain compatible and are presented as **Native form** in the UI.
 
 ### 9.4 Reusable Form Library
@@ -245,7 +253,8 @@ The library supports:
 
 - native forms built and completed in Approval App;
 - linked Microsoft Forms registered by response URL;
-- mapped value fields and file-upload questions;
+- canonical request data fields with an explicit user-entry, Microsoft Forms answer, or AI-from-attachment source;
+- registered file-upload questions that can attach files and supply AI/OCR-derived values;
 - immutable versions with version comments;
 - archive behavior that removes a form from new workflow selection without breaking pinned workflow versions;
 - a target workflow and participant-resolution preflight when a Microsoft Form starts a new request.
@@ -257,16 +266,18 @@ Microsoft Forms can be configured in two modes:
 1. **Start a new approval request**: one registered form version identifies one active published workflow version. Participant emails resolve from fixed template values, the respondent, mapped email fields, the company position directory, or manual intake resolution.
 2. **Complete an existing workflow box**: the external response must carry the Approval Request Reference and match a form version pinned to that request's workflow snapshot.
 
-The request screen opens a linked Microsoft Form in a new tab and retains mapped in-app fields as a review/manual fallback. Automatic response delivery requires a Microsoft Power Automate flow.
+The request screen opens a linked Microsoft Form in a new tab and retains mapped in-app fields as a review/manual fallback. Automatic response delivery requires a Microsoft Power Automate flow. A Microsoft Form does not need to contain questions for AI-derived fields: Power Automate delivers the registered attachment and Approval App writes the parsed result into the app-owned request data field.
 
 The secure endpoint is `POST /api/form-intake`. It requires a bearer secret, validates a bounded structured payload, and deduplicates by provider/form/response ID. Each payload identifies the workspace owner, pinned form key and version, external Form ID, schema fingerprint, response mode, and external response ID.
 
 The response processor is server-side and synchronous:
 
-- **Start workflow** resolves the registered active workflow, maps respondent/form/template participant emails, validates required values and uploads, creates one request, and routes it normally.
-- **Complete node** locates the referenced request, verifies the pinned form version, adds mapped values and Microsoft 365 attachment links, and records an audit event. It does not approve the box; the current owner still decides.
+- **Start workflow** resolves the registered active workflow, maps respondent/form/template participant emails, downloads registered PDF or image attachments when AI fields require them, extracts those fields, validates required values and uploads, creates one request, and routes it normally.
+- **Complete node** locates the referenced request, verifies the pinned form version, adds mapped values and Microsoft 365 attachment links, extracts registered AI fields, and records an audit event. It does not approve the box; the current owner still decides.
 - Processing updates both the normalized workspace and the owner snapshot so browser reloads retain the result.
 - Results and failures remain in `external_form_submissions` for diagnosis.
+
+For native Approval App forms, registered attachment questions render as upload controls in the request screen. Uploading a PDF or image invokes the existing parser, merges linked AI-derived values into the current request without clearing manual answers, and leaves every result editable. Multiple attachment questions can contribute values to the same request.
 
 The Power Automate runbook and payload contract are in `docs/microsoft-forms-power-automate.md`.
 

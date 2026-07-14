@@ -15,7 +15,7 @@ This runbook connects one registered Microsoft Form version to Approval App thro
 2. Add Microsoft Forms trigger **When a new response is submitted**.
 3. Add Microsoft Forms action **Get response details** using the trigger response ID.
 4. Add Microsoft Forms action **Get form details** and retain its modified date when available.
-5. For each file-upload question, parse the JSON response and create a Microsoft 365 sharing/download link. Do not send binary file data in the webhook body.
+5. For each file-upload question, parse the JSON response and create an HTTPS download URL. The Approval App server must be able to fetch this URL when a registered field uses **AI from attachment**. Do not send binary file data in the webhook body.
 6. Add an HTTP `POST` action to `https://<approval-app-domain>/api/form-intake`.
 7. Add headers:
 
@@ -64,6 +64,8 @@ For `start_workflow`, use that response mode and omit `approvalRequestNo` unless
 - `externalResponseId` is the idempotency key. Retried deliveries return the stored result and do not create another request.
 - `complete_node` requires the form to be pinned to the request workflow and requires `approvalRequestNo`.
 - Unknown questions, missing required questions, missing required uploads, or a changed fingerprint are stored as `schema_changed` and do not alter a request.
+- A request data field sourced from **AI from attachment** is not expected in `answers`. Approval App downloads the matching registered attachment, parses it, and writes the result into that canonical field.
+- Required AI-derived fields fail safely when the registered attachment or its `downloadUrl` is missing, or extraction returns no value.
 - A completed-node response supplies values and files; it does not approve the workflow box. The box owner still makes the approval decision.
 
 ## Test Checklist
@@ -74,10 +76,12 @@ For `start_workflow`, use that response mode and omit `approvalRequestNo` unless
 4. Omit a required answer and required upload in separate tests; both must return `422`.
 5. For complete-node mode, use an invalid request reference and confirm no request changes.
 6. For start-workflow mode, omit one required participant email and confirm no request is created.
-7. Verify the request in Queue/Tracking and open each Microsoft 365 attachment link as an authorized user.
+7. For a PDF or image attachment linked to an AI field, confirm the extracted value appears in Queue/Tracking and remains editable before the workflow decision.
+8. Verify each Microsoft 365 attachment link opens for an authorized user.
 
 ## Operational Notes
 
-- Microsoft 365 links may still require Microsoft sign-in; Approval App stores the link and Drive item reference, not the file binary.
+- Microsoft 365 links shown to users may require Microsoft sign-in. The `downloadUrl` used for server-side AI extraction must be directly fetchable by Approval App and may be a separate time-limited URL.
+- Server-side Microsoft Forms attachment extraction currently supports PDF and image files. Excel files can still be attached, but are not AI-parsed through this intake path.
 - Create a new Form Library version after changing Microsoft Forms questions. Review and republish affected workflow templates before activating the new version.
 - Keep the webhook secret server-only. Never place the service-role key or webhook secret in client-side variables.
