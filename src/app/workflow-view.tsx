@@ -1119,6 +1119,7 @@ export function WorkflowView({
                     <button
                       type="button"
                       disabled
+                      aria-label="Canvas (desktop only)"
                       title="Canvas editing is available on tablet and desktop screens."
                       className="min-h-11 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-sm text-neutral-500 md:hidden"
                     >

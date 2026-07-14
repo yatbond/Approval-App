@@ -30,6 +30,14 @@ const formLibrarySource = await readFile(
   new URL("../app/form-library.tsx", import.meta.url),
   "utf8",
 );
+const adminViewSource = await readFile(
+  new URL("../app/admin-view.tsx", import.meta.url),
+  "utf8",
+);
+const uploadViewSource = await readFile(
+  new URL("../app/upload-view.tsx", import.meta.url),
+  "utf8",
+);
 
 test("uses the official Chun Wo palette and typography", () => {
   for (const token of ["#f7941d", "#7b791c", "#231f20", "#e6e6e6", "#8a8a8a"]) {
@@ -67,6 +75,34 @@ test("keeps neutral text and orange actions readable in light mode", async () =>
   }
 });
 
+test("keeps dark mode foregrounds and placeholders readable", () => {
+  assert.match(
+    globalsSource,
+    /html\[data-theme="dark"\] \.text-neutral-400[\s\S]*color: #aaa4a5 !important/,
+  );
+  assert.match(
+    globalsSource,
+    /html\[data-theme="dark"\] \.text-emerald-100[\s\S]*color: #ffd7aa !important/,
+  );
+  assert.match(
+    globalsSource,
+    /html\[data-theme="dark"\] \.text-sky-100[\s\S]*color: #e5e69e !important/,
+  );
+  assert.match(globalsSource, /::placeholder[\s\S]*color: #666162/);
+  assert.match(
+    globalsSource,
+    /html\[data-theme="dark"\] ::placeholder[\s\S]*color: #aaa4a5/,
+  );
+});
+
+test("labels editable admin fields and saved-draft actions", () => {
+  assert.match(adminViewSource, /aria-label="Business name"/);
+  assert.match(adminViewSource, /aria-label=\{`Department name \$\{index \+ 1\}`\}/);
+  assert.match(adminViewSource, /aria-label="Test email recipient"/);
+  assert.match(uploadViewSource, /aria-label=\{`Open saved draft \$\{draft\.title\}`\}/);
+  assert.match(shellSource, /size-10 shrink-0 items-center/);
+});
+
 test("keeps form-library inputs mounted while their labels change", () => {
   assert.match(formLibrarySource, /key=\{`mapped-value-\$\{index\}`\}/);
   assert.match(formLibrarySource, /key=\{`mapped-attachment-\$\{index\}`\}/);
@@ -89,6 +125,19 @@ test("supports a persistent dark theme across login, workspace, and canvas", () 
   assert.match(canvasSource, /colorMode=\{theme\}/);
   assert.match(canvasSource, /theme === "dark" \? "#4b4647" : "#d9d9d9"/);
   assert.doesNotMatch(canvasSource, /background:\s*"#0f172a"/);
+});
+
+test("explains the mobile canvas restriction accessibly", async () => {
+  const workflowViewSource = await readFile(
+    new URL("../app/workflow-view.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(workflowViewSource, /aria-label="Canvas \(desktop only\)"/);
+  assert.match(
+    workflowViewSource,
+    /title="Canvas editing is available on tablet and desktop screens\."/,
+  );
 });
 
 test("keeps sign out as the rightmost header action", () => {

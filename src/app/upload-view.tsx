@@ -2220,6 +2220,8 @@ function UploadDraftControls({
                         ) : (
                           <button
                             type="button"
+                            title={`Open saved draft ${draft.title}`}
+                            aria-label={`Open saved draft ${draft.title}`}
                             onClick={() => {
                               onLoadRequestDraft(draft);
                               draftMenuRef.current?.removeAttribute("open");

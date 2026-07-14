@@ -150,7 +150,7 @@ export function WorkspaceShell({
               type="button"
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               onClick={onToggleSidebar}
-              className={`ml-auto hidden size-10 items-center justify-center rounded-md border border-[#e6e6e6] bg-white text-[#4b4647] transition hover:border-[#f7941d] hover:bg-[#fff8ef] lg:flex ${
+              className={`ml-auto hidden size-10 shrink-0 items-center justify-center rounded-md border border-[#e6e6e6] bg-white text-[#4b4647] transition hover:border-[#f7941d] hover:bg-[#fff8ef] lg:flex ${
                 sidebarCollapsed ? "" : "ml-auto"
               }`}
             >

@@ -111,15 +111,15 @@ body {
 }
 
 html[data-theme="dark"] .bg-white {
-  background-color: var(--cw-surface);
+  background-color: var(--cw-surface) !important;
 }
 
 html[data-theme="dark"] .bg-\[\#f7f7f5\] {
-  background-color: var(--cw-surface-muted);
+  background-color: var(--cw-surface-muted) !important;
 }
 
 html[data-theme="dark"] .bg-\[\#f2f2f2\] {
-  background-color: var(--cw-surface-subtle);
+  background-color: var(--cw-surface-subtle) !important;
 }
 
 html[data-theme="dark"] .border-\[\#e6e6e6\] {
@@ -132,32 +132,32 @@ html[data-theme="dark"] .border-\[\#d9d9d9\] {
 }
 
 html[data-theme="dark"] .text-\[\#231f20\] {
-  color: var(--foreground);
+  color: var(--foreground) !important;
 }
 
 html[data-theme="dark"] .text-\[\#4b4647\] {
-  color: #cbc6c7;
+  color: #cbc6c7 !important;
 }
 
 html[data-theme="dark"] .text-\[\#666162\],
 html[data-theme="dark"] .text-\[\#8a8a8a\] {
-  color: #aaa4a5;
+  color: #aaa4a5 !important;
 }
 
 html[data-theme="dark"] .text-\[\#7b791c\],
 html[data-theme="dark"] .text-\[\#4d4c10\] {
-  color: #dfe18f;
+  color: #dfe18f !important;
 }
 
 html[data-theme="dark"] .text-\[\#653a08\],
 html[data-theme="dark"] .text-\[\#713d00\],
 html[data-theme="dark"] .text-\[\#9b5200\] {
-  color: #ffd5a3;
+  color: #ffd5a3 !important;
 }
 
 html[data-theme="dark"] .bg-\[\#fff4e6\],
 html[data-theme="dark"] .bg-\[\#fff4e5\] {
-  background-color: #3b2918;
+  background-color: #3b2918 !important;
 }
 
 html[data-theme="dark"] .hover\:bg-\[\#fff8ef\]:hover {
@@ -171,7 +171,46 @@ html[data-theme="dark"] .hover\:bg-\[\#eeeeec\]:hover {
 }
 
 html[data-theme="dark"] .bg-\[\#f7941d\].text-\[\#231f20\] {
-  color: #231f20;
+  color: #231f20 !important;
+}
+
+/*
+ * Tailwind's semantic status colors were originally tuned for the light
+ * palette. These explicit dark-mode foregrounds keep every legacy status and
+ * action readable regardless of generated utility order.
+ */
+html[data-theme="dark"] .text-neutral-100,
+html[data-theme="dark"] .text-neutral-200,
+html[data-theme="dark"] .text-neutral-300 {
+  color: #f5f3f3 !important;
+}
+
+html[data-theme="dark"] .text-neutral-400,
+html[data-theme="dark"] .text-neutral-500,
+html[data-theme="dark"] .text-neutral-600 {
+  color: #aaa4a5 !important;
+}
+
+html[data-theme="dark"] .text-neutral-700,
+html[data-theme="dark"] .text-neutral-800,
+html[data-theme="dark"] .text-neutral-900,
+html[data-theme="dark"] .text-neutral-950 {
+  color: #f5f3f3 !important;
+}
+
+html[data-theme="dark"] .text-emerald-100,
+html[data-theme="dark"] .text-amber-100,
+html[data-theme="dark"] .text-yellow-100 {
+  color: #ffd7aa !important;
+}
+
+html[data-theme="dark"] .text-sky-100,
+html[data-theme="dark"] .text-violet-100 {
+  color: #e5e69e !important;
+}
+
+html[data-theme="dark"] .text-rose-100 {
+  color: #ffd6dd !important;
 }
 
 html[data-theme="dark"] .bg-rose-50 {
@@ -195,20 +234,20 @@ html[data-theme="dark"] [data-brand-logo] {
 html:not([data-theme="dark"]) .text-neutral-950,
 html:not([data-theme="dark"]) .text-neutral-900,
 html:not([data-theme="dark"]) .text-neutral-800 {
-  color: #231f20;
+  color: #231f20 !important;
 }
 
 html:not([data-theme="dark"]) .text-neutral-700 {
-  color: #4b4647;
+  color: #4b4647 !important;
 }
 
 html:not([data-theme="dark"]) .text-neutral-600,
 html:not([data-theme="dark"]) .text-neutral-500 {
-  color: #666162;
+  color: #666162 !important;
 }
 
 html:not([data-theme="dark"]) .text-\[\#8a8a8a\] {
-  color: #666162;
+  color: #666162 !important;
 }
 
 .validation-error {
@@ -254,6 +293,15 @@ textarea {
   color: inherit;
   font: inherit;
   letter-spacing: 0;
+}
+
+::placeholder {
+  color: #666162;
+  opacity: 1;
+}
+
+html[data-theme="dark"] ::placeholder {
+  color: #aaa4a5;
 }
 
 input:disabled,

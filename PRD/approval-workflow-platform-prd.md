@@ -42,7 +42,7 @@ The current stack is:
 - OpenRouter or OpenAI-compatible AI parsing;
 - Resend for transactional email;
 - Vercel for deployment;
-- Vitest and Playwright for automated verification.
+- Node.js test runner and Playwright-based browser verification.
 
 ## 3. Product Principles
 
@@ -128,7 +128,7 @@ The signed-in application contains five primary destinations:
 1. **Queue**: requests requiring the user’s action.
 2. **Tracking**: requests the user originated, owns, previously acted on, or can otherwise view.
 3. **Drafts**: incomplete request drafts that can be resumed or deleted.
-4. **Workflow**: workflow Builder, Canvas, Library, Versions, and Archived views.
+4. **Workflow**: workflow Builder, Canvas, Library, and Forms views; Library separates active workflows, versions, and archived workflows.
 5. **Admin**: organization, role, notification, email, and template administration.
 
 The header also contains:
@@ -136,6 +136,7 @@ The header also contains:
 - a clickable, user-specific unread notification count and notification menu;
 - signed-in user identity;
 - save/sync state;
+- persistent light/dark theme control;
 - sign-out action with confirmation;
 - **+ New** to start a request.
 
@@ -151,6 +152,8 @@ There is no user-facing Upload tab. **+ New** opens the internal request-creatio
 - Long labels wrap or truncate without crossing control boundaries.
 - Tooltips explain unfamiliar controls.
 - Workflow Canvas editing is disabled on mobile with a concise desktop/tablet notice.
+- Form controls and icon-only actions expose accessible names; placeholders are supporting hints rather than the only control label.
+- The sidebar collapse control retains a full touch target even when the brand lockup and navigation share constrained width.
 
 ## 8. End-to-End User Journeys
 
@@ -871,6 +874,7 @@ The current application saves:
 | `/api/workflow-collaboration` | POST | Mirror collaboration records |
 | `/api/email/task-notifications` | POST | Send task event notifications |
 | `/api/email/test` | POST | Send an administrator test email |
+| `/api/form-intake` | POST | Validate and process idempotent Microsoft Forms responses from Power Automate |
 
 Authentication middleware protects application routes and Supabase SSR cookies maintain the session.
 
@@ -997,7 +1001,7 @@ Important environment groups include:
 
 ## 25. Validation and Test Coverage
 
-The codebase currently contains 662 automated tests covering 107 test files. Coverage includes:
+The codebase currently contains 665 automated tests covering 107 test files. Coverage includes:
 
 - graph validation and routing;
 - sequential and parallel approval state;
@@ -1011,6 +1015,7 @@ The codebase currently contains 662 automated tests covering 107 test files. Cov
 - PDF and spreadsheet parsing;
 - upload/request workspace behavior;
 - Queue, Tracking, Workflow, intermediate-width, mobile, and light/dark UI behavior;
+- accessible control labels, placeholder readability, stable touch targets, and dark-theme semantic foregrounds;
 - email delivery modes and notification targeting;
 - Supabase persistence and normalized records;
 - security and row-level policy expectations.
@@ -1029,6 +1034,13 @@ Release verification must include:
 10. draft refresh and resume;
 11. published template version activation;
 12. email dry-run or controlled live-delivery verification.
+
+The release browser audit exercises the six primary screens at 390 px mobile,
+900 px intermediate, and 1440 px desktop widths. It checks page-level overflow,
+clipped content, accessible control names, placeholder and foreground contrast,
+minimum control size, and light/dark theme behavior. Workflow subviews and the
+Tracking, notification, handoff, history, and draft controls are checked as
+separate interactive states rather than relying only on their default screens.
 
 ## 26. Acceptance Criteria by Capability
 

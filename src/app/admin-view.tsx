@@ -233,6 +233,7 @@ export function AdminView({
               <input
                 value={businessNameDraft}
                 onChange={(event) => setBusinessNameDraft(event.target.value)}
+                aria-label="Business name"
                 className="min-h-11 min-w-0 rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
               />
               <button
@@ -261,6 +262,7 @@ export function AdminView({
                 >
                   <input
                     defaultValue={department}
+                    aria-label={`Department name ${index + 1}`}
                     onBlur={(event) =>
                       setBusinessDirectory((items) =>
                         updateDepartment(
@@ -439,10 +441,11 @@ export function AdminView({
           <p className="mt-2 rounded-md border border-yellow-400/20 bg-yellow-400/10 p-2 text-xs text-yellow-100">
             Verify Resend domain before live sends.
           </p>
-          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+          <div className="mt-3 grid min-w-0 gap-2">
             <input
               value={testEmail}
               onChange={(event) => setTestEmail(event.target.value)}
+              aria-label="Test email recipient"
               placeholder="recipient@example.com"
               className="min-h-11 rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
             />
@@ -608,4 +611,3 @@ export function AdminView({
     </div>
   );
 }
-
