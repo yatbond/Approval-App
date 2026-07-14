@@ -13,7 +13,7 @@ export function InfoTip({ label }: { label: string }) {
       </span>
       <span
         role="tooltip"
-        className="pointer-events-none invisible absolute left-0 top-full z-50 mt-2 w-max max-w-[min(16rem,calc(100vw-2rem))] border border-[#d2d2d2] bg-[#231f20] px-3 py-2 text-xs leading-5 text-white opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        className="pointer-events-none absolute left-0 top-full z-50 mt-2 hidden w-max max-w-[min(16rem,calc(100vw-2rem))] border border-[#d2d2d2] bg-[#231f20] px-3 py-2 text-xs leading-5 text-white shadow-lg group-hover:block group-focus-within:block"
       >
         {label}
       </span>
