@@ -198,7 +198,9 @@ export function WorkflowRuntimePanel({
                 First task:{" "}
                 <span className="text-neutral-100">
                   {workflowSimulation.currentNode
-                    ? `${workflowSimulation.currentNode.label} (${workflowSimulation.currentNode.assigneeEmail})`
+                    ? workflowSimulation.currentNode.assigneeEmail?.trim()
+                      ? `${workflowSimulation.currentNode.label} (${workflowSimulation.currentNode.assigneeEmail})`
+                      : `${workflowSimulation.currentNode.label} (assigned when request starts)`
                     : "not configured"}
                 </span>
               </p>

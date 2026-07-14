@@ -555,7 +555,7 @@ test("finds initial routes for supported parallel canvas combinations", () => {
   });
 });
 
-test("validates missing first approver and document extraction fields", () => {
+test("allows template approval emails to be assigned when a request starts", () => {
   const issues = validateWorkflowTemplate({
     ...template,
     documents: [
@@ -621,12 +621,66 @@ test("validates missing first approver and document extraction fields", () => {
         issue.message.includes("no fields"),
     ),
   );
-  assert.ok(
-    issues.some(
-      (issue) =>
-        issue.severity === "error" &&
-        issue.message.includes("first approver"),
-    ),
+  assert.equal(
+    issues.some((issue) => issue.message.includes("first approver")),
+    false,
+  );
+});
+
+test("simulates a submit box followed by an unassigned approval box", () => {
+  const simulated = simulateWorkflowTemplate({
+    ...template,
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+        {
+          id: "submit-1",
+          kind: "submit_request",
+          label: "QS",
+          x: 180,
+          y: 0,
+        },
+        {
+          id: "approval-1",
+          kind: "approval",
+          label: "PQS",
+          x: 360,
+          y: 0,
+          assigneeEmail: "",
+        },
+        { id: "end", kind: "end", label: "End", x: 540, y: 0 },
+      ],
+      edges: [
+        {
+          id: "edge-start-submit",
+          sourceId: "start",
+          targetId: "submit-1",
+          label: "Main",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-approval",
+          sourceId: "submit-1",
+          targetId: "approval-1",
+          label: "Main",
+          branchType: "main",
+        },
+        {
+          id: "edge-approval-end",
+          sourceId: "approval-1",
+          targetId: "end",
+          label: "Main",
+          branchType: "main",
+        },
+      ],
+    },
+  });
+
+  assert.equal(simulated.currentNode?.id, "approval-1");
+  assert.equal(
+    simulated.issues.some((issue) => issue.message.includes("first approver")),
+    false,
   );
 });
 

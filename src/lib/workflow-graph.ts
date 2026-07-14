@@ -77,6 +77,7 @@ type InitialRouteOptions = {
   extractedFields?: Record<string, string>;
   nodeDecisions?: Record<string, "approved" | "rejected">;
   allowAmbiguousCondition?: boolean;
+  allowUnassignedActionNodes?: boolean;
 };
 
 export type ConditionCoverageWarning = {
@@ -561,6 +562,7 @@ export function validateWorkflowTemplate(
 
   const route = traceInitialWorkflowRoute(graph, {
     allowAmbiguousCondition: true,
+    allowUnassignedActionNodes: true,
   });
   if (!route.currentNode) {
     issues.push({
@@ -909,6 +911,7 @@ export function simulateWorkflowTemplate(
   const graph = createWorkflowGraphFromTemplate(template);
   const route = traceInitialWorkflowRoute(graph, {
     allowAmbiguousCondition: true,
+    allowUnassignedActionNodes: true,
   });
   const routeDocumentIds = new Set<string>();
 
@@ -1020,7 +1023,7 @@ function traceInitialWorkflowBranch(
 
     if (
       (node.kind === "approval" || node.kind === "review") &&
-      node.assigneeEmail?.trim()
+      (options.allowUnassignedActionNodes || node.assigneeEmail?.trim())
     ) {
       return {
         currentNode: node,
@@ -1089,7 +1092,11 @@ function traceInitialWorkflowBranch(
       continue;
     }
 
-    const outgoingActionNodes = getOutgoingActionableNodes(graph, node.id);
+    const outgoingActionNodes = getOutgoingActionableNodes(
+      graph,
+      node.id,
+      options.allowUnassignedActionNodes,
+    );
     if (outgoingActionNodes.length > 1) {
       return {
         currentNode: outgoingActionNodes[0],
@@ -1181,7 +1188,9 @@ function chooseInitialConditionCaseTarget(
     }
   });
 
-  const currentNodes = targetNodes.filter(isActionableRouteNode);
+  const currentNodes = targetNodes.filter((targetNode) =>
+    isActionableRouteNode(targetNode, options.allowUnassignedActionNodes),
+  );
   const terminalNode = targetNodes.find(
     (targetNode) => targetNode.kind === "return_reject" || targetNode.kind === "end",
   );
@@ -1193,18 +1202,25 @@ function chooseInitialConditionCaseTarget(
   };
 }
 
-function getOutgoingActionableNodes(graph: WorkflowGraph, sourceId: string) {
+function getOutgoingActionableNodes(
+  graph: WorkflowGraph,
+  sourceId: string,
+  allowUnassignedActionNodes = false,
+) {
   return graph.edges
     .filter((edge) => edge.sourceId === sourceId && edge.branchType !== "for_information")
     .map((edge) => graph.nodes.find((node) => node.id === edge.targetId))
     .filter((node): node is WorkflowGraphNode => Boolean(node))
-    .filter(isActionableRouteNode);
+    .filter((node) => isActionableRouteNode(node, allowUnassignedActionNodes));
 }
 
-function isActionableRouteNode(node: WorkflowGraphNode) {
+function isActionableRouteNode(
+  node: WorkflowGraphNode,
+  allowUnassignedActionNodes = false,
+) {
   return (
     (node.kind === "approval" || node.kind === "review") &&
-    Boolean(node.assigneeEmail?.trim())
+    (allowUnassignedActionNodes || Boolean(node.assigneeEmail?.trim()))
   );
 }
 
