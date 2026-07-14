@@ -2283,7 +2283,7 @@ export function WorkflowView({
                                 onClick={addLibraryFormToSelectedBox}
                                 disabled={!selectedLibraryFormId}
                                 title="Attach this form version to the selected Submit or Approval box."
-                                className="mt-2 flex min-h-9 w-full items-center justify-center gap-2 rounded-md border border-[#f7941d] bg-[#f7941d] px-3 text-sm font-medium text-white transition hover:bg-[#df7f0a] disabled:cursor-not-allowed disabled:opacity-45"
+                                className="mt-2 flex min-h-9 w-full items-center justify-center gap-2 rounded-md border border-[#f7941d] bg-[#f7941d] px-3 text-sm font-medium text-[#231f20] transition hover:bg-[#df7f0a] disabled:cursor-not-allowed disabled:opacity-45"
                               >
                                 <Plus size={15} /> Add library form
                               </button>

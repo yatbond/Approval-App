@@ -586,7 +586,7 @@ export function FormLibrary({
             onClick={save}
             disabled={preflightIssues.length > 0 || selectedDefinition?.status === "archived"}
             title={preflightIssues[0] || "Save this immutable form version."}
-            className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-[#f7941d] bg-[#f7941d] px-4 font-medium text-white transition hover:bg-[#df7f0a] disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+            className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-[#f7941d] bg-[#f7941d] px-4 font-medium text-[#231f20] transition hover:bg-[#df7f0a] disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
           >
             <Save size={16} /> {selectedDefinition ? "Save new version" : "Save form"}
           </button>

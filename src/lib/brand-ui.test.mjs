@@ -35,6 +35,26 @@ test("uses the official Chun Wo palette and typography", () => {
   assert.match(globalsSource, /html\[data-theme="dark"\]/);
 });
 
+test("keeps neutral text and orange actions readable in light mode", async () => {
+  assert.match(
+    globalsSource,
+    /html:not\(\[data-theme="dark"\]\) \.text-neutral-900[\s\S]*color: #231f20/,
+  );
+  assert.match(
+    globalsSource,
+    /html:not\(\[data-theme="dark"\]\) \.text-neutral-500[\s\S]*color: #666162/,
+  );
+
+  for (const path of [
+    "../app/form-library.tsx",
+    "../app/upload-view.tsx",
+    "../app/workflow-view.tsx",
+  ]) {
+    const source = await readFile(new URL(path, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /bg-\[\#f7941d\][^"\n]*text-white/);
+  }
+});
+
 test("uses the official logo and labeled mobile navigation", () => {
   assert.match(shellSource, /src="\/chunwo-logo\.svg"/);
   assert.match(loginSource, /src="\/chunwo-logo\.svg"/);

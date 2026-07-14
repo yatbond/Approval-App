@@ -185,6 +185,26 @@ html[data-theme="dark"] [data-brand-logo] {
   background-color: #ffffff;
 }
 
+/*
+ * Legacy screens use the low neutral utilities for foreground text, while
+ * newer screens use Tailwind's conventional high neutral utilities. Keep both
+ * readable without changing the neutral background and border palette.
+ */
+html:not([data-theme="dark"]) .text-neutral-950,
+html:not([data-theme="dark"]) .text-neutral-900,
+html:not([data-theme="dark"]) .text-neutral-800 {
+  color: #231f20;
+}
+
+html:not([data-theme="dark"]) .text-neutral-700 {
+  color: #4b4647;
+}
+
+html:not([data-theme="dark"]) .text-neutral-600,
+html:not([data-theme="dark"]) .text-neutral-500 {
+  color: #666162;
+}
+
 .validation-error {
   border-color: #fda4af;
   background-color: #fff1f2;

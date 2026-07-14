@@ -1713,7 +1713,7 @@ export function UploadView({
                               target="_blank"
                               rel="noreferrer"
                               title="Open this registered Microsoft Form in a new tab."
-                              className="flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-[#f7941d] bg-[#f7941d] px-3 text-sm font-medium text-white transition hover:bg-[#df7f0a]"
+                              className="flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-[#f7941d] bg-[#f7941d] px-3 text-sm font-medium text-[#231f20] transition hover:bg-[#df7f0a]"
                             >
                               <ExternalLink size={15} /> Open form
                             </a>
