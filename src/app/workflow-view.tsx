@@ -2302,51 +2302,71 @@ export function WorkflowView({
                               </button>
                             </div>
                           )}
-                          <input
-                            value={boxDocumentType}
-                            title="Name the new document requirement to add to this box."
-                            onChange={(event) => setBoxDocumentType(event.target.value)}
-                            placeholder={
-                              boxDocumentInputMode === "manual_form"
-                                ? "Section name, e.g. Request details"
-                                : "Document type, e.g. Invoice"
-                            }
-                            className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
-                          />
-                          <select
-                            value={boxDocumentInputMode}
-                            title="Choose whether this requirement is a requester upload or a manual digital form."
-                            onChange={(event) =>
-                              setBoxDocumentInputMode(
-                                event.target.value as WorkflowDocumentInputMode,
-                              )
-                            }
-                            className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
-                          >
-                            {documentInputModeOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 dark:border-neutral-700 dark:bg-neutral-950">
+                            <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                              Add separate requirement
+                            </p>
+                            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                              Add another Approval App form section or document upload. This
+                              does not change a pinned library form above.
+                            </p>
+                          </div>
+                          <label className="block">
+                            <span className="mb-1 block text-xs text-neutral-500">Name</span>
+                            <input
+                              value={boxDocumentType}
+                              title="Name the new document requirement to add to this box."
+                              onChange={(event) => setBoxDocumentType(event.target.value)}
+                              placeholder={
+                                boxDocumentInputMode === "manual_form"
+                                  ? "Section name, e.g. Request details"
+                                  : "Document type, e.g. Invoice"
+                              }
+                              className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="mb-1 block text-xs text-neutral-500">Type</span>
+                            <select
+                              value={boxDocumentInputMode}
+                              title="Choose whether this separate requirement is a document upload or an Approval App form."
+                              onChange={(event) =>
+                                setBoxDocumentInputMode(
+                                  event.target.value as WorkflowDocumentInputMode,
+                                )
+                              }
+                              className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
+                            >
+                              {documentInputModeOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                           {boxDocumentInputMode === "upload" && (
                             <>
-                              <select
-                                value={boxDocumentFormat}
-                                title="Choose the file format expected for the new document requirement."
-                                onChange={(event) =>
-                                  setBoxDocumentFormat(
-                                    event.target.value as DocumentFormat,
-                                  )
-                                }
-                                className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
-                              >
-                                {documentFormatOptions.map((option) => (
-                                  <option key={option.value} value={option.value}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
+                              <label className="block">
+                                <span className="mb-1 block text-xs text-neutral-500">
+                                  File format
+                                </span>
+                                <select
+                                  value={boxDocumentFormat}
+                                  title="Choose the file format expected for the new document requirement."
+                                  onChange={(event) =>
+                                    setBoxDocumentFormat(
+                                      event.target.value as DocumentFormat,
+                                    )
+                                  }
+                                  className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
+                                >
+                                  {documentFormatOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
                               <label className="flex items-center gap-2 text-sm text-neutral-300">
                                 <input
                                   type="checkbox"
