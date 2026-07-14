@@ -22,12 +22,6 @@ type WorkspacePayload = {
   reason?: string;
 };
 
-const workspacePayloadCache = new Map<
-  string,
-  { expiresAt: number; payload: WorkspacePayload }
->();
-const workspacePayloadCacheTtlMs = 10_000;
-
 async function getWorkspaceRouteUser(supabase: ReturnType<typeof createSupabaseRouteClient>) {
   const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
   const claims = claimsData?.claims as { sub?: string; email?: string } | undefined;
@@ -45,21 +39,6 @@ async function getWorkspaceRouteUser(supabase: ReturnType<typeof createSupabaseR
   return user?.email ? { id: user.id, email: user.email } : null;
 }
 
-function readWorkspacePayloadCache(email: string) {
-  const cached = workspacePayloadCache.get(email);
-  if (!cached || Date.now() >= cached.expiresAt) {
-    return null;
-  }
-  return cached.payload;
-}
-
-function writeWorkspacePayloadCache(email: string, payload: WorkspacePayload) {
-  workspacePayloadCache.set(email, {
-    payload,
-    expiresAt: Date.now() + workspacePayloadCacheTtlMs,
-  });
-}
-
 export async function GET(request: NextRequest) {
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
@@ -67,11 +46,6 @@ export async function GET(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ mode: "local", snapshot: null });
-  }
-
-  const cachedPayload = readWorkspacePayloadCache(user.email);
-  if (cachedPayload) {
-    return NextResponse.json(cachedPayload);
   }
 
   const { data, error } = await supabase
@@ -107,7 +81,6 @@ export async function GET(request: NextRequest) {
           formLibrary: fallbackSnapshot?.formLibrary || [],
         },
       };
-      writeWorkspacePayloadCache(user.email, payload);
       return NextResponse.json(payload);
     }
   } catch (normalizedError) {
@@ -131,7 +104,6 @@ export async function GET(request: NextRequest) {
     source: "snapshot",
     snapshot: fallbackSnapshot,
   };
-  writeWorkspacePayloadCache(user.email, payload);
   return NextResponse.json(payload);
 }
 
@@ -172,7 +144,6 @@ export async function POST(request: NextRequest) {
           : "Normalized save failed",
       snapshot,
     };
-    writeWorkspacePayloadCache(user.email, payload);
     return NextResponse.json(payload, {
       status: snapshotSave.error ? 503 : 200,
     });
@@ -186,7 +157,6 @@ export async function POST(request: NextRequest) {
       reason: snapshotSave.error.message,
       snapshot,
     };
-    writeWorkspacePayloadCache(user.email, payload);
     return NextResponse.json(payload);
   }
 
@@ -196,7 +166,6 @@ export async function POST(request: NextRequest) {
     snapshotBackup: "saved",
     snapshot,
   };
-  writeWorkspacePayloadCache(user.email, payload);
   return NextResponse.json(payload);
 }
 
@@ -233,7 +202,6 @@ export async function PATCH(request: NextRequest) {
 
   try {
     await deactivateWorkspaceAdminRecord(supabase, record);
-    workspacePayloadCache.delete(user.email);
     return NextResponse.json({ mode: "supabase" });
   } catch (error) {
     return NextResponse.json(
