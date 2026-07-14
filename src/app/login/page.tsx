@@ -33,7 +33,15 @@ export default async function LoginPage({
               width={180}
               height={48}
               priority
-              className="h-auto w-[180px]"
+              className="h-auto w-[180px] dark:hidden"
+            />
+            <Image
+              src="/chunwo-logo-dark.svg"
+              alt="Chun Wo"
+              width={180}
+              height={48}
+              priority
+              className="hidden h-auto w-[180px] dark:block"
             />
           </span>
           <div className="mt-5 border-l-2 border-[#f7941d] pl-3">

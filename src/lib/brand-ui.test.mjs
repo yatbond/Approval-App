@@ -38,6 +38,14 @@ const uploadViewSource = await readFile(
   new URL("../app/upload-view.tsx", import.meta.url),
   "utf8",
 );
+const workflowViewSource = await readFile(
+  new URL("../app/workflow-view.tsx", import.meta.url),
+  "utf8",
+);
+const darkLogoSource = await readFile(
+  new URL("../../public/chunwo-logo-dark.svg", import.meta.url),
+  "utf8",
+);
 
 test("uses the official Chun Wo palette and typography", () => {
   for (const token of ["#f7941d", "#7b791c", "#231f20", "#e6e6e6", "#8a8a8a"]) {
@@ -111,9 +119,24 @@ test("keeps form-library inputs mounted while their labels change", () => {
 
 test("uses the official logo and labeled mobile navigation", () => {
   assert.match(shellSource, /src="\/chunwo-logo\.svg"/);
+  assert.match(shellSource, /src="\/chunwo-logo-dark\.svg"/);
   assert.match(loginSource, /src="\/chunwo-logo\.svg"/);
+  assert.match(loginSource, /src="\/chunwo-logo-dark\.svg"/);
+  assert.match(darkLogoSource, /\.a\{fill:#ffffff;\}/);
   assert.match(shellSource, /grid-cols-5/);
   assert.doesNotMatch(shellSource, /Approval App/);
+});
+
+test("uses black workflow and logo surfaces in dark mode", () => {
+  assert.match(workflowViewSource, /data-workflow-publish-bar/);
+  assert.match(
+    globalsSource,
+    /html\[data-theme="dark"\] \[data-workflow-publish-bar\][\s\S]*background-color: #000000/,
+  );
+  assert.match(
+    globalsSource,
+    /html\[data-theme="dark"\] \[data-brand-lockup\][\s\S]*background-color: #000000/,
+  );
 });
 
 test("supports a persistent dark theme across login, workspace, and canvas", () => {

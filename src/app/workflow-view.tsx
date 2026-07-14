@@ -2415,7 +2415,10 @@ export function WorkflowView({
                 users={userDirectory}
               />
             </div>
-            <div className="sticky bottom-0 z-30 mt-4 flex justify-end border-t border-[#e6e6e6] bg-white/95 py-4 backdrop-blur-sm">
+            <div
+              data-workflow-publish-bar
+              className="sticky bottom-0 z-30 mt-4 flex justify-end border-t border-[#e6e6e6] bg-white/95 py-4 backdrop-blur-sm"
+            >
               <button
                 type="button"
                 onClick={publishSelectedTemplate}

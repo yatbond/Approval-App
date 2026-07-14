@@ -140,7 +140,15 @@ export function WorkspaceShell({
               width={168}
               height={45}
               priority
-              className={`h-auto w-[156px] sm:w-[168px] ${sidebarCollapsed ? "lg:hidden" : ""}`}
+              className={`h-auto w-[156px] dark:hidden sm:w-[168px] ${sidebarCollapsed ? "lg:hidden" : ""}`}
+            />
+            <Image
+              src="/chunwo-logo-dark.svg"
+              alt="Chun Wo"
+              width={168}
+              height={45}
+              priority
+              className={`hidden h-auto w-[156px] dark:block sm:w-[168px] ${sidebarCollapsed ? "lg:hidden" : ""}`}
             />
             <span
               aria-label="Chun Wo"

@@ -223,7 +223,12 @@ html[data-theme="dark"] .text-rose-800 {
 
 html[data-theme="dark"] [data-brand-lockup],
 html[data-theme="dark"] [data-brand-logo] {
-  background-color: #ffffff;
+  background-color: #000000;
+}
+
+html[data-theme="dark"] [data-workflow-publish-bar] {
+  background-color: #000000;
+  border-color: #403c3d;
 }
 
 /*
