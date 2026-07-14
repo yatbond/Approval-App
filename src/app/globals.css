@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 :root {
   --cw-orange: #f7941d;
   --cw-olive: #7b791c;
@@ -202,6 +204,10 @@ html:not([data-theme="dark"]) .text-neutral-700 {
 
 html:not([data-theme="dark"]) .text-neutral-600,
 html:not([data-theme="dark"]) .text-neutral-500 {
+  color: #666162;
+}
+
+html:not([data-theme="dark"]) .text-\[\#8a8a8a\] {
   color: #666162;
 }
 

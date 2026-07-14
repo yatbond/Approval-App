@@ -38,11 +38,19 @@ test("uses the official Chun Wo palette and typography", () => {
 test("keeps neutral text and orange actions readable in light mode", async () => {
   assert.match(
     globalsSource,
+    /@custom-variant dark \(&:where\(\[data-theme="dark"\]/,
+  );
+  assert.match(
+    globalsSource,
     /html:not\(\[data-theme="dark"\]\) \.text-neutral-900[\s\S]*color: #231f20/,
   );
   assert.match(
     globalsSource,
     /html:not\(\[data-theme="dark"\]\) \.text-neutral-500[\s\S]*color: #666162/,
+  );
+  assert.match(
+    globalsSource,
+    /html:not\(\[data-theme="dark"\]\) \.text-\\\[\\#8a8a8a\\\][\s\S]*color: #666162/,
   );
 
   for (const path of [
