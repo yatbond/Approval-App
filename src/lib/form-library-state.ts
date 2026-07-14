@@ -105,7 +105,7 @@ export function getFormLibraryPreflightIssues(
   draft.fields.forEach((field) => {
     const inputSource = getFormLibraryFieldInputSource(field, draft.source);
     if (
-      inputSource !== "attachment_extraction" &&
+      inputSource === "approval_app" &&
       isNativeFormChoiceField(field.type) &&
       !field.options?.some((option) => option.trim())
     ) {
@@ -190,6 +190,7 @@ export function saveFormLibraryDraft({
         ...field,
         inputSource,
         source: inputSource === "attachment_extraction" ? ("ai" as const) : ("manual" as const),
+        options: inputSource === "microsoft_forms" ? undefined : field.options,
         instructions:
           inputSource === "attachment_extraction"
             ? field.instructions.trim() || `Extract ${field.label}.`
@@ -270,7 +271,7 @@ export function attachLibraryFormToWorkflow({
     format: "text",
     inputMode: "manual_form",
     required: completionRequired,
-    fields: definition.fields.map((field) => ({ ...field, source: "manual" as const })),
+    fields: definition.fields.map((field) => ({ ...field })),
     formLibraryRef: {
       definitionId: definition.id,
       formKey: definition.formKey,
@@ -305,17 +306,20 @@ export function getFormParticipantNodes(template?: WorkflowTemplate | null) {
 
 function buildFormSchemaFingerprint(draft: FormLibraryDraft) {
   return JSON.stringify({
-    fields: draft.fields.map((field) => [
-      field.name,
-      field.label,
-      field.type,
-      field.required,
-      field.options || [],
-      getFormLibraryFieldInputSource(field, draft.source),
-      field.externalQuestionLabel || "",
-      field.attachmentFieldName || "",
-      field.instructions || "",
-    ]),
+    fields: draft.fields.map((field) => {
+      const inputSource = getFormLibraryFieldInputSource(field, draft.source);
+      return [
+        field.name,
+        field.label,
+        field.type,
+        field.required,
+        inputSource === "microsoft_forms" ? [] : field.options || [],
+        inputSource,
+        field.externalQuestionLabel || "",
+        field.attachmentFieldName || "",
+        field.instructions || "",
+      ];
+    }),
     attachments: (draft.attachmentFields || []).map((field) => [
       field.name,
       field.label,

@@ -501,6 +501,57 @@ test("blocks a manual form request when a required manual value is missing", () 
   assert.equal(state.submissionMessage, "Missing required request field(s): Leave reason.");
 });
 
+test("does not require Microsoft Forms answers as duplicate native inputs", () => {
+  const microsoftField = {
+    name: "winning_team",
+    label: "Which team will win?",
+    type: "radio",
+    required: true,
+    source: "manual",
+    inputSource: "microsoft_forms",
+    externalQuestionLabel: "Which team will win?",
+    instructions: "",
+  };
+  const microsoftTemplate = {
+    ...template,
+    fields: [microsoftField],
+    documents: [
+      {
+        id: "world-cup-form",
+        documentType: "World Cup survey",
+        format: "text",
+        inputMode: "upload",
+        required: true,
+        fields: [microsoftField],
+        formLibraryRef: {
+          definitionId: "world-cup-v1",
+          formKey: "world-cup",
+          version: 1,
+          source: "microsoft_forms",
+          responseMode: "complete_node",
+          completionRequired: true,
+          selectedFieldNames: ["winning_team"],
+          selectedAttachmentNames: [],
+        },
+      },
+    ],
+  };
+
+  const state = getWorkspaceRequestSubmissionState({
+    selectedTemplate: microsoftTemplate,
+    parseResult: null,
+    activeUser: actor,
+    fileName: "",
+    editedFields: {},
+    uploadedAttachments: [],
+    tasks: [],
+    taskId: "APR-MS-FORM",
+  });
+
+  assert.equal(state.didSubmit, true);
+  assert.equal(state.selectedTaskId, "APR-MS-FORM");
+});
+
 test("does not submit a request from a draft template", () => {
   const state = getWorkspaceRequestSubmissionState({
     selectedTemplate: { ...template, isDraft: true, publishedAt: undefined },

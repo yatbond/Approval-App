@@ -66,6 +66,13 @@ import {
   type WorkflowParticipantEmailMap,
 } from "@/lib/workflow-participant-assignment-state";
 import {
+  getLocallyEditableWorkflowFormFields,
+  getLocallyUploadableWorkflowFormAttachments,
+  getWorkflowFormAttachmentFields,
+  getWorkflowFormFieldSourceLabel,
+  isMicrosoftFormsRequirement,
+} from "@/lib/workflow-library-form-state";
+import {
   buildRequestWorkflowMapState,
   getWorkflowMapNodeIdForParticipantField,
 } from "@/lib/request-workflow-map-state";
@@ -579,7 +586,7 @@ export function UploadView({
   const missingRequiredNativeFields = Array.from(
     new Set(
       manualFormDocuments.flatMap((document) =>
-        document.fields
+        getLocallyEditableWorkflowFormFields(document)
           .filter((field) => field.required)
           .filter((field) => {
             const value =
@@ -591,7 +598,7 @@ export function UploadView({
     ),
   );
   const missingRequiredNativeAttachments = manualFormDocuments.flatMap((document) =>
-    getFormAttachmentFields(document)
+    getLocallyUploadableWorkflowFormAttachments(document)
       .filter((field) => field.required)
       .filter(
         (field) =>
@@ -1729,7 +1736,9 @@ export function UploadView({
                 <InfoTip label="Complete the form defined in this workflow's Submit box. Required fields must be filled before submission." />
               </div>
               <div className="mt-3 space-y-4">
-                {manualFormDocuments.map((document) => (
+                {manualFormDocuments.map((document) => {
+                  const isMicrosoftForms = isMicrosoftFormsRequirement(document);
+                  return (
                   <div
                     key={document.id}
                     className="rounded-md border border-[#e6e6e6] bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900"
@@ -1744,7 +1753,7 @@ export function UploadView({
                           : `${document.fields.length} field(s)`}
                       </span>
                     </div>
-                    {document.formLibraryRef?.source === "microsoft_forms" && (
+                    {isMicrosoftForms && (
                       <div className="mt-3 rounded-md border border-[#f7941d]/35 bg-[#fffaf4] p-3 dark:bg-[#f7941d]/10">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div>
@@ -1752,12 +1761,12 @@ export function UploadView({
                               Complete in Microsoft Forms
                             </p>
                             <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
-                              {document.formLibraryRef.responseMode === "start_workflow"
+                              {document.formLibraryRef?.responseMode === "start_workflow"
                                 ? "Submitting this form starts the linked workflow after automatic response delivery is connected."
-                                : "For an existing request, include its Approval Request Reference in the form response. The mapped values below remain available as a manual fallback."}
+                                : "For an existing request, include its Approval Request Reference. Answers and attachments return through Power Automate."}
                             </p>
                           </div>
-                          {document.formLibraryRef.responseUrl && (
+                          {document.formLibraryRef?.responseUrl && (
                             <a
                               href={document.formLibraryRef.responseUrl}
                               target="_blank"
@@ -1771,15 +1780,21 @@ export function UploadView({
                         </div>
                       </div>
                     )}
-                    {getFormAttachmentFields(document).length > 0 && (
+                    {getWorkflowFormAttachmentFields(document).length > 0 && (
                       <div className="mt-3 space-y-2">
                         <div className="flex items-center gap-2">
                           <p className="text-xs font-semibold uppercase text-neutral-500">
                             Attachments
                           </p>
-                          <InfoTip label="Upload each requested file. Fields linked to an attachment are extracted automatically and remain editable below." />
+                          <InfoTip
+                            label={
+                              isMicrosoftForms
+                                ? "These files are uploaded in Microsoft Forms and delivered through Power Automate."
+                                : "Upload each requested file. Linked fields are extracted automatically and remain editable below."
+                            }
+                          />
                         </div>
-                        {getFormAttachmentFields(document).map((attachmentField) => {
+                        {getWorkflowFormAttachmentFields(document).map((attachmentField) => {
                           const linkedFields = document.fields.filter(
                             (field) =>
                               field.inputSource === "attachment_extraction" &&
@@ -1810,6 +1825,11 @@ export function UploadView({
                                       : "The file will be attached without AI extraction."}
                                 </p>
                               </div>
+                              {isMicrosoftForms ? (
+                                <span className="flex min-h-10 items-center justify-center rounded-md border border-[#d2d2d2] bg-white px-3 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
+                                  Uploaded in Microsoft Forms
+                                </span>
+                              ) : (
                               <label className="flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#f7941d]/55 bg-[#fff4e6] px-3 text-sm font-medium text-neutral-900 transition hover:border-[#f7941d] dark:bg-[#f7941d]/12 dark:text-neutral-100">
                                 <Upload size={15} />
                                 {uploaded ? "Upload another" : "Upload file"}
@@ -1835,13 +1855,40 @@ export function UploadView({
                                   }}
                                 />
                               </label>
+                              )}
                             </div>
                           );
                         })}
                       </div>
                     )}
+                    {isMicrosoftForms && document.fields.length > 0 && (
+                      <div className="mt-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 dark:border-neutral-700 dark:bg-neutral-950">
+                        <p className="text-xs font-semibold uppercase text-neutral-500 dark:text-neutral-400">
+                          Data received from Microsoft Forms
+                        </p>
+                        <div className="mt-2 space-y-2">
+                          {document.fields.map((field) => {
+                            const value =
+                              editedFields[field.label] ?? editedFields[field.name] ?? "";
+                            return (
+                              <div
+                                key={field.name}
+                                className="flex flex-col gap-1 rounded-md border border-[#e6e6e6] bg-white p-2 text-sm dark:border-neutral-700 dark:bg-neutral-900 sm:flex-row sm:items-center sm:justify-between"
+                              >
+                                <span className="break-words font-medium text-neutral-900 dark:text-neutral-100">
+                                  {field.label}{field.required ? " *" : ""}
+                                </span>
+                                <span className="break-words text-xs text-neutral-500 dark:text-neutral-400 sm:text-right">
+                                  {value || getWorkflowFormFieldSourceLabel(document, field)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
-                      {document.fields.map((field) => {
+                      {getLocallyEditableWorkflowFormFields(document).map((field) => {
                         const value =
                           editedFields[field.label] ?? editedFields[field.name] ?? "";
 
@@ -1872,7 +1919,8 @@ export function UploadView({
                       </p>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -2043,19 +2091,6 @@ export function UploadView({
       </section>
     </div>
   );
-}
-
-function getFormAttachmentFields(
-  document: WorkflowDocumentRequirement,
-): FormLibraryAttachmentField[] {
-  if (document.formLibraryRef?.attachmentFields?.length) {
-    return document.formLibraryRef.attachmentFields;
-  }
-  return (document.formLibraryRef?.selectedAttachmentNames || []).map((name) => ({
-    name,
-    label: name.replaceAll("_", " ").replace(/^./, (value) => value.toUpperCase()),
-    required: false,
-  }));
 }
 
 function isUploadedFormAttachment(

@@ -42,13 +42,16 @@ export function formatDocumentFormat(format: DocumentFormat | string) {
 }
 
 export function getDocumentInputMode(
-  documentRequirement: Pick<WorkflowDocumentRequirement, "inputMode">,
+  documentRequirement: Pick<WorkflowDocumentRequirement, "inputMode" | "formLibraryRef">,
 ): WorkflowDocumentInputMode {
+  if (documentRequirement.formLibraryRef) {
+    return "manual_form";
+  }
   return documentRequirement.inputMode || "upload";
 }
 
 export function isManualFormRequirement(
-  documentRequirement: Pick<WorkflowDocumentRequirement, "inputMode">,
+  documentRequirement: Pick<WorkflowDocumentRequirement, "inputMode" | "formLibraryRef">,
 ) {
   return getDocumentInputMode(documentRequirement) === "manual_form";
 }

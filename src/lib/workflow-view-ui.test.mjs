@@ -182,6 +182,10 @@ test("submit boxes expose a native form builder and request renderer", () => {
   const workflowSource = readFileSync("src/app/workflow-view.tsx", "utf8");
   const uploadSource = readFileSync("src/app/upload-view.tsx", "utf8");
   const formLibrarySource = readFileSync("src/app/form-library.tsx", "utf8");
+  const librarySummarySource = readFileSync(
+    "src/app/workflow-library-form-summary.tsx",
+    "utf8",
+  );
 
   assert.equal(workflowSource.includes("Request form and documents"), true);
   assert.equal(workflowSource.includes("Form section name"), true);
@@ -195,4 +199,13 @@ test("submit boxes expose a native form builder and request renderer", () => {
   assert.equal(formLibrarySource.includes("Add choice"), true);
   assert.equal(formLibrarySource.includes("Users may select one choice."), true);
   assert.equal(formLibrarySource.includes("Users may select more than one choice."), true);
+  assert.equal(
+    formLibrarySource.includes("Choices are managed in Microsoft Forms."),
+    true,
+  );
+  assert.equal(workflowSource.includes("WorkflowLibraryFormSummary"), true);
+  assert.equal(librarySummarySource.includes("This workflow is pinned"), true);
+  assert.equal(librarySummarySource.includes("Choices are managed in Microsoft Forms."), true);
+  assert.equal(uploadSource.includes("Uploaded in Microsoft Forms"), true);
+  assert.equal(uploadSource.includes("mapped values below remain available as a manual fallback"), false);
 });

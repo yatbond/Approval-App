@@ -65,6 +65,7 @@ For `start_workflow`, use that response mode and omit `approvalRequestNo` unless
 - `complete_node` requires the form to be pinned to the request workflow and requires `approvalRequestNo`.
 - Unknown questions, missing required questions, missing required uploads, or a changed fingerprint are stored as `schema_changed` and do not alter a request.
 - A request data field sourced from **AI from attachment** is not expected in `answers`. Approval App downloads the matching registered attachment, parses it, and writes the result into that canonical field.
+- Choice options remain managed in Microsoft Forms. Send the selected response value under the registered exact question label; Approval App does not require a duplicate option list.
 - Required AI-derived fields fail safely when the registered attachment or its `downloadUrl` is missing, or extraction returns no value.
 - A completed-node response supplies values and files; it does not approve the workflow box. The box owner still makes the approval decision.
 

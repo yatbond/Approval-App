@@ -60,6 +60,24 @@ test("choice fields require configured choices", () => {
   ]);
 });
 
+test("Microsoft Forms choices remain managed by Microsoft Forms", () => {
+  const draft = createEmptyFormLibraryDraft("microsoft_forms");
+  draft.responseUrl = "https://forms.cloud.microsoft/r/5raJmEfjPA";
+  draft.fields[0] = {
+    ...draft.fields[0],
+    type: "radio",
+    options: ["Choice 1", "Choice 2"],
+  };
+  assert.deepEqual(getFormLibraryPreflightIssues(draft, []), []);
+  const saved = saveFormLibraryDraft({
+    library: [],
+    draft,
+    actorEmail: "admin@example.com",
+  });
+  assert.equal(saved.definition.fields[0].inputSource, "microsoft_forms");
+  assert.equal(saved.definition.fields[0].options, undefined);
+});
+
 test("request data fields can be populated from a registered attachment", () => {
   const draft = createEmptyFormLibraryDraft("microsoft_forms");
   draft.responseUrl = "https://forms.cloud.microsoft/r/5raJmEfjPA";

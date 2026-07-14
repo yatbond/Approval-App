@@ -47,7 +47,9 @@ import { ConditionBoxDetails } from "@/app/condition-box-details";
 import { WorkflowTemplateLibrary } from "@/app/workflow-template-library";
 import { WorkflowTemplateBuilder } from "@/app/workflow-template-builder";
 import { FormLibrary } from "@/app/form-library";
+import { WorkflowLibraryFormSummary } from "@/app/workflow-library-form-summary";
 import { TemplateDocumentRecognitionPanel } from "@/app/template-document-recognition-panel";
+import { isLibraryFormRequirement } from "@/lib/workflow-library-form-state";
 import { getWorkflowTemplateBuilderBusinessState } from "@/lib/workflow-template-builder-state";
 import { WorkflowRuntimePanel } from "@/app/workflow-runtime-panel";
 import { getSelectedRuntimeTask } from "@/lib/workflow-runtime-panel-state";
@@ -1925,6 +1927,17 @@ export function WorkflowView({
                               selectedGraphNode.documentIds?.includes(document.id),
                             )
                             .map((document) => {
+                              if (isLibraryFormRequirement(document)) {
+                                return (
+                                  <WorkflowLibraryFormSummary
+                                    key={document.id}
+                                    document={document}
+                                    onRemove={() =>
+                                      removeBoxDocumentRequirement(document.id)
+                                    }
+                                  />
+                                );
+                              }
                               const isManualForm = isManualFormRequirement(document);
 
                               return (

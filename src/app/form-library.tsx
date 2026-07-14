@@ -387,12 +387,20 @@ export function FormLibrary({
                     value={field.type}
                     onChange={(event) => {
                       const type = event.target.value as WorkflowField["type"];
+                      const inputSource = getFormLibraryFieldInputSource(
+                        field,
+                        draft.source,
+                      );
                       updateField(index, {
                         type,
                         options:
-                          isNativeFormChoiceField(type) && !field.options?.length
+                          inputSource === "approval_app" &&
+                          isNativeFormChoiceField(type) &&
+                          !field.options?.length
                             ? ["Choice 1", "Choice 2"]
-                            : field.options,
+                            : inputSource === "microsoft_forms"
+                              ? undefined
+                              : field.options,
                       });
                     }}
                     className={inputClassName}
@@ -527,8 +535,8 @@ export function FormLibrary({
                       ? "Required Microsoft Forms answer"
                       : "Required response"}
                 </label>
-                {getFormLibraryFieldInputSource(field, draft.source) !==
-                  "attachment_extraction" &&
+                {getFormLibraryFieldInputSource(field, draft.source) ===
+                  "approval_app" &&
                   isNativeFormChoiceField(field.type) && (
                   <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 dark:border-neutral-700 dark:bg-neutral-900 lg:col-span-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -597,6 +605,15 @@ export function FormLibrary({
                     </div>
                   </div>
                 )}
+                {getFormLibraryFieldInputSource(field, draft.source) ===
+                  "microsoft_forms" &&
+                  isNativeFormChoiceField(field.type) && (
+                    <p className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 lg:col-span-4">
+                      Choices are managed in Microsoft Forms. Approval App receives the
+                      selected answer through Power Automate and does not duplicate the
+                      option list here.
+                    </p>
+                  )}
               </div>
             ))}
           </div>

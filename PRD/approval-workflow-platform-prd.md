@@ -261,12 +261,27 @@ The library supports:
 
 A Submit or Approval box can attach a ready library form. The workflow stores both a pinned library/version reference and a snapshot of its mapped fields. Later library changes therefore do not alter published workflow versions or in-flight requests.
 
+Pinned library forms retain their source and are not converted into generic document requirements:
+
+- a Microsoft Form remains a Microsoft Form and is completed through its registered Microsoft Forms link;
+- an Approval App form renders its native controls inside Approval App;
+- Canvas shows the pinned source, version, field sources, and attachment mappings as a read-only summary;
+- Canvas does not offer the legacy **Input method** or **Format** controls for a pinned library form;
+- field definitions, choice lists, and attachment questions are edited by creating a new Form Library version, then attaching that version to the workflow.
+
+Microsoft Forms remains authoritative for its question presentation and choice lists. Approval App stores the exact question label and canonical data type needed by the workflow, but it does not duplicate Microsoft Forms choice options as native controls. Power Automate returns the selected answer. Native Approval App choice fields continue to store and render their configured options directly.
+
 Microsoft Forms can be configured in two modes:
 
 1. **Start a new approval request**: one registered form version identifies one active published workflow version. Participant emails resolve from fixed template values, the respondent, mapped email fields, the company position directory, or manual intake resolution.
 2. **Complete an existing workflow box**: the external response must carry the Approval Request Reference and match a form version pinned to that request's workflow snapshot.
 
-The request screen opens a linked Microsoft Form in a new tab and retains mapped in-app fields as a review/manual fallback. Automatic response delivery requires a Microsoft Power Automate flow. A Microsoft Form does not need to contain questions for AI-derived fields: Power Automate delivers the registered attachment and Approval App writes the parsed result into the app-owned request data field.
+The request screen opens a linked Microsoft Form in a new tab and shows the values expected from that form without rendering duplicate native answer controls. Automatic response delivery requires a Microsoft Power Automate flow. A Microsoft Form does not need to contain questions for AI-derived fields: Power Automate delivers the registered attachment and Approval App writes the parsed result into the app-owned request data field.
+
+Attachment handling follows the form source:
+
+- Microsoft Forms attachments are uploaded in Microsoft Forms and delivered to Approval App by Power Automate; no duplicate Approval App file picker is shown for them.
+- Approval App form attachments are uploaded in Approval App, parsed immediately when fields are linked, and remain editable before submission.
 
 The secure endpoint is `POST /api/form-intake`. It requires a bearer secret, validates a bounded structured payload, and deduplicates by provider/form/response ID. Each payload identifies the workspace owner, pinned form key and version, external Form ID, schema fingerprint, response mode, and external response ID.
 

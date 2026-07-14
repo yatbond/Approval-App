@@ -9,6 +9,7 @@ import {
   getMissingRequiredSubmissionDocuments,
 } from "./request-builder.ts";
 import { isManualFormRequirement } from "./workflow-documents.ts";
+import { isMicrosoftFormsRequirement } from "./workflow-library-form-state.ts";
 import {
   applyWorkflowParticipantEmails,
   getMissingWorkflowParticipantEmails,
@@ -277,11 +278,24 @@ function getMissingRequiredExtractedFields({
   selectedTemplate: WorkflowTemplate;
   editedFields: Record<string, string>;
 }) {
+  const localDocumentFields = selectedTemplate.documents
+    .filter((document) => !isMicrosoftFormsRequirement(document))
+    .flatMap((document) => document.fields);
+  const localDocumentFieldNames = new Set(localDocumentFields.map((field) => field.name));
+  const microsoftFormsFieldNames = new Set(
+    selectedTemplate.documents
+      .filter(isMicrosoftFormsRequirement)
+      .flatMap((document) => document.fields.map((field) => field.name)),
+  );
   const requiredFields = Array.from(
     new Map(
       [
-        ...selectedTemplate.fields,
-        ...selectedTemplate.documents.flatMap((document) => document.fields),
+        ...selectedTemplate.fields.filter(
+          (field) =>
+            !microsoftFormsFieldNames.has(field.name) ||
+            localDocumentFieldNames.has(field.name),
+        ),
+        ...localDocumentFields,
       ]
         .filter((field) => field.required)
         .map((field) => [field.name, field]),

@@ -72,6 +72,20 @@ test("lists and normalizes document input modes", () => {
   assert.equal(getDocumentInputMode({ inputMode: "manual_form" }), "manual_form");
   assert.equal(isManualFormRequirement({ inputMode: "manual_form" }), true);
   assert.equal(isManualFormRequirement({ inputMode: "upload" }), false);
+  assert.equal(
+    getDocumentInputMode({
+      inputMode: "upload",
+      formLibraryRef: { source: "microsoft_forms" },
+    }),
+    "manual_form",
+  );
+  assert.equal(
+    isManualFormRequirement({
+      inputMode: "upload",
+      formLibraryRef: { source: "microsoft_forms" },
+    }),
+    true,
+  );
   assert.equal(formatDocumentInputMode("manual_form"), "Native form");
   assert.equal(formatDocumentInputMode("unknown"), "Document upload + AI");
 });
