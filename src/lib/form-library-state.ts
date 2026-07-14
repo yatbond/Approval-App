@@ -6,6 +6,7 @@ import type {
   WorkflowField,
   WorkflowTemplate,
 } from "./types.ts";
+import { isNativeFormChoiceField } from "./workflow-native-form-state.ts";
 import { addWorkflowDocumentToNode, createWorkflowGraphFromTemplate } from "./workflow-graph.ts";
 
 export type FormLibraryDraft = {
@@ -78,6 +79,14 @@ export function getFormLibraryPreflightIssues(
   if (!draft.fields.length && !draft.attachmentFields?.length) {
     issues.push("Add at least one value or attachment field.");
   }
+  draft.fields.forEach((field) => {
+    if (
+      isNativeFormChoiceField(field.type) &&
+      !field.options?.some((option) => option.trim())
+    ) {
+      issues.push(`${field.label}: add at least one choice.`);
+    }
+  });
   if (draft.source === "microsoft_forms") {
     if (!extractMicrosoftFormId(draft.responseUrl)) {
       issues.push("Add a valid Microsoft Forms response link.");

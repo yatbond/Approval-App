@@ -5,6 +5,7 @@ import {
   isNativeFormChoiceField,
   nativeFormFieldTypeOptions,
   parseNativeFormOptions,
+  toggleNativeFormCheckboxOption,
 } from "./workflow-native-form-state.ts";
 
 test("offers practical native request field types", () => {
@@ -31,7 +32,19 @@ test("normalizes form choices from lines or commas", () => {
   );
   assert.equal(isNativeFormChoiceField("select"), true);
   assert.equal(isNativeFormChoiceField("radio"), true);
+  assert.equal(isNativeFormChoiceField("checkbox"), true);
   assert.equal(isNativeFormChoiceField("text"), false);
+});
+
+test("adds and removes checkbox choices without losing other selections", () => {
+  assert.equal(
+    toggleNativeFormCheckboxOption("Finance, Commercial", "Operations", true),
+    "Finance, Commercial, Operations",
+  );
+  assert.equal(
+    toggleNativeFormCheckboxOption("Finance, Commercial", "Finance", false),
+    "Commercial",
+  );
 });
 
 test("uses configured placeholders before generated fallbacks", () => {

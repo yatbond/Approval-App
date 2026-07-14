@@ -51,6 +51,14 @@ test("Microsoft Forms start mode requires a published workflow", () => {
   ]);
 });
 
+test("choice fields require configured choices", () => {
+  const draft = createEmptyFormLibraryDraft("native");
+  draft.fields[0] = { ...draft.fields[0], type: "checkbox", options: [] };
+  assert.deepEqual(getFormLibraryPreflightIssues(draft, []), [
+    "New field: add at least one choice.",
+  ]);
+});
+
 test("saving creates immutable versions and attaching pins the version", () => {
   const draft = createEmptyFormLibraryDraft("native");
   draft.name = "Site intake";

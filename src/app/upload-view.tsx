@@ -37,6 +37,8 @@ import {
 } from "@/lib/workflow-documents";
 import {
   getNativeFormFieldPlaceholder,
+  parseNativeFormOptions,
+  toggleNativeFormCheckboxOption,
 } from "@/lib/workflow-native-form-state";
 import {
   addBoxToHighlightFieldGroup,
@@ -124,26 +126,43 @@ function NativeFormFieldInput({
     "min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3 text-sm text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-[#f7941d] focus:ring-2 focus:ring-[#f7941d]/15 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-600";
 
   if (field.type === "checkbox") {
+    const selectedOptions = parseNativeFormOptions(value);
     return (
-      <div className={wrapperClass}>
-        <label
-          htmlFor={fieldId}
-          className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md border border-[#d8d8d8] bg-white p-3 dark:border-neutral-700 dark:bg-neutral-950"
-        >
-          <input
-            id={fieldId}
-            type="checkbox"
-            checked={value === "Yes"}
-            onFocus={onFocus}
-            onChange={(event) => onChange(event.target.checked ? "Yes" : "")}
-            className="mt-0.5 size-4 accent-[#f7941d]"
-          />
-          <span className="min-w-0">
-            {heading}
-            {helpText}
-          </span>
-        </label>
-      </div>
+      <fieldset className={wrapperClass} onFocus={onFocus}>
+        <legend>{heading}</legend>
+        <div className="grid gap-2 rounded-md border border-[#d8d8d8] bg-white p-3 sm:grid-cols-2 dark:border-neutral-700 dark:bg-neutral-950">
+          {options.map((option, optionIndex) => (
+            <label
+              key={`${option}-${optionIndex}`}
+              htmlFor={`${fieldId}-${optionIndex}`}
+              className="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200"
+            >
+              <input
+                id={`${fieldId}-${optionIndex}`}
+                type="checkbox"
+                checked={selectedOptions.includes(option)}
+                onChange={(event) =>
+                  onChange(
+                    toggleNativeFormCheckboxOption(
+                      value,
+                      option,
+                      event.target.checked,
+                    ),
+                  )
+                }
+                className="accent-[#f7941d]"
+              />
+              <span className="break-words">{option}</span>
+            </label>
+          ))}
+          {!options.length && (
+            <p className="text-xs text-rose-600 dark:text-rose-300">
+              No choices configured.
+            </p>
+          )}
+        </div>
+        {helpText}
+      </fieldset>
     );
   }
 
@@ -152,9 +171,9 @@ function NativeFormFieldInput({
       <fieldset className={wrapperClass} onFocus={onFocus}>
         <legend>{heading}</legend>
         <div className="grid gap-2 rounded-md border border-[#d8d8d8] bg-white p-3 sm:grid-cols-2 dark:border-neutral-700 dark:bg-neutral-950">
-          {options.map((option) => (
+          {options.map((option, optionIndex) => (
             <label
-              key={option}
+              key={`${option}-${optionIndex}`}
               className="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200"
             >
               <input
@@ -193,8 +212,8 @@ function NativeFormFieldInput({
           <option value="">
             {getNativeFormFieldPlaceholder(field)}
           </option>
-          {options.map((option) => (
-            <option key={option} value={option}>
+          {options.map((option, optionIndex) => (
+            <option key={`${option}-${optionIndex}`} value={option}>
               {option}
             </option>
           ))}

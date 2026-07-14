@@ -181,6 +181,7 @@ test("sample recognition reloads saved sample values when fields are revisited",
 test("submit boxes expose a native form builder and request renderer", () => {
   const workflowSource = readFileSync("src/app/workflow-view.tsx", "utf8");
   const uploadSource = readFileSync("src/app/upload-view.tsx", "utf8");
+  const formLibrarySource = readFileSync("src/app/form-library.tsx", "utf8");
 
   assert.equal(workflowSource.includes("Request form and documents"), true);
   assert.equal(workflowSource.includes("Form section name"), true);
@@ -188,4 +189,10 @@ test("submit boxes expose a native form builder and request renderer", () => {
   assert.equal(workflowSource.includes("nativeFormFieldTypeOptions"), true);
   assert.equal(uploadSource.includes("function NativeFormFieldInput"), true);
   assert.equal(uploadSource.includes("Complete required form fields"), true);
+  assert.equal(uploadSource.includes('field.type === "date"'), true);
+  assert.equal(uploadSource.includes('? "date"'), true);
+  assert.equal(uploadSource.includes("toggleNativeFormCheckboxOption"), true);
+  assert.equal(formLibrarySource.includes("Add choice"), true);
+  assert.equal(formLibrarySource.includes("Users may select one choice."), true);
+  assert.equal(formLibrarySource.includes("Users may select more than one choice."), true);
 });

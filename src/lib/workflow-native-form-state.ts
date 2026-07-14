@@ -16,7 +16,7 @@ export const nativeFormFieldTypeOptions: {
 ];
 
 export function isNativeFormChoiceField(type: WorkflowField["type"]) {
-  return type === "select" || type === "radio";
+  return type === "select" || type === "radio" || type === "checkbox";
 }
 
 export function parseNativeFormOptions(value: string) {
@@ -28,6 +28,18 @@ export function parseNativeFormOptions(value: string) {
         .filter(Boolean),
     ),
   );
+}
+
+export function toggleNativeFormCheckboxOption(
+  value: string,
+  option: string,
+  checked: boolean,
+) {
+  const selected = parseNativeFormOptions(value);
+  const next = checked
+    ? [...selected.filter((item) => item !== option), option]
+    : selected.filter((item) => item !== option);
+  return next.join(", ");
 }
 
 export function getNativeFormFieldPlaceholder(field: WorkflowField) {

@@ -11,7 +11,10 @@ import {
   getLatestFormLibraryDefinitions,
   type FormLibraryDraft,
 } from "@/lib/form-library-state";
-import { nativeFormFieldTypeOptions } from "@/lib/workflow-native-form-state";
+import {
+  isNativeFormChoiceField,
+  nativeFormFieldTypeOptions,
+} from "@/lib/workflow-native-form-state";
 import type {
   FormLibraryDefinition,
   FormParticipantResolutionSource,
@@ -366,9 +369,16 @@ export function FormLibrary({
                   <span className="mb-1 block text-xs text-neutral-500">Type</span>
                   <select
                     value={field.type}
-                    onChange={(event) =>
-                      updateField(index, { type: event.target.value as WorkflowField["type"] })
-                    }
+                    onChange={(event) => {
+                      const type = event.target.value as WorkflowField["type"];
+                      updateField(index, {
+                        type,
+                        options:
+                          isNativeFormChoiceField(type) && !field.options?.length
+                            ? ["Choice 1", "Choice 2"]
+                            : field.options,
+                      });
+                    }}
                     className={inputClassName}
                   >
                     {nativeFormFieldTypeOptions.map((option) => (
@@ -399,6 +409,74 @@ export function FormLibrary({
                   />
                   Required response
                 </label>
+                {isNativeFormChoiceField(field.type) && (
+                  <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 dark:border-neutral-700 dark:bg-neutral-900 md:col-span-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                          Choices
+                        </p>
+                        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                          {field.type === "checkbox"
+                            ? "Users may select more than one choice."
+                            : "Users may select one choice."}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateField(index, {
+                            options: [
+                              ...(field.options || []),
+                              `Choice ${(field.options || []).length + 1}`,
+                            ],
+                          })
+                        }
+                        className="flex min-h-9 items-center gap-2 rounded-md border border-[#f7941d]/50 bg-[#fff4e6] px-3 text-sm text-neutral-900 dark:bg-[#f7941d]/12 dark:text-neutral-100"
+                      >
+                        <Plus size={14} /> Add choice
+                      </button>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {(field.options || []).map((option, optionIndex) => (
+                        <div
+                          key={`mapped-value-${index}-choice-${optionIndex}`}
+                          className="grid grid-cols-[minmax(0,1fr)_auto] gap-2"
+                        >
+                          <label>
+                            <span className="sr-only">Choice {optionIndex + 1}</span>
+                            <input
+                              value={option}
+                              onChange={(event) =>
+                                updateField(index, {
+                                  options: (field.options || []).map((item, itemIndex) =>
+                                    itemIndex === optionIndex ? event.target.value : item,
+                                  ),
+                                })
+                              }
+                              placeholder={`Choice ${optionIndex + 1}`}
+                              className={inputClassName}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateField(index, {
+                                options: (field.options || []).filter(
+                                  (_, itemIndex) => itemIndex !== optionIndex,
+                                ),
+                              })
+                            }
+                            title={`Remove choice ${optionIndex + 1}`}
+                            className="flex size-10 items-center justify-center rounded-md border border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-100"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
