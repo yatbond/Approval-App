@@ -177,3 +177,15 @@ test("sample recognition reloads saved sample values when fields are revisited",
   assert.equal(source.includes("savedExample?.correctedValue || \"\""), true);
   assert.equal(source.includes("clearSampleTrainingDraft();"), false);
 });
+
+test("submit boxes expose a native form builder and request renderer", () => {
+  const workflowSource = readFileSync("src/app/workflow-view.tsx", "utf8");
+  const uploadSource = readFileSync("src/app/upload-view.tsx", "utf8");
+
+  assert.equal(workflowSource.includes("Request form and documents"), true);
+  assert.equal(workflowSource.includes("Form section name"), true);
+  assert.equal(workflowSource.includes("Build the fields users complete"), true);
+  assert.equal(workflowSource.includes("nativeFormFieldTypeOptions"), true);
+  assert.equal(uploadSource.includes("function NativeFormFieldInput"), true);
+  assert.equal(uploadSource.includes("Complete required form fields"), true);
+});

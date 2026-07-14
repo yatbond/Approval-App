@@ -1,7 +1,18 @@
 import type { WorkflowField } from "./types.ts";
 
 const validSources = new Set(["ai", "ocr", "excel", "manual"]);
-const validTypes = new Set(["text", "number", "date", "currency", "table"]);
+const validTypes = new Set([
+  "text",
+  "long_text",
+  "number",
+  "date",
+  "currency",
+  "email",
+  "select",
+  "radio",
+  "checkbox",
+  "table",
+]);
 
 export function normalizeWorkflowFieldsForParsing(value: unknown): WorkflowField[] {
   if (!Array.isArray(value)) {
@@ -50,6 +61,18 @@ function normalizeWorkflowField(
 
   if (typeof value.documentId === "string" && value.documentId.trim()) {
     field.documentId = value.documentId.trim();
+  }
+  if (typeof value.placeholder === "string" && value.placeholder.trim()) {
+    field.placeholder = value.placeholder.trim();
+  }
+  if (Array.isArray(value.options)) {
+    const options = value.options
+      .filter((option): option is string => typeof option === "string")
+      .map((option) => option.trim())
+      .filter(Boolean);
+    if (options.length) {
+      field.options = Array.from(new Set(options));
+    }
   }
 
   return field;

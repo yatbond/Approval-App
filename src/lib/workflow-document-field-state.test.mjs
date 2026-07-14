@@ -60,6 +60,26 @@ test("adds a new extraction field using the document format source", () => {
   });
 });
 
+test("adds a manual field to a native form section", () => {
+  const result = addWorkflowDocumentField(
+    [
+      {
+        id: "request-details",
+        documentType: "Request details",
+        format: "text",
+        inputMode: "manual_form",
+        required: false,
+        fields: [],
+      },
+    ],
+    "request-details",
+  );
+
+  assert.equal(result[0].fields[0].type, "text");
+  assert.equal(result[0].fields[0].source, "manual");
+  assert.equal(result[0].fields[0].instructions, "");
+});
+
 test("removes the requested document field", () => {
   const result = removeWorkflowDocumentField(documents, "invoice", 0);
 

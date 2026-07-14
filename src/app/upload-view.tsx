@@ -35,6 +35,9 @@ import {
   formatDocumentFormat,
 } from "@/lib/workflow-documents";
 import {
+  getNativeFormFieldPlaceholder,
+} from "@/lib/workflow-native-form-state";
+import {
   addBoxToHighlightFieldGroup,
   createHighlightFieldGroup,
   createHighlightValueBox,
@@ -80,6 +83,175 @@ type UploadRequestDraftRowView = {
 };
 
 type RequestWorkflowMapState = ReturnType<typeof buildRequestWorkflowMapState>;
+
+function NativeFormFieldInput({
+  field,
+  value,
+  onChange,
+  onFocus,
+}: {
+  field: WorkflowField;
+  value: string;
+  onChange: (value: string) => void;
+  onFocus: () => void;
+}) {
+  const fieldId = `native-form-${field.name}`;
+  const options = (field.options || [])
+    .map((option) => option.trim())
+    .filter(Boolean);
+  const isWide =
+    field.type === "long_text" ||
+    field.type === "radio" ||
+    field.type === "checkbox";
+  const heading = (
+    <span className="mb-1 flex min-w-0 flex-wrap items-center gap-2 text-xs font-medium text-neutral-700 dark:text-neutral-200">
+      <span className="break-words">{field.label}</span>
+      {field.required && (
+        <span className="rounded-sm border border-[#f7941d]/35 bg-[#fff4e6] px-1.5 py-0.5 text-[10px] font-semibold text-[#713d00] dark:bg-[#f7941d]/15 dark:text-[#ffd29a]">
+          Required
+        </span>
+      )}
+    </span>
+  );
+  const helpText = field.instructions?.trim() ? (
+    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+      {field.instructions}
+    </p>
+  ) : null;
+  const wrapperClass = isWide ? "block md:col-span-2" : "block";
+  const inputClass =
+    "min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3 text-sm text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-[#f7941d] focus:ring-2 focus:ring-[#f7941d]/15 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-600";
+
+  if (field.type === "checkbox") {
+    return (
+      <div className={wrapperClass}>
+        <label
+          htmlFor={fieldId}
+          className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md border border-[#d8d8d8] bg-white p-3 dark:border-neutral-700 dark:bg-neutral-950"
+        >
+          <input
+            id={fieldId}
+            type="checkbox"
+            checked={value === "Yes"}
+            onFocus={onFocus}
+            onChange={(event) => onChange(event.target.checked ? "Yes" : "")}
+            className="mt-0.5 size-4 accent-[#f7941d]"
+          />
+          <span className="min-w-0">
+            {heading}
+            {helpText}
+          </span>
+        </label>
+      </div>
+    );
+  }
+
+  if (field.type === "radio") {
+    return (
+      <fieldset className={wrapperClass} onFocus={onFocus}>
+        <legend>{heading}</legend>
+        <div className="grid gap-2 rounded-md border border-[#d8d8d8] bg-white p-3 sm:grid-cols-2 dark:border-neutral-700 dark:bg-neutral-950">
+          {options.map((option) => (
+            <label
+              key={option}
+              className="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200"
+            >
+              <input
+                type="radio"
+                name={fieldId}
+                value={option}
+                checked={value === option}
+                onChange={() => onChange(option)}
+                className="accent-[#f7941d]"
+              />
+              <span className="break-words">{option}</span>
+            </label>
+          ))}
+          {!options.length && (
+            <p className="text-xs text-rose-600 dark:text-rose-300">
+              No choices configured.
+            </p>
+          )}
+        </div>
+        {helpText}
+      </fieldset>
+    );
+  }
+
+  if (field.type === "select") {
+    return (
+      <label className={wrapperClass} htmlFor={fieldId}>
+        {heading}
+        <select
+          id={fieldId}
+          value={value}
+          onFocus={onFocus}
+          onChange={(event) => onChange(event.target.value)}
+          className={inputClass}
+        >
+          <option value="">
+            {getNativeFormFieldPlaceholder(field)}
+          </option>
+          {options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+        {helpText}
+      </label>
+    );
+  }
+
+  if (field.type === "long_text") {
+    return (
+      <label className={wrapperClass} htmlFor={fieldId}>
+        {heading}
+        <textarea
+          id={fieldId}
+          value={value}
+          onFocus={onFocus}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={getNativeFormFieldPlaceholder(field)}
+          rows={4}
+          className={`${inputClass} py-2`}
+        />
+        {helpText}
+      </label>
+    );
+  }
+
+  const inputType =
+    field.type === "date"
+      ? "date"
+      : field.type === "email"
+        ? "email"
+        : field.type === "number" || field.type === "currency"
+          ? "number"
+          : "text";
+
+  return (
+    <label className={wrapperClass} htmlFor={fieldId}>
+      {heading}
+      <input
+        id={fieldId}
+        type={inputType}
+        step={field.type === "currency" ? "0.01" : undefined}
+        inputMode={
+          field.type === "number" || field.type === "currency"
+            ? "decimal"
+            : undefined
+        }
+        value={value}
+        onFocus={onFocus}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={getNativeFormFieldPlaceholder(field)}
+        className={inputClass}
+      />
+      {helpText}
+    </label>
+  );
+}
 
 function RequestWorkflowMiniMap({
   activeNodeId,
@@ -371,6 +543,20 @@ export function UploadView({
   const participantEmailFields = selectedTemplate
     ? getWorkflowParticipantEmailFields(selectedTemplate)
     : [];
+  const missingRequiredNativeFields = Array.from(
+    new Set(
+      manualFormDocuments.flatMap((document) =>
+        document.fields
+          .filter((field) => field.required)
+          .filter((field) => {
+            const value =
+              editedFields[field.label] ?? editedFields[field.name] ?? "";
+            return !value.trim();
+          })
+          .map((field) => field.label),
+      ),
+    ),
+  );
 
   useEffect(() => {
     if (selectedTemplate && selectedTemplate.id !== selectedTemplateId) {
@@ -811,7 +997,7 @@ export function UploadView({
               sharedManualFormDocuments.length > 0) && (
               <div className="rounded-md border border-sky-500/25 bg-sky-500/10 p-3">
                 <p className="text-sm font-semibold text-sky-100">
-                  Manual form
+                  Native form
                 </p>
                 <div className="mt-2 space-y-1 text-xs text-sky-100/80">
                   {assignedManualFormDocuments.map((document) => (
@@ -937,6 +1123,12 @@ export function UploadView({
             {missingRequiredDocuments
               .map((document) => document.documentType)
               .join(", ")}
+          </div>
+        )}
+
+        {missingRequiredNativeFields.length > 0 && (
+          <div className="mt-4 rounded-md border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-900 dark:text-amber-100">
+            Complete required form fields: {missingRequiredNativeFields.join(", ")}
           </div>
         )}
 
@@ -1478,25 +1670,25 @@ export function UploadView({
           )}
 
           {manualFormDocuments.length > 0 && (
-            <div className="mb-4 rounded-md border border-sky-500/25 bg-sky-500/10 p-4">
+            <div className="mb-4 rounded-md border border-[#f7941d]/35 bg-[#fffaf4] p-4 dark:bg-[#f7941d]/8">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold text-sky-100">
-                  Manual fields
+                <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                  Request form
                 </h3>
-                <InfoTip label="Enter these values directly. They will be routed and validated like OCR fields." />
+                <InfoTip label="Complete the form defined in this workflow's Submit box. Required fields must be filled before submission." />
               </div>
               <div className="mt-3 space-y-4">
                 {manualFormDocuments.map((document) => (
                   <div
                     key={document.id}
-                    className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3"
+                    className="rounded-md border border-[#e6e6e6] bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-semibold text-neutral-100">
+                      <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                         {document.documentType}
                       </p>
-                      <span className="rounded-md border border-[#e6e6e6] px-2 py-1 text-xs text-neutral-400">
-                        {document.required ? "Required" : "Optional"}
+                      <span className="rounded-md border border-[#e6e6e6] px-2 py-1 text-xs text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+                        {document.fields.length} field(s)
                       </span>
                     </div>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -1505,34 +1697,23 @@ export function UploadView({
                           editedFields[field.label] ?? editedFields[field.name] ?? "";
 
                         return (
-                          <label key={field.name} className="block">
-                            <span className="mb-1 flex items-center gap-2 text-xs text-neutral-400">
-                              <span>{field.label}</span>
-                              {field.required && (
-                                <span className="rounded-sm border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-amber-100">
-                                  Required
-                                </span>
-                              )}
-                            </span>
-                            <textarea
-                              value={value}
-                              onFocus={() => setActiveWorkflowNodeId(requestWorkflowNodeByDocumentId.get(document.id) || requestSubmitNodeId)}
-                              onChange={(event) =>
-                                setEditedFields({
-                                  ...editedFields,
-                                  [field.label]: event.target.value,
-                                })
-                              }
-                              placeholder={field.instructions || "Enter value"}
-                              rows={2}
-                              className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
-                            />
-                            {field.instructions && (
-                              <p className="mt-1 text-xs text-neutral-500">
-                                {field.instructions}
-                              </p>
-                            )}
-                          </label>
+                          <NativeFormFieldInput
+                            key={field.name}
+                            field={field}
+                            value={value}
+                            onFocus={() =>
+                              setActiveWorkflowNodeId(
+                                requestWorkflowNodeByDocumentId.get(document.id) ||
+                                  requestSubmitNodeId,
+                              )
+                            }
+                            onChange={(nextValue) =>
+                              setEditedFields({
+                                ...editedFields,
+                                [field.label]: nextValue,
+                              })
+                            }
+                          />
                         );
                       })}
                     </div>
@@ -1672,7 +1853,10 @@ export function UploadView({
               <button
                 type="button"
                 onClick={() => onSubmitRequest(participantEmails)}
-                disabled={missingRequiredDocuments.length > 0}
+                disabled={
+                  missingRequiredDocuments.length > 0 ||
+                  missingRequiredNativeFields.length > 0
+                }
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <Send size={16} />

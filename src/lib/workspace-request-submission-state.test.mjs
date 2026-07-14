@@ -112,7 +112,7 @@ test("returns a missing required extracted field message before creating a task"
   });
 
   assert.equal(state.didSubmit, false);
-  assert.equal(state.submissionMessage, "Missing required extracted field(s): Total.");
+  assert.equal(state.submissionMessage, "Missing required request field(s): Total.");
   assert.equal(state.tasks.length, 0);
 });
 
@@ -498,7 +498,7 @@ test("blocks a manual form request when a required manual value is missing", () 
   });
 
   assert.equal(state.didSubmit, false);
-  assert.equal(state.submissionMessage, "Missing required extracted field(s): Leave reason.");
+  assert.equal(state.submissionMessage, "Missing required request field(s): Leave reason.");
 });
 
 test("does not submit a request from a draft template", () => {
@@ -622,7 +622,7 @@ test("blocks batch submission when any request draft is invalid", () => {
   assert.equal(state.shouldClearUploadedAttachments, false);
   assert.equal(
     state.submissionMessage,
-    "Request 2 (invoice-b.pdf): Missing required extracted field(s): Total.",
+    "Request 2 (invoice-b.pdf): Missing required request field(s): Total.",
   );
 });
 

@@ -9,6 +9,7 @@ import type {
   WorkflowDocumentRequirement,
   WorkflowTemplate,
 } from "@/lib/types";
+import { isNativeFormChoiceField } from "./workflow-native-form-state.ts";
 
 type LegacyDocumentNode = Omit<WorkflowGraphNode, "kind"> & { kind: "document" };
 type LegacyWorkflowGraphNode = WorkflowGraphNode | LegacyDocumentNode;
@@ -527,11 +528,32 @@ export function validateWorkflowTemplate(
         return;
       }
 
-      if (document.required && document.fields.length === 0) {
+      if (document.inputMode === "manual_form" && document.fields.length === 0) {
+        issues.push({
+          severity: "error",
+          nodeId: node.id,
+          message: `${node.label}: Native form section ${document.documentType} has no form fields.`,
+        });
+      } else if (document.required && document.fields.length === 0) {
         issues.push({
           severity: "warning",
           nodeId: node.id,
           message: `${node.label}: Required ${document.documentType} has no fields to extract.`,
+        });
+      }
+
+      if (document.inputMode === "manual_form") {
+        document.fields.forEach((field) => {
+          if (
+            isNativeFormChoiceField(field.type) &&
+            !field.options?.some((option) => option.trim())
+          ) {
+            issues.push({
+              severity: "error",
+              nodeId: node.id,
+              message: `${node.label}: ${field.label} has no choices.`,
+            });
+          }
         });
       }
     });

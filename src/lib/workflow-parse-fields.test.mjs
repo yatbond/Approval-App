@@ -49,3 +49,32 @@ test("keeps complete workflow fields unchanged for parsing", () => {
     ],
   );
 });
+
+test("preserves native form field metadata", () => {
+  assert.deepEqual(
+    normalizeWorkflowFieldsForParsing([
+      {
+        name: "department",
+        label: "Department",
+        type: "select",
+        required: true,
+        source: "manual",
+        instructions: "Choose the requesting department.",
+        placeholder: "Select department",
+        options: [" Finance ", "Operations", "Finance", ""],
+      },
+    ]),
+    [
+      {
+        name: "department",
+        label: "Department",
+        type: "select",
+        required: true,
+        source: "manual",
+        instructions: "Choose the requesting department.",
+        placeholder: "Select department",
+        options: ["Finance", "Operations"],
+      },
+    ],
+  );
+});

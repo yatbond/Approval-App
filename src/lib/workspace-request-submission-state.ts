@@ -139,7 +139,7 @@ export function getWorkspaceRequestSubmissionState({
       tasks,
       selectedTaskId: "",
       shouldClearUploadedAttachments: false,
-      submissionMessage: `Missing required extracted field(s): ${missingRequiredFields.join(", ")}.`,
+      submissionMessage: `Missing required request field(s): ${missingRequiredFields.join(", ")}.`,
     };
   }
 
@@ -277,10 +277,16 @@ function getMissingRequiredExtractedFields({
   selectedTemplate: WorkflowTemplate;
   editedFields: Record<string, string>;
 }) {
-  const requiredFields = [
-    ...selectedTemplate.fields,
-    ...selectedTemplate.documents.flatMap((document) => document.fields),
-  ].filter((field) => field.required);
+  const requiredFields = Array.from(
+    new Map(
+      [
+        ...selectedTemplate.fields,
+        ...selectedTemplate.documents.flatMap((document) => document.fields),
+      ]
+        .filter((field) => field.required)
+        .map((field) => [field.name, field]),
+    ).values(),
+  );
 
   return requiredFields
     .filter((field) => {

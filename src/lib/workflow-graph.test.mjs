@@ -630,6 +630,78 @@ test("validates missing first approver and document extraction fields", () => {
   );
 });
 
+test("validates native form sections and choice options", () => {
+  const issues = validateWorkflowTemplate({
+    ...template,
+    documentTypes: ["Request details", "Classification"],
+    documents: [
+      {
+        id: "request-details",
+        documentType: "Request details",
+        format: "text",
+        inputMode: "manual_form",
+        required: false,
+        fields: [],
+      },
+      {
+        id: "classification",
+        documentType: "Classification",
+        format: "text",
+        inputMode: "manual_form",
+        required: false,
+        fields: [
+          {
+            name: "category",
+            label: "Category",
+            type: "select",
+            source: "manual",
+            required: true,
+            instructions: "Choose a category.",
+            options: [],
+          },
+        ],
+      },
+    ],
+    fields: [],
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+        {
+          id: "submit",
+          kind: "submit_request",
+          label: "Requester",
+          x: 200,
+          y: 0,
+          documentIds: ["request-details", "classification"],
+        },
+        { id: "end", kind: "end", label: "End", x: 400, y: 0 },
+      ],
+      edges: [
+        {
+          id: "start-submit",
+          sourceId: "start",
+          targetId: "submit",
+          label: "Main",
+          branchType: "main",
+        },
+        {
+          id: "submit-end",
+          sourceId: "submit",
+          targetId: "end",
+          label: "Main",
+          branchType: "main",
+        },
+      ],
+    },
+  });
+
+  assert.ok(
+    issues.some((issue) => issue.message.includes("has no form fields")),
+  );
+  assert.ok(issues.some((issue) => issue.message.includes("has no choices")));
+});
+
 test("warns when condition outcomes can both match the same numeric field", () => {
   const issues = validateWorkflowTemplate({
     ...template,

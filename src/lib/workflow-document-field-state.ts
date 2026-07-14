@@ -5,7 +5,10 @@ import type {
 import { fieldSourceForDocumentFormat } from "./workflow-documents.ts";
 
 type DocumentFieldPatch = Partial<
-  Pick<WorkflowField, "label" | "instructions" | "required">
+  Pick<
+    WorkflowField,
+    "label" | "type" | "instructions" | "placeholder" | "options" | "required"
+  >
 >;
 
 export function updateWorkflowDocumentField(
@@ -41,9 +44,14 @@ export function addWorkflowDocumentField(
               label: "New field",
               type: "text",
               required: false,
-              source: fieldSourceForDocumentFormat(document.format),
+              source:
+                document.inputMode === "manual_form"
+                  ? "manual"
+                  : fieldSourceForDocumentFormat(document.format),
               instructions:
-                "Describe what should be extracted from this document.",
+                document.inputMode === "manual_form"
+                  ? ""
+                  : "Describe what should be extracted from this document.",
               documentId: document.id,
             },
           ],

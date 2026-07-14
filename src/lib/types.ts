@@ -77,10 +77,22 @@ export type AuditEvent = {
 export type WorkflowField = {
   name: string;
   label: string;
-  type: "text" | "number" | "date" | "currency" | "table";
+  type:
+    | "text"
+    | "long_text"
+    | "number"
+    | "date"
+    | "currency"
+    | "email"
+    | "select"
+    | "radio"
+    | "checkbox"
+    | "table";
   required: boolean;
   source: "ai" | "ocr" | "excel" | "manual";
   instructions: string;
+  placeholder?: string;
+  options?: string[];
   documentId?: string;
   examples?: ExtractionTrainingExample[];
 };

@@ -65,15 +65,15 @@ test("lists document formats in the UI order", () => {
 
 test("lists and normalizes document input modes", () => {
   assert.deepEqual(documentInputModeOptions, [
-    { value: "upload", label: "OCR upload" },
-    { value: "manual_form", label: "Manual form" },
+    { value: "upload", label: "Document upload + AI" },
+    { value: "manual_form", label: "Native form" },
   ]);
   assert.equal(getDocumentInputMode({}), "upload");
   assert.equal(getDocumentInputMode({ inputMode: "manual_form" }), "manual_form");
   assert.equal(isManualFormRequirement({ inputMode: "manual_form" }), true);
   assert.equal(isManualFormRequirement({ inputMode: "upload" }), false);
-  assert.equal(formatDocumentInputMode("manual_form"), "Manual form");
-  assert.equal(formatDocumentInputMode("unknown"), "OCR upload");
+  assert.equal(formatDocumentInputMode("manual_form"), "Native form");
+  assert.equal(formatDocumentInputMode("unknown"), "Document upload + AI");
 });
 
 test("formats document labels and accepted upload extensions", () => {

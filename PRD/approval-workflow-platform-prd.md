@@ -1,6 +1,6 @@
 # Approval Workflow Platform PRD
 
-Last updated: 2026-07-13
+Last updated: 2026-07-14
 Document owner: Product / Workflow Platform
 Status: Living specification aligned with the current codebase
 Repository: Approval Workflow Next.js application
@@ -29,7 +29,7 @@ The codebase is the source of truth for implemented behavior. This PRD covers:
 
 ## 2. Product Summary
 
-The Approval Workflow Platform is a responsive web application for document-heavy business approvals. It lets authorized users create reusable workflow templates, start requests, extract structured values from uploaded documents, route work through sequential or parallel approvals, collaborate on missing information, track progress, and retain an auditable history.
+The Approval Workflow Platform is a responsive web application for document-heavy business approvals. It lets authorized users create reusable workflow templates, build native request forms inside Submit boxes, start requests, extract structured values from uploaded documents, route work through sequential or parallel approvals, collaborate on missing information, track progress, and retain an auditable history.
 
 The initial organizational scope is the Chun Wo group and its businesses and departments. The product is designed to support different approval structures without requiring a custom application for each process.
 
@@ -60,7 +60,7 @@ The current stack is:
 
 - Replace informal email and spreadsheet approval chains with a consistent system.
 - Let administrators and workflow creators model approval processes without code.
-- Support uploaded PDFs, images, spreadsheets, and manual-form requests.
+- Support uploaded PDFs, images, spreadsheets, and native request forms.
 - Reduce manual data entry through AI/OCR extraction with evidence and confidence.
 - Provide deterministic sequential, parallel, conditional, FYI, escalation, return, delegation, and reassignment behavior.
 - Preserve visibility for originators and prior participants throughout the request lifecycle.
@@ -217,7 +217,27 @@ Templates are position-based:
 - Non-fixed or blank emails must be completed at request start when the position is required by the route.
 - Escalation position and escalation email are optional.
 
-### 9.3 Required Inputs
+### 9.3 Native Request Forms
+
+The Submit box can define one or more native form sections alongside document uploads. Each section has a user-facing name and contains ordered fields.
+
+Supported field types are:
+
+- short text;
+- long text;
+- number;
+- currency;
+- date;
+- email;
+- dropdown;
+- single choice;
+- checkbox.
+
+Each field can define a label, optional help text, optional placeholder, required status, and choices where applicable. Dropdown and single-choice fields must contain at least one choice before publication. Required native fields block request submission until completed.
+
+Native form values use the same request field map as AI/OCR values. They therefore participate in draft autosave, conditions, handoff visibility, tracking, and audit behavior without a separate form data model. Existing templates stored with `inputMode: manual_form` remain compatible and are presented as **Native form** in the UI.
+
+### 9.4 Required Inputs
 
 Submission validation covers:
 
@@ -227,9 +247,9 @@ Submission validation covers:
 - valid email formats;
 - valid workflow graph and active template version.
 
-Manual-form workflows may submit without an uploaded file when their required manual fields are complete.
+Native-form workflows may submit without an uploaded file when their required fields are complete.
 
-### 9.4 Draft Identity and Persistence
+### 9.5 Draft Identity and Persistence
 
 - Every request draft has a stable unique identifier.
 - Autosaving an existing loaded draft updates that draft rather than creating a duplicate.
@@ -241,7 +261,7 @@ Manual-form workflows may submit without an uploaded file when their required ma
 - Resuming a draft opens the request editor while keeping **Drafts** highlighted in navigation. A compact **Draft controls** bar below the workflow map shows autosave status and a **Drafts (n)** dropdown for opening named drafts, saving a new draft, deleting saved drafts, or discarding current work.
 - Each saved attachment exposes **Edit extraction** and **Remove** actions. Edit extraction securely reloads the private stored original, restores its preview and saved extraction boxes, and opens boxed-field editing. Remove requires confirmation and clears the associated attachment, extracted values, and prepared request item from the same draft.
 
-### 9.5 Multi-Document and Batch Behavior
+### 9.6 Multi-Document and Batch Behavior
 
 - A request can contain multiple required or optional documents.
 - Each attachment records its requirement, source box, storage metadata, and parsing result.
@@ -985,6 +1005,8 @@ Release verification must include:
 - Enterprise SSO and user provisioning.
 - Teams or Slack notifications.
 - ERP/procurement integrations.
+- Microsoft Forms intake through Power Automate and a secure idempotent intake API.
+- Microsoft Forms is the only planned external form platform. Google Forms, Typeform, and Jotform are out of scope unless the product decision is revisited.
 - Search, reporting, SLA analytics, and export.
 - Read-only workflow visualization optimized for mobile.
 - Localization and configurable date/number formats.
@@ -994,7 +1016,7 @@ Release verification must include:
 | Capability | Primary implementation area |
 | --- | --- |
 | Workspace shell and navigation | `src/app/approval-workspace.tsx` and `src/app/use-approval-workspace-state.ts` |
-| Request creation | `src/app/upload-view.tsx` and upload/request libraries |
+| Request creation and native forms | `src/app/upload-view.tsx`, `src/lib/workflow-native-form-state.ts`, and upload/request libraries |
 | Queue actions | `src/app/approval-workspace.tsx`, workspace task-state libraries, and `src/lib/approval-state.ts` |
 | Tracking | `src/app/approval-workspace.tsx` and workflow graph/history libraries |
 | Workflow Builder and Canvas | `src/app/workflow-view.tsx`, `src/app/workflow-canvas.tsx`, and `src/lib/workflow-graph.ts` |
@@ -1016,6 +1038,8 @@ The current product direction is:
 - one fixed Start and one fixed End;
 - position-based templates with optional fixed emails;
 - request-time participant completion;
+- native request forms are built inside Submit boxes and share the workflow field model;
+- Microsoft Forms is the sole planned external form connector because the organization uses Microsoft 365;
 - all/selected/none document handoff;
 - checkbox-based value and document selection;
 - simple default handoff with advanced controls collapsed;

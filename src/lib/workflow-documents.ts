@@ -19,8 +19,8 @@ export const documentInputModeOptions: {
   value: WorkflowDocumentInputMode;
   label: string;
 }[] = [
-  { value: "upload", label: "OCR upload" },
-  { value: "manual_form", label: "Manual form" },
+  { value: "upload", label: "Document upload + AI" },
+  { value: "manual_form", label: "Native form" },
 ];
 
 export type CreateAttachmentRecordInput = {
@@ -56,7 +56,7 @@ export function isManualFormRequirement(
 export function formatDocumentInputMode(inputMode: WorkflowDocumentInputMode) {
   return (
     documentInputModeOptions.find((option) => option.value === inputMode)?.label ||
-    "OCR upload"
+    "Document upload + AI"
   );
 }
 
