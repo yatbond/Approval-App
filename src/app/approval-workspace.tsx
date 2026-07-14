@@ -37,6 +37,7 @@ import {
   createEmptyUploadRequestDraftStatus,
   getCurrentAutosaveUploadRequestDraft,
   getCreatorVisibleUploadRequestDrafts,
+  getUploadDraftResumeItems,
   getUploadAutosaveIdentity,
   getNamedSavedUploadRequestDrafts,
   getNextSavedUploadRequestDrafts,
@@ -387,6 +388,25 @@ function ApprovalWorkspaceBody({
       createEmptyUploadRequestDraftStatus(currentUploadRequestDraft),
     [currentUploadRequestDraft],
   );
+  const uploadDraftResumeItems = useMemo(
+    () =>
+      getUploadDraftResumeItems({
+        activeUserEmail: activeUser.email,
+        activeDraftId: selectedUploadDraftId,
+        currentDraft: currentUploadRequestDraft,
+        currentDraftStatus: uploadDraftStatus,
+        savedDrafts: savedUploadDrafts,
+        templates,
+      }),
+    [
+      activeUser.email,
+      currentUploadRequestDraft,
+      savedUploadDrafts,
+      selectedUploadDraftId,
+      templates,
+      uploadDraftStatus,
+    ],
+  );
 
   const {
     actionableTasks,
@@ -405,12 +425,11 @@ function ApprovalWorkspaceBody({
     () =>
       getWorkspaceShellState({
         baseNotifications: [],
-        draftItemCount:
-          (uploadDraftStatus.hasDraft ? 1 : 0) + savedUploadDrafts.length,
+        draftItemCount: uploadDraftResumeItems.length,
         taskNotifications: userTaskNotifications,
         workspaceSyncMode,
       }),
-    [savedUploadDrafts.length, uploadDraftStatus.hasDraft, userTaskNotifications, workspaceSyncMode],
+    [uploadDraftResumeItems.length, userTaskNotifications, workspaceSyncMode],
   );
 
   const restoreUploadRequestDraft = useCallback(
@@ -2499,12 +2518,9 @@ function ApprovalWorkspaceBody({
 
             {activeTab === "drafts" && (
               <UploadDraftsView
-                currentDraft={currentUploadRequestDraft}
-                uploadDraftStatus={uploadDraftStatus}
+                resumeItems={uploadDraftResumeItems}
                 savedUploadDrafts={savedUploadDrafts}
-                workflowTemplates={templates}
                 selectedUploadDraftId={selectedUploadDraftId}
-                activeUserEmail={activeUser.email}
                 onResumeSavedDraft={resumeUploadRequestDraft}
                 onClearCurrentDraft={confirmClearUploadRequestDraftFromUi}
                 onDeleteRequestDraft={confirmDeleteUploadRequestDraft}

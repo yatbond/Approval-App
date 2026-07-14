@@ -4,45 +4,25 @@ import { FileText, Plus, RotateCcw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { InfoTip } from "./ui-hint";
 import {
-  getUploadDraftResumeItems,
   type SavedUploadRequestDraft,
-  type UploadRequestDraft,
-  type UploadRequestDraftStatus,
+  type UploadDraftResumeItem,
 } from "@/lib/upload-request-draft-state";
-import type { WorkflowTemplate } from "@/lib/types";
 
 export function UploadDraftsView({
-  currentDraft,
-  uploadDraftStatus,
+  resumeItems,
   savedUploadDrafts,
-  workflowTemplates,
   selectedUploadDraftId,
-  activeUserEmail,
-  activeUserId,
   onResumeSavedDraft,
   onClearCurrentDraft,
   onDeleteRequestDraft,
 }: {
-  currentDraft: UploadRequestDraft | null;
-  uploadDraftStatus: UploadRequestDraftStatus;
+  resumeItems: UploadDraftResumeItem[];
   savedUploadDrafts: SavedUploadRequestDraft[];
-  workflowTemplates: WorkflowTemplate[];
   selectedUploadDraftId: string;
-  activeUserEmail: string;
-  activeUserId?: string;
   onResumeSavedDraft: (draft: SavedUploadRequestDraft) => void;
   onClearCurrentDraft: () => void;
   onDeleteRequestDraft: (draftId: string) => void;
 }) {
-  const resumeItems = getUploadDraftResumeItems({
-    activeUserEmail,
-    activeUserId,
-    activeDraftId: selectedUploadDraftId,
-    currentDraft,
-    currentDraftStatus: uploadDraftStatus,
-    savedDrafts: savedUploadDrafts,
-    templates: workflowTemplates,
-  });
   const savedDraftById = new Map(savedUploadDrafts.map((draft) => [draft.id, draft]));
 
   return (
