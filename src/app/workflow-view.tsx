@@ -340,10 +340,8 @@ export function WorkflowView({
       getWorkflowCanvasInstanceKey({
         workflowId: workflow?.id || "",
         resetNonce: canvasViewResetNonce,
-        graph: workflowGraph,
-        runtimeTask,
       }),
-    [canvasViewResetNonce, runtimeTask, workflow?.id, workflowGraph],
+    [canvasViewResetNonce, workflow?.id],
   );
   const [workflowEditorTab, setWorkflowEditorTab] =
     useState<WorkflowEditorTab>(defaultWorkflowEditorTab);
@@ -1227,7 +1225,6 @@ export function WorkflowView({
               </div>
               <WorkflowCanvas
                 graph={workflowGraph}
-                runtimeTask={runtimeTask}
                 highlightedNodeIds={Array.from(activeOutcomeTargetIds)}
                 selectedEdgeId={selectedEdgeId}
                 canvasInstanceKey={canvasInstanceKey}

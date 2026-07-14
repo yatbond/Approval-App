@@ -142,3 +142,22 @@ test("explains workflow testing without exposing stale live requests", async () 
   assert.doesNotMatch(source, /Test controls/);
   assert.doesNotMatch(source, /selectedRuntimeTaskId/);
 });
+
+test("keeps request progress out of the workflow template canvas", async () => {
+  const workflowViewSource = await readFile(
+    new URL("../app/workflow-view.tsx", import.meta.url),
+    "utf8",
+  );
+  const runtimePanelSource = await readFile(
+    new URL("../app/workflow-runtime-panel.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.doesNotMatch(canvasSource, /runtimeTask/);
+  assert.doesNotMatch(canvasSource, /formatRuntimeStatus/);
+  assert.doesNotMatch(
+    workflowViewSource,
+    /<WorkflowCanvas\s*\n\s*graph=\{workflowGraph\}\s*\n\s*runtimeTask=/,
+  );
+  assert.doesNotMatch(runtimePanelSource, />\s*FYI sent\s*</);
+});

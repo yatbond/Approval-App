@@ -17,7 +17,6 @@ import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo } from "react";
 import { useAppTheme } from "./use-app-theme";
 import type {
-  ApprovalTask,
   WorkflowBranchType,
   WorkflowGraph,
   WorkflowGraphEdge,
@@ -25,11 +24,8 @@ import type {
   WorkflowNodeKind,
 } from "@/lib/types";
 
-type WorkflowNodeRuntimeStatus = "current" | "completed" | "notified";
-
 type WorkflowCanvasProps = {
   graph: WorkflowGraph;
-  runtimeTask?: ApprovalTask;
   highlightedNodeIds: string[];
   selectedEdgeId?: string | null;
   canvasInstanceKey: string;
@@ -60,7 +56,6 @@ const branchTypeOptions: { value: WorkflowBranchType; label: string }[] = [
 
 export default function WorkflowCanvas({
   graph,
-  runtimeTask,
   highlightedNodeIds,
   selectedEdgeId,
   canvasInstanceKey,
@@ -78,8 +73,8 @@ export default function WorkflowCanvas({
     [highlightedNodeIds],
   );
   const flowNodes = useMemo(
-    () => toFlowNodes(graph, runtimeTask, highlightedNodes),
-    [graph, highlightedNodes, runtimeTask],
+    () => toFlowNodes(graph, highlightedNodes),
+    [graph, highlightedNodes],
   );
   const flowEdges = useMemo(
     () => toFlowEdges(graph, selectedEdgeId),
@@ -151,7 +146,6 @@ export default function WorkflowCanvas({
 
 function toFlowNodes(
   graph: WorkflowGraph,
-  runtimeTask?: ApprovalTask,
   highlightedNodeIds: Set<string> = new Set(),
 ): FlowNode[] {
   return graph.nodes.map((node) => ({
@@ -166,11 +160,6 @@ function toFlowNodes(
             <p className="min-w-0 break-words text-sm font-semibold">
               {node.label}
             </p>
-            {getNodeRuntimeStatus(node, runtimeTask) && (
-              <span className="shrink-0 rounded border border-[#d9d9d9] bg-[#f2f2f2] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-normal">
-                {formatRuntimeStatus(getNodeRuntimeStatus(node, runtimeTask))}
-              </span>
-            )}
           </div>
           <p className="mt-1 text-xs uppercase tracking-normal text-neutral-500">
             {formatNodeKind(node.kind)}
@@ -183,11 +172,7 @@ function toFlowNodes(
         </div>
       ),
     },
-    style: getWorkflowNodeStyle(
-      node,
-      getNodeRuntimeStatus(node, runtimeTask),
-      highlightedNodeIds.has(node.id),
-    ),
+    style: getWorkflowNodeStyle(node, highlightedNodeIds.has(node.id)),
   }));
 }
 
@@ -213,45 +198,6 @@ function toFlowEdges(graph: WorkflowGraph, selectedEdgeId?: string | null): Flow
     labelStyle: { fill: "#231f20", fontSize: 12 },
     labelBgStyle: { fill: "#ffffff", fillOpacity: 0.96 },
   }));
-}
-
-function getNodeRuntimeStatus(
-  node: WorkflowGraphNode,
-  task?: ApprovalTask,
-): WorkflowNodeRuntimeStatus | undefined {
-  if (!task) {
-    return undefined;
-  }
-
-  if (task.currentNodeId === node.id) {
-    return "current";
-  }
-
-  if (task.completedNodeIds?.includes(node.id)) {
-    return "completed";
-  }
-
-  if (task.notifiedNodeIds?.includes(node.id)) {
-    return "notified";
-  }
-
-  return undefined;
-}
-
-function formatRuntimeStatus(status?: WorkflowNodeRuntimeStatus) {
-  if (status === "current") {
-    return "Current";
-  }
-
-  if (status === "completed") {
-    return "Completed";
-  }
-
-  if (status === "notified") {
-    return "FYI sent";
-  }
-
-  return "";
 }
 
 function formatBranchLabel(edge: WorkflowGraphEdge, graph?: WorkflowGraph) {
@@ -284,7 +230,6 @@ function formatBranchLabel(edge: WorkflowGraphEdge, graph?: WorkflowGraph) {
 
 function getWorkflowNodeStyle(
   node: WorkflowGraphNode,
-  status?: WorkflowNodeRuntimeStatus,
   highlighted = false,
 ): React.CSSProperties {
   const palette: Record<WorkflowNodeKind, { bg: string; border: string; color: string }> = {
@@ -298,29 +243,18 @@ function getWorkflowNodeStyle(
     end: { bg: "#f2f2f2", border: "#8a8a8a", color: "#231f20" },
   };
   const tone = palette[node.kind];
-  const statusBorder =
-    highlighted
-      ? "#231f20"
-      : status === "current"
-        ? "#f7941d"
-        : status === "completed"
-          ? "#7b791c"
-          : status === "notified"
-            ? "#7b791c"
-            : tone.border;
+  const border = highlighted ? "#231f20" : tone.border;
 
   return {
     background: tone.bg,
-    border: `2px solid ${statusBorder}`,
+    border: `2px solid ${border}`,
     color: tone.color,
     borderRadius: 6,
     padding: 12,
     width: 190,
     boxShadow: highlighted
       ? "0 0 0 3px rgba(35, 31, 32, 0.12), 0 4px 12px rgba(35,31,32,0.10)"
-      : status === "current"
-        ? "0 0 0 3px rgba(247, 148, 29, 0.14), 0 4px 12px rgba(35,31,32,0.10)"
-        : "0 4px 12px rgba(35,31,32,0.10)",
+      : "0 4px 12px rgba(35,31,32,0.10)",
   };
 }
 

@@ -442,6 +442,11 @@ The desktop/tablet Canvas provides:
 - route summary and a dedicated tester-email workflow test;
 - autosave and publish controls.
 
+The template canvas shows workflow structure and editor selection only. It does
+not display live-request labels such as **Current**, **Completed**, or **FYI
+sent**. Test-run progress appears in **Test this workflow**, while real-request
+progress remains in Queue and Tracking.
+
 ### 12.2 Available Boxes
 
 | Box | Purpose |
@@ -992,7 +997,7 @@ Important environment groups include:
 
 ## 25. Validation and Test Coverage
 
-The codebase currently contains 661 automated tests covering 107 test files. Coverage includes:
+The codebase currently contains 662 automated tests covering 107 test files. Coverage includes:
 
 - graph validation and routing;
 - sequential and parallel approval state;

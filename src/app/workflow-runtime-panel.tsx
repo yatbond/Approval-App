@@ -110,18 +110,6 @@ export function WorkflowRuntimePanel({
                 Last: {lastWorkflowEdit}
               </span>
             )}
-            <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-full bg-yellow-400" />
-              Current
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-full bg-emerald-500" />
-              Completed
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-full bg-sky-400" />
-              FYI sent
-            </span>
           </div>
         </div>
       </div>
