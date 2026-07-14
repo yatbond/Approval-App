@@ -346,7 +346,7 @@ export function FormLibrary({
           <div className="mt-3 space-y-3">
             {draft.fields.map((field, index) => (
               <div
-                key={`${field.name}-${index}`}
+                key={`mapped-value-${index}`}
                 className="grid gap-3 rounded-md border border-[#e6e6e6] p-3 dark:border-neutral-700 md:grid-cols-[minmax(0,1fr)_180px_auto]"
               >
                 <label>
@@ -433,7 +433,7 @@ export function FormLibrary({
           <div className="mt-3 space-y-3">
             {(draft.attachmentFields || []).map((field, index) => (
               <div
-                key={`${field.name}-${index}`}
+                key={`mapped-attachment-${index}`}
                 className="grid gap-3 rounded-md border border-[#e6e6e6] p-3 dark:border-neutral-700 sm:grid-cols-[minmax(0,1fr)_auto]"
               >
                 <label>

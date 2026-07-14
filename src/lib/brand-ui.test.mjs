@@ -26,6 +26,10 @@ const themeToggleSource = await readFile(
   new URL("../app/theme-toggle.tsx", import.meta.url),
   "utf8",
 );
+const formLibrarySource = await readFile(
+  new URL("../app/form-library.tsx", import.meta.url),
+  "utf8",
+);
 
 test("uses the official Chun Wo palette and typography", () => {
   for (const token of ["#f7941d", "#7b791c", "#231f20", "#e6e6e6", "#8a8a8a"]) {
@@ -61,6 +65,12 @@ test("keeps neutral text and orange actions readable in light mode", async () =>
     const source = await readFile(new URL(path, import.meta.url), "utf8");
     assert.doesNotMatch(source, /bg-\[\#f7941d\][^"\n]*text-white/);
   }
+});
+
+test("keeps form-library inputs mounted while their labels change", () => {
+  assert.match(formLibrarySource, /key=\{`mapped-value-\$\{index\}`\}/);
+  assert.match(formLibrarySource, /key=\{`mapped-attachment-\$\{index\}`\}/);
+  assert.doesNotMatch(formLibrarySource, /key=\{`\$\{field\.name\}-\$\{index\}`\}/);
 });
 
 test("uses the official logo and labeled mobile navigation", () => {
