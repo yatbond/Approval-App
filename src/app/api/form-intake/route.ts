@@ -4,6 +4,7 @@ import {
   parseExternalFormIntake,
 } from "@/lib/external-form-intake";
 import { processExternalFormIntake } from "@/lib/external-form-processing";
+import { extractExternalFormAttachmentAnswers } from "@/lib/external-form-attachment-extraction";
 import { saveNormalizedWorkspaceState } from "@/lib/normalized-workspace-store";
 import { parseWorkspaceState, serializeWorkspaceState } from "@/lib/workspace-persistence";
 
@@ -133,7 +134,40 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = processExternalFormIntake({ snapshot, intake });
+  const definition = snapshot.formLibrary.find(
+    (item) =>
+      item.formKey === intake.formKey &&
+      item.version === intake.formVersion &&
+      item.source === "microsoft_forms",
+  );
+  const canExtractAttachments = Boolean(
+    definition &&
+      definition.status === "ready" &&
+      definition.externalFormId === intake.externalFormId &&
+      definition.schemaFingerprint === intake.schemaFingerprint &&
+      definition.responseMode === intake.responseMode,
+  );
+  const extractionResult = definition && canExtractAttachments
+    ? await extractExternalFormAttachmentAnswers({ definition, intake })
+    : { success: true as const, answers: {} };
+  if (!extractionResult.success) {
+    await markSubmissionFailed(data.id, "failed", extractionResult.message);
+    return Response.json(
+      {
+        accepted: false,
+        submissionId: data.id,
+        status: "failed",
+        reason: extractionResult.message,
+      },
+      { status: 422 },
+    );
+  }
+
+  const result = processExternalFormIntake({
+    snapshot,
+    intake,
+    attachmentExtractionAnswers: extractionResult.answers,
+  });
   if (!result.success) {
     await markSubmissionFailed(data.id, result.status, result.message);
     return Response.json(

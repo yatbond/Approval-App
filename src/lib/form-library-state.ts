@@ -1,5 +1,6 @@
 import type {
   FormLibraryDefinition,
+  FormLibraryFieldInputSource,
   FormLibraryResponseMode,
   FormLibrarySource,
   FormParticipantMapping,
@@ -35,22 +36,44 @@ export function createEmptyFormLibraryDraft(
     embedUrl: "",
     targetWorkflowTemplateId: "",
     versionComment: "",
-    fields: [createFormLibraryField("New field")],
+    fields: [
+      createFormLibraryField(
+        "New field",
+        source === "microsoft_forms" ? "microsoft_forms" : "approval_app",
+      ),
+    ],
     attachmentFields: [],
     participantMappings: [],
   };
 }
 
-export function createFormLibraryField(label: string): WorkflowField {
+export function createFormLibraryField(
+  label: string,
+  inputSource: FormLibraryFieldInputSource = "approval_app",
+): WorkflowField {
   const cleanLabel = label.trim() || "New field";
   return {
     name: toFieldName(cleanLabel),
     label: cleanLabel,
     type: "text",
     required: false,
-    source: "manual",
+    source: inputSource === "attachment_extraction" ? "ai" : "manual",
     instructions: "",
+    inputSource,
+    ...(inputSource === "microsoft_forms"
+      ? { externalQuestionLabel: cleanLabel }
+      : {}),
   };
+}
+
+export function getFormLibraryFieldInputSource(
+  field: WorkflowField,
+  formSource: FormLibrarySource,
+): FormLibraryFieldInputSource {
+  if (field.inputSource) {
+    return field.inputSource;
+  }
+  return formSource === "microsoft_forms" ? "microsoft_forms" : "approval_app";
 }
 
 export function extractMicrosoftFormId(responseUrl: string) {
@@ -80,11 +103,30 @@ export function getFormLibraryPreflightIssues(
     issues.push("Add at least one value or attachment field.");
   }
   draft.fields.forEach((field) => {
+    const inputSource = getFormLibraryFieldInputSource(field, draft.source);
     if (
+      inputSource !== "attachment_extraction" &&
       isNativeFormChoiceField(field.type) &&
       !field.options?.some((option) => option.trim())
     ) {
       issues.push(`${field.label}: add at least one choice.`);
+    }
+    if (draft.source === "microsoft_forms" && inputSource === "microsoft_forms") {
+      if (!field.externalQuestionLabel?.trim() && !field.label.trim()) {
+        issues.push(`${field.label || "Request field"}: add the Microsoft Forms question label.`);
+      }
+    }
+    if (inputSource === "attachment_extraction") {
+      const attachment = (draft.attachmentFields || []).find(
+        (item) => item.name === field.attachmentFieldName,
+      );
+      if (!attachment) {
+        issues.push(`${field.label}: choose the attachment AI should parse.`);
+      } else if (field.required && !attachment.required) {
+        issues.push(
+          `${field.label}: mark the linked attachment "${attachment.label}" as required.`,
+        );
+      }
     }
   });
   if (draft.source === "microsoft_forms") {
@@ -142,7 +184,21 @@ export function saveFormLibraryDraft({
     version,
     versionComment: draft.versionComment.trim(),
     status: issues.length ? "setup_required" : "ready",
-    fields: draft.fields.map((field) => ({ ...field, source: "manual" as const })),
+    fields: draft.fields.map((field) => {
+      const inputSource = getFormLibraryFieldInputSource(field, draft.source);
+      return {
+        ...field,
+        inputSource,
+        source: inputSource === "attachment_extraction" ? ("ai" as const) : ("manual" as const),
+        instructions:
+          inputSource === "attachment_extraction"
+            ? field.instructions.trim() || `Extract ${field.label}.`
+            : field.instructions,
+        ...(inputSource === "microsoft_forms"
+          ? { externalQuestionLabel: field.externalQuestionLabel?.trim() || field.label }
+          : {}),
+      };
+    }),
     attachmentFields: draft.attachmentFields || [],
     responseMode: draft.responseMode,
     responseUrl: draft.responseUrl.trim() || undefined,
@@ -228,6 +284,7 @@ export function attachLibraryFormToWorkflow({
       completionRequired,
       selectedFieldNames: definition.fields.map((field) => field.name),
       selectedAttachmentNames: (definition.attachmentFields || []).map((field) => field.name),
+      attachmentFields: (definition.attachmentFields || []).map((field) => ({ ...field })),
     },
   });
   return {
@@ -254,6 +311,10 @@ function buildFormSchemaFingerprint(draft: FormLibraryDraft) {
       field.type,
       field.required,
       field.options || [],
+      getFormLibraryFieldInputSource(field, draft.source),
+      field.externalQuestionLabel || "",
+      field.attachmentFieldName || "",
+      field.instructions || "",
     ]),
     attachments: (draft.attachmentFields || []).map((field) => [
       field.name,

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   attachLibraryFormToWorkflow,
   createEmptyFormLibraryDraft,
+  createFormLibraryField,
   extractMicrosoftFormId,
   getFormLibraryPreflightIssues,
   saveFormLibraryDraft,
@@ -59,6 +60,48 @@ test("choice fields require configured choices", () => {
   ]);
 });
 
+test("request data fields can be populated from a registered attachment", () => {
+  const draft = createEmptyFormLibraryDraft("microsoft_forms");
+  draft.responseUrl = "https://forms.cloud.microsoft/r/5raJmEfjPA";
+  draft.attachmentFields = [
+    { name: "payment_certificate", label: "Payment certificate", required: true },
+  ];
+  draft.fields = [
+    createFormLibraryField("Project name", "microsoft_forms"),
+    {
+      ...createFormLibraryField("Payment amount", "attachment_extraction"),
+      required: true,
+      attachmentFieldName: "payment_certificate",
+      instructions: "Extract the final payable amount.",
+    },
+  ];
+
+  assert.deepEqual(getFormLibraryPreflightIssues(draft, []), []);
+  const saved = saveFormLibraryDraft({
+    library: [],
+    draft,
+    actorEmail: "admin@example.com",
+  });
+  assert.equal(saved.definition.fields[0].inputSource, "microsoft_forms");
+  assert.equal(saved.definition.fields[0].externalQuestionLabel, "Project name");
+  assert.equal(saved.definition.fields[1].inputSource, "attachment_extraction");
+  assert.equal(saved.definition.fields[1].source, "ai");
+  assert.equal(saved.definition.fields[1].attachmentFieldName, "payment_certificate");
+});
+
+test("attachment extraction requires a valid registered attachment", () => {
+  const draft = createEmptyFormLibraryDraft("native");
+  draft.fields = [
+    {
+      ...createFormLibraryField("Invoice total", "attachment_extraction"),
+      attachmentFieldName: "missing_upload",
+    },
+  ];
+  assert.deepEqual(getFormLibraryPreflightIssues(draft, []), [
+    "Invoice total: choose the attachment AI should parse.",
+  ]);
+});
+
 test("saving creates immutable versions and attaching pins the version", () => {
   const draft = createEmptyFormLibraryDraft("native");
   draft.name = "Site intake";
@@ -88,6 +131,10 @@ test("saving creates immutable versions and attaching pins the version", () => {
   assert.deepEqual(attached.template.graph.nodes[0].documentIds, [
     attached.template.documents[0].id,
   ]);
+  assert.deepEqual(
+    attached.template.documents[0].formLibraryRef.attachmentFields,
+    second.definition.attachmentFields,
+  );
 });
 
 test("forms cannot be attached to End boxes", () => {

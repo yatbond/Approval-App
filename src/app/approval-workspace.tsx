@@ -24,6 +24,7 @@ import {
   getWorkspaceParseFileStartState,
   getWorkspaceParseFileStoredAttachmentState,
   getWorkspaceParseFileSuccessState,
+  mergeParsedWorkspaceFilePayload,
 } from "@/lib/workspace-parse-file-state";
 import {
   appendExtractionExamplesToTemplate,
@@ -157,6 +158,12 @@ type UploadRequestDraftRow = {
   uploadedAttachments: ApprovalAttachment[];
   parsedDocumentId?: string;
   documentPreviewPages: DocumentPreviewPage[];
+};
+
+type ParseFileOptions = {
+  preserveExistingRequestData?: boolean;
+  mergeIntoCurrentRequest?: boolean;
+  skipExtraction?: boolean;
 };
 
 const uploadRequestDraftStoragePrefix = "approval-upload-request-draft-v1";
@@ -1540,14 +1547,31 @@ function ApprovalWorkspaceBody({
     file: File,
     documentRequirement?: WorkflowDocumentRequirement,
     adHocFields: WorkflowField[] = [],
+    options: ParseFileOptions = {},
   ) {
     const startState = getWorkspaceParseFileStartState(file);
+    const currentRow = options.mergeIntoCurrentRequest
+      ? uploadRequestDraftRows.find(
+          (row) => row.id === selectedUploadRequestDraftRowId,
+        )
+      : undefined;
+    const baseParseResult = options.preserveExistingRequestData
+      ? currentRow?.parseResult || parseResult
+      : null;
+    const baseEditedFields = options.preserveExistingRequestData
+      ? currentRow?.editedFields || editedFields
+      : {};
+    const baseAttachments = options.preserveExistingRequestData
+      ? currentRow?.uploadedAttachments || uploadedAttachments
+      : [];
     setFileName(startState.fileName);
     setParseError(startState.parseError);
     setSubmissionMessage(startState.submissionMessage);
     setIsParsing(startState.isParsing);
-    setParseResult(startState.parseResult);
-    setEditedFields(startState.editedFields);
+    if (!options.preserveExistingRequestData) {
+      setParseResult(startState.parseResult);
+      setEditedFields(startState.editedFields);
+    }
     setDocumentPreviewPages([]);
     setParsedDocumentId(documentRequirement?.id);
     let storage: Awaited<ReturnType<typeof uploadWorkspaceAttachmentFile>> | null = null;
@@ -1574,11 +1598,47 @@ function ApprovalWorkspaceBody({
       publicUrl: storage?.publicUrl,
     });
     const storedAttachment = storedAttachmentState.uploadedAttachments[0];
-    if (storedAttachment) {
-      setUploadedAttachments((items) => [...items, storedAttachment]);
-    }
+    const nextAttachments = storedAttachment
+      ? [...baseAttachments, storedAttachment]
+      : baseAttachments;
+    const nextUploadedAttachments = options.preserveExistingRequestData
+      ? nextAttachments
+      : storedAttachment
+        ? [...uploadedAttachments, storedAttachment]
+        : uploadedAttachments;
+    setUploadedAttachments(nextUploadedAttachments);
 
     try {
+      if (options.skipExtraction) {
+        const nextDocumentPreviewPages = await buildDocumentPreviewPages(file);
+        setDocumentPreviewPages(nextDocumentPreviewPages);
+        setParseResult(baseParseResult);
+        setEditedFields(baseEditedFields);
+        setIsParsing(false);
+        if (currentRow && options.mergeIntoCurrentRequest) {
+          const nextRow: UploadRequestDraftRow = {
+            ...currentRow,
+            uploadedAttachments: nextAttachments,
+            documentPreviewPages: nextDocumentPreviewPages,
+          };
+          setUploadRequestDraftRows((rows) =>
+            rows.map((row) => (row.id === nextRow.id ? nextRow : row)),
+          );
+        } else {
+          const nextRow: UploadRequestDraftRow = {
+            id: crypto.randomUUID(),
+            fileName: file.name,
+            parseResult: baseParseResult,
+            editedFields: baseEditedFields,
+            uploadedAttachments: nextAttachments,
+            parsedDocumentId: documentRequirement?.id,
+            documentPreviewPages: nextDocumentPreviewPages,
+          };
+          setUploadRequestDraftRows((rows) => [...rows, nextRow]);
+          setSelectedUploadRequestDraftRowId(nextRow.id);
+        }
+        return;
+      }
       const pageImages = shouldRenderPdfForVision(file)
         ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
         : [];
@@ -1595,20 +1655,40 @@ function ApprovalWorkspaceBody({
         ),
       });
       const successState = getWorkspaceParseFileSuccessState(payload);
-      setParseResult(successState.parseResult);
-      setEditedFields(successState.editedFields);
+      const nextParseResult = options.preserveExistingRequestData
+        ? mergeParsedWorkspaceFilePayload(baseParseResult, successState.parseResult)
+        : successState.parseResult;
+      const nextEditedFields = options.preserveExistingRequestData
+        ? { ...baseEditedFields, ...successState.editedFields }
+        : successState.editedFields;
+      setParseResult(nextParseResult);
+      setEditedFields(nextEditedFields);
       setIsParsing(successState.isParsing);
-      const nextRow: UploadRequestDraftRow = {
-        id: crypto.randomUUID(),
-        fileName: file.name,
-        parseResult: successState.parseResult,
-        editedFields: successState.editedFields,
-        uploadedAttachments: storedAttachment ? [storedAttachment] : [],
-        parsedDocumentId: documentRequirement?.id,
-        documentPreviewPages: nextDocumentPreviewPages,
-      };
-      setUploadRequestDraftRows((rows) => [...rows, nextRow]);
-      setSelectedUploadRequestDraftRowId(nextRow.id);
+      if (currentRow && options.mergeIntoCurrentRequest) {
+        const nextRow: UploadRequestDraftRow = {
+          ...currentRow,
+          parseResult: nextParseResult,
+          editedFields: nextEditedFields,
+          uploadedAttachments: nextAttachments,
+          parsedDocumentId: documentRequirement?.id || currentRow.parsedDocumentId,
+          documentPreviewPages: nextDocumentPreviewPages,
+        };
+        setUploadRequestDraftRows((rows) =>
+          rows.map((row) => (row.id === nextRow.id ? nextRow : row)),
+        );
+      } else {
+        const nextRow: UploadRequestDraftRow = {
+          id: crypto.randomUUID(),
+          fileName: file.name,
+          parseResult: nextParseResult,
+          editedFields: nextEditedFields,
+          uploadedAttachments: nextAttachments,
+          parsedDocumentId: documentRequirement?.id,
+          documentPreviewPages: nextDocumentPreviewPages,
+        };
+        setUploadRequestDraftRows((rows) => [...rows, nextRow]);
+        setSelectedUploadRequestDraftRowId(nextRow.id);
+      }
     } catch (error) {
       setParseError(error instanceof Error ? error.message : "Unable to parse file.");
     } finally {

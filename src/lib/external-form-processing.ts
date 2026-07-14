@@ -8,6 +8,7 @@ import type {
 } from "./types.ts";
 import type { ExternalFormIntake } from "./external-form-intake.ts";
 import type { WorkspaceStateSnapshot } from "./workspace-persistence.ts";
+import { getFormLibraryFieldInputSource } from "./form-library-state.ts";
 import { createApprovalTaskFromTemplate } from "./request-builder.ts";
 import {
   applyWorkflowParticipantEmails,
@@ -31,10 +32,12 @@ export type ExternalFormProcessingResult =
 export function processExternalFormIntake({
   snapshot,
   intake,
+  attachmentExtractionAnswers = {},
   now = new Date(),
 }: {
   snapshot: WorkspaceStateSnapshot;
   intake: ExternalFormIntake;
+  attachmentExtractionAnswers?: Record<string, string>;
   now?: Date;
 }): ExternalFormProcessingResult {
   const definition = snapshot.formLibrary.find(
@@ -73,11 +76,19 @@ export function processExternalFormIntake({
   if (!attachmentValidation.success) {
     return attachmentValidation;
   }
+  const requestDataValidation = validateRequestData(
+    definition,
+    answerValidation.answers,
+    attachmentExtractionAnswers,
+  );
+  if (!requestDataValidation.success) {
+    return requestDataValidation;
+  }
 
   if (intake.responseMode === "complete_node") {
-    return completeRequestNode(snapshot, definition, intake, answerValidation.answers, now);
+    return completeRequestNode(snapshot, definition, intake, requestDataValidation.answers, now);
   }
-  return startWorkflow(snapshot, definition, intake, answerValidation.answers, now);
+  return startWorkflow(snapshot, definition, intake, requestDataValidation.answers, now);
 }
 
 function completeRequestNode(
@@ -209,8 +220,13 @@ function validateAnswers(
 ):
   | { success: true; answers: Record<string, string> }
   | { success: false; status: "schema_changed"; message: string } {
+  const responseFields = definition.fields.filter(
+    (field) =>
+      getFormLibraryFieldInputSource(field, definition.source) === "microsoft_forms",
+  );
   const knownKeys = new Map<string, string>();
-  for (const field of definition.fields) {
+  for (const field of responseFields) {
+    knownKeys.set(normalizeKey(field.externalQuestionLabel || field.label), field.label);
     knownKeys.set(normalizeKey(field.name), field.label);
     knownKeys.set(normalizeKey(field.label), field.label);
   }
@@ -225,9 +241,12 @@ function validateAnswers(
   }
 
   const answers: Record<string, string> = {};
-  for (const field of definition.fields) {
+  for (const field of responseFields) {
     const entry = Object.entries(rawAnswers).find(
-      ([key]) => normalizeKey(key) === normalizeKey(field.name) || normalizeKey(key) === normalizeKey(field.label),
+      ([key]) =>
+        normalizeKey(key) === normalizeKey(field.externalQuestionLabel || field.label) ||
+        normalizeKey(key) === normalizeKey(field.name) ||
+        normalizeKey(key) === normalizeKey(field.label),
     );
     const value = stringifyAnswer(entry?.[1]);
     if (field.required && !value) {
@@ -235,6 +254,35 @@ function validateAnswers(
     }
     if (value) {
       answers[field.label] = value;
+    }
+  }
+  return { success: true, answers };
+}
+
+function validateRequestData(
+  definition: FormLibraryDefinition,
+  formAnswers: Record<string, string>,
+  attachmentExtractionAnswers: Record<string, string>,
+):
+  | { success: true; answers: Record<string, string> }
+  | { success: false; status: "schema_changed"; message: string } {
+  const answers = { ...formAnswers };
+  for (const field of definition.fields) {
+    if (
+      getFormLibraryFieldInputSource(field, definition.source) !==
+      "attachment_extraction"
+    ) {
+      continue;
+    }
+    const value = findAnswer(attachmentExtractionAnswers, field.name) ||
+      findAnswer(attachmentExtractionAnswers, field.label);
+    if (value) {
+      answers[field.label] = value;
+    } else if (field.required) {
+      return failure(
+        "schema_changed",
+        `AI could not extract required request data: ${field.label}. Review the attachment or extraction instruction.`,
+      );
     }
   }
   return { success: true, answers };

@@ -167,6 +167,42 @@ test("rejects missing required answers, attachments, and participant emails", ()
   assert.equal(participantResult.success, false);
 });
 
+test("merges AI attachment values without requiring matching Microsoft Forms questions", () => {
+  const extractionDefinition = {
+    ...definition,
+    fields: [
+      ...definition.fields,
+      {
+        name: "payment_amount",
+        label: "Payment amount",
+        type: "currency",
+        required: true,
+        source: "ai",
+        inputSource: "attachment_extraction",
+        attachmentFieldName: "site_photo",
+        instructions: "Extract the payable amount.",
+      },
+    ],
+  };
+  const result = processExternalFormIntake({
+    snapshot: snapshot({ formLibrary: [extractionDefinition] }),
+    intake: intake(),
+    attachmentExtractionAnswers: { payment_amount: "HKD 500,000.00" },
+  });
+  assert.equal(result.success, true);
+  assert.equal(
+    result.snapshot.approvalTasks[0].extractedFields["Payment amount"],
+    "HKD 500,000.00",
+  );
+
+  const missing = processExternalFormIntake({
+    snapshot: snapshot({ formLibrary: [extractionDefinition] }),
+    intake: intake(),
+  });
+  assert.equal(missing.success, false);
+  assert.match(missing.message, /Payment amount/);
+});
+
 test("applies a complete-node response to the referenced request without approving it", () => {
   const completeDefinition = { ...definition, responseMode: "complete_node", targetWorkflowTemplateId: undefined };
   const attached = attachLibraryFormToWorkflow({

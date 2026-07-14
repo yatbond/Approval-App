@@ -63,3 +63,24 @@ export function getWorkspaceParseFileSuccessState(
     isParsing: false,
   };
 }
+
+export function mergeParsedWorkspaceFilePayload(
+  current: ParsedWorkspaceFilePayload | null,
+  next: ParsedWorkspaceFilePayload,
+): ParsedWorkspaceFilePayload {
+  if (!current) {
+    return next;
+  }
+  return {
+    ...current,
+    ...next,
+    fields: { ...(current.fields || {}), ...(next.fields || {}) },
+    confidence: { ...(current.confidence || {}), ...(next.confidence || {}) },
+    evidence: { ...(current.evidence || {}), ...(next.evidence || {}) },
+    suggestedFields: [
+      ...(current.suggestedFields || []),
+      ...(next.suggestedFields || []),
+    ],
+    notes: [...(current.notes || []), ...(next.notes || [])],
+  };
+}

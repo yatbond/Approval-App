@@ -6,6 +6,7 @@ import {
   createEmptyFormLibraryDraft,
   createFormLibraryField,
   extractMicrosoftFormId,
+  getFormLibraryFieldInputSource,
   getFormLibraryPreflightIssues,
   getFormParticipantNodes,
   getLatestFormLibraryDefinitions,
@@ -17,6 +18,7 @@ import {
 } from "@/lib/workflow-native-form-state";
 import type {
   FormLibraryDefinition,
+  FormLibraryFieldInputSource,
   FormParticipantResolutionSource,
   WorkflowField,
   WorkflowTemplate,
@@ -330,27 +332,35 @@ export function FormLibrary({
         <div className="mt-5 border-t border-[#e6e6e6] pt-5 dark:border-neutral-700">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold">Mapped values</h3>
-              <InfoTip label="For native forms these are input fields. For Microsoft Forms they map response labels to workflow values." />
+              <h3 className="text-sm font-semibold">Request data fields</h3>
+              <InfoTip label="The complete data used by the workflow. A field can come from a form answer or be extracted by AI from an attachment." />
             </div>
             <button
               type="button"
               onClick={() =>
                 setDraft({
                   ...draft,
-                  fields: [...draft.fields, createFormLibraryField(`Field ${draft.fields.length + 1}`)],
+                  fields: [
+                    ...draft.fields,
+                    createFormLibraryField(
+                      `Field ${draft.fields.length + 1}`,
+                      draft.source === "microsoft_forms"
+                        ? "microsoft_forms"
+                        : "approval_app",
+                    ),
+                  ],
                 })
               }
               className="flex min-h-9 items-center gap-2 rounded-md border border-[#f7941d]/50 bg-[#fff4e6] px-3 text-sm text-neutral-900 dark:bg-[#f7941d]/12 dark:text-neutral-100"
             >
-              <Plus size={14} /> Add value
+              <Plus size={14} /> Add data field
             </button>
           </div>
           <div className="mt-3 space-y-3">
             {draft.fields.map((field, index) => (
               <div
                 key={`mapped-value-${index}`}
-                className="grid gap-3 rounded-md border border-[#e6e6e6] p-3 dark:border-neutral-700 md:grid-cols-[minmax(0,1fr)_180px_auto]"
+                className="grid gap-3 rounded-md border border-[#e6e6e6] p-3 dark:border-neutral-700 lg:grid-cols-[minmax(0,1fr)_170px_220px_auto]"
               >
                 <label>
                   <span className="mb-1 block text-xs text-neutral-500">Field label</span>
@@ -360,6 +370,12 @@ export function FormLibrary({
                       updateField(index, {
                         label: event.target.value,
                         name: toFieldName(event.target.value),
+                        ...(getFormLibraryFieldInputSource(field, draft.source) ===
+                          "microsoft_forms" &&
+                        (!field.externalQuestionLabel ||
+                          field.externalQuestionLabel === field.label)
+                          ? { externalQuestionLabel: event.target.value }
+                          : {}),
                       })
                     }
                     className={inputClassName}
@@ -388,6 +404,40 @@ export function FormLibrary({
                     ))}
                   </select>
                 </label>
+                <label>
+                  <span className="mb-1 block text-xs text-neutral-500">Input source</span>
+                  <select
+                      value={getFormLibraryFieldInputSource(field, draft.source)}
+                      onChange={(event) => {
+                        const inputSource = event.target
+                          .value as FormLibraryFieldInputSource;
+                        updateField(index, {
+                          inputSource,
+                          source:
+                            inputSource === "attachment_extraction"
+                              ? "ai"
+                              : "manual",
+                          externalQuestionLabel:
+                            inputSource === "microsoft_forms"
+                              ? field.externalQuestionLabel || field.label
+                              : undefined,
+                          attachmentFieldName:
+                            inputSource === "attachment_extraction"
+                              ? field.attachmentFieldName ||
+                                draft.attachmentFields?.[0]?.name
+                              : undefined,
+                        });
+                      }}
+                      className={inputClassName}
+                    >
+                      {draft.source === "microsoft_forms" ? (
+                        <option value="microsoft_forms">Microsoft Forms answer</option>
+                      ) : (
+                        <option value="approval_app">User entry in Approval App</option>
+                      )}
+                      <option value="attachment_extraction">AI from attachment</option>
+                  </select>
+                </label>
                 <button
                   type="button"
                   onClick={() =>
@@ -401,16 +451,86 @@ export function FormLibrary({
                 >
                   <Trash2 size={15} />
                 </button>
-                <label className="flex items-center gap-2 text-sm md:col-span-3">
+                {draft.source === "microsoft_forms" &&
+                  getFormLibraryFieldInputSource(field, draft.source) ===
+                    "microsoft_forms" && (
+                    <label className="lg:col-span-4">
+                      <span className="mb-1 block text-xs text-neutral-500">
+                        Microsoft Forms question
+                      </span>
+                      <input
+                        value={field.externalQuestionLabel || field.label}
+                        onChange={(event) =>
+                          updateField(index, {
+                            externalQuestionLabel: event.target.value,
+                          })
+                        }
+                        placeholder="Exact question label sent by Power Automate"
+                        className={inputClassName}
+                      />
+                    </label>
+                  )}
+                {getFormLibraryFieldInputSource(field, draft.source) ===
+                  "attachment_extraction" && (
+                  <div className="grid gap-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 dark:border-neutral-700 dark:bg-neutral-900 lg:col-span-4 md:grid-cols-2">
+                    <label>
+                      <span className="mb-1 block text-xs text-neutral-500">
+                        Attachment to parse
+                      </span>
+                      <select
+                        value={field.attachmentFieldName || ""}
+                        onChange={(event) =>
+                          updateField(index, {
+                            attachmentFieldName: event.target.value,
+                          })
+                        }
+                        className={inputClassName}
+                      >
+                        <option value="">Choose attachment</option>
+                        {(draft.attachmentFields || []).map((attachment) => (
+                          <option key={attachment.name} value={attachment.name}>
+                            {attachment.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span className="mb-1 block text-xs text-neutral-500">
+                        AI instruction (optional)
+                      </span>
+                      <input
+                        value={field.instructions}
+                        onChange={(event) =>
+                          updateField(index, { instructions: event.target.value })
+                        }
+                        placeholder={`Extract ${field.label}.`}
+                        className={inputClassName}
+                      />
+                    </label>
+                    {!draft.attachmentFields?.length && (
+                      <p className="text-xs text-amber-800 dark:text-amber-200 md:col-span-2">
+                        Add an attachment question below before saving this field.
+                      </p>
+                    )}
+                  </div>
+                )}
+                <label className="flex items-center gap-2 text-sm lg:col-span-4">
                   <input
                     type="checkbox"
                     checked={field.required}
                     onChange={(event) => updateField(index, { required: event.target.checked })}
                   />
-                  Required response
+                  {getFormLibraryFieldInputSource(field, draft.source) ===
+                  "attachment_extraction"
+                    ? "Required extracted value"
+                    : draft.source === "microsoft_forms"
+                      ? "Required Microsoft Forms answer"
+                      : "Required response"}
                 </label>
-                {isNativeFormChoiceField(field.type) && (
-                  <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 dark:border-neutral-700 dark:bg-neutral-900 md:col-span-3">
+                {getFormLibraryFieldInputSource(field, draft.source) !==
+                  "attachment_extraction" &&
+                  isNativeFormChoiceField(field.type) && (
+                  <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 dark:border-neutral-700 dark:bg-neutral-900 lg:col-span-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
@@ -485,8 +605,8 @@ export function FormLibrary({
         <div className="mt-5 border-t border-[#e6e6e6] pt-5 dark:border-neutral-700">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold">Mapped attachments</h3>
-              <InfoTip label="Register file-upload questions so their files can be attached to the approval request when the response connection is enabled." />
+              <h3 className="text-sm font-semibold">Attachment questions</h3>
+              <InfoTip label="Register file-upload questions. Microsoft Forms files arrive through Power Automate; Approval App forms show upload controls directly." />
             </div>
             <button
               type="button"
@@ -573,7 +693,7 @@ export function FormLibrary({
             ))}
             {!draft.attachmentFields?.length && (
               <p className="rounded-md border border-dashed border-[#d2d2d2] px-3 py-4 text-sm text-neutral-500 dark:border-neutral-700">
-                No attachment questions mapped.
+                No attachment questions registered.
               </p>
             )}
           </div>
@@ -687,7 +807,16 @@ function definitionToDraft(definition: FormLibraryDefinition): FormLibraryDraft 
     embedUrl: definition.embedUrl || "",
     targetWorkflowTemplateId: definition.targetWorkflowTemplateId || "",
     versionComment: "",
-    fields: definition.fields.map((field) => ({ ...field })),
+    fields: definition.fields.map((field) => {
+      const inputSource = getFormLibraryFieldInputSource(field, definition.source);
+      return {
+        ...field,
+        inputSource,
+        ...(inputSource === "microsoft_forms"
+          ? { externalQuestionLabel: field.externalQuestionLabel || field.label }
+          : {}),
+      };
+    }),
     attachmentFields: definition.attachmentFields || [],
     participantMappings: definition.participantMappings || [],
   };

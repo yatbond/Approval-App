@@ -4,6 +4,7 @@ import {
   getWorkspaceParseFileStartState,
   getWorkspaceParseFileStoredAttachmentState,
   getWorkspaceParseFileSuccessState,
+  mergeParsedWorkspaceFilePayload,
 } from "./workspace-parse-file-state.ts";
 
 function makeFile(name = "invoice.pdf") {
@@ -104,4 +105,29 @@ test("maps parse success into parse result and editable fields", () => {
     editedFields: { amount: "1000", vendor: "Northstar" },
     isParsing: false,
   });
+});
+
+test("merges attachment extraction without clearing existing form values", () => {
+  const current = {
+    strategy: "pdf-ocr",
+    fields: { "Project name": "Hospital extension" },
+    confidence: { "Project name": "high" },
+    evidence: { "Project name": "Project heading" },
+    suggestedFields: [],
+    notes: ["Form value retained"],
+  };
+  const next = {
+    strategy: "pdf-ocr",
+    fields: { "Payment amount": "HKD 500,000.00" },
+    confidence: { "Payment amount": "high" },
+    evidence: { "Payment amount": "Final payable amount" },
+    suggestedFields: [],
+    notes: ["Attachment parsed"],
+  };
+  const merged = mergeParsedWorkspaceFilePayload(current, next);
+  assert.deepEqual(merged.fields, {
+    "Project name": "Hospital extension",
+    "Payment amount": "HKD 500,000.00",
+  });
+  assert.deepEqual(merged.notes, ["Form value retained", "Attachment parsed"]);
 });

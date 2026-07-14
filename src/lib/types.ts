@@ -94,10 +94,17 @@ export type WorkflowField = {
   placeholder?: string;
   options?: string[];
   documentId?: string;
+  inputSource?: FormLibraryFieldInputSource;
+  externalQuestionLabel?: string;
+  attachmentFieldName?: string;
   examples?: ExtractionTrainingExample[];
 };
 
 export type FormLibrarySource = "native" | "microsoft_forms";
+export type FormLibraryFieldInputSource =
+  | "approval_app"
+  | "microsoft_forms"
+  | "attachment_extraction";
 export type FormLibraryStatus =
   | "setup_required"
   | "ready"
@@ -163,6 +170,7 @@ export type WorkflowFormLibraryReference = {
   completionRequired: boolean;
   selectedFieldNames: string[];
   selectedAttachmentNames: string[];
+  attachmentFields?: FormLibraryAttachmentField[];
 };
 
 export type ExternalFormResponseRecord = {

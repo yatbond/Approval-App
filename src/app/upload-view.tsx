@@ -71,6 +71,7 @@ import {
 } from "@/lib/request-workflow-map-state";
 import type {
   ApprovalAttachment,
+  FormLibraryAttachmentField,
   WorkflowDocumentRequirement,
   WorkflowField,
   WorkflowTemplate,
@@ -83,6 +84,12 @@ type UploadRequestDraftRowView = {
   parseResult: ParsedWorkspaceFilePayload | null;
   editedFields: Record<string, string>;
   uploadedAttachments: ApprovalAttachment[];
+};
+
+type ParseFileOptions = {
+  preserveExistingRequestData?: boolean;
+  mergeIntoCurrentRequest?: boolean;
+  skipExtraction?: boolean;
 };
 
 type RequestWorkflowMapState = ReturnType<typeof buildRequestWorkflowMapState>;
@@ -112,6 +119,11 @@ function NativeFormFieldInput({
       {field.required && (
         <span className="rounded-sm border border-[#f7941d]/35 bg-[#fff4e6] px-1.5 py-0.5 text-[10px] font-semibold text-[#713d00] dark:bg-[#f7941d]/15 dark:text-[#ffd29a]">
           Required
+        </span>
+      )}
+      {field.inputSource === "attachment_extraction" && (
+        <span className="rounded-sm border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-800 dark:border-violet-500/35 dark:bg-violet-500/10 dark:text-violet-200">
+          AI from attachment
         </span>
       )}
     </span>
@@ -393,6 +405,7 @@ export function UploadView({
     file: File,
     documentRequirement?: WorkflowDocumentRequirement,
     adHocFields?: WorkflowField[],
+    options?: ParseFileOptions,
   ) => void;
   documentPreviewPages: DocumentPreviewPage[];
   onExtractHighlightedRegion: (
@@ -576,6 +589,17 @@ export function UploadView({
           .map((field) => field.label),
       ),
     ),
+  );
+  const missingRequiredNativeAttachments = manualFormDocuments.flatMap((document) =>
+    getFormAttachmentFields(document)
+      .filter((field) => field.required)
+      .filter(
+        (field) =>
+          !uploadedAttachments.some((attachment) =>
+            isUploadedFormAttachment(attachment, document, field),
+          ),
+      )
+      .map((field) => field.label),
   );
 
   useEffect(() => {
@@ -1149,6 +1173,13 @@ export function UploadView({
         {missingRequiredNativeFields.length > 0 && (
           <div className="mt-4 rounded-md border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-900 dark:text-amber-100">
             Complete required form fields: {missingRequiredNativeFields.join(", ")}
+          </div>
+        )}
+
+        {missingRequiredNativeAttachments.length > 0 && (
+          <div className="mt-4 rounded-md border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-900 dark:text-amber-100">
+            Upload required form attachments:{" "}
+            {Array.from(new Set(missingRequiredNativeAttachments)).join(", ")}
           </div>
         )}
 
@@ -1740,6 +1771,75 @@ export function UploadView({
                         </div>
                       </div>
                     )}
+                    {getFormAttachmentFields(document).length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-semibold uppercase text-neutral-500">
+                            Attachments
+                          </p>
+                          <InfoTip label="Upload each requested file. Fields linked to an attachment are extracted automatically and remain editable below." />
+                        </div>
+                        {getFormAttachmentFields(document).map((attachmentField) => {
+                          const linkedFields = document.fields.filter(
+                            (field) =>
+                              field.inputSource === "attachment_extraction" &&
+                              field.attachmentFieldName === attachmentField.name,
+                          );
+                          const uploaded = uploadedAttachments.find((attachment) =>
+                            isUploadedFormAttachment(
+                              attachment,
+                              document,
+                              attachmentField,
+                            ),
+                          );
+                          return (
+                            <div
+                              key={attachmentField.name}
+                              className="flex flex-col gap-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 dark:border-neutral-700 dark:bg-neutral-950 sm:flex-row sm:items-center sm:justify-between"
+                            >
+                              <div className="min-w-0">
+                                <p className="break-words text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                                  {attachmentField.label}
+                                  {attachmentField.required ? " *" : ""}
+                                </p>
+                                <p className="mt-1 break-words text-xs text-neutral-500 dark:text-neutral-400">
+                                  {uploaded
+                                    ? uploaded.fileName
+                                    : linkedFields.length
+                                      ? `${linkedFields.length} field(s) will be extracted by AI.`
+                                      : "The file will be attached without AI extraction."}
+                                </p>
+                              </div>
+                              <label className="flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#f7941d]/55 bg-[#fff4e6] px-3 text-sm font-medium text-neutral-900 transition hover:border-[#f7941d] dark:bg-[#f7941d]/12 dark:text-neutral-100">
+                                <Upload size={15} />
+                                {uploaded ? "Upload another" : "Upload file"}
+                                <input
+                                  type="file"
+                                  accept=".pdf,image/*"
+                                  disabled={isParsing}
+                                  className="sr-only"
+                                  onChange={(event) => {
+                                    const file = event.target.files?.[0];
+                                    if (!file) return;
+                                    const parsingRequirement: WorkflowDocumentRequirement = {
+                                      ...document,
+                                      documentType: attachmentField.label,
+                                      fields: linkedFields,
+                                    };
+                                    parseFile(file, parsingRequirement, [], {
+                                      preserveExistingRequestData: true,
+                                      mergeIntoCurrentRequest: true,
+                                      skipExtraction: linkedFields.length === 0,
+                                    });
+                                    event.target.value = "";
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       {document.fields.map((field) => {
                         const value =
@@ -1904,7 +2004,8 @@ export function UploadView({
                 onClick={() => onSubmitRequest(participantEmails)}
                 disabled={
                   missingRequiredDocuments.length > 0 ||
-                  missingRequiredNativeFields.length > 0
+                  missingRequiredNativeFields.length > 0 ||
+                  missingRequiredNativeAttachments.length > 0
                 }
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-45"
               >
@@ -1941,6 +2042,32 @@ export function UploadView({
         </div>
       </section>
     </div>
+  );
+}
+
+function getFormAttachmentFields(
+  document: WorkflowDocumentRequirement,
+): FormLibraryAttachmentField[] {
+  if (document.formLibraryRef?.attachmentFields?.length) {
+    return document.formLibraryRef.attachmentFields;
+  }
+  return (document.formLibraryRef?.selectedAttachmentNames || []).map((name) => ({
+    name,
+    label: name.replaceAll("_", " ").replace(/^./, (value) => value.toUpperCase()),
+    required: false,
+  }));
+}
+
+function isUploadedFormAttachment(
+  attachment: ApprovalAttachment,
+  document: WorkflowDocumentRequirement,
+  field: FormLibraryAttachmentField,
+) {
+  const documentType = attachment.documentType.trim().toLowerCase();
+  return (
+    attachment.documentId === document.id &&
+    (documentType === field.name.trim().toLowerCase() ||
+      documentType === field.label.trim().toLowerCase())
   );
 }
 
