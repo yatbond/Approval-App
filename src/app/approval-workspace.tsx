@@ -131,6 +131,11 @@ import {
   getWorkspaceRecordTaskActionState,
   getWorkspaceRunnerTaskActionState,
 } from "@/lib/workspace-task-action-state";
+import {
+  buildWorkflowTestNotification,
+  createWorkflowTestRequestState,
+  isWorkflowTestTask,
+} from "@/lib/workflow-test-request-state";
 import { deactivateRemoteWorkspaceAdminRecord } from "@/lib/workspace-sync";
 import {
   archiveFormLibraryDefinition,
@@ -1543,6 +1548,29 @@ function ApprovalWorkspaceBody({
     }
   }
 
+  function createWorkflowTestRequest(
+    template: WorkflowTemplate,
+    testerEmail: string,
+  ) {
+    const result = createWorkflowTestRequestState({
+      tasks,
+      template,
+      testerEmail,
+      startedByEmail: activeUser.email,
+    });
+    if (!result.didCreate || !result.task) {
+      return result;
+    }
+
+    setTasks(result.tasks);
+    setSelectedTaskId(result.task.id);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({ approvalTasks: result.tasks }),
+    );
+    void sendWorkflowEmailNotifications(result.task);
+    return result;
+  }
+
   async function parseFile(
     file: File,
     documentRequirement?: WorkflowDocumentRequirement,
@@ -1958,14 +1986,17 @@ function ApprovalWorkspaceBody({
     task: ApprovalTask,
     notificationsOverride?: TaskNotification[],
   ) {
-    const taskNotifications = notificationsOverride || buildTaskNotifications([task]);
+    const effectiveNotifications =
+      notificationsOverride ||
+      (isWorkflowTestTask(task) ? [buildWorkflowTestNotification(task)] : undefined);
+    const taskNotifications = effectiveNotifications || buildTaskNotifications([task]);
     try {
       const response = await fetch("/api/email/task-notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
-          notificationsOverride
-            ? { notifications: notificationsOverride }
+          effectiveNotifications
+            ? { notifications: effectiveNotifications }
             : { task },
         ),
       });
@@ -2498,6 +2529,7 @@ function ApprovalWorkspaceBody({
                 userDirectory={userDirectory}
                 activeUser={activeUser}
                 onRunWorkflowAction={runWorkflowAction}
+                onCreateWorkflowTestRequest={createWorkflowTestRequest}
                 onSaveFormLibrary={saveFormLibraryRecord}
                 onArchiveFormLibrary={archiveFormLibraryRecord}
               />

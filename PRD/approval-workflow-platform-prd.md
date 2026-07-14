@@ -163,7 +163,8 @@ There is no user-facing Upload tab. **+ New** opens the internal request-creatio
 5. Creating the template opens Canvas directly.
 6. The user configures Submit, Approval, FYI, and Condition boxes and connects them to the fixed Start and End boxes.
 7. Validation identifies routing, document, field, and condition problems.
-8. The user tests the route with the built-in simulator.
+8. The user enters one tester email and starts a dedicated test request. Every
+   workflow role is assigned to that tester, and no live request is changed.
 9. The user publishes an eligible draft.
 10. The published version can be activated for future requests.
 
@@ -438,7 +439,7 @@ The desktop/tablet Canvas provides:
 - keyboard deletion where allowed;
 - undo, redo, and reset;
 - route validation;
-- route summary and test controls;
+- route summary and a dedicated tester-email workflow test;
 - autosave and publish controls.
 
 ### 12.2 Available Boxes
@@ -523,6 +524,30 @@ Document options must be derived from current reachable requirements, deduplicat
 - Calculate percentage difference
 
 Handoff configuration currently controls display behavior. Server-side access control must independently enforce the same visibility before production use.
+
+### 12.7 Test This Workflow
+
+The Canvas provides a routing-only test for the current draft:
+
+- the workflow author enters an Approval App user email;
+- the application creates a separate request with a `TEST-` identifier and a
+  `[TEST]` title;
+- every Submit, Approval, FYI, and escalation recipient in the test snapshot is
+  replaced with the tester email, including template emails marked Fixed;
+- starting a new test replaces the previous test run for the same template but
+  does not remove or change any live request;
+- the tester receives an email containing the workflow name, current position,
+  upstream position, status, required action, latest decision or update, and a
+  direct link to Queue or Tracking;
+- later test decisions send the updated workflow details only to the tester;
+- the panel uses plain labels such as **Current position**, **Latest update**,
+  **Approve test step**, and **Reject test step** instead of internal node IDs;
+- only actions valid for the current test status are shown;
+- document requirements are displayed but do not block this routing-only test;
+  forms, uploads, and AI parsing are tested through **+ New**.
+
+The tester must have an Approval App account for the entered email. Email
+delivery follows the configured Disabled, Dry run, or Live delivery mode.
 
 ## 13. Routing and Decision Semantics
 
@@ -728,6 +753,11 @@ Email uses Resend and supports:
 | Live | Sends through the configured Resend account. |
 
 A test redirect can send all messages to one verified address while recording the intended recipient. Real-recipient delivery requires a valid provider key, verified sending domain/address, live mode, and no test redirect.
+
+Workflow-routing test emails are always addressed only to the tester entered on
+the Canvas. They include the workflow context and latest decision details and
+link action-required tests to Queue; completed or cancelled tests link to
+Tracking.
 
 ### 17.3 Email Types
 
@@ -962,7 +992,7 @@ Important environment groups include:
 
 ## 25. Validation and Test Coverage
 
-The codebase currently contains 607 automated tests covering 96 test files. Coverage includes:
+The codebase currently contains 661 automated tests covering 107 test files. Coverage includes:
 
 - graph validation and routing;
 - sequential and parallel approval state;

@@ -128,3 +128,17 @@ test("keeps intermediate-width panels readable", async () => {
   assert.match(runtimePanelSource, /validation-error/);
   assert.match(runtimePanelSource, /validation-ready/);
 });
+
+test("explains workflow testing without exposing stale live requests", async () => {
+  const source = await readFile(
+    new URL("../app/workflow-runtime-panel.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /Test this workflow/);
+  assert.match(source, /Tester email/);
+  assert.match(source, /Every workflow role is assigned to the tester/);
+  assert.match(source, /It does not change a live request/);
+  assert.doesNotMatch(source, /Test controls/);
+  assert.doesNotMatch(source, /selectedRuntimeTaskId/);
+});

@@ -57,6 +57,29 @@ test("builds workflow notification email with request link and original recipien
   assert.match(email.text, /http:\/\/localhost:3000\/\?tab=tracking&request=APR-1/);
 });
 
+test("includes workflow test details and opens the requested action tab", () => {
+  const email = buildTaskNotificationEmail({
+    notification: {
+      ...notification,
+      targetTab: "queue",
+      details: [
+        { label: "Current position", value: "PQS" },
+        { label: "Required action", value: "Choose Approve or Reject." },
+      ],
+    },
+    from: "Approval App <approval@example.com>",
+    appUrl: "https://approval.example.com",
+  });
+
+  assert.match(email.text, /Current position: PQS/);
+  assert.match(email.text, /Required action: Choose Approve or Reject\./);
+  assert.match(email.html, /<strong>Current position:<\/strong> PQS/);
+  assert.match(
+    email.text,
+    /https:\/\/approval\.example\.com\/\?tab=queue&request=APR-1/,
+  );
+});
+
 test("dry run returns skipped sends without calling fetch", async () => {
   let didFetch = false;
   const result = await sendTaskNotificationEmails({

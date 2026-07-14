@@ -53,6 +53,10 @@ import { isLibraryFormRequirement } from "@/lib/workflow-library-form-state";
 import { getWorkflowTemplateBuilderBusinessState } from "@/lib/workflow-template-builder-state";
 import { WorkflowRuntimePanel } from "@/app/workflow-runtime-panel";
 import { getSelectedRuntimeTask } from "@/lib/workflow-runtime-panel-state";
+import {
+  getWorkflowTestTasks,
+  type WorkflowTestRequestResult,
+} from "@/lib/workflow-test-request-state";
 import { WorkflowCanvasToolbar } from "@/app/workflow-canvas-toolbar";
 import { WorkflowEdgeDetails } from "@/app/workflow-edge-details";
 import {
@@ -220,6 +224,7 @@ export function WorkflowView({
   userDirectory,
   activeUser,
   onRunWorkflowAction,
+  onCreateWorkflowTestRequest,
   requestConfirmation,
   onSaveFormLibrary,
   onArchiveFormLibrary,
@@ -239,6 +244,10 @@ export function WorkflowView({
   userDirectory: UserDirectoryEntry[];
   activeUser: UserDirectoryEntry;
   onRunWorkflowAction: (taskId: string, action: ApprovalAction) => void;
+  onCreateWorkflowTestRequest: (
+    template: WorkflowTemplate,
+    testerEmail: string,
+  ) => WorkflowTestRequestResult;
   requestConfirmation: (request: ConfirmationRequest) => Promise<boolean>;
   onSaveFormLibrary: (
     draft: FormLibraryDraft,
@@ -255,20 +264,14 @@ export function WorkflowView({
     [workflow],
   );
   const workflowGraph = persistedWorkflowGraph;
-  const workflowTasks = useMemo(
-    () =>
-      workflow
-        ? tasks.filter(
-            (task) =>
-              task.workflowTemplateId === workflow.id || task.workflow === workflow.name,
-          )
-        : [],
+  const workflowTestTasks = useMemo(
+    () => getWorkflowTestTasks(tasks, workflow),
     [tasks, workflow],
   );
   const [selectedRuntimeTaskId, setSelectedRuntimeTaskId] = useState("");
   const runtimeTask = useMemo(
-    () => getSelectedRuntimeTask(workflowTasks, selectedRuntimeTaskId),
-    [selectedRuntimeTaskId, workflowTasks],
+    () => getSelectedRuntimeTask(workflowTestTasks, selectedRuntimeTaskId),
+    [selectedRuntimeTaskId, workflowTestTasks],
   );
   const workflowSimulation = useMemo(
     () => (workflow ? simulateWorkflowTemplate(workflow) : null),
@@ -1176,12 +1179,9 @@ export function WorkflowView({
               />
 
               <WorkflowRuntimePanel
-                workflowTasks={workflowTasks}
                 runtimeTask={runtimeTask}
                 workflowSimulation={workflowSimulation}
                 runtimeMissingDocuments={runtimeMissingDocuments}
-                selectedRuntimeTaskId={selectedRuntimeTaskId}
-                onSelectRuntimeTask={setSelectedRuntimeTaskId}
                 workflowUndoStack={workflowUndoStack}
                 workflowRedoStack={workflowRedoStack}
                 lastWorkflowEdit={lastWorkflowEdit}
@@ -1189,6 +1189,13 @@ export function WorkflowView({
                 onRedo={redoWorkflowChange}
                 onResetView={resetCanvasView}
                 onRunWorkflowAction={onRunWorkflowAction}
+                onStartWorkflowTest={(testerEmail) => {
+                  const result = onCreateWorkflowTestRequest(workflow, testerEmail);
+                  if (result.task?.id) {
+                    setSelectedRuntimeTaskId(result.task.id);
+                  }
+                  return result;
+                }}
               />
               <div className="mb-3 flex flex-col gap-2 rounded-md border border-[#e6e6e6] bg-white p-3 sm:flex-row sm:items-end">
                 <label className="min-w-0 flex-1">

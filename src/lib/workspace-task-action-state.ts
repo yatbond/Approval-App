@@ -6,6 +6,7 @@ import { getMissingRequiredCurrentNodeDocuments } from "./request-builder.ts";
 import { findTemplateForTask } from "./task-display.ts";
 import { getTaskActionPreflightState } from "./task-action-state.ts";
 import { getWorkflowRunnerActionActor } from "./workflow-runner-action-state.ts";
+import { isWorkflowTestTask } from "./workflow-test-request-state.ts";
 import type {
   ApprovalAction,
   ApprovalActor,
@@ -156,7 +157,9 @@ export function getWorkspaceRunnerTaskActionState({
   const nextTask = applyTaskAction(task, {
     action,
     actor,
-    comment: "Workflow runner simulation",
+    comment: isWorkflowTestTask(task)
+      ? "Workflow routing test"
+      : "Workflow runner action",
     template,
   });
 

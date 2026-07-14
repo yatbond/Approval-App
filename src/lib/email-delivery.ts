@@ -66,7 +66,7 @@ export function buildTaskNotificationEmail({
   appUrl: string;
   redirectTo?: string;
 }): WorkflowEmail {
-  const requestUrl = `${appUrl.replace(/\/$/, "")}/?tab=tracking&request=${encodeURIComponent(
+  const requestUrl = `${appUrl.replace(/\/$/, "")}/?tab=${notification.targetTab || "tracking"}&request=${encodeURIComponent(
     notification.requestId,
   )}`;
   const to = redirectTo || notification.recipientEmail;
@@ -74,9 +74,14 @@ export function buildTaskNotificationEmail({
     ? `\nOriginal recipient: ${notification.recipientEmail}`
     : "";
   const subject = `[Approval App] ${notification.title}: ${notification.requestId}`;
+  const detailLines = (notification.details || []).map(
+    (detail) => `${detail.label}: ${detail.value}`,
+  );
   const text = [
     notification.body,
     "",
+    ...detailLines,
+    ...(detailLines.length ? [""] : []),
     `Request: ${notification.requestId}`,
     `Notification type: ${notification.kind}`,
     `Open request: ${requestUrl}`,
@@ -92,6 +97,16 @@ export function buildTaskNotificationEmail({
     text,
     html: [
       `<p>${escapeHtml(notification.body)}</p>`,
+      ...(notification.details?.length
+        ? [
+            "<ul>",
+            ...notification.details.map(
+              (detail) =>
+                `<li><strong>${escapeHtml(detail.label)}:</strong> ${escapeHtml(detail.value)}</li>`,
+            ),
+            "</ul>",
+          ]
+        : []),
       "<ul>",
       `<li><strong>Request:</strong> ${escapeHtml(notification.requestId)}</li>`,
       `<li><strong>Notification type:</strong> ${escapeHtml(notification.kind)}</li>`,

@@ -9,6 +9,8 @@ import { getWorkflowTemplateFamilyKey } from "./workflow-template-version-state.
 export type TaskNotification = NotificationItem & {
   requestId: string;
   recipientEmail: string;
+  targetTab?: "queue" | "tracking";
+  details?: Array<{ label: string; value: string }>;
   kind:
     | "action_required"
     | "originator_update"

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   getRuntimeActionItems,
+  getRuntimeNextActionLabel,
   getRuntimeStatusLabel,
   getSelectedRuntimeTask,
 } from "./workflow-runtime-panel-state.ts";
@@ -37,12 +38,42 @@ test("selects requested runtime task and falls back to the first task", () => {
 test("formats runtime status for linked and unlinked templates", () => {
   assert.equal(
     getRuntimeStatusLabel(tasks[0]),
-    "Invoice request is at Finance review",
+    "task-1 is at Finance review",
   );
   assert.equal(
     getRuntimeStatusLabel(undefined),
-    "no active request is linked to this template yet",
+    "No test has been started for this workflow.",
   );
+  assert.equal(
+    getRuntimeNextActionLabel(tasks[0]),
+    "Review the current position and choose Approve or Reject.",
+  );
+});
+
+test("uses plain action labels and only shows actions valid for the current state", () => {
+  const pendingActions = getRuntimeActionItems({
+    runtimeTask: { ...tasks[0], id: "TEST-1" },
+    missingDocuments: [{ documentType: "Invoice PDF" }],
+  });
+  const returnedActions = getRuntimeActionItems({
+    runtimeTask: { ...tasks[0], id: "TEST-2", status: "returned" },
+    missingDocuments: [],
+  });
+  const completedActions = getRuntimeActionItems({
+    runtimeTask: { ...tasks[0], id: "TEST-3", status: "approved" },
+    missingDocuments: [],
+  });
+
+  assert.deepEqual(pendingActions.map((item) => item.label), [
+    "Approve test step",
+    "Reject test step",
+  ]);
+  assert.equal(pendingActions[0].disabled, false);
+  assert.deepEqual(returnedActions.map((item) => item.label), [
+    "Resubmit test",
+    "Cancel test",
+  ]);
+  assert.deepEqual(completedActions, []);
 });
 
 test("blocks approve action when current node has missing documents", () => {

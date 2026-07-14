@@ -1,10 +1,13 @@
 "use client";
 
 import { AlertTriangle, ArrowRightLeft, RotateCcw } from "lucide-react";
+import { useState } from "react";
 import {
   getRuntimeActionItems,
+  getRuntimeNextActionLabel,
   getRuntimeStatusLabel,
 } from "@/lib/workflow-runtime-panel-state";
+import type { WorkflowTestRequestResult } from "@/lib/workflow-test-request-state";
 import type {
   ApprovalAction,
   ApprovalTask,
@@ -19,12 +22,9 @@ import type {
 import { InfoTip } from "./ui-hint";
 
 export function WorkflowRuntimePanel({
-  workflowTasks,
   runtimeTask,
   workflowSimulation,
   runtimeMissingDocuments,
-  selectedRuntimeTaskId,
-  onSelectRuntimeTask,
   workflowUndoStack,
   workflowRedoStack,
   lastWorkflowEdit,
@@ -32,13 +32,11 @@ export function WorkflowRuntimePanel({
   onRedo,
   onResetView,
   onRunWorkflowAction,
+  onStartWorkflowTest,
 }: {
-  workflowTasks: ApprovalTask[];
   runtimeTask?: ApprovalTask;
   workflowSimulation: WorkflowRouteSimulation | null;
   runtimeMissingDocuments: WorkflowDocumentRequirement[];
-  selectedRuntimeTaskId: string;
-  onSelectRuntimeTask: (taskId: string) => void;
   workflowUndoStack: WorkflowHistoryEntry[];
   workflowRedoStack: WorkflowHistoryEntry[];
   lastWorkflowEdit: string;
@@ -46,7 +44,10 @@ export function WorkflowRuntimePanel({
   onRedo: () => void;
   onResetView: () => void;
   onRunWorkflowAction: (taskId: string, action: ApprovalAction) => void;
+  onStartWorkflowTest: (testerEmail: string) => WorkflowTestRequestResult;
 }) {
+  const [testerEmail, setTesterEmail] = useState("");
+  const [testMessage, setTestMessage] = useState("");
   const validationErrors =
     workflowSimulation?.issues.filter((issue) => issue.severity === "error") || [];
   const validationWarnings =
@@ -55,25 +56,18 @@ export function WorkflowRuntimePanel({
     runtimeTask,
     missingDocuments: runtimeMissingDocuments,
   });
+  const nextAction = getRuntimeNextActionLabel(runtimeTask);
+
+  function startWorkflowTest() {
+    const result = onStartWorkflowTest(testerEmail);
+    setTestMessage(result.message);
+  }
 
   return (
     <>
       <div className="mb-3 flex flex-col gap-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 text-xs text-neutral-400 lg:flex-row lg:items-center lg:justify-between">
-        <span>Test request: {getRuntimeStatusLabel(runtimeTask)}</span>
+        <span>Canvas tools</span>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          {workflowTasks.length > 0 && (
-            <select
-              value={runtimeTask?.id || selectedRuntimeTaskId}
-              onChange={(event) => onSelectRuntimeTask(event.target.value)}
-              className="h-9 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs text-neutral-200 outline-none focus:border-emerald-400/60"
-            >
-              {workflowTasks.map((task) => (
-                <option key={task.id} value={task.id}>
-                  {task.id} - {task.currentStep}
-                </option>
-              ))}
-            </select>
-          )}
           <button
             type="button"
             onClick={onUndo}
@@ -228,70 +222,132 @@ export function WorkflowRuntimePanel({
           </div>
 
           <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 xl:col-span-2">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-neutral-300">
-                    Test controls
-                  </h3>
-                  <InfoTip label="Simulate the selected request through this template using the same routing engine as the approval queue." />
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-neutral-300">
+                Test this workflow
+              </h3>
+              <InfoTip label="Creates a separate test request from this draft. It does not change a live request." />
+            </div>
+            <p className="mt-1 max-w-3xl text-xs text-neutral-500">
+              Enter an Approval App user&apos;s email. That person will receive a test
+              request with the workflow, current position, latest decision, and next
+              action. Every workflow role is assigned to the tester, so no real
+              participant is contacted.
+            </p>
+
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+              <label className="min-w-0 flex-1">
+                <span className="mb-1 block text-xs text-neutral-400">
+                  Tester email
+                </span>
+                <input
+                  type="email"
+                  value={testerEmail}
+                  onChange={(event) => setTesterEmail(event.target.value)}
+                  placeholder="tester@company.com"
+                  autoComplete="off"
+                  className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm text-neutral-200 outline-none focus:border-orange-400"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={startWorkflowTest}
+                disabled={validationErrors.length > 0}
+                title={
+                  validationErrors.length
+                    ? "Resolve validation errors before starting a test."
+                    : "Create a new routing test and email the tester."
+                }
+                className="min-h-10 rounded-md border border-orange-400 bg-orange-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {runtimeTask ? "Start new test" : "Start test"}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-neutral-500">
+              The tester must be able to sign in to Approval App with this email.
+            </p>
+            {testMessage && (
+              <p className="mt-3 rounded-md border border-orange-300 bg-orange-50 p-2 text-xs text-orange-900">
+                {testMessage}
+              </p>
+            )}
+
+            {runtimeTask && (
+              <div className="mt-4 border-t border-[#e6e6e6] pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-300">
+                      Active test request
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      {getRuntimeStatusLabel(runtimeTask)}
+                    </p>
+                  </div>
+                  <span className="rounded-md border border-orange-300 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-900">
+                    Test only
+                  </span>
                 </div>
-                {runtimeTask ? (
-                  <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,8.5rem),1fr))] gap-2 text-xs">
-                    <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
-                      <p className="text-neutral-500">Status</p>
-                      <p className="mt-1 break-words text-neutral-200">
-                        {runtimeTask.status}
-                      </p>
-                    </div>
-                    <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
-                      <p className="text-neutral-500">Owner</p>
-                      <p className="mt-1 break-words text-neutral-200">
-                        {runtimeTask.currentOwner || "Closed"}
-                      </p>
-                    </div>
-                    <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
-                      <p className="text-neutral-500">Node</p>
-                      <p className="mt-1 break-words text-neutral-200">
-                        {runtimeTask.currentNodeId || "none"}
-                      </p>
-                    </div>
-                    <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
-                      <p className="text-neutral-500">Last</p>
-                      <p className="mt-1 break-words text-neutral-200">
-                        {runtimeTask.auditTrail.at(-1)?.detail || runtimeTask.lastAction}
-                      </p>
-                    </div>
+
+                <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-2 text-xs">
+                  <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
+                    <p className="text-neutral-500">Status</p>
+                    <p className="mt-1 break-words capitalize text-neutral-200">
+                      {runtimeTask.status}
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
+                    <p className="text-neutral-500">Current position</p>
+                    <p className="mt-1 break-words text-neutral-200">
+                      {runtimeTask.currentStep}
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
+                    <p className="text-neutral-500">Tester</p>
+                    <p className="mt-1 break-words text-neutral-200">
+                      {runtimeTask.requesterEmail}
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
+                    <p className="text-neutral-500">Latest update</p>
+                    <p className="mt-1 break-words text-neutral-200">
+                      {runtimeTask.auditTrail.at(-1)?.detail || runtimeTask.lastAction}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-md border border-orange-300 bg-orange-50 p-3 text-xs text-orange-950">
+                  <span className="font-semibold">Next action: </span>
+                  {nextAction}
+                </div>
+
+                {runtimeActions.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {runtimeActions.map((item) => (
+                      <button
+                        key={item.action}
+                        type="button"
+                        disabled={item.disabled}
+                        title={item.title}
+                        onClick={() => onRunWorkflowAction(runtimeTask.id, item.action)}
+                        className="min-h-10 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-sm text-neutral-200 transition hover:border-orange-400 disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        {item.label}
+                      </button>
+                    ))}
                   </div>
                 ) : (
                   <p className="mt-3 text-xs text-neutral-500">
-                    Submit first.
+                    This test is finished. Start a new test to run the workflow again.
                   </p>
                 )}
               </div>
-              {runtimeTask && (
-                <div className="grid min-w-48 gap-2 sm:grid-cols-2 lg:grid-cols-1">
-                  {runtimeActions.map((item) => (
-                    <button
-                      key={item.action}
-                      type="button"
-                      disabled={item.disabled}
-                      title={item.title}
-                      onClick={() => onRunWorkflowAction(runtimeTask.id, item.action)}
-                      className="min-h-9 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-xs text-neutral-200 transition hover:border-emerald-400/50 disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
             {runtimeMissingDocuments.length > 0 && (
-              <p className="mt-3 rounded-md border border-amber-400/30 bg-amber-400/10 p-2 text-xs text-amber-100">
-                Requires:{" "}
+              <p className="mt-3 rounded-md border border-[#e6e6e6] bg-white p-2 text-xs text-neutral-500">
+                Document requirements are not enforced in this routing test:{" "}
                 {runtimeMissingDocuments
                   .map((document) => document.documentType)
-                  .join(", ")}
+                  .join(", ")}. Test uploads and AI parsing from New request.
               </p>
             )}
           </div>
