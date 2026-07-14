@@ -104,6 +104,7 @@ export async function GET(request: NextRequest) {
         snapshot: {
           ...normalizedSnapshot,
           userRoleAssignments: fallbackSnapshot?.userRoleAssignments || [],
+          formLibrary: fallbackSnapshot?.formLibrary || [],
         },
       };
       writeWorkspacePayloadCache(user.email, payload);

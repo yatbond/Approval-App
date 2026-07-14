@@ -90,6 +90,7 @@ test("serializes and parses workspace state", () => {
         templateVersion: 1,
       },
     ],
+    formLibrary: [],
   };
 
   assert.deepEqual(parseWorkspaceState(serializeWorkspaceState(state)), state);

@@ -1,4 +1,4 @@
-export type WorkflowEditorTab = "builder" | "canvas" | "library";
+export type WorkflowEditorTab = "builder" | "canvas" | "library" | "forms";
 
 export const workflowEditorTabs: {
   id: WorkflowEditorTab;
@@ -8,6 +8,7 @@ export const workflowEditorTabs: {
   { id: "builder", label: "Builder" },
   { id: "canvas", label: "Canvas", mobileDisabled: true },
   { id: "library", label: "Library" },
+  { id: "forms", label: "Forms" },
 ];
 
 export const defaultWorkflowEditorTab: WorkflowEditorTab = "builder";

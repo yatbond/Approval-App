@@ -54,6 +54,7 @@ export function createDefaultWorkspaceSnapshot({
       businessDirectory,
     ),
     adminAuditEvents: [],
+    formLibrary: [],
     selectedTemplateId: workflowTemplates[0]?.id || "",
   };
 }
@@ -88,6 +89,7 @@ export function createWorkspaceSnapshotPatch(
     userRoleAssignments: UserRoleAssignment[];
     selectedTemplateId: string;
     adminAuditEvents: AdminAuditEvent[];
+    formLibrary: WorkspaceStateSnapshot["formLibrary"];
   }> = {},
 ): WorkspaceStateSnapshot {
   return {
@@ -97,5 +99,6 @@ export function createWorkspaceSnapshotPatch(
     userRoleAssignments: patch.userRoleAssignments ?? current.userRoleAssignments,
     selectedTemplateId: patch.selectedTemplateId ?? current.selectedTemplateId,
     adminAuditEvents: patch.adminAuditEvents ?? current.adminAuditEvents,
+    formLibrary: patch.formLibrary ?? current.formLibrary,
   };
 }

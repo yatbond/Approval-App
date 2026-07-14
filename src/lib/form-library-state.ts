@@ -1,0 +1,263 @@
+import type {
+  FormLibraryDefinition,
+  FormLibraryResponseMode,
+  FormLibrarySource,
+  FormParticipantMapping,
+  WorkflowField,
+  WorkflowTemplate,
+} from "./types.ts";
+import { addWorkflowDocumentToNode, createWorkflowGraphFromTemplate } from "./workflow-graph.ts";
+
+export type FormLibraryDraft = {
+  name: string;
+  description: string;
+  source: FormLibrarySource;
+  responseMode: FormLibraryResponseMode;
+  responseUrl: string;
+  embedUrl: string;
+  targetWorkflowTemplateId: string;
+  versionComment: string;
+  fields: WorkflowField[];
+  attachmentFields: FormLibraryDefinition["attachmentFields"];
+  participantMappings: FormParticipantMapping[];
+};
+
+export function createEmptyFormLibraryDraft(
+  source: FormLibrarySource = "native",
+): FormLibraryDraft {
+  return {
+    name: source === "microsoft_forms" ? "Microsoft form" : "Untitled form",
+    description: "",
+    source,
+    responseMode: source === "microsoft_forms" ? "complete_node" : "manual",
+    responseUrl: "",
+    embedUrl: "",
+    targetWorkflowTemplateId: "",
+    versionComment: "",
+    fields: [createFormLibraryField("New field")],
+    attachmentFields: [],
+    participantMappings: [],
+  };
+}
+
+export function createFormLibraryField(label: string): WorkflowField {
+  const cleanLabel = label.trim() || "New field";
+  return {
+    name: toFieldName(cleanLabel),
+    label: cleanLabel,
+    type: "text",
+    required: false,
+    source: "manual",
+    instructions: "",
+  };
+}
+
+export function extractMicrosoftFormId(responseUrl: string) {
+  const trimmed = responseUrl.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const pathId = url.pathname.match(/\/(?:r|e)\/([^/?#]+)/i)?.[1];
+    return pathId || url.searchParams.get("id") || "";
+  } catch {
+    return "";
+  }
+}
+
+export function getFormLibraryPreflightIssues(
+  draft: FormLibraryDraft,
+  templates: WorkflowTemplate[],
+) {
+  const issues: string[] = [];
+  if (!draft.name.trim()) {
+    issues.push("Add a form name.");
+  }
+  if (!draft.fields.length && !draft.attachmentFields?.length) {
+    issues.push("Add at least one value or attachment field.");
+  }
+  if (draft.source === "microsoft_forms") {
+    if (!extractMicrosoftFormId(draft.responseUrl)) {
+      issues.push("Add a valid Microsoft Forms response link.");
+    }
+    if (draft.responseMode === "start_workflow" && !draft.targetWorkflowTemplateId) {
+      issues.push("Choose the published workflow this form starts.");
+    }
+    if (
+      draft.targetWorkflowTemplateId &&
+      !templates.some(
+        (template) =>
+          template.id === draft.targetWorkflowTemplateId &&
+          template.isDraft !== true &&
+          template.isArchived !== true,
+      )
+    ) {
+      issues.push("The selected start workflow is not published and active.");
+    }
+  }
+  return issues;
+}
+
+export function saveFormLibraryDraft({
+  library,
+  draft,
+  actorEmail,
+  existingDefinition,
+  workflowTemplates = [],
+  now = new Date(),
+}: {
+  library: FormLibraryDefinition[];
+  draft: FormLibraryDraft;
+  actorEmail: string;
+  existingDefinition?: FormLibraryDefinition | null;
+  workflowTemplates?: WorkflowTemplate[];
+  now?: Date;
+}) {
+  const timestamp = now.toISOString();
+  const formKey = existingDefinition?.formKey || `form-${toFieldName(draft.name)}-${now.getTime()}`;
+  const currentVersions = library.filter((item) => item.formKey === formKey);
+  const version = currentVersions.length
+    ? Math.max(...currentVersions.map((item) => item.version)) + 1
+    : 1;
+  const externalFormId =
+    draft.source === "microsoft_forms" ? extractMicrosoftFormId(draft.responseUrl) : undefined;
+  const issues = getFormLibraryPreflightIssues(draft, workflowTemplates);
+  const definition: FormLibraryDefinition = {
+    id: `${formKey}-v${version}`,
+    formKey,
+    name: draft.name.trim(),
+    description: draft.description.trim(),
+    source: draft.source,
+    version,
+    versionComment: draft.versionComment.trim(),
+    status: issues.length ? "setup_required" : "ready",
+    fields: draft.fields.map((field) => ({ ...field, source: "manual" as const })),
+    attachmentFields: draft.attachmentFields || [],
+    responseMode: draft.responseMode,
+    responseUrl: draft.responseUrl.trim() || undefined,
+    embedUrl: draft.embedUrl.trim() || undefined,
+    externalFormId,
+    schemaFingerprint: buildFormSchemaFingerprint(draft),
+    targetWorkflowTemplateId: draft.targetWorkflowTemplateId || undefined,
+    participantMappings: draft.participantMappings,
+    createdByEmail: existingDefinition?.createdByEmail || actorEmail,
+    createdAt: existingDefinition?.createdAt || timestamp,
+    updatedAt: timestamp,
+  };
+  return {
+    definition,
+    library: [definition, ...library],
+  };
+}
+
+export function getLatestFormLibraryDefinitions(library: FormLibraryDefinition[]) {
+  const latest = new Map<string, FormLibraryDefinition>();
+  for (const definition of library) {
+    const current = latest.get(definition.formKey);
+    if (!current || definition.version > current.version) {
+      latest.set(definition.formKey, definition);
+    }
+  }
+  return Array.from(latest.values()).sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
+}
+
+export function archiveFormLibraryDefinition(
+  library: FormLibraryDefinition[],
+  definitionId: string,
+) {
+  return library.map((definition) =>
+    definition.id === definitionId
+      ? { ...definition, status: "archived" as const, updatedAt: new Date().toISOString() }
+      : definition,
+  );
+}
+
+export function attachLibraryFormToWorkflow({
+  template,
+  nodeId,
+  definition,
+  completionRequired = true,
+}: {
+  template: WorkflowTemplate;
+  nodeId: string;
+  definition: FormLibraryDefinition;
+  completionRequired?: boolean;
+}) {
+  if (definition.status !== "ready") {
+    return { didUpdate: false, template, message: "Only ready forms can be added." };
+  }
+  const graph = createWorkflowGraphFromTemplate(template);
+  const node = graph.nodes.find((item) => item.id === nodeId);
+  if (!node || !["submit_request", "approval"].includes(node.kind)) {
+    return {
+      didUpdate: false,
+      template,
+      message: "Forms can only be added to Submit or Approval boxes.",
+    };
+  }
+
+  const nextTemplate = addWorkflowDocumentToNode(template, nodeId, {
+    documentType: definition.name,
+    format: "text",
+    inputMode: "manual_form",
+    required: completionRequired,
+    fields: definition.fields.map((field) => ({ ...field, source: "manual" as const })),
+    formLibraryRef: {
+      definitionId: definition.id,
+      formKey: definition.formKey,
+      version: definition.version,
+      source: definition.source,
+      responseMode: definition.responseMode,
+      responseUrl: definition.responseUrl,
+      embedUrl: definition.embedUrl,
+      completionRequired,
+      selectedFieldNames: definition.fields.map((field) => field.name),
+      selectedAttachmentNames: (definition.attachmentFields || []).map((field) => field.name),
+    },
+  });
+  return {
+    didUpdate: true,
+    template: nextTemplate,
+    message: `Added ${definition.name} v${definition.version} to ${node.label}.`,
+  };
+}
+
+export function getFormParticipantNodes(template?: WorkflowTemplate | null) {
+  if (!template) {
+    return [];
+  }
+  return createWorkflowGraphFromTemplate(template).nodes.filter((node) =>
+    ["submit_request", "approval", "fyi"].includes(node.kind),
+  );
+}
+
+function buildFormSchemaFingerprint(draft: FormLibraryDraft) {
+  return JSON.stringify({
+    fields: draft.fields.map((field) => [
+      field.name,
+      field.label,
+      field.type,
+      field.required,
+      field.options || [],
+    ]),
+    attachments: (draft.attachmentFields || []).map((field) => [
+      field.name,
+      field.label,
+      field.required,
+    ]),
+  });
+}
+
+function toFieldName(value: string) {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "field"
+  );
+}

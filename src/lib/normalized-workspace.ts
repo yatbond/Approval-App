@@ -243,6 +243,7 @@ export function restoreWorkspaceStateFromNormalizedRows(
     workflowTemplates,
     userRoleAssignments: [],
     adminAuditEvents: [],
+    formLibrary: [],
   };
 }
 

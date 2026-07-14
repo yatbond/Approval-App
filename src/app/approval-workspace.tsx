@@ -131,11 +131,17 @@ import {
   getWorkspaceRunnerTaskActionState,
 } from "@/lib/workspace-task-action-state";
 import { deactivateRemoteWorkspaceAdminRecord } from "@/lib/workspace-sync";
+import {
+  archiveFormLibraryDefinition,
+  saveFormLibraryDraft,
+  type FormLibraryDraft,
+} from "@/lib/form-library-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
   ApprovalTask,
   BusinessUnit,
+  FormLibraryDefinition,
   WorkflowTemplate,
   WorkflowDocumentRequirement,
   WorkflowField,
@@ -219,12 +225,14 @@ function ApprovalWorkspaceBody({
     businessDirectory,
     buildWorkspaceSnapshot,
     effectiveRoleAssignments,
+    formLibrary,
     persistWorkspaceSnapshot,
     selectedTaskId,
     selectedTemplateId,
     setBusinessDirectory,
     setRoleAssignments,
     setAdminAuditEvents,
+    setFormLibrary,
     setSelectedTaskId,
     setSelectedTemplateId,
     setTasks,
@@ -2007,6 +2015,31 @@ function ApprovalWorkspaceBody({
     );
   }
 
+  function saveFormLibraryRecord(
+    draft: FormLibraryDraft,
+    existingDefinition: FormLibraryDefinition | null,
+  ) {
+    const nextState = saveFormLibraryDraft({
+      library: formLibrary,
+      draft,
+      actorEmail: activeUser.email,
+      existingDefinition,
+      workflowTemplates: templates,
+    });
+    setFormLibrary(nextState.library);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({ formLibrary: nextState.library }),
+    );
+  }
+
+  function archiveFormLibraryRecord(definitionId: string) {
+    const nextLibrary = archiveFormLibraryDefinition(formLibrary, definitionId);
+    setFormLibrary(nextLibrary);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({ formLibrary: nextLibrary }),
+    );
+  }
+
   function updateTemplateRecord(template: WorkflowTemplate) {
     const currentTemplate = templates.find((item) => item.id === template.id);
     const action =
@@ -2372,6 +2405,7 @@ function ApprovalWorkspaceBody({
                 businessDirectory={businessDirectory}
                 tasks={tasks}
                 workflowTemplates={templates}
+                formLibrary={formLibrary}
                 selectedTemplateId={selectedTemplate?.id || ""}
                 setSelectedTemplateId={selectTemplateRecord}
                 onDeleteTemplate={confirmDeleteTemplateRecord}
@@ -2384,6 +2418,8 @@ function ApprovalWorkspaceBody({
                 userDirectory={userDirectory}
                 activeUser={activeUser}
                 onRunWorkflowAction={runWorkflowAction}
+                onSaveFormLibrary={saveFormLibraryRecord}
+                onArchiveFormLibrary={archiveFormLibraryRecord}
               />
             )}
 

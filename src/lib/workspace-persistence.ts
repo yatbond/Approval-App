@@ -2,6 +2,7 @@ import type {
   AdminAuditEvent,
   ApprovalTask,
   BusinessUnit,
+  FormLibraryDefinition,
   UserRoleAssignment,
   WorkflowTemplate,
 } from "@/lib/types";
@@ -15,6 +16,7 @@ export type WorkspaceStateSnapshot = {
   workflowTemplates: WorkflowTemplate[];
   userRoleAssignments: UserRoleAssignment[];
   adminAuditEvents: AdminAuditEvent[];
+  formLibrary: FormLibraryDefinition[];
 };
 
 export function serializeWorkspaceState(snapshot: WorkspaceStateSnapshot) {
@@ -46,6 +48,7 @@ export function parseWorkspaceState(value: string): WorkspaceStateSnapshot | nul
       adminAuditEvents: Array.isArray(parsed.adminAuditEvents)
         ? parsed.adminAuditEvents
         : [],
+      formLibrary: Array.isArray(parsed.formLibrary) ? parsed.formLibrary : [],
     });
   } catch {
     return null;
@@ -59,6 +62,7 @@ export function sanitizeWorkspaceStateSnapshot(
     ...snapshot,
     approvalTasks: snapshot.approvalTasks.map(repairApprovalTaskState),
     workflowTemplates: sanitizeWorkflowTemplates(snapshot.workflowTemplates),
+    formLibrary: Array.isArray(snapshot.formLibrary) ? snapshot.formLibrary : [],
   };
 }
 

@@ -97,6 +97,72 @@ export type WorkflowField = {
   examples?: ExtractionTrainingExample[];
 };
 
+export type FormLibrarySource = "native" | "microsoft_forms";
+export type FormLibraryStatus =
+  | "setup_required"
+  | "ready"
+  | "changed"
+  | "broken"
+  | "archived";
+export type FormLibraryResponseMode =
+  | "manual"
+  | "start_workflow"
+  | "complete_node";
+export type FormParticipantResolutionSource =
+  | "fixed_template"
+  | "responder"
+  | "form_field"
+  | "directory_position"
+  | "manual";
+
+export type FormParticipantMapping = {
+  nodeId: string;
+  source: FormParticipantResolutionSource;
+  fieldName?: string;
+};
+
+export type FormLibraryAttachmentField = {
+  name: string;
+  label: string;
+  required: boolean;
+};
+
+export type FormLibraryDefinition = {
+  id: string;
+  formKey: string;
+  name: string;
+  description?: string;
+  source: FormLibrarySource;
+  version: number;
+  versionComment?: string;
+  status: FormLibraryStatus;
+  fields: WorkflowField[];
+  attachmentFields?: FormLibraryAttachmentField[];
+  responseMode: FormLibraryResponseMode;
+  responseUrl?: string;
+  embedUrl?: string;
+  externalFormId?: string;
+  schemaFingerprint?: string;
+  targetWorkflowTemplateId?: string;
+  participantMappings?: FormParticipantMapping[];
+  createdByEmail: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorkflowFormLibraryReference = {
+  definitionId: string;
+  formKey: string;
+  version: number;
+  source: FormLibrarySource;
+  responseMode: FormLibraryResponseMode;
+  responseUrl?: string;
+  embedUrl?: string;
+  completionRequired: boolean;
+  selectedFieldNames: string[];
+  selectedAttachmentNames: string[];
+};
+
 export type ExtractionTrainingExample = {
   id: string;
   templateId: string;
@@ -132,6 +198,7 @@ export type WorkflowDocumentRequirement = {
   required: boolean;
   fields: WorkflowField[];
   sample?: WorkflowDocumentSample;
+  formLibraryRef?: WorkflowFormLibraryReference;
 };
 
 export type WorkflowDocumentSamplePage = {

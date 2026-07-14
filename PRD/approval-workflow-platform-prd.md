@@ -237,7 +237,39 @@ Each field can define a label, optional help text, optional placeholder, require
 
 Native form values use the same request field map as AI/OCR values. They therefore participate in draft autosave, conditions, handoff visibility, tracking, and audit behavior without a separate form data model. Existing templates stored with `inputMode: manual_form` remain compatible and are presented as **Native form** in the UI.
 
-### 9.4 Required Inputs
+### 9.4 Reusable Form Library
+
+Workflow includes a **Forms** subtab containing a reusable, versioned Form Library.
+
+The library supports:
+
+- native forms built and completed in Approval App;
+- linked Microsoft Forms registered by response URL;
+- mapped value fields and file-upload questions;
+- immutable versions with version comments;
+- archive behavior that removes a form from new workflow selection without breaking pinned workflow versions;
+- a target workflow and participant-resolution preflight when a Microsoft Form starts a new request.
+
+A Submit or Approval box can attach a ready library form. The workflow stores both a pinned library/version reference and a snapshot of its mapped fields. Later library changes therefore do not alter published workflow versions or in-flight requests.
+
+Microsoft Forms can be configured in two modes:
+
+1. **Start a new approval request**: one registered form version identifies one active published workflow version. Participant emails resolve from fixed template values, the respondent, mapped email fields, the company position directory, or manual intake resolution.
+2. **Complete an existing workflow box**: the external response must carry an opaque correlation token that identifies the request and form instance.
+
+The request screen opens a linked Microsoft Form in a new tab and retains mapped in-app fields as a review/manual fallback. Automatic response delivery requires a Microsoft Power Automate flow.
+
+The secure endpoint is `POST /api/form-intake`. It requires a bearer secret, validates a bounded structured payload, deduplicates by provider/form/response ID, and stores responses in `external_form_submissions`. The endpoint refuses delivery if its secret or server-side Supabase credentials are unavailable. Stored responses enter `pending_mapping`; a production response processor is still required to resolve the pinned form version, map participants, create or update the request, and attach Microsoft 365 files.
+
+Schema drift policy:
+
+- form versions are immutable;
+- breaking changes require a new registered version;
+- new requests can only use forms in **Ready** status;
+- existing workflows and requests remain pinned to their original form schema;
+- changed, broken, and archived status values are reserved for connection monitoring and lifecycle control.
+
+### 9.5 Required Inputs
 
 Submission validation covers:
 
@@ -249,7 +281,7 @@ Submission validation covers:
 
 Native-form workflows may submit without an uploaded file when their required fields are complete.
 
-### 9.5 Draft Identity and Persistence
+### 9.6 Draft Identity and Persistence
 
 - Every request draft has a stable unique identifier.
 - Autosaving an existing loaded draft updates that draft rather than creating a duplicate.
@@ -261,7 +293,7 @@ Native-form workflows may submit without an uploaded file when their required fi
 - Resuming a draft opens the request editor while keeping **Drafts** highlighted in navigation. A compact **Draft controls** bar below the workflow map shows autosave status and a **Drafts (n)** dropdown for opening named drafts, saving a new draft, deleting saved drafts, or discarding current work.
 - Each saved attachment exposes **Edit extraction** and **Remove** actions. Edit extraction securely reloads the private stored original, restores its preview and saved extraction boxes, and opens boxed-field editing. Remove requires confirmation and clears the associated attachment, extracted values, and prepared request item from the same draft.
 
-### 9.6 Multi-Document and Batch Behavior
+### 9.7 Multi-Document and Batch Behavior
 
 - A request can contain multiple required or optional documents.
 - Each attachment records its requirement, source box, storage metadata, and parsing result.
@@ -1005,7 +1037,9 @@ Release verification must include:
 - Enterprise SSO and user provisioning.
 - Teams or Slack notifications.
 - ERP/procurement integrations.
-- Microsoft Forms intake through Power Automate and a secure idempotent intake API.
+- Configure the Microsoft Forms Power Automate flow and production webhook secret.
+- Add the response processor that converts accepted form intake rows into new requests or completed workflow-box form instances.
+- Add automated Microsoft Forms schema checks and Changed/Broken lifecycle transitions.
 - Microsoft Forms is the only planned external form platform. Google Forms, Typeform, and Jotform are out of scope unless the product decision is revisited.
 - Search, reporting, SLA analytics, and export.
 - Read-only workflow visualization optimized for mobile.
@@ -1017,6 +1051,7 @@ Release verification must include:
 | --- | --- |
 | Workspace shell and navigation | `src/app/approval-workspace.tsx` and `src/app/use-approval-workspace-state.ts` |
 | Request creation and native forms | `src/app/upload-view.tsx`, `src/lib/workflow-native-form-state.ts`, and upload/request libraries |
+| Form Library and Microsoft Forms registration | `src/app/form-library.tsx`, `src/lib/form-library-state.ts`, `src/app/api/form-intake`, and `external_form_submissions` migration |
 | Queue actions | `src/app/approval-workspace.tsx`, workspace task-state libraries, and `src/lib/approval-state.ts` |
 | Tracking | `src/app/approval-workspace.tsx` and workflow graph/history libraries |
 | Workflow Builder and Canvas | `src/app/workflow-view.tsx`, `src/app/workflow-canvas.tsx`, and `src/lib/workflow-graph.ts` |
@@ -1038,8 +1073,9 @@ The current product direction is:
 - one fixed Start and one fixed End;
 - position-based templates with optional fixed emails;
 - request-time participant completion;
-- native request forms are built inside Submit boxes and share the workflow field model;
-- Microsoft Forms is the sole planned external form connector because the organization uses Microsoft 365;
+- native forms can be built inline or reused from the versioned Form Library and share the workflow field model;
+- Microsoft Forms is the sole external form connector because the organization uses Microsoft 365;
+- Microsoft Forms responses enter through Power Automate and the authenticated idempotent intake endpoint; automatic request creation remains gated on the response processor and participant preflight;
 - all/selected/none document handoff;
 - checkbox-based value and document selection;
 - simple default handoff with advanced controls collapsed;

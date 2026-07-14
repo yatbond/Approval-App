@@ -5,6 +5,7 @@ import {
   ChevronDown,
   FileSpreadsheet,
   FileText,
+  ExternalLink,
   FolderOpen,
   Image as ImageIcon,
   Loader2,
@@ -1688,9 +1689,36 @@ export function UploadView({
                         {document.documentType}
                       </p>
                       <span className="rounded-md border border-[#e6e6e6] px-2 py-1 text-xs text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-                        {document.fields.length} field(s)
+                        {document.formLibraryRef
+                          ? `Library v${document.formLibraryRef.version}`
+                          : `${document.fields.length} field(s)`}
                       </span>
                     </div>
+                    {document.formLibraryRef?.source === "microsoft_forms" && (
+                      <div className="mt-3 rounded-md border border-[#f7941d]/35 bg-[#fffaf4] p-3 dark:bg-[#f7941d]/10">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                              Complete in Microsoft Forms
+                            </p>
+                            <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
+                              The mapped values below remain available for review or manual fallback until automatic response delivery is connected.
+                            </p>
+                          </div>
+                          {document.formLibraryRef.responseUrl && (
+                            <a
+                              href={document.formLibraryRef.responseUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Open this registered Microsoft Form in a new tab."
+                              className="flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-[#f7941d] bg-[#f7941d] px-3 text-sm font-medium text-white transition hover:bg-[#df7f0a]"
+                            >
+                              <ExternalLink size={15} /> Open form
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       {document.fields.map((field) => {
                         const value =

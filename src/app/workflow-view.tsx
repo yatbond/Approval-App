@@ -46,6 +46,7 @@ import { UserDirectoryDatalist } from "@/app/task-views";
 import { ConditionBoxDetails } from "@/app/condition-box-details";
 import { WorkflowTemplateLibrary } from "@/app/workflow-template-library";
 import { WorkflowTemplateBuilder } from "@/app/workflow-template-builder";
+import { FormLibrary } from "@/app/form-library";
 import { TemplateDocumentRecognitionPanel } from "@/app/template-document-recognition-panel";
 import { getWorkflowTemplateBuilderBusinessState } from "@/lib/workflow-template-builder-state";
 import { WorkflowRuntimePanel } from "@/app/workflow-runtime-panel";
@@ -139,6 +140,11 @@ import type {
   WorkflowTemplate,
 } from "@/lib/types";
 import { InfoTip } from "./ui-hint";
+import {
+  attachLibraryFormToWorkflow,
+  getLatestFormLibraryDefinitions,
+  type FormLibraryDraft,
+} from "@/lib/form-library-state";
 
 const WorkflowCanvas = dynamic(() => import("@/app/workflow-canvas"), {
   loading: () => (
@@ -200,6 +206,7 @@ export function WorkflowView({
   businessDirectory,
   tasks,
   workflowTemplates,
+  formLibrary,
   selectedTemplateId,
   setSelectedTemplateId,
   onDeleteTemplate,
@@ -212,10 +219,13 @@ export function WorkflowView({
   activeUser,
   onRunWorkflowAction,
   requestConfirmation,
+  onSaveFormLibrary,
+  onArchiveFormLibrary,
 }: {
   businessDirectory: BusinessUnit[];
   tasks: ApprovalTask[];
   workflowTemplates: WorkflowTemplate[];
+  formLibrary: import("@/lib/types").FormLibraryDefinition[];
   selectedTemplateId: string;
   setSelectedTemplateId: (id: string) => void;
   onDeleteTemplate: (id: string) => void | Promise<void>;
@@ -228,6 +238,11 @@ export function WorkflowView({
   activeUser: UserDirectoryEntry;
   onRunWorkflowAction: (taskId: string, action: ApprovalAction) => void;
   requestConfirmation: (request: ConfirmationRequest) => Promise<boolean>;
+  onSaveFormLibrary: (
+    draft: FormLibraryDraft,
+    existingDefinition: import("@/lib/types").FormLibraryDefinition | null,
+  ) => void;
+  onArchiveFormLibrary: (definitionId: string) => void;
 }) {
   const workflow =
     workflowTemplates.find((template) => template.id === selectedTemplateId) ||
@@ -333,6 +348,14 @@ export function WorkflowView({
   const [boxDocumentInputMode, setBoxDocumentInputMode] =
     useState<WorkflowDocumentInputMode>("upload");
   const [boxDocumentRequired, setBoxDocumentRequired] = useState(true);
+  const [selectedLibraryFormId, setSelectedLibraryFormId] = useState("");
+  const availableLibraryForms = useMemo(
+    () =>
+      getLatestFormLibraryDefinitions(formLibrary).filter(
+        (definition) => definition.status === "ready",
+      ),
+    [formLibrary],
+  );
   const firstBusiness = businessDirectory[0];
   const [templateName, setTemplateName] = useState("General document approval");
   const [businessId, setBusinessId] = useState(firstBusiness?.id || "");
@@ -711,6 +734,30 @@ export function WorkflowView({
     setBoxDocumentFormat(nextState.resetForm.format);
     setBoxDocumentInputMode(nextState.resetForm.inputMode);
     setBoxDocumentRequired(nextState.resetForm.required);
+  }
+
+  function addLibraryFormToSelectedBox() {
+    if (!workflow || !selectedGraphNode) {
+      return;
+    }
+    const definition = availableLibraryForms.find(
+      (item) => item.id === selectedLibraryFormId,
+    );
+    if (!definition) {
+      setWorkflowActionMessage("Select a ready form from the library.");
+      return;
+    }
+    const nextState = attachLibraryFormToWorkflow({
+      template: workflow,
+      nodeId: selectedGraphNode.id,
+      definition,
+    });
+    if (!nextState.didUpdate) {
+      setWorkflowActionMessage(nextState.message);
+      return;
+    }
+    saveWorkflowTemplate(nextState.template, nextState.message);
+    setSelectedLibraryFormId("");
   }
 
   function updateTemplateDocuments(
@@ -2211,6 +2258,37 @@ export function WorkflowView({
                           )}
                         </div>
                         <div className="mt-3 space-y-2 border-t border-[#e6e6e6] pt-3">
+                          {availableLibraryForms.length > 0 && (
+                            <div className="rounded-md border border-[#f7941d]/35 bg-[#fffaf4] p-3 dark:bg-[#f7941d]/8">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                                  Form library
+                                </p>
+                                <InfoTip label="Attach a pinned copy of a reusable form to this workflow box." />
+                              </div>
+                              <select
+                                value={selectedLibraryFormId}
+                                onChange={(event) => setSelectedLibraryFormId(event.target.value)}
+                                className="mt-2 h-10 w-full rounded-md border border-[#d2d2d2] bg-white px-3 text-sm text-neutral-900 outline-none focus:border-[#f7941d] dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                              >
+                                <option value="">Select reusable form</option>
+                                {availableLibraryForms.map((definition) => (
+                                  <option key={definition.id} value={definition.id}>
+                                    {definition.name} · v{definition.version} · {definition.source === "native" ? "Approval App" : "Microsoft Forms"}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={addLibraryFormToSelectedBox}
+                                disabled={!selectedLibraryFormId}
+                                title="Attach this form version to the selected Submit or Approval box."
+                                className="mt-2 flex min-h-9 w-full items-center justify-center gap-2 rounded-md border border-[#f7941d] bg-[#f7941d] px-3 text-sm font-medium text-white transition hover:bg-[#df7f0a] disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                <Plus size={15} /> Add library form
+                              </button>
+                            </div>
+                          )}
                           <input
                             value={boxDocumentType}
                             title="Name the new document requirement to add to this box."
@@ -2326,6 +2404,15 @@ export function WorkflowView({
             onUpdateTemplateVersionComment={onUpdateTemplateVersionComment}
             activeUserEmail={activeUser.email}
             activeUserRole={activeUser.role}
+          />
+        )}
+
+        {workflowEditorTab === "forms" && (
+          <FormLibrary
+            definitions={formLibrary}
+            workflowTemplates={workflowTemplates}
+            onSave={onSaveFormLibrary}
+            onArchive={onArchiveFormLibrary}
           />
         )}
       </section>
