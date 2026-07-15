@@ -10,6 +10,10 @@ const uploadViewSource = readFileSync(
   new URL("../app/upload-view.tsx", import.meta.url),
   "utf8",
 );
+const uploadRequestSetupSource = readFileSync(
+  new URL("../app/upload-request-setup-panel.tsx", import.meta.url),
+  "utf8",
+);
 const uploadDraftControlsSource = readFileSync(
   new URL("../app/upload-draft-controls.tsx", import.meta.url),
   "utf8",
@@ -33,12 +37,13 @@ test("resumed drafts keep Drafts active and use clear draft controls", () => {
   assert.match(uploadDraftControlsSource, />\s*Available drafts\s*</);
   assert.match(uploadDraftControlsSource, />\s*Save as new draft\s*</);
   assert.match(uploadDraftControlsSource, />\s*Discard current work\s*</);
-  assert.match(uploadViewSource, />\s*Request setup\s*</);
+  assert.match(uploadRequestSetupSource, />\s*Request setup\s*</);
   assert.match(uploadViewSource, />\s*Current request information\s*</);
   assert.ok(
-    uploadViewSource.indexOf(">Files<") <
+    uploadViewSource.indexOf("<UploadRequestSetupPanel") <
       uploadViewSource.indexOf(">Current request information<"),
   );
+  assert.match(uploadRequestSetupSource, />\s*Files\s*</);
   assert.match(
     uploadDraftStateSource,
     /options\?\.asNew\s*\?\s*crypto\.randomUUID\(\)\s*:\s*selectedUploadDraftId/,

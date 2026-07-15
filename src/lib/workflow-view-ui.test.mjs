@@ -185,6 +185,10 @@ test("submit boxes expose a native form builder and request renderer", () => {
     "utf8",
   );
   const uploadSource = readFileSync("src/app/upload-view.tsx", "utf8");
+  const uploadSetupSource = readFileSync(
+    "src/app/upload-request-setup-panel.tsx",
+    "utf8",
+  );
   const nativeFormFieldSource = readFileSync(
     "src/app/native-form-field-input.tsx",
     "utf8",
@@ -201,7 +205,7 @@ test("submit boxes expose a native form builder and request renderer", () => {
   assert.equal(boxDocumentsSource.includes("Build the fields users complete"), true);
   assert.equal(boxDocumentsSource.includes("nativeFormFieldTypeOptions"), true);
   assert.equal(uploadSource.includes("import { NativeFormFieldInput }"), true);
-  assert.equal(uploadSource.includes("Complete required form fields"), true);
+  assert.equal(uploadSetupSource.includes("Complete required form fields"), true);
   assert.equal(nativeFormFieldSource.includes('field.type === "date"'), true);
   assert.equal(nativeFormFieldSource.includes('? "date"'), true);
   assert.equal(

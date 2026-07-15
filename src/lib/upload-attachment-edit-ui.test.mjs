@@ -6,6 +6,10 @@ const uploadViewSource = readFileSync(
   new URL("../app/upload-view.tsx", import.meta.url),
   "utf8",
 );
+const uploadRequestSetupSource = readFileSync(
+  new URL("../app/upload-request-setup-panel.tsx", import.meta.url),
+  "utf8",
+);
 const workspaceSource = readFileSync(
   new URL("../app/approval-workspace.tsx", import.meta.url),
   "utf8",
@@ -20,11 +24,15 @@ const attachmentRouteSource = readFileSync(
 );
 
 test("saved draft files expose extraction editing and confirmed removal", () => {
-  assert.match(uploadViewSource, /Edit extraction/);
-  assert.match(uploadViewSource, /Remove/);
+  assert.match(uploadRequestSetupSource, /Edit extraction/);
+  assert.match(uploadRequestSetupSource, /Remove/);
+  assert.match(
+    uploadRequestSetupSource,
+    /onEditAttachmentExtraction\(attachment\)/,
+  );
   assert.match(uploadViewSource, /editAttachmentExtraction\(attachment\)/);
   assert.match(uploadViewSource, /currentRequestInformationRef\.current\?\.scrollIntoView/);
-  assert.match(uploadViewSource, /Opening saved file/);
+  assert.match(uploadRequestSetupSource, /Opening saved file/);
   assert.match(workspaceSource, /openUploadAttachmentForEditing/);
   assert.match(uploadDraftStateSource, /getDraftAttachmentRemoveConfirmation/);
   assert.match(uploadDraftStateSource, /setUploadRequestDraftRows\(remainingRows\)/);
