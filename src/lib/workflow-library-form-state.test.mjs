@@ -8,6 +8,7 @@ import {
   getWorkflowFormFieldSourceLabel,
   isLibraryFormRequirement,
   isMicrosoftFormsRequirement,
+  isUploadedWorkflowFormAttachment,
 } from "./workflow-library-form-state.ts";
 
 const microsoftDocument = {
@@ -67,4 +68,34 @@ test("keeps native library fields and attachments locally editable", () => {
   assert.equal(getLibraryFormSourceLabel(nativeDocument), "Approval App form");
   assert.equal(getLocallyEditableWorkflowFormFields(nativeDocument).length, 2);
   assert.equal(getLocallyUploadableWorkflowFormAttachments(nativeDocument).length, 1);
+});
+
+test("matches uploaded form attachments by document and normalized field name or label", () => {
+  const document = { id: "form-document" };
+  const field = { name: "invoice_pdf", label: "Invoice PDF" };
+
+  assert.equal(
+    isUploadedWorkflowFormAttachment(
+      { documentId: document.id, documentType: " Invoice_PDF " },
+      document,
+      field,
+    ),
+    true,
+  );
+  assert.equal(
+    isUploadedWorkflowFormAttachment(
+      { documentId: document.id, documentType: "invoice pdf" },
+      document,
+      field,
+    ),
+    true,
+  );
+  assert.equal(
+    isUploadedWorkflowFormAttachment(
+      { documentId: "another-document", documentType: "invoice pdf" },
+      document,
+      field,
+    ),
+    false,
+  );
 });

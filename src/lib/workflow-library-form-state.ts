@@ -1,4 +1,5 @@
 import type {
+  ApprovalAttachment,
   FormLibraryAttachmentField,
   WorkflowDocumentRequirement,
   WorkflowField,
@@ -49,6 +50,19 @@ export function getLocallyUploadableWorkflowFormAttachments(
   return isMicrosoftFormsRequirement(document)
     ? []
     : getWorkflowFormAttachmentFields(document);
+}
+
+export function isUploadedWorkflowFormAttachment(
+  attachment: Pick<ApprovalAttachment, "documentId" | "documentType">,
+  document: Pick<WorkflowDocumentRequirement, "id">,
+  field: Pick<FormLibraryAttachmentField, "name" | "label">,
+) {
+  const documentType = attachment.documentType.trim().toLowerCase();
+  return (
+    attachment.documentId === document.id &&
+    (documentType === field.name.trim().toLowerCase() ||
+      documentType === field.label.trim().toLowerCase())
+  );
 }
 
 export function getWorkflowFormFieldSourceLabel(

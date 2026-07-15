@@ -58,11 +58,16 @@ test("new requests show a contextual workflow map", () => {
 
 test("upload orchestration delegates focused form, map, and draft controls", () => {
   const source = readFileSync(new URL("../app/upload-view.tsx", import.meta.url), "utf8");
+  const dataPanelSource = readFileSync(
+    new URL("../app/upload-request-data-panel.tsx", import.meta.url),
+    "utf8",
+  );
 
-  assert.match(source, /import \{ NativeFormFieldInput \}/);
+  assert.match(dataPanelSource, /import \{ NativeFormFieldInput \}/);
   assert.match(source, /import \{ RequestWorkflowMiniMap \}/);
   assert.match(source, /import \{ UploadDraftControls \}/);
   assert.match(source, /UploadRequestSetupPanel/);
+  assert.match(source, /UploadRequestDataPanel/);
   assert.doesNotMatch(source, /function NativeFormFieldInput/);
   assert.doesNotMatch(source, /function RequestWorkflowMiniMap/);
   assert.doesNotMatch(source, /function UploadDraftControls/);

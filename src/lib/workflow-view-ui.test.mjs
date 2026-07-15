@@ -189,6 +189,10 @@ test("submit boxes expose a native form builder and request renderer", () => {
     "src/app/upload-request-setup-panel.tsx",
     "utf8",
   );
+  const uploadDataSource = readFileSync(
+    "src/app/upload-request-data-panel.tsx",
+    "utf8",
+  );
   const nativeFormFieldSource = readFileSync(
     "src/app/native-form-field-input.tsx",
     "utf8",
@@ -204,7 +208,8 @@ test("submit boxes expose a native form builder and request renderer", () => {
   assert.equal(boxDocumentsSource.includes("Form section name"), true);
   assert.equal(boxDocumentsSource.includes("Build the fields users complete"), true);
   assert.equal(boxDocumentsSource.includes("nativeFormFieldTypeOptions"), true);
-  assert.equal(uploadSource.includes("import { NativeFormFieldInput }"), true);
+  assert.equal(uploadSource.includes("UploadRequestDataPanel"), true);
+  assert.equal(uploadDataSource.includes("import { NativeFormFieldInput }"), true);
   assert.equal(uploadSetupSource.includes("Complete required form fields"), true);
   assert.equal(nativeFormFieldSource.includes('field.type === "date"'), true);
   assert.equal(nativeFormFieldSource.includes('? "date"'), true);
@@ -223,7 +228,7 @@ test("submit boxes expose a native form builder and request renderer", () => {
   assert.equal(boxDocumentsSource.includes("Add separate requirement"), true);
   assert.equal(librarySummarySource.includes("This workflow is pinned"), true);
   assert.equal(librarySummarySource.includes("Choices are managed in Microsoft Forms."), true);
-  assert.equal(uploadSource.includes("Uploaded in Microsoft Forms"), true);
+  assert.equal(uploadDataSource.includes("Uploaded in Microsoft Forms"), true);
   assert.equal(uploadSource.includes("mapped values below remain available as a manual fallback"), false);
 });
 
