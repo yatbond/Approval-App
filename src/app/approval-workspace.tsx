@@ -65,6 +65,7 @@ import {
   getTaskSharedFulfillmentDecisionState,
 } from "@/lib/shared-fulfillment-state";
 import { useApprovalWorkspaceState } from "@/app/use-approval-workspace-state";
+import { useWorkspaceAdminRecords } from "@/app/use-workspace-admin-records";
 import { useWorkspaceEmailDelivery } from "@/app/use-workspace-email-delivery";
 import {
   QueueView,
@@ -87,27 +88,12 @@ import {
   getWorkspaceShellState,
 } from "@/lib/workspace-shell-state";
 import {
-  getAdminRecordDeleteConfirmation,
   getApprovalActionConfirmation,
   getDraftAttachmentRemoveConfirmation,
   getDraftDeleteConfirmation,
   getSignOutConfirmation,
-  getWorkflowTemplateArchiveConfirmation,
   type ConfirmationRequest,
 } from "@/lib/confirmation-policy";
-import {
-  getActivatedTemplateVersionRecordState,
-  getCreatedTemplateRecordState,
-  getDeletedTemplateRecordState,
-  getUpdatedTemplateVersionCommentRecordState,
-  getUpdatedTemplateRecordState,
-} from "@/lib/workspace-template-record-state";
-import {
-  getAdminRecordDeleteFailureState,
-  getAdminRecordDeleteSyncState,
-  getUpdatedBusinessDirectoryRecordState,
-  getUpdatedRoleAssignmentRecordState,
-} from "@/lib/workspace-admin-record-state";
 import {
   getWorkspaceBatchRequestSubmissionState,
   getWorkspaceRequestSubmissionPersistenceMessage,
@@ -130,22 +116,12 @@ import {
   createWorkflowTestRequestState,
 } from "@/lib/workflow-test-request-state";
 import { persistWorkspaceCollaborationTransition } from "@/lib/workspace-collaboration-api";
-import { deactivateRemoteWorkspaceAdminRecord } from "@/lib/workspace-sync";
-import {
-  archiveFormLibraryDefinition,
-  saveFormLibraryDraft,
-  type FormLibraryDraft,
-} from "@/lib/form-library-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
-  ApprovalTask,
-  BusinessUnit,
-  FormLibraryDefinition,
   WorkflowTemplate,
   WorkflowDocumentRequirement,
   WorkflowField,
-  UserRoleAssignment,
 } from "@/lib/types";
 
 type Tab = WorkspaceTab;
@@ -280,7 +256,6 @@ function ApprovalWorkspaceBody({
   const [actionError, setActionError] = useState("");
   const [actionSubmissionTaskId, setActionSubmissionTaskId] = useState("");
   const actionSubmissionTaskIdRef = useRef("");
-  const [adminRecordError, setAdminRecordError] = useState("");
   const [confirmationRequest, setConfirmationRequest] =
     useState<ConfirmationRequest | null>(null);
   const confirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(
@@ -327,6 +302,39 @@ function ApprovalWorkspaceBody({
     sendTestEmail,
     sendWorkflowEmailNotifications,
   } = useWorkspaceEmailDelivery({ requestConfirmation });
+  const {
+    activateTemplateVersionRecord,
+    adminRecordError,
+    archiveFormLibraryRecord,
+    confirmDeactivateBusinessRecord,
+    confirmDeactivateDepartmentRecord,
+    confirmDeleteTemplateRecord,
+    createTemplateRecord,
+    saveFormLibraryRecord,
+    updateBusinessDirectoryRecords,
+    updateRoleAssignmentRecords,
+    updateTemplateRecord,
+    updateTemplateVersionCommentRecord,
+  } = useWorkspaceAdminRecords({
+    activeUser,
+    adminAuditEvents,
+    businessDirectory,
+    buildWorkspaceSnapshot,
+    effectiveRoleAssignments,
+    formLibrary,
+    persistWorkspaceSnapshot,
+    requestConfirmation,
+    selectedTemplateId,
+    setAdminAuditEvents,
+    setBusinessDirectory,
+    setFormLibrary,
+    setRoleAssignments,
+    setSelectedTemplateId,
+    setTemplates,
+    tasks,
+    templates,
+    workspaceSyncMode,
+  });
   const uploadDraftStorageReady = useRef(false);
   const lastRemoteUploadAutosavePayloadRef = useRef("");
   const selectedTemplate = useMemo(
@@ -1985,283 +1993,6 @@ function ApprovalWorkspaceBody({
     if (confirmed) {
       window.location.href = "/logout";
     }
-  }
-
-  function createTemplateRecord(template: WorkflowTemplate) {
-    const action = template.isDraft === false
-      ? "template_published"
-      : template.sourceTemplateId
-        ? "template_duplicated"
-        : "template_created";
-    const nextState = getCreatedTemplateRecordState({
-      templates,
-      template,
-      actor: activeUser,
-      action,
-    });
-    const nextAuditEvents = nextState.auditEvent
-      ? [nextState.auditEvent, ...adminAuditEvents]
-      : adminAuditEvents;
-    setTemplates(nextState.templates);
-    setAdminAuditEvents(nextAuditEvents);
-    setSelectedTemplateId(nextState.selectedTemplateId);
-    void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({
-        workflowTemplates: nextState.templates,
-        adminAuditEvents: nextAuditEvents,
-        selectedTemplateId: nextState.selectedTemplateId,
-      }),
-    );
-  }
-
-  function saveFormLibraryRecord(
-    draft: FormLibraryDraft,
-    existingDefinition: FormLibraryDefinition | null,
-  ) {
-    const nextState = saveFormLibraryDraft({
-      library: formLibrary,
-      draft,
-      actorEmail: activeUser.email,
-      existingDefinition,
-      workflowTemplates: templates,
-    });
-    setFormLibrary(nextState.library);
-    void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ formLibrary: nextState.library }),
-    );
-  }
-
-  function archiveFormLibraryRecord(definitionId: string) {
-    const nextLibrary = archiveFormLibraryDefinition(formLibrary, definitionId);
-    setFormLibrary(nextLibrary);
-    void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ formLibrary: nextLibrary }),
-    );
-  }
-
-  function updateTemplateRecord(template: WorkflowTemplate) {
-    const currentTemplate = templates.find((item) => item.id === template.id);
-    const action =
-      currentTemplate?.isDraft !== false && template.isDraft === false
-        ? "template_published"
-        : "template_updated";
-    const nextState = getUpdatedTemplateRecordState({
-      templates,
-      template,
-      actor: activeUser,
-      action,
-    });
-    const nextAuditEvents = nextState.auditEvent
-      ? [nextState.auditEvent, ...adminAuditEvents]
-      : adminAuditEvents;
-    setTemplates(nextState.templates);
-    setAdminAuditEvents(nextAuditEvents);
-    void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({
-        workflowTemplates: nextState.templates,
-        adminAuditEvents: nextAuditEvents,
-      }),
-    );
-  }
-
-  function activateTemplateVersionRecord(templateId: string) {
-    const nextState = getActivatedTemplateVersionRecordState({
-      templates,
-      selectedTemplateId,
-      templateId,
-      actor: activeUser,
-    });
-    if (!nextState.didUpdate) {
-      return;
-    }
-
-    const nextAuditEvents = nextState.auditEvent
-      ? [nextState.auditEvent, ...adminAuditEvents]
-      : adminAuditEvents;
-    setTemplates(nextState.templates);
-    setAdminAuditEvents(nextAuditEvents);
-    setSelectedTemplateId(nextState.selectedTemplateId);
-    void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({
-        workflowTemplates: nextState.templates,
-        adminAuditEvents: nextAuditEvents,
-        selectedTemplateId: nextState.selectedTemplateId,
-      }),
-    );
-  }
-
-  function updateTemplateVersionCommentRecord(templateId: string, comment: string) {
-    const nextState = getUpdatedTemplateVersionCommentRecordState({
-      templates,
-      templateId,
-      comment,
-      actor: activeUser,
-    });
-    if (!nextState.didUpdate) {
-      return;
-    }
-
-    const nextAuditEvents = nextState.auditEvent
-      ? [nextState.auditEvent, ...adminAuditEvents]
-      : adminAuditEvents;
-    setTemplates(nextState.templates);
-    setAdminAuditEvents(nextAuditEvents);
-    void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({
-        workflowTemplates: nextState.templates,
-        adminAuditEvents: nextAuditEvents,
-      }),
-    );
-  }
-
-  async function deleteTemplateRecord(templateId: string) {
-    const template = templates.find((item) => item.id === templateId);
-    const didDeactivate = template
-      ? await deactivateAdminRecord({
-          type: "template",
-          templateKey: template.id,
-          versionNumber: template.version || latestTaskVersionForTemplate(template.id),
-        })
-      : true;
-    if (!didDeactivate) {
-      return;
-    }
-
-    const nextState = getDeletedTemplateRecordState({
-      templates,
-      selectedTemplateId,
-      templateId,
-      actor: activeUser,
-    });
-    const nextAuditEvents = nextState.auditEvent
-      ? [nextState.auditEvent, ...adminAuditEvents]
-      : adminAuditEvents;
-    setTemplates(nextState.templates);
-    setAdminAuditEvents(nextAuditEvents);
-    setSelectedTemplateId(nextState.selectedTemplateId);
-    void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({
-        workflowTemplates: nextState.templates,
-        adminAuditEvents: nextAuditEvents,
-        selectedTemplateId: nextState.selectedTemplateId,
-      }),
-    );
-  }
-
-  async function confirmDeleteTemplateRecord(templateId: string) {
-    const template = templates.find((item) => item.id === templateId);
-    const confirmed = await requestConfirmation(
-      getWorkflowTemplateArchiveConfirmation({
-        templateName: template?.name || "this workflow template",
-      }),
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    await deleteTemplateRecord(templateId);
-  }
-
-  async function deactivateAdminRecord(
-    record: Parameters<typeof deactivateRemoteWorkspaceAdminRecord>[0],
-  ) {
-    const syncState = getAdminRecordDeleteSyncState({ workspaceSyncMode });
-    if (!syncState.canContinue) {
-      setAdminRecordError(syncState.error);
-      return false;
-    }
-
-    if (!syncState.shouldDeactivateRemote) {
-      setAdminRecordError("");
-      return true;
-    }
-
-    const result = await deactivateRemoteWorkspaceAdminRecord(record);
-    if (result.mode !== "supabase") {
-      const failureState = getAdminRecordDeleteFailureState({
-        record,
-        reason: result.reason || "",
-      });
-      setAdminRecordError(failureState.error);
-      return failureState.canContinue;
-    }
-
-    setAdminRecordError("");
-    return true;
-  }
-
-  async function confirmDeactivateBusinessRecord(business: BusinessUnit) {
-    const confirmed = await requestConfirmation(
-      getAdminRecordDeleteConfirmation({
-        recordType: "business",
-        recordName: business.name,
-      }),
-    );
-    if (!confirmed) {
-      return false;
-    }
-
-    return deactivateAdminRecord({
-      type: "business",
-      businessId: business.id,
-    });
-  }
-
-  async function confirmDeactivateDepartmentRecord(
-    business: BusinessUnit,
-    departmentName: string,
-  ) {
-    const confirmed = await requestConfirmation(
-      getAdminRecordDeleteConfirmation({
-        recordType: "department",
-        recordName: departmentName,
-      }),
-    );
-    if (!confirmed) {
-      return false;
-    }
-
-    return deactivateAdminRecord({
-      type: "department",
-      businessId: business.id,
-      departmentName,
-    });
-  }
-
-  function latestTaskVersionForTemplate(templateId: string) {
-    return tasks.reduce((version, task) => {
-      if (task.workflowTemplateId !== templateId) {
-        return version;
-      }
-
-      return Math.max(version, task.workflowTemplateVersion || 1);
-    }, 1);
-  }
-
-  function updateRoleAssignmentRecords(
-    updater: (items: UserRoleAssignment[]) => UserRoleAssignment[],
-  ) {
-    const nextState = getUpdatedRoleAssignmentRecordState({
-      roleAssignments: effectiveRoleAssignments,
-      updater,
-    });
-    setRoleAssignments(nextState.roleAssignments);
-    void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ userRoleAssignments: nextState.roleAssignments }),
-    );
-  }
-
-  function updateBusinessDirectoryRecords(
-    updater: (items: BusinessUnit[]) => BusinessUnit[],
-  ) {
-    const nextState = getUpdatedBusinessDirectoryRecordState({
-      businessDirectory,
-      updater,
-    });
-    setBusinessDirectory(nextState.businessDirectory);
-    void persistWorkspaceSnapshot(
-      buildWorkspaceSnapshot({ businessDirectory: nextState.businessDirectory }),
-    );
   }
 
   function selectTemplateRecord(templateId: string) {

@@ -34,10 +34,6 @@ const adminViewSource = await readFile(
   new URL("../app/admin-view.tsx", import.meta.url),
   "utf8",
 );
-const uploadViewSource = await readFile(
-  new URL("../app/upload-view.tsx", import.meta.url),
-  "utf8",
-);
 const uploadDraftControlsSource = await readFile(
   new URL("../app/upload-draft-controls.tsx", import.meta.url),
   "utf8",
