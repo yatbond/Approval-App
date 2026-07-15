@@ -1743,3 +1743,14 @@ Verification:
 - Autoreview checked callback parity, legacy document-mode handling, process transition defaults, import direction, accessibility labels, and workflow-save ownership. No blocking issue or behavior drift was found.
 - Verification: focused handoff/UI tests passed 24/24; full `npm test` passed 672/672; `npx next typegen` and `npx tsc --noEmit` passed; `npm run lint -- --quiet` passed; `npm run build` passed with all 19 pages generated; `git diff --check` passed.
 - Live server verification: `/?tab=workflow` returned the expected `307 /login` auth boundary and `/login` returned HTTP 200 with the Chun Wo Approvals page. Authenticated editor interaction is verified after the Vercel deployment because the local browser has no localhost Supabase session.
+- Deployment verification: commit `3ac8d31` was pushed to `yatbond/Approval-App`, promoted from its ready preview deployment to Vercel production, and confirmed `READY` on the production and branch aliases. The deployed `/login` route returned HTTP 200.
+
+## Step 79 - Workflow Box Form and Document Boundary
+- Extracted the selected workflow box's reusable-form attachment, native form construction, document requirement, field editing, and sample recognition UI from `workflow-view.tsx` into `workflow-box-documents-editor.tsx`.
+- Moved transient sidebar state for the selected reusable form and new requirement defaults into the editor component. Workflow graph selection, template mutation, undo history, action messages, and persistence remain owned by `WorkflowView`.
+- Kept reusable forms pinned through the existing `attachLibraryFormToWorkflow` path and kept all requirement, field, and recognition updates routed through explicit parent callbacks.
+- Added accessible labels to document and field removal controls and updated source-level UI contracts to follow the new component ownership.
+- Reduced `workflow-view.tsx` from 2,113 to approximately 1,525 lines. The extracted editor is cohesive but remains sizeable; its field card and requirement card can be separated later if they begin changing independently.
+- Autoreview checked callback parity, ready-form filtering, pinned form versions, requirement reset behavior, native choice normalization, sample-recognition persistence, and save ownership. No blocking issue or behavior drift was found.
+- Verification: focused workflow/form/document tests passed; full `npm test` passed 673/673; `npx next typegen`, `npx tsc --noEmit`, and `npm run lint -- --quiet` passed; `npm run build` passed with all 19 pages generated; `git diff --check` passed.
+- Live server verification: the production build served locally on port 3019, `/?tab=workflow` returned the expected `307 /login` auth boundary, and `/login` returned HTTP 200 with the Chun Wo Approvals page.

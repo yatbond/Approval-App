@@ -180,6 +180,10 @@ test("sample recognition reloads saved sample values when fields are revisited",
 
 test("submit boxes expose a native form builder and request renderer", () => {
   const workflowSource = readFileSync("src/app/workflow-view.tsx", "utf8");
+  const boxDocumentsSource = readFileSync(
+    "src/app/workflow-box-documents-editor.tsx",
+    "utf8",
+  );
   const uploadSource = readFileSync("src/app/upload-view.tsx", "utf8");
   const nativeFormFieldSource = readFileSync(
     "src/app/native-form-field-input.tsx",
@@ -191,10 +195,11 @@ test("submit boxes expose a native form builder and request renderer", () => {
     "utf8",
   );
 
-  assert.equal(workflowSource.includes("Request form and documents"), true);
-  assert.equal(workflowSource.includes("Form section name"), true);
-  assert.equal(workflowSource.includes("Build the fields users complete"), true);
-  assert.equal(workflowSource.includes("nativeFormFieldTypeOptions"), true);
+  assert.equal(workflowSource.includes("WorkflowBoxDocumentsEditor"), true);
+  assert.equal(boxDocumentsSource.includes("Request form and documents"), true);
+  assert.equal(boxDocumentsSource.includes("Form section name"), true);
+  assert.equal(boxDocumentsSource.includes("Build the fields users complete"), true);
+  assert.equal(boxDocumentsSource.includes("nativeFormFieldTypeOptions"), true);
   assert.equal(uploadSource.includes("import { NativeFormFieldInput }"), true);
   assert.equal(uploadSource.includes("Complete required form fields"), true);
   assert.equal(nativeFormFieldSource.includes('field.type === "date"'), true);
@@ -210,10 +215,25 @@ test("submit boxes expose a native form builder and request renderer", () => {
     formLibrarySource.includes("Choices are managed in Microsoft Forms."),
     true,
   );
-  assert.equal(workflowSource.includes("WorkflowLibraryFormSummary"), true);
-  assert.equal(workflowSource.includes("Add separate requirement"), true);
+  assert.equal(boxDocumentsSource.includes("WorkflowLibraryFormSummary"), true);
+  assert.equal(boxDocumentsSource.includes("Add separate requirement"), true);
   assert.equal(librarySummarySource.includes("This workflow is pinned"), true);
   assert.equal(librarySummarySource.includes("Choices are managed in Microsoft Forms."), true);
   assert.equal(uploadSource.includes("Uploaded in Microsoft Forms"), true);
   assert.equal(uploadSource.includes("mapped values below remain available as a manual fallback"), false);
+});
+
+test("workflow document editor owns transient controls and delegates persistence", () => {
+  const workflowSource = readFileSync("src/app/workflow-view.tsx", "utf8");
+  const editorSource = readFileSync(
+    "src/app/workflow-box-documents-editor.tsx",
+    "utf8",
+  );
+
+  assert.equal(workflowSource.includes("onAddRequirement={addDocumentToSelectedBox}"), true);
+  assert.equal(workflowSource.includes("onUpdateRequirement={updateBoxDocumentRequirement}"), true);
+  assert.equal(editorSource.includes("const [requirementDraft"), true);
+  assert.equal(editorSource.includes("const [selectedLibraryFormId"), true);
+  assert.equal(editorSource.includes("onAttachLibraryForm(definition)"), true);
+  assert.equal(editorSource.includes("saveWorkflowTemplate"), false);
 });
