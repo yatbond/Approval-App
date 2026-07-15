@@ -1722,3 +1722,13 @@ Verification:
 - Verified `npx supabase migration list --linked` shows both new migrations on local and remote. Verified `upload_request_drafts.draft_kind` exists live with default `named`.
 - Verified live `workflow_template_versions` policies are now exactly: one INSERT policy, one SELECT policy, and one UPDATE policy. `supabase db advisors` could not complete because the CLI temp role hit Supabase auth failures and requested `SUPABASE_DB_PASSWORD`.
 - Updated `PRD/approval-workflow-platform-prd.md` with remote current autosave, consolidated template RLS, field-recognition mode selector, and the Supabase leaked-password-protection setup note.
+
+## Step 77 - Upload View Component Boundaries
+- Extracted native request-form field rendering from `upload-view.tsx` into `native-form-field-input.tsx`, keeping field-type behavior and attachment-extraction labels in one focused component.
+- Extracted the request workflow mini-map into `request-workflow-mini-map.tsx`, leaving workflow-map state construction and active-node orchestration in `UploadView`.
+- Extracted autosave and named-draft controls into `upload-draft-controls.tsx`, preserving the existing load, save-as-new, delete, and discard callbacks.
+- Reduced `upload-view.tsx` from 2,105 to 1,839 nonblank implementation lines without changing the request creation flow or user-facing behavior.
+- Updated source-level UI contracts so tests follow the new component ownership instead of requiring implementation details to remain in the orchestration file.
+- Autoreview checked prop parity, state ownership, callback behavior, import direction, and source-test coverage. No blocking issue or behavior drift was found; the remaining architectural risk is that `UploadView` is still large and should be decomposed further in later steps.
+- Verification: `npm test` passed 668/668; `npx next typegen` and `npx tsc --noEmit` passed; `npm run lint -- --quiet` passed; `npm run build` passed with all 19 pages generated; `git diff --check` passed.
+- Live browser verification: the local app loaded through its Supabase auth boundary at desktop and 390px mobile width with no browser console errors or horizontal overflow. Authenticated New Request verification is deferred to the Vercel deployment because the local browser has no localhost Supabase session.

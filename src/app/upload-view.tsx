@@ -1,17 +1,13 @@
 "use client";
 
 import {
-  ArrowRight,
-  ChevronDown,
   FileSpreadsheet,
   FileText,
   ExternalLink,
-  FolderOpen,
   Image as ImageIcon,
   Loader2,
   Plus,
   Send,
-  Save,
   ScanSearch,
   Trash2,
   X,
@@ -36,11 +32,6 @@ import {
   formatDocumentFormat,
 } from "@/lib/workflow-documents";
 import {
-  getNativeFormFieldPlaceholder,
-  parseNativeFormOptions,
-  toggleNativeFormCheckboxOption,
-} from "@/lib/workflow-native-form-state";
-import {
   addBoxToHighlightFieldGroup,
   createHighlightFieldGroup,
   createHighlightValueBox,
@@ -57,7 +48,6 @@ import {
 import type { ParsedWorkspaceFilePayload } from "@/lib/workspace-file-api";
 import {
   shouldRestoreUploadRequestDraftHighlightState,
-  getUploadWorkInProgressItems,
   type SavedUploadRequestDraft,
   type UploadRequestDraftStatus,
 } from "@/lib/upload-request-draft-state";
@@ -84,6 +74,9 @@ import type {
   WorkflowTemplate,
 } from "@/lib/types";
 import { InfoTip } from "./ui-hint";
+import { NativeFormFieldInput } from "./native-form-field-input";
+import { RequestWorkflowMiniMap } from "./request-workflow-mini-map";
+import { UploadDraftControls } from "./upload-draft-controls";
 
 type UploadRequestDraftRowView = {
   id: string;
@@ -98,266 +91,6 @@ type ParseFileOptions = {
   mergeIntoCurrentRequest?: boolean;
   skipExtraction?: boolean;
 };
-
-type RequestWorkflowMapState = ReturnType<typeof buildRequestWorkflowMapState>;
-
-function NativeFormFieldInput({
-  field,
-  value,
-  onChange,
-  onFocus,
-}: {
-  field: WorkflowField;
-  value: string;
-  onChange: (value: string) => void;
-  onFocus: () => void;
-}) {
-  const fieldId = `native-form-${field.name}`;
-  const options = (field.options || [])
-    .map((option) => option.trim())
-    .filter(Boolean);
-  const isWide =
-    field.type === "long_text" ||
-    field.type === "radio" ||
-    field.type === "checkbox";
-  const heading = (
-    <span className="mb-1 flex min-w-0 flex-wrap items-center gap-2 text-xs font-medium text-neutral-700 dark:text-neutral-200">
-      <span className="break-words">{field.label}</span>
-      {field.required && (
-        <span className="rounded-sm border border-[#f7941d]/35 bg-[#fff4e6] px-1.5 py-0.5 text-[10px] font-semibold text-[#713d00] dark:bg-[#f7941d]/15 dark:text-[#ffd29a]">
-          Required
-        </span>
-      )}
-      {field.inputSource === "attachment_extraction" && (
-        <span className="rounded-sm border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-800 dark:border-violet-500/35 dark:bg-violet-500/10 dark:text-violet-200">
-          AI from attachment
-        </span>
-      )}
-    </span>
-  );
-  const helpText = field.instructions?.trim() ? (
-    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-      {field.instructions}
-    </p>
-  ) : null;
-  const wrapperClass = isWide ? "block md:col-span-2" : "block";
-  const inputClass =
-    "min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3 text-sm text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-[#f7941d] focus:ring-2 focus:ring-[#f7941d]/15 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-600";
-
-  if (field.type === "checkbox") {
-    const selectedOptions = parseNativeFormOptions(value);
-    return (
-      <fieldset className={wrapperClass} onFocus={onFocus}>
-        <legend>{heading}</legend>
-        <div className="grid gap-2 rounded-md border border-[#d8d8d8] bg-white p-3 sm:grid-cols-2 dark:border-neutral-700 dark:bg-neutral-950">
-          {options.map((option, optionIndex) => (
-            <label
-              key={`${option}-${optionIndex}`}
-              htmlFor={`${fieldId}-${optionIndex}`}
-              className="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200"
-            >
-              <input
-                id={`${fieldId}-${optionIndex}`}
-                type="checkbox"
-                checked={selectedOptions.includes(option)}
-                onChange={(event) =>
-                  onChange(
-                    toggleNativeFormCheckboxOption(
-                      value,
-                      option,
-                      event.target.checked,
-                    ),
-                  )
-                }
-                className="accent-[#f7941d]"
-              />
-              <span className="break-words">{option}</span>
-            </label>
-          ))}
-          {!options.length && (
-            <p className="text-xs text-rose-600 dark:text-rose-300">
-              No choices configured.
-            </p>
-          )}
-        </div>
-        {helpText}
-      </fieldset>
-    );
-  }
-
-  if (field.type === "radio") {
-    return (
-      <fieldset className={wrapperClass} onFocus={onFocus}>
-        <legend>{heading}</legend>
-        <div className="grid gap-2 rounded-md border border-[#d8d8d8] bg-white p-3 sm:grid-cols-2 dark:border-neutral-700 dark:bg-neutral-950">
-          {options.map((option, optionIndex) => (
-            <label
-              key={`${option}-${optionIndex}`}
-              className="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200"
-            >
-              <input
-                type="radio"
-                name={fieldId}
-                value={option}
-                checked={value === option}
-                onChange={() => onChange(option)}
-                className="accent-[#f7941d]"
-              />
-              <span className="break-words">{option}</span>
-            </label>
-          ))}
-          {!options.length && (
-            <p className="text-xs text-rose-600 dark:text-rose-300">
-              No choices configured.
-            </p>
-          )}
-        </div>
-        {helpText}
-      </fieldset>
-    );
-  }
-
-  if (field.type === "select") {
-    return (
-      <label className={wrapperClass} htmlFor={fieldId}>
-        {heading}
-        <select
-          id={fieldId}
-          value={value}
-          onFocus={onFocus}
-          onChange={(event) => onChange(event.target.value)}
-          className={inputClass}
-        >
-          <option value="">
-            {getNativeFormFieldPlaceholder(field)}
-          </option>
-          {options.map((option, optionIndex) => (
-            <option key={`${option}-${optionIndex}`} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-        {helpText}
-      </label>
-    );
-  }
-
-  if (field.type === "long_text") {
-    return (
-      <label className={wrapperClass} htmlFor={fieldId}>
-        {heading}
-        <textarea
-          id={fieldId}
-          value={value}
-          onFocus={onFocus}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={getNativeFormFieldPlaceholder(field)}
-          rows={4}
-          className={`${inputClass} py-2`}
-        />
-        {helpText}
-      </label>
-    );
-  }
-
-  const inputType =
-    field.type === "date"
-      ? "date"
-      : field.type === "email"
-        ? "email"
-        : field.type === "number" || field.type === "currency"
-          ? "number"
-          : "text";
-
-  return (
-    <label className={wrapperClass} htmlFor={fieldId}>
-      {heading}
-      <input
-        id={fieldId}
-        type={inputType}
-        step={field.type === "currency" ? "0.01" : undefined}
-        inputMode={
-          field.type === "number" || field.type === "currency"
-            ? "decimal"
-            : undefined
-        }
-        value={value}
-        onFocus={onFocus}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={getNativeFormFieldPlaceholder(field)}
-        className={inputClass}
-      />
-      {helpText}
-    </label>
-  );
-}
-
-function RequestWorkflowMiniMap({
-  activeNodeId,
-  map,
-  onSelectNode,
-}: {
-  activeNodeId: string;
-  map: RequestWorkflowMapState;
-  onSelectNode: (nodeId: string) => void;
-}) {
-  const activeNode = map.stages
-    .flatMap((stage) => stage.nodes)
-    .find((node) => node.id === activeNodeId);
-
-  return (
-    <section className="sticky top-2 z-20 min-w-0 rounded-md border border-[#e6e6e6] bg-white/95 p-3 shadow-sm backdrop-blur xl:col-span-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold">Workflow map</h2>
-            <InfoTip label="The highlighted box changes as you enter participant, document, and request information." />
-          </div>
-          <p className="mt-1 text-xs text-neutral-500">
-            Current box: <span className="font-medium text-[#713d00]">{activeNode?.label || "Request"}</span>
-          </p>
-        </div>
-        <span className="rounded-md border border-[#f7941d]/40 bg-[#fff4e6] px-2 py-1 text-[11px] font-semibold text-[#713d00]">
-          You are here
-        </span>
-      </div>
-      <div className="mt-3 overflow-x-auto pb-1">
-        <div className="flex min-w-max items-center gap-2">
-          {map.stages.map((stage, stageIndex) => (
-            <div key={stage.stageNumber} className="flex items-center gap-2">
-              {stageIndex > 0 && <ArrowRight size={16} className="shrink-0 text-[#8a8a8a]" />}
-              <div className="flex max-w-[14rem] flex-col gap-1.5">
-                {stage.nodes.map((node) => {
-                  const active = node.id === activeNodeId;
-                  return (
-                    <button
-                      key={node.id}
-                      type="button"
-                      title={`Show ${node.label}`}
-                      onClick={() => onSelectNode(node.id)}
-                      className={`min-h-11 min-w-36 rounded-md border px-3 py-2 text-left transition ${
-                        active
-                          ? "border-[#f7941d] bg-[#fff4e6] text-[#231f20] shadow-sm"
-                          : "border-[#e6e6e6] bg-white text-[#666162] hover:border-[#f7941d]/60"
-                      }`}
-                    >
-                      <span className="block text-[10px] font-semibold uppercase text-[#8a8a8a]">
-                        {node.pathLabel} · {node.kind}
-                      </span>
-                      <span className="mt-0.5 block max-w-48 break-words text-xs font-semibold">
-                        {node.label}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
 
 export function UploadView({
   activeUserEmail,
@@ -2092,7 +1825,6 @@ export function UploadView({
     </div>
   );
 }
-
 function isUploadedFormAttachment(
   attachment: ApprovalAttachment,
   document: WorkflowDocumentRequirement,
@@ -2103,192 +1835,5 @@ function isUploadedFormAttachment(
     attachment.documentId === document.id &&
     (documentType === field.name.trim().toLowerCase() ||
       documentType === field.label.trim().toLowerCase())
-  );
-}
-
-function UploadDraftControls({
-  uploadDraftStatus,
-  savedUploadDrafts,
-  selectedUploadDraftId,
-  uploadDraftTitle,
-  setUploadDraftTitle,
-  uploadDraftMessage,
-  onSaveRequestDraft,
-  onLoadRequestDraft,
-  onDeleteRequestDraft,
-  onClearRequestDraft,
-}: {
-  uploadDraftStatus: UploadRequestDraftStatus;
-  savedUploadDrafts: SavedUploadRequestDraft[];
-  selectedUploadDraftId: string;
-  uploadDraftTitle: string;
-  setUploadDraftTitle: (title: string) => void;
-  uploadDraftMessage: string;
-  onSaveRequestDraft: (options?: { asNew?: boolean }) => void;
-  onLoadRequestDraft: (draft: SavedUploadRequestDraft) => void;
-  onDeleteRequestDraft: (draftId: string) => void;
-  onClearRequestDraft: () => void;
-}) {
-  const workInProgressItems = getUploadWorkInProgressItems({
-    activeDraftId: selectedUploadDraftId,
-    currentDraftStatus: uploadDraftStatus,
-    savedDrafts: savedUploadDrafts,
-  });
-  const draftMenuRef = useRef<HTMLDetailsElement>(null);
-  const autosaveDetail = uploadDraftStatus.label.replace(/^Autosaved\s*/, "");
-
-  return (
-    <section className="relative min-w-0 rounded-md border border-[#e6e6e6] bg-white p-3 shadow-sm xl:col-span-2">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-neutral-200">Draft controls</h2>
-            <InfoTip label="This request is saved automatically. Open the draft list to switch drafts, save a named copy, or discard the current work." />
-          </div>
-          <p className="mt-1 break-words text-xs text-neutral-500">
-            {uploadDraftStatus.hasDraft
-              ? `Saved automatically - ${autosaveDetail}`
-              : "Your progress will be saved automatically after you add information."}
-          </p>
-        </div>
-
-        <details ref={draftMenuRef} className="relative w-full sm:w-auto">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-[#d2d2d2] bg-white px-3 text-sm font-medium text-neutral-200 transition hover:border-[#f7941d] hover:bg-[#fff4e5] sm:min-w-32">
-            Drafts ({workInProgressItems.length})
-            <ChevronDown size={16} />
-          </summary>
-          <div className="absolute right-0 z-40 mt-2 w-[min(30rem,calc(100vw-2rem))] rounded-md border border-[#d2d2d2] bg-white p-3 shadow-xl">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-neutral-200">Available drafts</h3>
-              <span className="text-xs text-neutral-500">
-                {workInProgressItems.length} total
-              </span>
-            </div>
-
-            <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
-              {workInProgressItems.length === 0 ? (
-                <p className="rounded-md border border-dashed border-[#e6e6e6] bg-[#f7f7f5] px-3 py-2 text-sm text-neutral-500">
-                  No draft content yet.
-                </p>
-              ) : null}
-
-              {workInProgressItems.some((item) => item.type === "current") ? (
-                <div className="rounded-md border border-[#f7941d]/50 bg-[#fff4e5] p-3 text-sm">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="font-medium text-neutral-100">Current work</p>
-                      <p className="mt-1 break-words text-xs text-neutral-500">
-                        {uploadDraftStatus.label}
-                      </p>
-                    </div>
-                    <span className="rounded-md border border-[#f7941d]/40 bg-white px-2 py-1 text-xs font-medium text-[#713d00]">
-                      Currently open
-                    </span>
-                  </div>
-                </div>
-              ) : null}
-
-              {savedUploadDrafts.map((draft) => {
-                const summary = workInProgressItems.find((item) => item.id === draft.id);
-                const isOpen = draft.id === selectedUploadDraftId;
-                return (
-                  <div
-                    key={draft.id}
-                    className={`rounded-md border p-3 text-sm ${
-                      isOpen
-                        ? "border-[#f7941d]/50 bg-[#fff4e5]"
-                        : "border-[#e6e6e6] bg-[#f7f7f5]"
-                    }`}
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="break-words font-medium text-neutral-100">
-                            {draft.title}
-                          </p>
-                          <span className="rounded-md border border-[#d2d2d2] bg-white px-2 py-0.5 text-[11px] text-neutral-500">
-                            Saved draft
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs text-neutral-500">{summary?.detail}</p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {isOpen ? (
-                          <span className="rounded-md border border-[#f7941d]/40 bg-white px-2 py-1 text-xs font-medium text-[#713d00]">
-                            Currently open
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            title={`Open saved draft ${draft.title}`}
-                            aria-label={`Open saved draft ${draft.title}`}
-                            onClick={() => {
-                              onLoadRequestDraft(draft);
-                              draftMenuRef.current?.removeAttribute("open");
-                            }}
-                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-100 transition hover:bg-sky-500/20"
-                          >
-                            <FolderOpen size={15} />
-                            Open
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          title={`Delete saved draft ${draft.title}`}
-                          aria-label={`Delete saved draft ${draft.title}`}
-                          onClick={() => onDeleteRequestDraft(draft.id)}
-                          className="inline-flex size-10 items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 text-rose-100 transition hover:bg-rose-500/20"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {uploadDraftStatus.hasDraft ? (
-              <div className="mt-3 border-t border-[#e6e6e6] pt-3">
-                <h3 className="text-sm font-semibold text-neutral-200">Save as new draft</h3>
-                <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
-                  <label className="block">
-                    <span className="sr-only">New draft name</span>
-                    <input
-                      value={uploadDraftTitle}
-                      onChange={(event) => setUploadDraftTitle(event.target.value)}
-                      placeholder="Draft name"
-                      className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none transition focus:border-emerald-400/60"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => onSaveRequestDraft({ asNew: true })}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/20"
-                  >
-                    <Save size={15} />
-                    Save as new
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={onClearRequestDraft}
-                  className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20"
-                >
-                  <X size={15} />
-                  Discard current work
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </details>
-      </div>
-
-      {uploadDraftMessage ? (
-        <p className="mt-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 py-2 text-xs text-neutral-300">
-          {uploadDraftMessage}
-        </p>
-      ) : null}
-    </section>
   );
 }

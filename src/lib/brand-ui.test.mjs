@@ -38,6 +38,10 @@ const uploadViewSource = await readFile(
   new URL("../app/upload-view.tsx", import.meta.url),
   "utf8",
 );
+const uploadDraftControlsSource = await readFile(
+  new URL("../app/upload-draft-controls.tsx", import.meta.url),
+  "utf8",
+);
 const workflowViewSource = await readFile(
   new URL("../app/workflow-view.tsx", import.meta.url),
   "utf8",
@@ -107,7 +111,10 @@ test("labels editable admin fields and saved-draft actions", () => {
   assert.match(adminViewSource, /aria-label="Business name"/);
   assert.match(adminViewSource, /aria-label=\{`Department name \$\{index \+ 1\}`\}/);
   assert.match(adminViewSource, /aria-label="Test email recipient"/);
-  assert.match(uploadViewSource, /aria-label=\{`Open saved draft \$\{draft\.title\}`\}/);
+  assert.match(
+    uploadDraftControlsSource,
+    /aria-label=\{`Open saved draft \$\{draft\.title\}`\}/,
+  );
   assert.match(shellSource, /size-10 shrink-0 items-center/);
 });
 

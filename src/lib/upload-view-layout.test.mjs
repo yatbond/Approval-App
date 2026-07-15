@@ -25,10 +25,31 @@ test("document previews start unmodified at one hundred percent", () => {
 });
 
 test("new requests show a contextual workflow map", () => {
-  const source = readFileSync(new URL("../app/upload-view.tsx", import.meta.url), "utf8");
+  const source = readFileSync(
+    new URL("../app/request-workflow-mini-map.tsx", import.meta.url),
+    "utf8",
+  );
+  const uploadSource = readFileSync(
+    new URL("../app/upload-view.tsx", import.meta.url),
+    "utf8",
+  );
 
   assert.match(source, /Workflow map/);
   assert.match(source, /Current box:/);
-  assert.match(source, /getWorkflowMapNodeIdForParticipantField\(field\.nodeId\)/);
-  assert.match(source, /buildRequestWorkflowMapState/);
+  assert.match(
+    uploadSource,
+    /getWorkflowMapNodeIdForParticipantField\(field\.nodeId\)/,
+  );
+  assert.match(uploadSource, /buildRequestWorkflowMapState/);
+});
+
+test("upload orchestration delegates focused form, map, and draft controls", () => {
+  const source = readFileSync(new URL("../app/upload-view.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /import \{ NativeFormFieldInput \}/);
+  assert.match(source, /import \{ RequestWorkflowMiniMap \}/);
+  assert.match(source, /import \{ UploadDraftControls \}/);
+  assert.doesNotMatch(source, /function NativeFormFieldInput/);
+  assert.doesNotMatch(source, /function RequestWorkflowMiniMap/);
+  assert.doesNotMatch(source, /function UploadDraftControls/);
 });
