@@ -182,8 +182,12 @@ test("header notifications open a user-actionable menu", () => {
 });
 
 test("keeps intermediate-width panels readable", async () => {
-  const taskViewsSource = await readFile(
-    new URL("../app/task-views.tsx", import.meta.url),
+  const queueViewSource = await readFile(
+    new URL("../app/queue-view.tsx", import.meta.url),
+    "utf8",
+  );
+  const taskDetailSource = await readFile(
+    new URL("../app/task-detail-panels.tsx", import.meta.url),
     "utf8",
   );
   const uploadViewSource = await readFile(
@@ -195,9 +199,9 @@ test("keeps intermediate-width panels readable", async () => {
     "utf8",
   );
 
-  assert.match(taskViewsSource, /minmax\(min\(100%,24rem\),1fr\)/);
-  assert.match(taskViewsSource, /2xl:grid-cols-\[360px_minmax\(0,1fr\)_320px\]/);
-  assert.match(taskViewsSource, /\[overflow-wrap:anywhere\]/);
+  assert.match(taskDetailSource, /minmax\(min\(100%,24rem\),1fr\)/);
+  assert.match(queueViewSource, /2xl:grid-cols-\[360px_minmax\(0,1fr\)_320px\]/);
+  assert.match(taskDetailSource, /\[overflow-wrap:anywhere\]/);
   assert.match(uploadViewSource, /minmax\(min\(100%,10rem\),1fr\)/);
   assert.match(runtimePanelSource, /validation-warning/);
   assert.match(runtimePanelSource, /validation-error/);
