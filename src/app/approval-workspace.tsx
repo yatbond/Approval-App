@@ -56,14 +56,8 @@ import type {
   HighlightFieldGroup,
 } from "@/lib/upload-view-state";
 import {
-  buildEmailOutboxEntries,
-  mergeEmailOutboxEntries,
-  type EmailOutboxEntry,
-} from "@/lib/email-outbox-state";
-import {
   buildTaskNotifications,
   mergeTaskNotifications,
-  type TaskNotification,
 } from "@/lib/workflow-system";
 import { buildCollaborationNotifications } from "@/lib/collaboration-notification-state";
 import {
@@ -71,6 +65,7 @@ import {
   getTaskSharedFulfillmentDecisionState,
 } from "@/lib/shared-fulfillment-state";
 import { useApprovalWorkspaceState } from "@/app/use-approval-workspace-state";
+import { useWorkspaceEmailDelivery } from "@/app/use-workspace-email-delivery";
 import {
   QueueView,
   TrackingView,
@@ -96,7 +91,6 @@ import {
   getApprovalActionConfirmation,
   getDraftAttachmentRemoveConfirmation,
   getDraftDeleteConfirmation,
-  getLiveEmailConfirmation,
   getSignOutConfirmation,
   getWorkflowTemplateArchiveConfirmation,
   type ConfirmationRequest,
@@ -133,10 +127,9 @@ import {
   getWorkspaceRunnerTaskActionState,
 } from "@/lib/workspace-task-action-state";
 import {
-  buildWorkflowTestNotification,
   createWorkflowTestRequestState,
-  isWorkflowTestTask,
 } from "@/lib/workflow-test-request-state";
+import { persistWorkspaceCollaborationTransition } from "@/lib/workspace-collaboration-api";
 import { deactivateRemoteWorkspaceAdminRecord } from "@/lib/workspace-sync";
 import {
   archiveFormLibraryDefinition,
@@ -287,8 +280,6 @@ function ApprovalWorkspaceBody({
   const [actionError, setActionError] = useState("");
   const [actionSubmissionTaskId, setActionSubmissionTaskId] = useState("");
   const actionSubmissionTaskIdRef = useRef("");
-  const [emailDeliveryMessage, setEmailDeliveryMessage] = useState("");
-  const [emailOutboxEntries, setEmailOutboxEntries] = useState<EmailOutboxEntry[]>([]);
   const [adminRecordError, setAdminRecordError] = useState("");
   const [confirmationRequest, setConfirmationRequest] =
     useState<ConfirmationRequest | null>(null);
@@ -330,6 +321,12 @@ function ApprovalWorkspaceBody({
     setConfirmationRequest(null);
     resolver?.(confirmed);
   }, []);
+  const {
+    emailDeliveryMessage,
+    emailOutboxEntries,
+    sendTestEmail,
+    sendWorkflowEmailNotifications,
+  } = useWorkspaceEmailDelivery({ requestConfirmation });
   const uploadDraftStorageReady = useRef(false);
   const lastRemoteUploadAutosavePayloadRef = useRef("");
   const selectedTemplate = useMemo(
@@ -1223,7 +1220,7 @@ function ApprovalWorkspaceBody({
     }
 
     try {
-      await persistCollaborationTransition({
+      await persistWorkspaceCollaborationTransition({
         task: result.task,
         notifications: [],
       });
@@ -1316,7 +1313,7 @@ function ApprovalWorkspaceBody({
           collaborationRequestId,
         },
       });
-      await persistCollaborationTransition({
+      await persistWorkspaceCollaborationTransition({
         task: result.task,
         notifications: collaborationNotifications,
       });
@@ -1389,7 +1386,7 @@ function ApprovalWorkspaceBody({
     ]);
 
     try {
-      await persistCollaborationTransition({
+      await persistWorkspaceCollaborationTransition({
         task: result.task,
         notifications,
       });
@@ -1488,7 +1485,7 @@ function ApprovalWorkspaceBody({
           : []),
       ]);
 
-      await persistCollaborationTransition({
+      await persistWorkspaceCollaborationTransition({
         task: result.task,
         notifications,
       });
@@ -1983,134 +1980,6 @@ function ApprovalWorkspaceBody({
     );
   }
 
-  async function persistCollaborationTransition({
-    task,
-    notifications,
-  }: {
-    task: ApprovalTask;
-    notifications: TaskNotification[];
-  }) {
-    const response = await fetch("/api/workflow-collaboration", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ task, notifications }),
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(result.reason || "Collaboration persistence failed.");
-    }
-  }
-
-  async function sendWorkflowEmailNotifications(
-    task: ApprovalTask,
-    notificationsOverride?: TaskNotification[],
-  ) {
-    const effectiveNotifications =
-      notificationsOverride ||
-      (isWorkflowTestTask(task) ? [buildWorkflowTestNotification(task)] : undefined);
-    const taskNotifications = effectiveNotifications || buildTaskNotifications([task]);
-    try {
-      const response = await fetch("/api/email/task-notifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          effectiveNotifications
-            ? { notifications: effectiveNotifications }
-            : { task },
-        ),
-      });
-      const result = await response.json();
-      setEmailDeliveryMessage(formatEmailDeliveryMessage(result));
-      setEmailOutboxEntries((entries) =>
-        mergeEmailOutboxEntries(
-          entries,
-          buildEmailOutboxEntries({
-            notifications: taskNotifications,
-            result,
-          }),
-        ),
-      );
-    } catch (error) {
-      setEmailOutboxEntries((entries) =>
-        mergeEmailOutboxEntries(
-          entries,
-          buildEmailOutboxEntries({
-            notifications: taskNotifications,
-            result: {
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Email delivery failed.",
-            },
-          }),
-        ),
-      );
-      setEmailDeliveryMessage(
-        error instanceof Error
-          ? `Email delivery failed: ${error.message}`
-          : "Email delivery failed.",
-      );
-    }
-  }
-
-  async function sendTestEmail(to: string) {
-    const confirmed = await requestConfirmation(
-      getLiveEmailConfirmation({ recipientEmail: to }),
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    const testNotification = {
-      id: `test-email-${Date.now()}`,
-      title: "Test email",
-      body: "This is a live Approval App email test.",
-      time: new Date().toISOString(),
-      unread: true,
-      requestId: "TEST",
-      recipientEmail: to,
-      kind: "fyi" as const,
-    };
-    try {
-      const response = await fetch("/api/email/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to }),
-      });
-      const result = await response.json();
-      setEmailDeliveryMessage(formatEmailDeliveryMessage(result));
-      setEmailOutboxEntries((entries) =>
-        mergeEmailOutboxEntries(
-          entries,
-          buildEmailOutboxEntries({
-            notifications: [testNotification],
-            result,
-          }),
-        ),
-      );
-    } catch (error) {
-      setEmailOutboxEntries((entries) =>
-        mergeEmailOutboxEntries(
-          entries,
-          buildEmailOutboxEntries({
-            notifications: [testNotification],
-            result: {
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Email test failed.",
-            },
-          }),
-        ),
-      );
-      setEmailDeliveryMessage(
-        error instanceof Error
-          ? `Email test failed: ${error.message}`
-          : "Email test failed.",
-      );
-    }
-  }
-
   async function confirmSignOut() {
     const confirmed = await requestConfirmation(getSignOutConfirmation());
     if (confirmed) {
@@ -2578,28 +2447,4 @@ function ApprovalWorkspaceBody({
     />
     </>
   );
-}
-
-function formatEmailDeliveryMessage(result: {
-  mode?: string;
-  attempted?: number;
-  sent?: number;
-  skipped?: number;
-  failures?: Array<{ message?: string }>;
-  error?: string;
-}) {
-  if (result.error) {
-    return `Email failed: ${result.error}`;
-  }
-
-  const attempted = result.attempted || 0;
-  const sent = result.sent || 0;
-  const skipped = result.skipped || 0;
-  const failureCount = result.failures?.length || 0;
-  const mode = result.mode || "unknown";
-  const suffix = failureCount
-    ? ` ${failureCount} failed: ${result.failures?.[0]?.message || "Unknown error"}`
-    : "";
-
-  return `Email ${mode}: ${sent} sent, ${skipped} skipped, ${attempted} attempted.${suffix}`;
 }

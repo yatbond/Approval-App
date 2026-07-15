@@ -1754,3 +1754,14 @@ Verification:
 - Autoreview checked callback parity, ready-form filtering, pinned form versions, requirement reset behavior, native choice normalization, sample-recognition persistence, and save ownership. No blocking issue or behavior drift was found.
 - Verification: focused workflow/form/document tests passed; full `npm test` passed 673/673; `npx next typegen`, `npx tsc --noEmit`, and `npm run lint -- --quiet` passed; `npm run build` passed with all 19 pages generated; `git diff --check` passed.
 - Live server verification: the production build served locally on port 3019, `/?tab=workflow` returned the expected `307 /login` auth boundary, and `/login` returned HTTP 200 with the Chun Wo Approvals page.
+- Deployment verification: commit `aabaaf4` was pushed to `yatbond/Approval-App`, confirmed in the ready Vercel preview, promoted to production, and verified as the exact production SHA. The production login route returned HTTP 200.
+
+## Step 80 - Workspace Delivery and Collaboration Boundary
+- Extracted workflow and test-email delivery state from `approval-workspace.tsx` into `use-workspace-email-delivery.ts`. The hook now owns delivery messages, outbox entries, notification endpoint calls, test-email confirmation, and provider/network failure recording.
+- Moved email result formatting and error normalization into `workspace-email-delivery-state.ts` with focused tests for counts, provider failures, request errors, and unknown exceptions.
+- Moved collaboration transition persistence into `workspace-collaboration-api.ts` with tests for request payloads, server failure reasons, and invalid JSON fallback behavior.
+- Preserved all existing action callers, recipient generation, workflow-test notification behavior, confirmation policy, and Admin outbox props while removing direct delivery endpoint knowledge from the workspace orchestrator.
+- Reduced `approval-workspace.tsx` from approximately 2,605 to 2,319 lines. Upload draft and task collaboration orchestration remain the largest responsibilities and should be separated in later steps.
+- Autoreview checked notification source parity, test-email confirmation, outbox success/failure entries, stable collaboration errors, endpoint ownership, and unchanged caller behavior. No blocking issue or behavior drift was found.
+- Verification: focused delivery/outbox/collaboration tests passed 13/13; full `npm test` passed 681/681; `npx next typegen`, `npx tsc --noEmit`, and `npm run lint -- --quiet` passed; `npm run build` passed with all 19 pages generated; `git diff --check` passed.
+- Live server verification: the production build served locally on port 3020, `/?tab=admin` returned the expected `307 /login` auth boundary, and `/login` returned HTTP 200 with the Chun Wo Approvals page.
