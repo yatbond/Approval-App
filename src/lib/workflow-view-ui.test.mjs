@@ -82,7 +82,7 @@ test("workflow builder does not expose end as a user-created box", () => {
 });
 
 test("handoff document visibility is limited to all selected or none", () => {
-  const source = readFileSync("src/app/workflow-view.tsx", "utf8");
+  const source = readFileSync("src/app/workflow-handoff-editor.tsx", "utf8");
 
   assert.equal(source.includes('label: "All documents"'), true);
   assert.equal(source.includes('label: "Selected documents"'), true);

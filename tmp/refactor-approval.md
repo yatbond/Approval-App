@@ -1731,4 +1731,15 @@ Verification:
 - Updated source-level UI contracts so tests follow the new component ownership instead of requiring implementation details to remain in the orchestration file.
 - Autoreview checked prop parity, state ownership, callback behavior, import direction, and source-test coverage. No blocking issue or behavior drift was found; the remaining architectural risk is that `UploadView` is still large and should be decomposed further in later steps.
 - Verification: `npm test` passed 668/668; `npx next typegen` and `npx tsc --noEmit` passed; `npm run lint -- --quiet` passed; `npm run build` passed with all 19 pages generated; `git diff --check` passed.
-- Live browser verification: the local app loaded through its Supabase auth boundary at desktop and 390px mobile width with no browser console errors or horizontal overflow. Authenticated New Request verification is deferred to the Vercel deployment because the local browser has no localhost Supabase session.
+- Live browser verification: the local app loaded through its Supabase auth boundary at desktop and 390px mobile width with no browser console errors or horizontal overflow. Commit `838b06e` was pushed to `yatbond/Approval-App`, the Vercel deployment was promoted to production, and the authenticated New Request page verified the workflow map, draft-menu interaction, active-box selection, desktop/mobile rendering, and zero browser console errors.
+
+## Step 78 - Workflow Information-Sharing Boundary
+- Extracted the advanced values, document visibility, layout, and handoff-check editor from `workflow-view.tsx` into `workflow-handoff-editor.tsx`.
+- Kept workflow selection, history, and persistence in `WorkflowView`; the extracted editor receives the selected box plus explicit update callbacks and does not save workflows directly.
+- Moved handoff check ID generation and comparison/calculation mode transitions into `workflow-handoff-process-state.ts` so this behavior is independent from React and directly testable.
+- Added four regression tests covering unique check IDs, comparison-to-calculation defaults, calculation-to-comparison defaults, and same-mode field/operator updates.
+- Preserved legacy `required_for_node` document visibility by presenting it as selected documents while retaining its current-node document IDs until the user changes the selection.
+- Reduced `workflow-view.tsx` from 2,538 to 2,113 lines. The remaining file still combines canvas orchestration and box-document editing, so further decomposition remains warranted.
+- Autoreview checked callback parity, legacy document-mode handling, process transition defaults, import direction, accessibility labels, and workflow-save ownership. No blocking issue or behavior drift was found.
+- Verification: focused handoff/UI tests passed 24/24; full `npm test` passed 672/672; `npx next typegen` and `npx tsc --noEmit` passed; `npm run lint -- --quiet` passed; `npm run build` passed with all 19 pages generated; `git diff --check` passed.
+- Live server verification: `/?tab=workflow` returned the expected `307 /login` auth boundary and `/login` returned HTTP 200 with the Chun Wo Approvals page. Authenticated editor interaction is verified after the Vercel deployment because the local browser has no localhost Supabase session.
