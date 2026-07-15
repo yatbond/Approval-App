@@ -18,6 +18,10 @@ const uploadDraftsViewSource = readFileSync(
   new URL("../app/upload-drafts-view.tsx", import.meta.url),
   "utf8",
 );
+const uploadDraftStateSource = readFileSync(
+  new URL("../app/use-workspace-upload-drafts.ts", import.meta.url),
+  "utf8",
+);
 
 test("resumed drafts keep Drafts active and use clear draft controls", () => {
   assert.match(workspaceSource, /activeTab=\{navigationActiveTab\}/);
@@ -36,20 +40,20 @@ test("resumed drafts keep Drafts active and use clear draft controls", () => {
       uploadViewSource.indexOf(">Current request information<"),
   );
   assert.match(
-    workspaceSource,
-    /options\?\.asNew \? crypto\.randomUUID\(\) : selectedUploadDraftId/,
+    uploadDraftStateSource,
+    /options\?\.asNew\s*\?\s*crypto\.randomUUID\(\)\s*:\s*selectedUploadDraftId/,
   );
   assert.doesNotMatch(uploadDraftControlsSource, />\s*Work\s*</);
   assert.doesNotMatch(uploadDraftControlsSource, />\s*Draft progress\s*</);
 });
 
 test("draft badge and Drafts page use the same visible items", () => {
-  assert.match(workspaceSource, /const uploadDraftResumeItems = useMemo/);
+  assert.match(uploadDraftStateSource, /const uploadDraftResumeItems = useMemo/);
   assert.match(workspaceSource, /draftItemCount: uploadDraftResumeItems\.length/);
   assert.match(workspaceSource, /resumeItems=\{uploadDraftResumeItems\}/);
   assert.match(uploadDraftsViewSource, /resumeItems: UploadDraftResumeItem\[\]/);
   assert.doesNotMatch(
-    workspaceSource,
+    uploadDraftStateSource,
     /\(uploadDraftStatus\.hasDraft \? 1 : 0\) \+ savedUploadDrafts\.length/,
   );
 });

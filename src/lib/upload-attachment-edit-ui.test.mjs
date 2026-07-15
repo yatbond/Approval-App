@@ -10,6 +10,10 @@ const workspaceSource = readFileSync(
   new URL("../app/approval-workspace.tsx", import.meta.url),
   "utf8",
 );
+const uploadDraftStateSource = readFileSync(
+  new URL("../app/use-workspace-upload-drafts.ts", import.meta.url),
+  "utf8",
+);
 const attachmentRouteSource = readFileSync(
   new URL("../app/api/attachments/file/route.ts", import.meta.url),
   "utf8",
@@ -22,8 +26,8 @@ test("saved draft files expose extraction editing and confirmed removal", () => 
   assert.match(uploadViewSource, /currentRequestInformationRef\.current\?\.scrollIntoView/);
   assert.match(uploadViewSource, /Opening saved file/);
   assert.match(workspaceSource, /openUploadAttachmentForEditing/);
-  assert.match(workspaceSource, /getDraftAttachmentRemoveConfirmation/);
-  assert.match(workspaceSource, /setUploadRequestDraftRows\(remainingRows\)/);
+  assert.match(uploadDraftStateSource, /getDraftAttachmentRemoveConfirmation/);
+  assert.match(uploadDraftStateSource, /setUploadRequestDraftRows\(remainingRows\)/);
 });
 
 test("stored draft files are retrieved and deleted through an owner-scoped route", () => {
