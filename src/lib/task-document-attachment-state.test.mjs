@@ -79,9 +79,11 @@ test("attaches an uploaded document to the matching task with audit details", ()
     publicUrl: "https://example.com/invoice.pdf",
     idPrefix: "attachment-fixed",
     uploadedAt: "2026-06-21T09:00:00.000Z",
+    extractedFields: { "Invoice total": "HKD 1,000" },
   });
 
   assert.equal(updated.attachments.length, 1);
+  assert.deepEqual(updated.extractedFields, { "Invoice total": "HKD 1,000" });
   assert.deepEqual(updated.attachments[0], {
     id: "attachment-fixed-invoice.pdf",
     fileName: "invoice.pdf",

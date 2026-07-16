@@ -50,6 +50,40 @@ test("blocks approval when current-node required documents are missing", () => {
   );
 });
 
+test("blocks approval when a required current-node form is incomplete", () => {
+  const state = getTaskActionPreflightState({
+    action: "approve",
+    targetEmail: "",
+    missingCurrentDocuments: [],
+    missingCurrentForms: [
+      { document: { documentType: "Site review form" } },
+    ],
+  });
+
+  assert.equal(state.canProceed, false);
+  assert.equal(
+    state.errorMessage,
+    "Complete required form(s) before approving: Site review form.",
+  );
+});
+
+test("blocks approval when required AI/OCR values are still empty", () => {
+  const state = getTaskActionPreflightState({
+    action: "approve",
+    targetEmail: "",
+    missingCurrentDocuments: [],
+    missingCurrentDocumentFields: [
+      { fields: [{ label: "Invoice total" }, { label: "Vendor" }] },
+    ],
+  });
+
+  assert.equal(state.canProceed, false);
+  assert.equal(
+    state.errorMessage,
+    "Confirm required extracted value(s) before approving: Invoice total, Vendor.",
+  );
+});
+
 test("blocks approval when blocking contributor requests are still pending", () => {
   const state = getTaskActionPreflightState({
     action: "approve",

@@ -20,6 +20,7 @@ import {
   getTaskContributorUploadState,
 } from "@/lib/task-collaboration-state";
 import { attachDocumentToTaskState } from "@/lib/task-document-attachment-state";
+import { saveTaskFormValuesState } from "@/lib/task-form-values-state";
 import type {
   ApprovalAction,
   ApprovalAttachment,
@@ -490,13 +491,39 @@ export function useWorkspaceTaskActions({
     documentRequirement: WorkflowDocumentRequirement,
   ) {
     try {
-      const { uploadWorkspaceAttachmentFile } = await import(
-        "@/lib/workspace-file-api"
-      );
+      const [pdfPages, workspaceFiles] = await Promise.all([
+        import("@/lib/pdf-page-images"),
+        import("@/lib/workspace-file-api"),
+      ]);
+      const {
+        getPdfOcrRenderOptions,
+        renderPdfFileToPageImages,
+        shouldRenderPdfForVision,
+      } = pdfPages;
+      const { parseWorkspaceFile, uploadWorkspaceAttachmentFile } = workspaceFiles;
       const storage = await uploadWorkspaceAttachmentFile({
         file,
         documentRequirement,
       });
+      let extractedFields: Record<string, string> = {};
+      let extractionWarning = "";
+      if (documentRequirement.fields.length) {
+        try {
+          const pageImages = shouldRenderPdfForVision(file)
+            ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
+            : [];
+          const parsed = await parseWorkspaceFile({
+            file,
+            documentRequirement,
+            pageImages,
+          });
+          extractedFields = parsed.fields || {};
+        } catch (error) {
+          extractionWarning = `Document uploaded, but AI/OCR could not extract its values. Enter them in Document data before approving. ${
+            error instanceof Error ? error.message : ""
+          }`.trim();
+        }
+      }
       const nextTasks = attachDocumentToTaskState({
         tasks,
         templates,
@@ -506,15 +533,44 @@ export function useWorkspaceTaskActions({
         activeUser,
         storagePath: storage.storagePath,
         publicUrl: storage.publicUrl,
+        extractedFields,
       });
       setTasks(nextTasks);
       void persistWorkspaceSnapshot(
         buildWorkspaceSnapshot({ approvalTasks: nextTasks }),
       );
-      setActionError("");
+      setActionError(extractionWarning);
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : "Unable to upload document.",
+      );
+    }
+  }
+
+  async function saveTaskFormValues(
+    taskId: string,
+    values: Record<string, string>,
+  ) {
+    const result = saveTaskFormValuesState({
+      tasks,
+      taskId,
+      values,
+      actor: activeUser,
+    });
+    if (!result.didUpdate) {
+      setActionError("");
+      return;
+    }
+    setTasks(result.tasks);
+    try {
+      await persistWorkspaceSnapshot(
+        buildWorkspaceSnapshot({ approvalTasks: result.tasks }),
+      );
+      setActionError("");
+    } catch (error) {
+      setTasks(tasks);
+      setActionError(
+        error instanceof Error ? error.message : "Unable to save form values.",
       );
     }
   }
@@ -583,6 +639,7 @@ export function useWorkspaceTaskActions({
     decideSharedFulfillment,
     requestTaskContributor,
     runWorkflowAction,
+    saveTaskFormValues,
     setComment,
     setContributorBlocksApproval,
     setContributorDueAt,

@@ -492,7 +492,17 @@ The Approval box can define:
 - optional escalation position;
 - optional escalation email and fixed-email lock;
 - information handoff rules;
-- local document requirements and recognition fields.
+- local document requirements and recognition fields;
+- an active published native or Microsoft form pinned from the Form Library.
+
+When an Approval box becomes current, Inbox renders its pinned form and local
+document requirements. Native form values and native form attachments can be
+completed in Inbox. Microsoft Forms shows its registered response link and the
+Approval Request Reference, then waits for the pinned response delivered through
+Power Automate. Approval is blocked while any required file, extracted value,
+native form field, native form attachment, or Microsoft Forms response is
+missing. Approval-stage uploads run AI/OCR immediately; the current owner can
+review and correct the extracted values before deciding.
 
 ### 12.5 FYI Box
 
@@ -696,6 +706,9 @@ Inbox shows requests on which the signed-in user can act, including:
 - Primary approval is an orange action.
 - Reassign, Delegate, and Additional contributor are collapsed under **More actions** for a cleaner interface.
 - Enabling Reassign or Delegate suppresses conflicting approval actions for that interaction.
+- Forms and document uploads attached to the current Approval box appear in the action area. Required inputs disable Approve and Approve + note until completed.
+- Approval-stage document uploads run AI/OCR and expose editable **Document data** before approval.
+- Native Approval App forms expose editable controls and required attachments; Microsoft Forms show response status, the request reference, and the registered external link.
 - Mobile layouts collapse secondary Request information and History.
 
 ### 15.3 Status Labels
@@ -1006,7 +1019,7 @@ Important environment groups include:
 
 ## 25. Validation and Test Coverage
 
-The codebase currently contains 721 automated tests covering 121 test files. Coverage includes:
+The codebase currently contains 747 automated tests. Coverage includes:
 
 - graph validation and routing;
 - sequential and parallel approval state;
@@ -1025,6 +1038,15 @@ The codebase currently contains 721 automated tests covering 121 test files. Cov
 - Supabase persistence and normalized records;
 - security and row-level policy expectations.
 
+Generated bounded-exhaustive matrices supplement the hand-written scenarios.
+They cover all one-to-three-stage linear Approval/FYI layouts, rejection and
+resubmission from every linear stage, every approve/reject decision vector for
+two- and three-person parallel stages, matching and fallback routes for every
+supported numeric operator, all supported upload formats at Submit and Approval
+boxes, Form Library source/node/publication boundaries, and every present or
+missing combination of approval-stage file, extracted value, and native or
+Microsoft form completion.
+
 Release verification must include:
 
 1. all unit and integration tests;
@@ -1039,6 +1061,7 @@ Release verification must include:
 10. draft refresh and resume;
 11. published template version activation;
 12. email dry-run or controlled live-delivery verification.
+13. Approval-box native form completion, Microsoft Forms response intake, and approval-stage AI/OCR correction.
 
 The release browser audit exercises the six primary screens at 390 px mobile,
 900 px intermediate, and 1440 px desktop widths. It checks page-level overflow,

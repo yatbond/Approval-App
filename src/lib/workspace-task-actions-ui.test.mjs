@@ -37,3 +37,22 @@ test("task action controller owns queue form state and pending submission state"
   );
   assert.equal(controllerSource.includes("actionSubmissionTaskIdRef"), true);
 });
+
+test("Approval document uploads remain correctable when AI extraction fails", () => {
+  const controllerSource = readFileSync(
+    "src/app/use-workspace-task-actions.ts",
+    "utf8",
+  );
+  const uploadStart = controllerSource.indexOf("async function attachTaskDocument");
+  const uploadEnd = controllerSource.indexOf("async function saveTaskFormValues", uploadStart);
+  const uploadSource = controllerSource.slice(uploadStart, uploadEnd);
+
+  assert.ok(uploadSource.indexOf("await uploadWorkspaceAttachmentFile") >= 0);
+  assert.ok(uploadSource.indexOf("await parseWorkspaceFile") >= 0);
+  assert.ok(
+    uploadSource.indexOf("await uploadWorkspaceAttachmentFile") <
+      uploadSource.indexOf("await parseWorkspaceFile"),
+  );
+  assert.match(uploadSource, /Document uploaded, but AI\/OCR could not extract/);
+  assert.match(uploadSource, /attachDocumentToTaskState/);
+});

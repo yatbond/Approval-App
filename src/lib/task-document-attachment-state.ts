@@ -18,6 +18,7 @@ export function attachDocumentToTaskState({
   publicUrl,
   idPrefix,
   uploadedAt,
+  extractedFields = {},
 }: {
   tasks: ApprovalTask[];
   templates: WorkflowTemplate[];
@@ -29,6 +30,7 @@ export function attachDocumentToTaskState({
   publicUrl?: string;
   idPrefix?: string;
   uploadedAt?: string;
+  extractedFields?: Record<string, string>;
 }) {
   return tasks.map((task) => {
     if (task.id !== taskId) {
@@ -53,6 +55,7 @@ export function attachDocumentToTaskState({
 
     return {
       ...task,
+      extractedFields: { ...task.extractedFields, ...extractedFields },
       attachments: [...(task.attachments || []), attachment],
       participants: Array.from(new Set([...task.participants, activeUser.email])),
       lastAction: `Document uploaded by ${activeUser.name}`,

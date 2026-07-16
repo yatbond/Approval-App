@@ -10,6 +10,8 @@ export function getTaskActionPreflightState({
   action,
   targetEmail,
   missingCurrentDocuments,
+  missingCurrentForms = [],
+  missingCurrentDocumentFields = [],
   pendingBlockingContributorRequests = [],
   pendingSharedFulfillments = [],
   pendingCorrectionRequests = [],
@@ -18,6 +20,12 @@ export function getTaskActionPreflightState({
   action: ApprovalAction;
   targetEmail: string;
   missingCurrentDocuments: WorkflowDocumentRequirement[];
+  missingCurrentForms?: Array<{
+    document: Pick<WorkflowDocumentRequirement, "documentType">;
+  }>;
+  missingCurrentDocumentFields?: Array<{
+    fields: Array<{ label: string }>;
+  }>;
   pendingBlockingContributorRequests?: TaskCollaborationRequest[];
   pendingSharedFulfillments?: TaskSharedFulfillment[];
   pendingCorrectionRequests?: TaskCorrectionRequest[];
@@ -35,6 +43,30 @@ export function getTaskActionPreflightState({
       canProceed: false,
       errorMessage: `Upload required document(s) before approving: ${missingCurrentDocuments
         .map((document) => document.documentType)
+        .join(", ")}.`,
+    };
+  }
+
+  if (
+    (action === "approve" || action === "approve_with_comment") &&
+    missingCurrentForms.length
+  ) {
+    return {
+      canProceed: false,
+      errorMessage: `Complete required form(s) before approving: ${missingCurrentForms
+        .map((issue) => issue.document.documentType)
+        .join(", ")}.`,
+    };
+  }
+
+  if (
+    (action === "approve" || action === "approve_with_comment") &&
+    missingCurrentDocumentFields.length
+  ) {
+    return {
+      canProceed: false,
+      errorMessage: `Confirm required extracted value(s) before approving: ${missingCurrentDocumentFields
+        .flatMap((issue) => issue.fields.map((field) => field.label))
         .join(", ")}.`,
     };
   }

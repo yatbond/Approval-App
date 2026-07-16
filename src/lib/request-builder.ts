@@ -26,15 +26,21 @@ export type CreateApprovalTaskInput = {
 export function getSubmissionDocumentRequirements(
   template: WorkflowTemplate,
 ): WorkflowDocumentRequirement[] {
+  if (!template.graph) {
+    return template.documents;
+  }
+
   const graph = createWorkflowGraphFromTemplate(template);
   const route = findInitialWorkflowRoute(graph);
   const startingNodes = findStartingActionNodes(graph);
   const routeDocumentIds = new Set<string>();
-  const submitRequestDocumentIds = route.routeNodes
-    .filter((node) => node.kind === "submit_request")
+  const submitRequestNodes = route.routeNodes.filter(
+    (node) => node.kind === "submit_request",
+  );
+  const submitRequestDocumentIds = submitRequestNodes
     .flatMap((node) => node.documentIds || []);
 
-  if (submitRequestDocumentIds.length) {
+  if (submitRequestNodes.length) {
     submitRequestDocumentIds.forEach((documentId) => routeDocumentIds.add(documentId));
   } else {
     (startingNodes.length ? startingNodes : route.currentNode ? [route.currentNode] : [])
@@ -43,6 +49,9 @@ export function getSubmissionDocumentRequirements(
   }
 
   if (!routeDocumentIds.size) {
+    if (submitRequestNodes.length) {
+      return [];
+    }
     return template.documents;
   }
 
@@ -91,6 +100,7 @@ export function getMissingRequiredCurrentNodeDocuments(
   return template.documents.filter(
     (document) =>
       document.required &&
+      !isManualFormRequirement(document) &&
       requiredDocumentIds.has(document.id) &&
       !uploadedDocumentIds.has(document.id),
   );

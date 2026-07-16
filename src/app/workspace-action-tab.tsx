@@ -9,6 +9,10 @@ export default function WorkspaceActionTab() {
   const {
     actionableTasks,
     selectedActionableTask,
+    selectedTaskCurrentForms,
+    selectedTaskCurrentUploadRequirements,
+    selectedTaskDocumentFieldIssues,
+    selectedTaskFormIssues,
     selectedTaskMissingDocuments,
     trackingTasks,
   } = core.taskState;
@@ -60,6 +64,14 @@ export default function WorkspaceActionTab() {
         actions.actionSubmissionTaskId === selectedActionableTask?.id
       }
       missingCurrentDocuments={selectedTaskMissingDocuments}
+      currentForms={selectedTaskCurrentForms}
+      currentFormIssues={selectedTaskFormIssues}
+      currentUploadRequirements={selectedTaskCurrentUploadRequirements}
+      currentDocumentFieldIssues={selectedTaskDocumentFieldIssues}
+      onSaveTaskFormValues={(values) =>
+        selectedActionableTask &&
+        actions.saveTaskFormValues(selectedActionableTask.id, values)
+      }
       onAttachTaskDocument={(file, documentRequirement) =>
         selectedActionableTask &&
         actions.attachTaskDocument(

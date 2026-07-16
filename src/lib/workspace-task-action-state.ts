@@ -3,6 +3,8 @@ import {
   getTaskActionBlockReason,
 } from "./approval-state.ts";
 import { getMissingRequiredCurrentNodeDocuments } from "./request-builder.ts";
+import { getCurrentNodeFormCompletionIssues } from "./current-node-form-state.ts";
+import { getCurrentNodeDocumentFieldIssues } from "./current-node-document-state.ts";
 import { findTemplateForTask } from "./task-display.ts";
 import { getTaskActionPreflightState } from "./task-action-state.ts";
 import { getWorkflowRunnerActionActor } from "./workflow-runner-action-state.ts";
@@ -72,10 +74,20 @@ export function getWorkspaceRecordTaskActionState({
     template && (action === "approve" || action === "approve_with_comment")
       ? getMissingRequiredCurrentNodeDocuments(selectedTask, template)
       : [];
+  const missingCurrentForms =
+    template && (action === "approve" || action === "approve_with_comment")
+      ? getCurrentNodeFormCompletionIssues(selectedTask, template)
+      : [];
+  const missingCurrentDocumentFields =
+    template && (action === "approve" || action === "approve_with_comment")
+      ? getCurrentNodeDocumentFieldIssues(selectedTask, template)
+      : [];
   const preflight = getTaskActionPreflightState({
     action,
     targetEmail,
     missingCurrentDocuments,
+    missingCurrentForms,
+    missingCurrentDocumentFields,
     pendingBlockingContributorRequests: (selectedTask.collaborationRequests || [])
       .filter(
         (request) =>

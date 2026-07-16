@@ -29,6 +29,8 @@ import {
   type QueueFilter,
 } from "@/lib/queue-filter-state";
 import { findRequestDisplayValue } from "@/lib/request-builder";
+import type { CurrentNodeFormCompletionIssue } from "@/lib/current-node-form-state";
+import type { CurrentNodeDocumentFieldIssue } from "@/lib/current-node-document-state";
 import { getRejectReturnTargetOptions } from "@/lib/reject-return-routing-state";
 import type {
   ApprovalAction,
@@ -38,6 +40,8 @@ import type {
 } from "@/lib/types";
 import type { UserDirectoryEntry } from "@/lib/user-directory";
 import { InfoTip } from "./ui-hint";
+import { CurrentNodeFormsPanel } from "./current-node-forms-panel";
+import { CurrentNodeDocumentDataPanel } from "./current-node-document-data-panel";
 import {
   AuditTrail,
   ContributorRequestList,
@@ -129,6 +133,11 @@ export function QueueView({
   actionError,
   actionPending,
   missingCurrentDocuments,
+  currentForms,
+  currentFormIssues,
+  currentUploadRequirements,
+  currentDocumentFieldIssues,
+  onSaveTaskFormValues,
   onAttachTaskDocument,
 }: {
   selectedTask?: ApprovalTask;
@@ -158,6 +167,11 @@ export function QueueView({
   actionError: string;
   actionPending: boolean;
   missingCurrentDocuments: WorkflowDocumentRequirement[];
+  currentForms: WorkflowDocumentRequirement[];
+  currentFormIssues: CurrentNodeFormCompletionIssue[];
+  currentUploadRequirements: WorkflowDocumentRequirement[];
+  currentDocumentFieldIssues: CurrentNodeDocumentFieldIssue[];
+  onSaveTaskFormValues: (values: Record<string, string>) => void;
   onAttachTaskDocument: (
     file: File,
     documentRequirement: WorkflowDocumentRequirement,
@@ -347,11 +361,19 @@ export function QueueView({
 
           <div>
             <h3 className="mb-3 text-sm font-semibold text-neutral-300">Act</h3>
+            <CurrentNodeFormsPanel
+              key={`${selectedTask.id}:${selectedTask.currentNodeId || "none"}:${selectedTask.lastAction}`}
+              task={selectedTask}
+              forms={currentForms}
+              issues={currentFormIssues}
+              onSave={onSaveTaskFormValues}
+              onAttach={onAttachTaskDocument}
+            />
             <textarea
               value={comment}
               onChange={(event) => setComment(event.target.value)}
               placeholder="Comment"
-              className="h-32 w-full resize-none rounded-md border border-[#e6e6e6] bg-white p-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
+              className="mt-3 h-32 w-full resize-none rounded-md border border-[#e6e6e6] bg-white p-3 text-sm outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/60"
             />
             {missingCurrentDocuments.length > 0 && (
               <div className="mt-3 rounded-md border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
@@ -382,6 +404,12 @@ export function QueueView({
                 </div>
               </div>
             )}
+            <CurrentNodeDocumentDataPanel
+              key={`${selectedTask.id}:${selectedTask.currentNodeId || "none"}:${selectedTask.lastAction}:document-data`}
+              task={selectedTask}
+              documents={currentUploadRequirements}
+              onSave={onSaveTaskFormValues}
+            />
             {actionError && (
               <div className="mt-3 rounded-md border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">
                 {actionError}
@@ -655,10 +683,18 @@ export function QueueView({
                 const needsCurrentDocuments =
                   (action === "approve" || action === "approve_with_comment") &&
                   missingCurrentDocuments.length > 0;
+                const needsCurrentForms =
+                  (action === "approve" || action === "approve_with_comment") &&
+                  currentFormIssues.length > 0;
+                const needsCurrentDocumentFields =
+                  (action === "approve" || action === "approve_with_comment") &&
+                  currentDocumentFieldIssues.length > 0;
                 const disabled =
                   actionPending ||
                   (needsTarget && !targetEmail.trim()) ||
-                  needsCurrentDocuments;
+                  needsCurrentDocuments ||
+                  needsCurrentForms ||
+                  needsCurrentDocumentFields;
                 return (
                   <button
                     key={action}

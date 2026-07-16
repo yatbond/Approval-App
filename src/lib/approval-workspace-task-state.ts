@@ -3,6 +3,14 @@ import {
   isVisibleToParticipant,
 } from "./approval-state.ts";
 import { getMissingRequiredCurrentNodeDocuments } from "./request-builder.ts";
+import {
+  getCurrentNodeFormCompletionIssues,
+  getCurrentNodeFormRequirements,
+} from "./current-node-form-state.ts";
+import {
+  getCurrentNodeDocumentFieldIssues,
+  getCurrentNodeUploadRequirements,
+} from "./current-node-document-state.ts";
 import { findTemplateForTask } from "./task-display.ts";
 import type {
   ApprovalTask,
@@ -43,6 +51,22 @@ export function getApprovalWorkspaceTaskState({
           selectedTaskTemplate,
         )
       : [];
+  const selectedTaskCurrentForms =
+    selectedActionableTask && selectedTaskTemplate
+      ? getCurrentNodeFormRequirements(selectedActionableTask, selectedTaskTemplate)
+      : [];
+  const selectedTaskFormIssues =
+    selectedActionableTask && selectedTaskTemplate
+      ? getCurrentNodeFormCompletionIssues(selectedActionableTask, selectedTaskTemplate)
+      : [];
+  const selectedTaskCurrentUploadRequirements =
+    selectedActionableTask && selectedTaskTemplate
+      ? getCurrentNodeUploadRequirements(selectedActionableTask, selectedTaskTemplate)
+      : [];
+  const selectedTaskDocumentFieldIssues =
+    selectedActionableTask && selectedTaskTemplate
+      ? getCurrentNodeDocumentFieldIssues(selectedActionableTask, selectedTaskTemplate)
+      : [];
 
   return {
     actionableTasks,
@@ -51,5 +75,9 @@ export function getApprovalWorkspaceTaskState({
     selectedTask,
     selectedTaskTemplate,
     selectedTaskMissingDocuments,
+    selectedTaskCurrentForms,
+    selectedTaskFormIssues,
+    selectedTaskCurrentUploadRequirements,
+    selectedTaskDocumentFieldIssues,
   };
 }

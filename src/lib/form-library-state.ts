@@ -320,8 +320,16 @@ export function attachLibraryFormToWorkflow({
   definition: FormLibraryDefinition;
   completionRequired?: boolean;
 }) {
-  if (definition.status !== "ready") {
-    return { didUpdate: false, template, message: "Only ready forms can be added." };
+  if (
+    definition.status !== "ready" ||
+    definition.isDraft === true ||
+    definition.isActiveVersion === false
+  ) {
+    return {
+      didUpdate: false,
+      template,
+      message: "Only active published forms can be added.",
+    };
   }
   const graph = createWorkflowGraphFromTemplate(template);
   const node = graph.nodes.find((item) => item.id === nodeId);

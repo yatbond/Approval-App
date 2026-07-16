@@ -12,13 +12,15 @@ export function NativeFormFieldInput({
   value,
   onChange,
   onFocus,
+  idPrefix = "",
 }: {
   field: WorkflowField;
   value: string;
   onChange: (value: string) => void;
   onFocus: () => void;
+  idPrefix?: string;
 }) {
-  const fieldId = `native-form-${field.name}`;
+  const fieldId = `${idPrefix ? `${idPrefix.replace(/[^a-zA-Z0-9_-]/g, "-")}-` : ""}native-form-${field.name}`;
   const options = (field.options || [])
     .map((option) => option.trim())
     .filter(Boolean);
