@@ -2,7 +2,7 @@
 
 This folder contains product requirements for the Approval Workflow Platform.
 
-Last reviewed: 2026-06-21
+Last reviewed: 2026-07-14
 
 Canonical PRD:
 

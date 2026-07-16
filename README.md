@@ -1,27 +1,28 @@
 # Approval App
 
-Configurable web-based approval workflow platform for departments that need to upload, parse, review, endorse, approve, reject, reassign, delegate, and escalate document-based requests.
+Configurable approval workflow platform for creating request forms, uploading and
+parsing documents, routing sequential or parallel approvals, collaborating on
+missing inputs, and tracking every decision.
 
-## MVP Scope
+## Current Capabilities
 
-- Dynamic departments and workflow templates
-- Upload workspace for images, PDFs, Excel files, and CSV files
-- AI vision adapter for photos/images
-- OCR integration slot for PDFs
-- Excel table parsing
-- Editable extracted fields so user corrections can become future extraction examples
-- Approval queue with approve, approve with comment, reject with comment, reassign, and delegate actions
-- In-app notifications
-- Deadlines and escalation model
-- Supabase schema for Auth, Postgres, Storage, RLS, workflows, tasks, notifications, and delegations
+- Versioned workflow templates with Submit, Approval, FYI, Condition, and End boxes
+- Native request forms and registered Microsoft Forms intake through Power Automate
+- PDF, image, spreadsheet, and CSV uploads with editable AI/OCR extraction
+- Request drafts, participant assignment, and multi-document submission
+- Sequential, parallel, conditional, reject-return, reassignment, delegation, and escalation flows
+- Queue, tracking history, in-app notifications, email delivery, and administration
+- Supabase Auth, Postgres, Storage, normalized persistence, and row-level security
+- Responsive light and dark interfaces using the Chun Wo brand palette
 
 ## Stack
 
-- Next.js App Router
-- React
-- Tailwind CSS
+- Next.js 16 App Router and React 19
+- TypeScript and Tailwind CSS
 - Supabase Auth, Postgres, and Storage
-- OpenAI Responses API adapter for image extraction
+- OpenRouter or OpenAI-compatible document parsing
+- PDF.js and SheetJS
+- Resend transactional email
 - Vercel deployment
 
 ## Local Setup
@@ -31,52 +32,54 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:3000`. Authentication and persisted application data
+require the Supabase variables in `.env.local`. Copy `.env.example` and add only
+the provider credentials needed for the features being tested.
 
-Useful routes:
+Primary application views use query-string tabs:
 
 - `/?tab=queue`
-- `/?tab=upload`
+- `/?tab=tracking`
+- `/?tab=drafts`
 - `/?tab=workflow`
 - `/?tab=admin`
 
-## Environment
+New Request opens the internal `upload` view from the `+ New` action; Upload is
+intentionally not a separate navigation tab.
 
-Copy `.env.example` to `.env.local` and fill these after the live services are created:
+## Environment Groups
 
-```bash
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.4-mini
-AI_PROVIDER=openrouter
-OPENROUTER_API_KEY=
-OPENROUTER_MODEL=google/gemini-3-flash-preview
-OPENROUTER_SITE_URL=https://approval-app-three.vercel.app
-OPENROUTER_APP_TITLE=Approval App
-APP_ADMIN_EMAIL=
-```
+- `NEXT_PUBLIC_SUPABASE_*`: browser and SSR authentication/data access
+- `SUPABASE_SERVICE_ROLE_KEY` and `FORM_INTAKE_WEBHOOK_SECRET`: server-only Microsoft Forms intake
+- `OPENROUTER_*`, `OPENAI_*`, `AI_PROVIDER`, and `NEXT_PUBLIC_PDF_OCR_MODE`: document parsing
+- `EMAIL_PROVIDER`, `EMAIL_LIVE`, `EMAIL_FROM`, `EMAIL_TEST_REDIRECT_TO`, and `RESEND_API_KEY`: email delivery
 
-For local AI parsing through OpenRouter, fill `OPENROUTER_API_KEY` in `.env`.
-Use `AI_PROVIDER=openrouter` to route image parsing through OpenRouter, or
-`AI_PROVIDER=openai` to use OpenAI directly.
+Never expose server-only keys to client code or commit local environment files.
 
-## Supabase
+## Database
 
-The initial database and storage model is in `supabase/schema.sql`.
-
-Pending live setup:
-
-1. Create a Supabase project in the selected organization and Singapore region.
-2. Apply `supabase/schema.sql`.
-3. Add the generated Supabase URL and publishable key to Vercel.
-4. Add the service role key only to server-side environments.
-5. Replace the MVP mock data with Supabase queries and mutations.
+The current database history is in `supabase/migrations/`; `supabase/schema.sql`
+is the consolidated schema reference. Apply migrations with the linked Supabase
+CLI project and review row-level security before using production identities.
 
 ## Verification
 
+Run the same local gates used before deployment:
+
 ```bash
+npm test
+npx next typegen
+npx tsc --noEmit
 npm run lint
-npm run build
+npm run build -- --webpack
 ```
+
+Authenticated browser regression tests require test credentials and request IDs;
+see the deployment runbook before invoking `npm run e2e:regression`.
+
+## Documentation
+
+- [Product requirements](PRD/approval-workflow-platform-prd.md)
+- [Deployment runbook](docs/deployment-runbook.md)
+- [Microsoft Forms and Power Automate setup](docs/microsoft-forms-power-automate.md)
+- [Architecture refactor history](docs/architecture-refactor-log.md)
