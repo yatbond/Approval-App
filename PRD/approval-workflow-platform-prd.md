@@ -423,7 +423,7 @@ The selected box is a location hint, not an exact coordinate rule. Recognition m
 
 - **Builder**: creates a new workflow or opens one current draft/active record per workflow family. It edits draft identity fields and creates a draft version from a published workflow.
 - **Canvas**: visually edits the selected draft.
-- **Library**: groups drafts and every published version under one workflow family. Its **Available** view supports edit/new draft, version notes, activation, and archive actions; its **Archived** view keeps retired versions separate.
+- **Library**: shows one full-width, collapsed row per workflow with its company, department, active version, and a draft indicator when applicable. Only one workflow expands at a time. The expanded view separates the active version, current draft, and individually expandable version history; version notes remain plain text until edited. Its **Available** view supports edit/new draft, activation, and archive actions, while **Archived** keeps retired versions separate.
 
 ### 11.3 Versioning Rules
 
