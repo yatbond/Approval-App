@@ -204,7 +204,7 @@ test("submit boxes expose a native form builder and request renderer", () => {
   );
 
   assert.equal(workflowSource.includes("WorkflowBoxDocumentsEditor"), true);
-  assert.equal(boxDocumentsSource.includes("Request form and documents"), true);
+  assert.equal(boxDocumentsSource.includes("Request requirements"), true);
   assert.equal(boxDocumentsSource.includes("Form section name"), true);
   assert.equal(boxDocumentsSource.includes("Build the fields users complete"), true);
   assert.equal(boxDocumentsSource.includes("nativeFormFieldTypeOptions"), true);
@@ -225,7 +225,11 @@ test("submit boxes expose a native form builder and request renderer", () => {
     true,
   );
   assert.equal(boxDocumentsSource.includes("WorkflowLibraryFormSummary"), true);
-  assert.equal(boxDocumentsSource.includes("Add separate requirement"), true);
+  assert.equal(boxDocumentsSource.includes("Attach form from library"), true);
+  assert.equal(boxDocumentsSource.includes("Add document requirement"), true);
+  assert.equal(boxDocumentsSource.includes("Select published form"), true);
+  assert.equal(boxDocumentsSource.includes("Add separate requirement"), false);
+  assert.equal(boxDocumentsSource.includes("documentInputModeOptions"), false);
   assert.equal(librarySummarySource.includes("This workflow is pinned"), true);
   assert.equal(librarySummarySource.includes("Choices are managed in Microsoft Forms."), true);
   assert.equal(uploadDataSource.includes("Uploaded in Microsoft Forms"), true);

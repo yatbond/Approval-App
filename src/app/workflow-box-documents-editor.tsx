@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, X } from "lucide-react";
+import { FilePlus2, Library, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { TemplateDocumentRecognitionPanel } from "@/app/template-document-recognition-panel";
 import { InfoTip } from "@/app/ui-hint";
@@ -10,8 +10,6 @@ import {
 } from "@/lib/form-library-state";
 import {
   documentFormatOptions,
-  documentInputModeOptions,
-  formatDocumentInputMode,
   isManualFormRequirement,
 } from "@/lib/workflow-documents";
 import { isLibraryFormRequirement } from "@/lib/workflow-library-form-state";
@@ -99,6 +97,9 @@ export function WorkflowBoxDocumentsEditor({
     required: true,
   });
   const [selectedLibraryFormId, setSelectedLibraryFormId] = useState("");
+  const [addRequirementType, setAddRequirementType] = useState<
+    "form" | "document" | null
+  >(null);
   const availableLibraryForms = useMemo(
     () =>
       getActiveFormLibraryDefinitions(formLibrary).filter(
@@ -137,10 +138,15 @@ export function WorkflowBoxDocumentsEditor({
         }
       >
         {node.kind === "submit_request"
-          ? "Request form and documents"
+          ? "Request requirements"
           : "Documents and data extraction"}
       </summary>
       <div className="mt-2 space-y-2">
+        {documents.length > 0 && (
+          <p className="text-xs font-semibold uppercase text-neutral-500 dark:text-neutral-400">
+            Current requirements
+          </p>
+        )}
         {documents.map((document) => {
           if (isLibraryFormRequirement(document)) {
             return (
@@ -158,6 +164,9 @@ export function WorkflowBoxDocumentsEditor({
               key={document.id}
               className="rounded-md border border-[#e6e6e6] bg-white p-2"
             >
+              <p className="mb-2 text-xs font-semibold uppercase text-neutral-500 dark:text-neutral-400">
+                {isManualForm ? "Legacy embedded form" : "Document requirement"}
+              </p>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1 space-y-2">
                   <label className="block">
@@ -178,27 +187,6 @@ export function WorkflowBoxDocumentsEditor({
                       }
                       className="h-9 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-sm outline-none focus:border-emerald-400/60"
                     />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-xs text-neutral-500">
-                      Input method
-                    </span>
-                    <select
-                      value={document.inputMode || "upload"}
-                      title="Choose whether the requester uploads a document for OCR or fills a digital form manually."
-                      onChange={(event) =>
-                        onUpdateRequirement(document.id, {
-                          inputMode: event.target.value as WorkflowDocumentInputMode,
-                        })
-                      }
-                      className="h-9 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-sm outline-none focus:border-emerald-400/60"
-                    >
-                      {documentInputModeOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
                   </label>
                   {!isManualForm && (
                     <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
@@ -240,8 +228,8 @@ export function WorkflowBoxDocumentsEditor({
                   )}
                   <p className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-1 text-xs text-neutral-500">
                     {isManualForm
-                      ? "Native form section shown directly in New Request."
-                      : formatDocumentInputMode(document.inputMode || "upload")}
+                      ? "This older embedded form remains editable for compatibility. New forms must be attached from the Form Library."
+                      : "Requester uploads this document. AI/OCR can extract the configured fields."}
                   </p>
                 </div>
                 <button
@@ -422,94 +410,122 @@ export function WorkflowBoxDocumentsEditor({
           );
         })}
         {!node.documentIds?.length && (
-          <p className="text-xs text-neutral-500">No documents yet.</p>
+          <p className="rounded-md border border-dashed border-[#d2d2d2] p-3 text-xs text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+            No requirements added.
+          </p>
         )}
       </div>
       <div className="mt-3 space-y-2 border-t border-[#e6e6e6] pt-3">
-        {availableLibraryForms.length > 0 && (
+        <div>
+          <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            Add a requirement
+          </p>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            Attach a published form or require a document upload.
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              aria-pressed={addRequirementType === "form"}
+              onClick={() =>
+                setAddRequirementType((current) =>
+                  current === "form" ? null : "form",
+                )
+              }
+              title="Choose an active form version from the Form Library."
+              className={`flex min-h-11 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition ${
+                addRequirementType === "form"
+                  ? "border-[#f7941d] bg-[#fff4e6] text-neutral-900 dark:bg-[#f7941d]/15 dark:text-neutral-100"
+                  : "border-[#d2d2d2] bg-white text-neutral-700 hover:border-[#f7941d] dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
+              }`}
+            >
+              <Library size={16} /> Attach form
+            </button>
+            <button
+              type="button"
+              aria-pressed={addRequirementType === "document"}
+              onClick={() =>
+                setAddRequirementType((current) =>
+                  current === "document" ? null : "document",
+                )
+              }
+              title="Add a document that the requester must upload."
+              className={`flex min-h-11 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition ${
+                addRequirementType === "document"
+                  ? "border-[#f7941d] bg-[#fff4e6] text-neutral-900 dark:bg-[#f7941d]/15 dark:text-neutral-100"
+                  : "border-[#d2d2d2] bg-white text-neutral-700 hover:border-[#f7941d] dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
+              }`}
+            >
+              <FilePlus2 size={16} /> Add document
+            </button>
+          </div>
+        </div>
+
+        {addRequirementType === "form" && (
           <div className="rounded-md border border-[#f7941d]/35 bg-[#fffaf4] p-3 dark:bg-[#f7941d]/8">
             <div className="flex items-center gap-2">
               <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                Form library
+                Attach form from library
               </p>
               <InfoTip label="Attach a pinned copy of a reusable form to this workflow box." />
             </div>
-            <select
-              value={selectedLibraryFormId}
-              onChange={(event) => setSelectedLibraryFormId(event.target.value)}
-              className="mt-2 h-10 w-full rounded-md border border-[#d2d2d2] bg-white px-3 text-sm text-neutral-900 outline-none focus:border-[#f7941d] dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-            >
-              <option value="">Select reusable form</option>
-              {availableLibraryForms.map((definition) => (
-                <option key={definition.id} value={definition.id}>
-                  {definition.name} · v{definition.version} ·{" "}
-                  {definition.source === "native"
-                    ? "Approval App"
-                    : "Microsoft Forms"}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={addLibraryForm}
-              disabled={!selectedLibraryFormId}
-              title="Attach this form version to the selected Submit or Approval box."
-              className="mt-2 flex min-h-9 w-full items-center justify-center gap-2 rounded-md border border-[#f7941d] bg-[#f7941d] px-3 text-sm font-medium text-[#231f20] transition hover:bg-[#df7f0a] disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              <Plus size={15} /> Add library form
-            </button>
+            {availableLibraryForms.length > 0 ? (
+              <>
+                <select
+                  aria-label="Form Library version"
+                  value={selectedLibraryFormId}
+                  onChange={(event) => setSelectedLibraryFormId(event.target.value)}
+                  className="mt-2 h-10 w-full rounded-md border border-[#d2d2d2] bg-white px-3 text-sm text-neutral-900 outline-none focus:border-[#f7941d] dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                >
+                  <option value="">Select published form</option>
+                  {availableLibraryForms.map((definition) => (
+                    <option key={definition.id} value={definition.id}>
+                      {definition.name} · v{definition.version} ·{" "}
+                      {definition.source === "native"
+                        ? "Approval App"
+                        : "Microsoft Forms"}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={addLibraryForm}
+                  disabled={!selectedLibraryFormId}
+                  title="Attach this published form version to the selected workflow box."
+                  className="mt-2 flex min-h-9 w-full items-center justify-center gap-2 rounded-md border border-[#f7941d] bg-[#f7941d] px-3 text-sm font-medium text-[#231f20] transition hover:bg-[#df7f0a] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Plus size={15} /> Attach selected form
+                </button>
+              </>
+            ) : (
+              <p className="mt-2 rounded-md border border-dashed border-[#d2d2d2] p-3 text-xs text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+                No published forms are available. Create and publish a form under Forms first.
+              </p>
+            )}
           </div>
         )}
-        <div className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 dark:border-neutral-700 dark:bg-neutral-950">
-          <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-            Add separate requirement
-          </p>
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-            Add another Approval App form section or document upload. This does
-            not change a pinned library form above.
-          </p>
-        </div>
-        <label className="block">
-          <span className="mb-1 block text-xs text-neutral-500">Name</span>
-          <input
-            value={requirementDraft.documentType}
-            title="Name the new document requirement to add to this box."
-            onChange={(event) =>
-              setRequirementDraft((current) => ({
-                ...current,
-                documentType: event.target.value,
-              }))
-            }
-            placeholder={
-              requirementDraft.inputMode === "manual_form"
-                ? "Section name, e.g. Request details"
-                : "Document type, e.g. Invoice"
-            }
-            className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-xs text-neutral-500">Type</span>
-          <select
-            value={requirementDraft.inputMode}
-            title="Choose whether this separate requirement is a document upload or an Approval App form."
-            onChange={(event) =>
-              setRequirementDraft((current) => ({
-                ...current,
-                inputMode: event.target.value as WorkflowDocumentInputMode,
-              }))
-            }
-            className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
-          >
-            {documentInputModeOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {requirementDraft.inputMode === "upload" && (
-          <>
+
+        {addRequirementType === "document" && (
+          <div className="space-y-3 rounded-md border border-[#e6e6e6] bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
+            <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              Add document requirement
+            </p>
+            <label className="block">
+              <span className="mb-1 block text-xs text-neutral-500">Document name</span>
+              <input
+                value={requirementDraft.documentType}
+                title="Name the document the requester must upload."
+                onChange={(event) =>
+                  setRequirementDraft((current) => ({
+                    ...current,
+                    documentType: event.target.value,
+                    inputMode: "upload",
+                  }))
+                }
+                placeholder="Document type, e.g. Invoice"
+                className="h-10 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-emerald-400/60 dark:border-neutral-700 dark:bg-neutral-950"
+              />
+            </label>
             <label className="block">
               <span className="mb-1 block text-xs text-neutral-500">
                 File format
@@ -546,16 +562,16 @@ export function WorkflowBoxDocumentsEditor({
               />
               Required upload
             </label>
-          </>
+            <button
+              type="button"
+              onClick={addRequirement}
+              title="Add this document requirement to the selected workflow box."
+              className="flex min-h-9 w-full items-center justify-center gap-2 rounded-md border border-[#f7941d] bg-[#fff4e6] px-3 py-2 text-sm font-medium text-neutral-900 transition hover:bg-[#ffe7c7] dark:bg-[#f7941d]/15 dark:text-neutral-100"
+            >
+              <FilePlus2 size={15} /> Add document requirement
+            </button>
+          </div>
         )}
-        <button
-          type="button"
-          onClick={addRequirement}
-          title="Add this input requirement to the selected workflow box."
-          className="flex min-h-9 w-full items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 py-2 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
-        >
-          <Plus size={15} /> Add requirement
-        </button>
       </div>
     </details>
   );

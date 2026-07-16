@@ -225,7 +225,7 @@ Templates are position-based:
 
 ### 9.3 Native Request Forms
 
-The Submit box can define one or more native form sections alongside document uploads. Each section has a user-facing name and contains ordered fields.
+Native forms are created and versioned only in the primary **Forms** workspace. A Submit or Approval box can attach an active published form from the Form Library; the workflow editor does not provide a second inline form builder. Document upload requirements are added separately from form attachments.
 
 Supported field types are:
 
@@ -249,7 +249,7 @@ Each request data field has one explicit input source:
 
 AI-derived fields select the attachment question to parse and can provide an optional extraction instruction. The extracted result is written into the same editable request field map as manual answers, so the submitter or box owner can review and correct it before submission or approval. Required extracted values block progression when extraction does not produce a value.
 
-Native form values use the same request field map as AI/OCR values. They therefore participate in draft autosave, conditions, handoff visibility, tracking, and audit behavior without a separate form data model. Existing templates stored with `inputMode: manual_form` remain compatible and are presented as **Native form** in the UI.
+Native form values use the same request field map as AI/OCR values. They therefore participate in draft autosave, conditions, handoff visibility, tracking, and audit behavior without a separate form data model. Existing templates stored with an embedded `inputMode: manual_form` remain compatible and editable, but new forms must be created and published in the Form Library before attachment to a workflow box.
 
 ### 9.4 Reusable Form Library
 
@@ -1162,7 +1162,7 @@ The current product direction is:
 - one fixed Start and one fixed End;
 - position-based templates with optional fixed emails;
 - request-time participant completion;
-- native forms can be built inline or reused from the versioned Form Library and share the workflow field model;
+- native forms are built and versioned in the Form Library, then attached to workflow boxes, and share the workflow field model;
 - Microsoft Forms is the sole external form connector because the organization uses Microsoft 365;
 - Microsoft Forms responses enter through Power Automate and the authenticated idempotent intake endpoint; the server processor applies valid responses only after pinned-version, schema, required-input, request-reference, and participant preflight checks;
 - all/selected/none document handoff;
