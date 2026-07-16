@@ -11,7 +11,7 @@ missing inputs, and tracking every decision.
 - PDF, image, spreadsheet, and CSV uploads with editable AI/OCR extraction
 - Request drafts, participant assignment, and multi-document submission
 - Sequential, parallel, conditional, reject-return, reassignment, delegation, and escalation flows
-- Queue, tracking history, in-app notifications, email delivery, and administration
+- Inbox, tracking history, in-app notifications, email delivery, and administration
 - Supabase Auth, Postgres, Storage, normalized persistence, and row-level security
 - Responsive light and dark interfaces using the Chun Wo brand palette
 

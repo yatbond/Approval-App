@@ -112,7 +112,7 @@ export function getWorkspaceRecordTaskActionState({
     return {
       didApply: false,
       tasks,
-      actionError: "The task did not change. Refresh the Queue and try again.",
+      actionError: "The task did not change. Refresh the Inbox and try again.",
       shouldClearInputs: false,
     };
   }

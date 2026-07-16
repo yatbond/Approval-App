@@ -179,8 +179,8 @@ export function QueueView({
     return (
       <section className="rounded-md border border-[#e6e6e6] bg-white p-5">
         <div className="flex items-center gap-2">
-          <h2 className="font-semibold">Empty</h2>
-          <InfoTip label="Use Tracking to follow requests you submitted, approved, reassigned, or delegated." />
+          <h2 className="font-semibold">Inbox is empty</h2>
+          <InfoTip label="Nothing is waiting for your action. Use Tracking to follow requests you submitted, approved, reassigned, or delegated." />
         </div>
       </section>
     );
@@ -238,14 +238,14 @@ export function QueueView({
         <div className="border-b border-[#e6e6e6] p-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <h2 className="font-semibold">Queue</h2>
+              <h2 className="font-semibold">Inbox</h2>
               <InfoTip label="Work currently waiting for your action." />
             </div>
             <span className="text-xs text-neutral-500">
               {filteredTasks.length} of {tasks.length}
             </span>
           </div>
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Queue filters">
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Inbox filters">
             {queueFilters.map((filter) => {
               const count = queueFilterCounts[filter.id];
               const isActive = queueFilter === filter.id;
@@ -498,7 +498,7 @@ export function QueueView({
                 <p className="font-medium">Reassignment request</p>
                 <p className="mt-1 text-xs text-amber-100/80">
                   {pendingReassignmentRequest.fromEmail} asked you to take ownership.
-                  Accept to transfer the task to your queue, or decline to leave it with the current owner.
+                  Accept to transfer the task to your inbox, or decline to leave it with the current owner.
                 </p>
               </div>
             )}

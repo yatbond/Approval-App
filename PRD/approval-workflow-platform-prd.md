@@ -52,7 +52,7 @@ The current stack is:
 4. **No silent loss of context**: handoff, decisions, corrections, reassignment, and delegation remain auditable.
 5. **Flexible with guardrails**: parallel routing, conditions, collaboration, and return routing are configurable but validated.
 6. **Human-correctable AI**: extracted values are reviewable, editable, and trainable through saved examples.
-7. **Mobile for operations, desktop for design**: request submission, Queue, Tracking, Drafts, Workflow Builder/Library, Forms Builder/Library, and Admin are responsive; visual workflow canvas editing is desktop or tablet only.
+7. **Mobile for operations, desktop for design**: request submission, Inbox, Tracking, Drafts, Workflow Builder/Library, Forms Builder/Library, and Admin are responsive; visual workflow canvas editing is desktop or tablet only.
 
 ## 4. Goals and Success Criteria
 
@@ -125,7 +125,7 @@ The current release is not intended to provide:
 
 The signed-in application contains six primary destinations:
 
-1. **Queue**: requests requiring the user’s action.
+1. **Inbox**: requests requiring the user’s action.
 2. **Tracking**: requests the user originated, owns, previously acted on, or can otherwise view.
 3. **Drafts**: incomplete request drafts that can be resumed or deleted.
 4. **Workflow**: workflow Builder, Canvas, and version-grouped Library.
@@ -189,7 +189,7 @@ There is no user-facing Upload tab. **+ New** opens the internal request-creatio
 
 ### 8.3 Act on a Request
 
-1. An actor opens Queue and selects a request.
+1. An actor opens Inbox and selects a request.
 2. The actor reviews visible values, documents, history, ownership, and due state.
 3. The actor approves, approves with a note, rejects, rejects with a note, delegates, requests reassignment, or requests a contributor.
 4. The workflow engine applies graph routing, parallel-stage rules, conditions, FYI behavior, and audit events.
@@ -453,7 +453,7 @@ The desktop/tablet Canvas provides:
 The template canvas shows workflow structure and editor selection only. It does
 not display live-request labels such as **Current**, **Completed**, or **FYI
 sent**. Test-run progress appears in **Test this workflow**, while real-request
-progress remains in Queue and Tracking.
+progress remains in Inbox and Tracking.
 
 ### 12.2 Available Boxes
 
@@ -551,7 +551,7 @@ The Canvas provides a routing-only test for the current draft:
   does not remove or change any live request;
 - the tester receives an email containing the workflow name, current position,
   upstream position, status, required action, latest decision or update, and a
-  direct link to Queue or Tracking;
+  direct link to Inbox or Tracking;
 - later test decisions send the updated workflow details only to the tester;
 - the panel uses plain labels such as **Current position**, **Latest update**,
   **Approve test step**, and **Reject test step** instead of internal node IDs;
@@ -594,7 +594,7 @@ delivery follows the configured Disabled, Dry run, or Live delivery mode.
 ### 13.4 Built-In Reject Return Routing
 
 - The default return target is the original submitter.
-- **Return to...** is an advanced, compact control in Queue.
+- **Return to...** is an advanced, compact control in Inbox.
 - Only valid upstream boxes or upstream parallel stages are selectable.
 - A parallel stage can reopen multiple boxes together.
 - The rejecting box is recorded as rejected.
@@ -676,11 +676,11 @@ The contributor can open Tracking, upload information, and submit their contribu
 - Blocking corrections prevent forward progress until resolved.
 - Collaboration events and targeted notifications remain in the audit trail.
 
-## 15. Queue
+## 15. Inbox
 
-### 15.1 Queue Scope
+### 15.1 Inbox Scope
 
-Queue shows requests on which the signed-in user can act, including:
+Inbox shows requests on which the signed-in user can act, including:
 
 - current ownership;
 - accepted delegation;
@@ -688,7 +688,7 @@ Queue shows requests on which the signed-in user can act, including:
 - returned-originator action;
 - contribution or confirmation work when applicable.
 
-### 15.2 Queue Presentation
+### 15.2 Inbox Presentation
 
 - Filters include All, Attention, Delegated, and Reassignment.
 - Each item summarizes request, workflow, status, current step, owner, and due state.
@@ -753,7 +753,7 @@ The application creates targeted notifications for:
 - contributor and correction activity;
 - shared fulfillment confirmation.
 
-The header count includes only notifications addressed to the signed-in user. Selecting the count opens a menu with the notification title, request context, time, and a direct link to the applicable Queue or Tracking request. Users can mark individual notifications or all notifications as read, with read state retained in the browser.
+The header count includes only notifications addressed to the signed-in user. Selecting the count opens a menu with the notification title, request context, time, and a direct link to the applicable Inbox or Tracking request. Users can mark individual notifications or all notifications as read, with read state retained in the browser.
 
 ### 17.2 Email Modes
 
@@ -769,7 +769,7 @@ A test redirect can send all messages to one verified address while recording th
 
 Workflow-routing test emails are always addressed only to the tester entered on
 the Canvas. They include the workflow context and latest decision details and
-link action-required tests to Queue; completed or cancelled tests link to
+link action-required tests to Inbox; completed or cancelled tests link to
 Tracking.
 
 ### 17.3 Email Types
@@ -968,7 +968,7 @@ The interface supports light and dark modes. The user can change theme from the 
 ### 23.2 Performance Requirements
 
 - Initial authenticated workspace should remain usable while remote state loads.
-- Queue and Tracking lists should remain responsive with realistic request volumes.
+- Inbox and Tracking lists should remain responsive with realistic request volumes.
 - Parsing should show progress and avoid blocking unrelated navigation.
 - Large PDF previews should use bounded rendering and release browser resources.
 - Canvas should remain responsive for typical departmental workflows.
@@ -1019,7 +1019,7 @@ The codebase currently contains 721 automated tests covering 121 test files. Cov
 - sample training persistence;
 - PDF and spreadsheet parsing;
 - upload/request workspace behavior;
-- Queue, Tracking, Workflow, Forms, intermediate-width, mobile, and light/dark UI behavior;
+- Inbox, Tracking, Workflow, Forms, intermediate-width, mobile, and light/dark UI behavior;
 - accessible control labels, placeholder readability, stable touch targets, and dark-theme semantic foregrounds;
 - email delivery modes and notification targeting;
 - Supabase persistence and normalized records;
@@ -1086,7 +1086,7 @@ separate interactive states rather than relying only on their default screens.
 
 ### 26.5 Visibility and Audit
 
-- Queue only shows actionable work.
+- Inbox only shows actionable work.
 - Tracking preserves authorized visibility after action.
 - Path numbering makes sequential and parallel order clear.
 - Every material action and note appears in history.
@@ -1141,7 +1141,7 @@ separate interactive states rather than relying only on their default screens.
 | Workspace shell and navigation | `src/app/approval-workspace.tsx` and `src/app/use-approval-workspace-state.ts` |
 | Request creation and native forms | `src/app/upload-view.tsx`, `src/lib/workflow-native-form-state.ts`, and upload/request libraries |
 | Form Library and Microsoft Forms registration | `src/app/form-library.tsx`, `src/lib/form-library-state.ts`, `src/app/api/form-intake`, and `external_form_submissions` migration |
-| Queue actions | `src/app/approval-workspace.tsx`, workspace task-state libraries, and `src/lib/approval-state.ts` |
+| Inbox actions | `src/app/approval-workspace.tsx`, workspace task-state libraries, and `src/lib/approval-state.ts` |
 | Tracking | `src/app/approval-workspace.tsx` and workflow graph/history libraries |
 | Workflow Builder and Canvas | `src/app/workflow-view.tsx`, `src/app/workflow-canvas.tsx`, and `src/lib/workflow-graph.ts` |
 | Parsing | `src/app/api/parse` and parser/document-preview libraries |
@@ -1168,7 +1168,7 @@ The current product direction is:
 - all/selected/none document handoff;
 - checkbox-based value and document selection;
 - simple default handoff with advanced controls collapsed;
-- Queue for action, Tracking for visibility, Workflow for workflow design, Forms for reusable form design, and Drafts for incomplete requests;
+- Inbox for action, Tracking for visibility, Workflow for workflow design, Forms for reusable form design, and Drafts for incomplete requests;
 - **+ New** for request creation, with no Upload navigation tab;
 - flexible contributors, delegation, and acceptance-based reassignment;
 - AI-assisted parsing with human correction and reusable examples;

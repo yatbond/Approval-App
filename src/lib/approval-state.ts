@@ -79,7 +79,7 @@ export function getTaskActionBlockReason({
   template?: WorkflowTemplate;
 }) {
   if (assignedTaskActions.has(action) && !isActionableBy(task, actorEmail)) {
-    return "This task is no longer assigned to you. Refresh the Queue to see its current owner.";
+    return "This task is no longer assigned to you. Refresh the Inbox to see its current owner.";
   }
 
   if (!decisionActions.has(action)) {
@@ -96,7 +96,7 @@ export function getTaskActionBlockReason({
     (actionTask.nodeDecisions?.[actionTask.currentNodeId] ||
       actionTask.completedNodeIds?.includes(actionTask.currentNodeId))
   ) {
-    return "This workflow box has already been decided. Refresh the Queue to continue.";
+    return "This workflow box has already been decided. Refresh the Inbox to continue.";
   }
 
   return "";

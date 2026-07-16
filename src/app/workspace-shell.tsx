@@ -26,7 +26,7 @@ import {
 } from "@/lib/workspace-tabs-state";
 
 const tabDetails: Record<WorkspaceTab, { label: string; icon: React.ElementType }> = {
-  queue: { label: "Queue", icon: ClipboardList },
+  queue: { label: "Inbox", icon: ClipboardList },
   tracking: { label: "Tracking", icon: History },
   upload: { label: "Upload", icon: Plus },
   drafts: { label: "Drafts", icon: ReceiptText },

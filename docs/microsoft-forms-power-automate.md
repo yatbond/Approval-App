@@ -77,7 +77,7 @@ For `start_workflow`, use that response mode and omit `approvalRequestNo` unless
 4. Omit a required answer and required upload in separate tests; both must return `422`.
 5. For complete-node mode, use an invalid request reference and confirm no request changes.
 6. For start-workflow mode, omit one required participant email and confirm no request is created.
-7. For a PDF or image attachment linked to an AI field, confirm the extracted value appears in Queue/Tracking and remains editable before the workflow decision.
+7. For a PDF or image attachment linked to an AI field, confirm the extracted value appears in Inbox/Tracking and remains editable before the workflow decision.
 8. Verify each Microsoft 365 attachment link opens for an authorized user.
 
 ## Operational Notes

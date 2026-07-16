@@ -64,11 +64,11 @@ async function signIn(page) {
     page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 20_000 }),
     page.getByRole("button", { name: "Sign in", exact: true }).click(),
   ]);
-  await expectText(page, "Queue");
+  await expectText(page, "Inbox");
 }
 
 async function verifyPrimaryNavigation(page) {
-  for (const label of ["Queue", "Tracking", "Drafts", "Workflow", "Forms", "Admin"]) {
+  for (const label of ["Inbox", "Tracking", "Drafts", "Workflow", "Forms", "Admin"]) {
     const link = page.getByRole("link", { name: label, exact: true });
     if ((await link.count()) !== 1) {
       throw new Error(`Expected one ${label} navigation link.`);
@@ -101,7 +101,7 @@ async function verifyFormsWorkspace(page) {
 
 async function verifyQueueDecisionControls(page) {
   await page.goto(`${appUrl}/?tab=queue`, { waitUntil: "networkidle" });
-  await expectText(page, "Queue");
+  await expectText(page, "Inbox");
 
   const rejectButton = page.getByRole("button", { name: "Reject", exact: true });
   if ((await rejectButton.count()) > 0) {

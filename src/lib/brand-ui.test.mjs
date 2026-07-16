@@ -181,6 +181,18 @@ test("header notifications open a user-actionable menu", () => {
   assert.match(shellSource, /notification\.requestId/);
 });
 
+test("calls actionable work Inbox while preserving the queue route", async () => {
+  const queueViewSource = await readFile(
+    new URL("../app/queue-view.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(shellSource, /queue: \{ label: "Inbox"/);
+  assert.match(queueViewSource, />Inbox</);
+  assert.match(queueViewSource, />Inbox is empty</);
+  assert.match(shellSource, /href=\{`\/\?tab=\$\{tab\.id\}`\}/);
+});
+
 test("keeps intermediate-width panels readable", async () => {
   const queueViewSource = await readFile(
     new URL("../app/queue-view.tsx", import.meta.url),

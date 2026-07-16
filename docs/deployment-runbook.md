@@ -56,7 +56,7 @@ Preview-only variables will be available to the Production rebuild.
 ## Browser Regression
 
 Run the authenticated browser regression suite after changes to parsing, routing,
-Queue actions, Tracking, or email delivery:
+Inbox actions, Tracking, or email delivery:
 
 ```powershell
 $env:APP_URL = "https://approval-app-derrick-pangs-projects.vercel.app"
@@ -71,7 +71,7 @@ npm run e2e:regression
 The three request variables are optional. When supplied, the runner verifies
 parsed values and the sequential, parallel, and conditional workflow history.
 It always checks authentication, primary navigation, Workflow Library, and
-Queue reject controls.
+Inbox reject controls.
 
 To send a real test notification through the configured provider, set
 `E2E_TEST_EMAIL_TO`. Email verification is deliberately opt-in because every
