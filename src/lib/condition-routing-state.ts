@@ -9,7 +9,7 @@ export type ConditionRoutingContext = {
   numericFields: { name: string; label: string }[];
 };
 
-export function getOrderedConditionCases(
+function getOrderedConditionCases(
   conditionCases: WorkflowConditionCase[] = [],
 ) {
   return [

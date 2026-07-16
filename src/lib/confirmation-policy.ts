@@ -1,6 +1,6 @@
 import type { ApprovalAction } from "@/lib/types";
 
-export type ConfirmationTone = "danger" | "warning";
+type ConfirmationTone = "danger" | "warning";
 
 export type ConfirmationRequest = {
   title: string;

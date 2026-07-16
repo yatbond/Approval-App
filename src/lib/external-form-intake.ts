@@ -8,7 +8,7 @@ const externalFormAttachmentSchema = z.object({
   driveItemId: z.string().trim().max(500).optional(),
 });
 
-export const externalFormIntakeSchema = z.object({
+const externalFormIntakeSchema = z.object({
   provider: z.literal("microsoft_forms"),
   workspaceOwnerEmail: z.string().email().max(500),
   formKey: z.string().trim().min(1).max(200),

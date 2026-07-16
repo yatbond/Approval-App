@@ -8,7 +8,7 @@ import type {
   ParsedWorkspaceFilePayload,
 } from "./workspace-file-api.ts";
 
-export const uploadRequestDraftVersion = 1;
+const uploadRequestDraftVersion = 1;
 
 export type UploadRequestDraft = {
   version: typeof uploadRequestDraftVersion;

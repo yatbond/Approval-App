@@ -103,7 +103,7 @@ export function getMissingWorkflowParticipantEmails(template: WorkflowTemplate) 
     .map((field) => field.label);
 }
 
-export function getEscalationParticipantEmailFieldId(nodeId: string) {
+function getEscalationParticipantEmailFieldId(nodeId: string) {
   return `${nodeId}:escalation`;
 }
 

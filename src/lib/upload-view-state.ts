@@ -20,7 +20,7 @@ export type AdHocFieldDraft = {
   instructions: string;
 };
 
-export type HighlightValueBoxStatus = "ready" | "extracting" | "done" | "error";
+type HighlightValueBoxStatus = "ready" | "extracting" | "done" | "error";
 
 export type HighlightValueBox = {
   id: string;

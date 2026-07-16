@@ -346,7 +346,7 @@ export async function extractPdfFieldsWithPageImagesAndPdfFallback(params: {
   };
 }
 
-export async function extractPdfFieldsWithMainPageImages(params: {
+async function extractPdfFieldsWithMainPageImages(params: {
   pageImages: PdfPageImageInput[];
   fields: WorkflowField[];
   languageHint: string;

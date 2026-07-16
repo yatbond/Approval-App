@@ -5,19 +5,19 @@ import type {
   WorkflowTemplate,
 } from "@/lib/types";
 
-export type TemplateFieldDraft = {
+type TemplateFieldDraft = {
   label: string;
   instructions: string;
 };
 
-export type TemplateDocumentDraft = {
+type TemplateDocumentDraft = {
   documentType: string;
   format: DocumentFormat;
   required: boolean;
   fields: TemplateFieldDraft[];
 };
 
-export type TemplateStepDraft = {
+type TemplateStepDraft = {
   approverName: string;
   approverEmail: string;
   dueInHours: number;

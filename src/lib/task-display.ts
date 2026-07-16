@@ -21,7 +21,7 @@ export type PathNodeProgressTone =
   | "rejected"
   | "not-reached";
 
-export type WorkflowPathStageNode = WorkflowGraphNode & {
+type WorkflowPathStageNode = WorkflowGraphNode & {
   stageNumber: number;
   pathLabel: string;
   parallelIndex: number;

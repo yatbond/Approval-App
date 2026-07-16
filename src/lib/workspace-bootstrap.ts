@@ -12,7 +12,7 @@ import {
 } from "./user-directory.ts";
 import type { WorkspaceStateSnapshot } from "./workspace-persistence.ts";
 
-export function personalizeApprovalTask(
+function personalizeApprovalTask(
   task: ApprovalTask,
   activeUserEmail: string,
 ): ApprovalTask {

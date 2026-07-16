@@ -12,16 +12,16 @@ import type {
 } from "./types.ts";
 import { createWorkflowGraphFromTemplate } from "./workflow-graph.ts";
 
-export type TaskHandoffField = {
+type TaskHandoffField = {
   label: string;
   value: string;
 };
 
-export type TaskHandoffAttachment = ApprovalAttachment & {
+type TaskHandoffAttachment = ApprovalAttachment & {
   storageLabel?: string;
 };
 
-export type TaskHandoffProcessResult = {
+type TaskHandoffProcessResult = {
   id: string;
   label: string;
   tone: "pass" | "fail" | "unknown" | "info";
