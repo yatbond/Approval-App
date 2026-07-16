@@ -29,6 +29,10 @@ const WorkspaceWorkflowEntry = dynamic(
   () => import("@/app/workspace-workflow-entry"),
   { ssr: false, loading: WorkspaceLoading },
 );
+const WorkspaceFormsEntry = dynamic(
+  () => import("@/app/workspace-forms-entry"),
+  { ssr: false, loading: WorkspaceLoading },
+);
 const WorkspaceAdminEntry = dynamic(
   () => import("@/app/workspace-admin-entry"),
   { ssr: false, loading: WorkspaceLoading },
@@ -46,6 +50,9 @@ export default function ApprovalWorkspaceLoader(props: ApprovalWorkspaceProps) {
   }
   if (props.initialTab === "workflow") {
     return <WorkspaceWorkflowEntry {...props} />;
+  }
+  if (props.initialTab === "forms") {
+    return <WorkspaceFormsEntry {...props} />;
   }
   return <WorkspaceAdminEntry {...props} />;
 }

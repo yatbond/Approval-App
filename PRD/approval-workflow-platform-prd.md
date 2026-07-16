@@ -1,6 +1,6 @@
 # Approval Workflow Platform PRD
 
-Last updated: 2026-07-14
+Last updated: 2026-07-16
 Document owner: Product / Workflow Platform
 Status: Living specification aligned with the current codebase
 Repository: Approval Workflow Next.js application
@@ -52,7 +52,7 @@ The current stack is:
 4. **No silent loss of context**: handoff, decisions, corrections, reassignment, and delegation remain auditable.
 5. **Flexible with guardrails**: parallel routing, conditions, collaboration, and return routing are configurable but validated.
 6. **Human-correctable AI**: extracted values are reviewable, editable, and trainable through saved examples.
-7. **Mobile for operations, desktop for design**: request submission, Queue, Tracking, Drafts, Library, and Admin are responsive; visual canvas editing is desktop or tablet only.
+7. **Mobile for operations, desktop for design**: request submission, Queue, Tracking, Drafts, Workflow Builder/Library, Forms Builder/Library, and Admin are responsive; visual workflow canvas editing is desktop or tablet only.
 
 ## 4. Goals and Success Criteria
 
@@ -123,13 +123,14 @@ The current release is not intended to provide:
 
 ### 7.1 Primary Navigation
 
-The signed-in application contains five primary destinations:
+The signed-in application contains six primary destinations:
 
 1. **Queue**: requests requiring the user’s action.
 2. **Tracking**: requests the user originated, owns, previously acted on, or can otherwise view.
 3. **Drafts**: incomplete request drafts that can be resumed or deleted.
-4. **Workflow**: workflow Builder, Canvas, Library, and Forms views; Library separates active workflows, versions, and archived workflows.
-5. **Admin**: organization, role, notification, email, and template administration.
+4. **Workflow**: workflow Builder, Canvas, and version-grouped Library.
+5. **Forms**: independent reusable form Builder, native form Layout editor, and version-grouped Library.
+6. **Admin**: organization, role, notification, email, and template administration.
 
 The header also contains:
 
@@ -147,7 +148,7 @@ There is no user-facing Upload tab. **+ New** opens the internal request-creatio
 ### 7.3 Responsive Navigation
 
 - Desktop uses a collapsible sidebar and compact header.
-- Mobile uses a compact five-item navigation treatment and responsive action layout.
+- Mobile uses a compact six-item navigation treatment and responsive action layout.
 - Intermediate window widths use available panel width, not viewport width alone, so nested cards stack before their text or controls become cramped.
 - Long labels wrap or truncate without crossing control boundaries.
 - Tooltips explain unfamiliar controls.
@@ -160,16 +161,17 @@ There is no user-facing Upload tab. **+ New** opens the internal request-creatio
 ### 8.1 Create and Publish a Workflow
 
 1. An authorized user opens Workflow > Builder.
-2. The user enters workflow name, business, department, description, and optional version note.
-3. The user chooses **Blank workflow** or copies an active, non-archived workflow.
-4. The application prevents duplicate workflow names within the same business and department.
-5. Creating the template opens Canvas directly.
-6. The user configures Submit, Approval, FYI, and Condition boxes and connects them to the fixed Start and End boxes.
-7. Validation identifies routing, document, field, and condition problems.
-8. The user enters one tester email and starts a dedicated test request. Every
+2. The user creates a workflow or opens the current draft/active version of an existing workflow family.
+3. The user enters or updates workflow name, business, and department. Published versions remain locked and expose **Create draft version** instead of editable fields.
+4. For a new workflow, the user chooses **Blank workflow** or copies an active, non-archived workflow.
+5. The application prevents duplicate workflow names within the same business and department.
+6. Creating the template opens Canvas directly.
+7. The user configures Submit, Approval, FYI, and Condition boxes and connects them to the fixed Start and End boxes.
+8. Validation identifies routing, document, field, and condition problems.
+9. The user enters one tester email and starts a dedicated test request. Every
    workflow role is assigned to that tester, and no live request is changed.
-9. The user publishes an eligible draft.
-10. The published version can be activated for future requests.
+10. The user publishes an eligible draft.
+11. The published version can be activated for future requests. Library keeps every draft and published version under one workflow family, with archived versions in a separate view.
 
 ### 8.2 Start and Submit a Request
 
@@ -251,17 +253,22 @@ Native form values use the same request field map as AI/OCR values. They therefo
 
 ### 9.4 Reusable Form Library
 
-Workflow includes a **Forms** subtab containing a reusable, versioned Form Library.
+**Forms** is a primary workspace separate from Workflow. It contains a reusable, versioned Form Library so forms can be designed independently and attached to multiple workflows.
 
 The library supports:
 
 - native forms built and completed in Approval App;
+- a Builder for fields, source mappings, choices, required responses, attachment questions, company/department scope, and version notes;
+- a Layout editor that arranges native fields into named sections and full- or half-width desktop rows, with automatic full-width mobile rendering;
+- drafts that update in place until published;
 - linked Microsoft Forms registered by response URL;
 - canonical request data fields with an explicit user-entry, Microsoft Forms answer, or AI-from-attachment source;
 - registered file-upload questions that can attach files and supply AI/OCR-derived values;
-- immutable versions with version comments;
+- immutable published versions with version comments and explicit activation for new workflow attachments;
 - archive behavior that removes a form from new workflow selection without breaking pinned workflow versions;
 - a target workflow and participant-resolution preflight when a Microsoft Form starts a new request.
+
+Forms Library groups draft and published versions under one form family. **Available** contains usable versions and editable drafts; **Archived** contains retired versions. An authorized user can edit a draft, create a new draft from a published version, activate any ready published version, or archive a version. Existing workflow attachments remain pinned to their original form version.
 
 A Submit or Approval box can attach a ready library form. The workflow stores both a pinned library/version reference and a snapshot of its mapped fields. Later library changes therefore do not alter published workflow versions or in-flight requests.
 
@@ -414,11 +421,9 @@ The selected box is a location hint, not an exact coordinate rule. Recognition m
 
 ### 11.2 Workflow Views
 
-- **Builder**: creates a new draft and selects a base workflow.
+- **Builder**: creates a new workflow or opens one current draft/active record per workflow family. It edits draft identity fields and creates a draft version from a published workflow.
 - **Canvas**: visually edits the selected draft.
-- **Library**: shows usable drafts and active published workflows, excluding archived items.
-- **Versions**: shows non-archived versions and allows an authorized user to activate a published version.
-- **Archived**: shows archived workflows separately.
+- **Library**: groups drafts and every published version under one workflow family. Its **Available** view supports edit/new draft, version notes, activation, and archive actions; its **Archived** view keeps retired versions separate.
 
 ### 11.3 Versioning Rules
 
@@ -1001,7 +1006,7 @@ Important environment groups include:
 
 ## 25. Validation and Test Coverage
 
-The codebase currently contains 665 automated tests covering 107 test files. Coverage includes:
+The codebase currently contains 721 automated tests covering 121 test files. Coverage includes:
 
 - graph validation and routing;
 - sequential and parallel approval state;
@@ -1014,7 +1019,7 @@ The codebase currently contains 665 automated tests covering 107 test files. Cov
 - sample training persistence;
 - PDF and spreadsheet parsing;
 - upload/request workspace behavior;
-- Queue, Tracking, Workflow, intermediate-width, mobile, and light/dark UI behavior;
+- Queue, Tracking, Workflow, Forms, intermediate-width, mobile, and light/dark UI behavior;
 - accessible control labels, placeholder readability, stable touch targets, and dark-theme semantic foregrounds;
 - email delivery modes and notification targeting;
 - Supabase persistence and normalized records;
@@ -1163,7 +1168,7 @@ The current product direction is:
 - all/selected/none document handoff;
 - checkbox-based value and document selection;
 - simple default handoff with advanced controls collapsed;
-- Queue for action, Tracking for visibility, Workflow for design, Drafts for incomplete requests;
+- Queue for action, Tracking for visibility, Workflow for workflow design, Forms for reusable form design, and Drafts for incomplete requests;
 - **+ New** for request creation, with no Upload navigation tab;
 - flexible contributors, delegation, and acceptance-based reassignment;
 - AI-assisted parsing with human correction and reusable examples;

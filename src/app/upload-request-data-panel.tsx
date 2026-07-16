@@ -22,6 +22,7 @@ import type {
   WorkflowField,
 } from "@/lib/types";
 import { NativeFormFieldInput } from "./native-form-field-input";
+import { normalizeFormLayout } from "@/lib/form-layout-state";
 import { InfoTip } from "./ui-hint";
 
 type ParseFileOptions = {
@@ -224,27 +225,63 @@ export function UploadRequestDataPanel({
                       </div>
                     </div>
                   )}
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    {getLocallyEditableWorkflowFormFields(document).map((field) => {
-                      const value =
-                        editedFields[field.label] ?? editedFields[field.name] ?? "";
-
-                      return (
-                        <NativeFormFieldInput
-                          key={field.name}
-                          field={field}
-                          value={value}
-                          onFocus={() => onFocusDocument(document.id)}
-                          onChange={(nextValue) =>
-                            setEditedFields({
-                              ...editedFields,
-                              [field.label]: nextValue,
-                            })
-                          }
-                        />
-                      );
-                    })}
-                  </div>
+                  {(() => {
+                    const editableFields = getLocallyEditableWorkflowFormFields(document);
+                    const fieldByName = new Map(
+                      editableFields.map((field) => [field.name, field]),
+                    );
+                    const layout = normalizeFormLayout(
+                      document.formLibraryRef?.layout,
+                      editableFields,
+                    );
+                    return (
+                      <div className="mt-3 space-y-4">
+                        {layout.sections.map((section) => (
+                          <section
+                            key={section.id}
+                            className="rounded-md border border-[#e6e6e6] bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900"
+                          >
+                            <h4 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                              {section.title}
+                            </h4>
+                            {section.description && (
+                              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                                {section.description}
+                              </p>
+                            )}
+                            <div className="mt-3 grid gap-3 md:grid-cols-2">
+                              {section.items.map((item) => {
+                                const field = fieldByName.get(item.fieldName);
+                                if (!field) return null;
+                                const value =
+                                  editedFields[field.label] ??
+                                  editedFields[field.name] ??
+                                  "";
+                                return (
+                                  <div
+                                    key={field.name}
+                                    className={item.width === "full" ? "md:col-span-2" : ""}
+                                  >
+                                    <NativeFormFieldInput
+                                      field={field}
+                                      value={value}
+                                      onFocus={() => onFocusDocument(document.id)}
+                                      onChange={(nextValue) =>
+                                        setEditedFields({
+                                          ...editedFields,
+                                          [field.label]: nextValue,
+                                        })
+                                      }
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    );
+                  })()}
                   {!document.fields.length && (
                     <p className="mt-3 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-xs text-neutral-500">
                       No fields yet.

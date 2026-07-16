@@ -4,15 +4,21 @@ import type {
   FormLibraryResponseMode,
   FormLibrarySource,
   FormParticipantMapping,
+  FormLayout,
   WorkflowField,
   WorkflowTemplate,
 } from "./types.ts";
 import { isNativeFormChoiceField } from "./workflow-native-form-state.ts";
 import { addWorkflowDocumentToNode, createWorkflowGraphFromTemplate } from "./workflow-graph.ts";
+import { createDefaultFormLayout, normalizeFormLayout } from "./form-layout-state.ts";
+
+export type FormLibrarySaveMode = "draft" | "publish";
 
 export type FormLibraryDraft = {
   name: string;
   description: string;
+  business: string;
+  department: string;
   source: FormLibrarySource;
   responseMode: FormLibraryResponseMode;
   responseUrl: string;
@@ -20,28 +26,32 @@ export type FormLibraryDraft = {
   targetWorkflowTemplateId: string;
   versionComment: string;
   fields: WorkflowField[];
+  layout: FormLayout;
   attachmentFields: FormLibraryDefinition["attachmentFields"];
   participantMappings: FormParticipantMapping[];
 };
 
 export function createEmptyFormLibraryDraft(
   source: FormLibrarySource = "native",
+  defaults: { business?: string; department?: string } = {},
 ): FormLibraryDraft {
+  const firstField = createFormLibraryField(
+    "New field",
+    source === "microsoft_forms" ? "microsoft_forms" : "approval_app",
+  );
   return {
     name: source === "microsoft_forms" ? "Microsoft form" : "Untitled form",
     description: "",
+    business: defaults.business || "",
+    department: defaults.department || "",
     source,
     responseMode: source === "microsoft_forms" ? "complete_node" : "manual",
     responseUrl: "",
     embedUrl: "",
     targetWorkflowTemplateId: "",
     versionComment: "",
-    fields: [
-      createFormLibraryField(
-        "New field",
-        source === "microsoft_forms" ? "microsoft_forms" : "approval_app",
-      ),
-    ],
+    fields: [firstField],
+    layout: createDefaultFormLayout([firstField]),
     attachmentFields: [],
     participantMappings: [],
   };
@@ -156,6 +166,7 @@ export function saveFormLibraryDraft({
   draft,
   actorEmail,
   existingDefinition,
+  saveMode = "publish",
   workflowTemplates = [],
   now = new Date(),
 }: {
@@ -163,26 +174,35 @@ export function saveFormLibraryDraft({
   draft: FormLibraryDraft;
   actorEmail: string;
   existingDefinition?: FormLibraryDefinition | null;
+  saveMode?: FormLibrarySaveMode;
   workflowTemplates?: WorkflowTemplate[];
   now?: Date;
 }) {
   const timestamp = now.toISOString();
   const formKey = existingDefinition?.formKey || `form-${toFieldName(draft.name)}-${now.getTime()}`;
   const currentVersions = library.filter((item) => item.formKey === formKey);
-  const version = currentVersions.length
+  const nextVersion = currentVersions.length
     ? Math.max(...currentVersions.map((item) => item.version)) + 1
     : 1;
+  const isUpdatingDraft = Boolean(existingDefinition?.isDraft);
+  const version = isUpdatingDraft ? existingDefinition?.version || nextVersion : nextVersion;
   const externalFormId =
     draft.source === "microsoft_forms" ? extractMicrosoftFormId(draft.responseUrl) : undefined;
   const issues = getFormLibraryPreflightIssues(draft, workflowTemplates);
+  const isDraft = saveMode === "draft";
+  const canPublish = !isDraft && issues.length === 0;
   const definition: FormLibraryDefinition = {
-    id: `${formKey}-v${version}`,
+    id: isUpdatingDraft ? existingDefinition?.id || `${formKey}-v${version}` : `${formKey}-v${version}`,
     formKey,
     name: draft.name.trim(),
     description: draft.description.trim(),
+    business: draft.business.trim() || undefined,
+    department: draft.department.trim() || undefined,
     source: draft.source,
     version,
     versionComment: draft.versionComment.trim(),
+    isDraft,
+    isActiveVersion: canPublish,
     status: issues.length ? "setup_required" : "ready",
     fields: draft.fields.map((field) => {
       const inputSource = getFormLibraryFieldInputSource(field, draft.source);
@@ -200,6 +220,7 @@ export function saveFormLibraryDraft({
           : {}),
       };
     }),
+    layout: normalizeFormLayout(draft.layout, draft.fields),
     attachmentFields: draft.attachmentFields || [],
     responseMode: draft.responseMode,
     responseUrl: draft.responseUrl.trim() || undefined,
@@ -212,9 +233,16 @@ export function saveFormLibraryDraft({
     createdAt: existingDefinition?.createdAt || timestamp,
     updatedAt: timestamp,
   };
+  const remainingLibrary = library
+    .filter((item) => item.id !== definition.id)
+    .map((item) =>
+      canPublish && item.formKey === formKey && item.status !== "archived"
+        ? { ...item, isActiveVersion: false }
+        : item,
+    );
   return {
     definition,
-    library: [definition, ...library],
+    library: [definition, ...remainingLibrary],
   };
 }
 
@@ -228,6 +256,45 @@ export function getLatestFormLibraryDefinitions(library: FormLibraryDefinition[]
   }
   return Array.from(latest.values()).sort((left, right) =>
     left.name.localeCompare(right.name),
+  );
+}
+
+export function getActiveFormLibraryDefinitions(library: FormLibraryDefinition[]) {
+  const groups = new Map<string, FormLibraryDefinition[]>();
+  library
+    .filter(
+      (definition) =>
+        definition.status === "ready" &&
+        definition.isDraft !== true,
+    )
+    .forEach((definition) => {
+      groups.set(definition.formKey, [
+        ...(groups.get(definition.formKey) || []),
+        definition,
+      ]);
+    });
+  return Array.from(groups.values())
+    .map((versions) => {
+      const explicit = versions.filter((version) => version.isActiveVersion === true);
+      return (explicit.length ? explicit : versions).reduce((latest, version) =>
+        version.version > latest.version ? version : latest,
+      );
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export function activateFormLibraryDefinition(
+  library: FormLibraryDefinition[],
+  definitionId: string,
+) {
+  const target = library.find((definition) => definition.id === definitionId);
+  if (!target || target.isDraft === true || target.status !== "ready") {
+    return library;
+  }
+  return library.map((definition) =>
+    definition.formKey === target.formKey && definition.isDraft !== true
+      ? { ...definition, isActiveVersion: definition.id === definitionId }
+      : definition,
   );
 }
 
@@ -286,6 +353,7 @@ export function attachLibraryFormToWorkflow({
       selectedFieldNames: definition.fields.map((field) => field.name),
       selectedAttachmentNames: (definition.attachmentFields || []).map((field) => field.name),
       attachmentFields: (definition.attachmentFields || []).map((field) => ({ ...field })),
+      layout: definition.layout,
     },
   });
   return {
@@ -325,6 +393,7 @@ function buildFormSchemaFingerprint(draft: FormLibraryDraft) {
       field.label,
       field.required,
     ]),
+    layout: normalizeFormLayout(draft.layout, draft.fields),
   });
 }
 

@@ -6,7 +6,7 @@ import { TemplateDocumentRecognitionPanel } from "@/app/template-document-recogn
 import { InfoTip } from "@/app/ui-hint";
 import { WorkflowLibraryFormSummary } from "@/app/workflow-library-form-summary";
 import {
-  getLatestFormLibraryDefinitions,
+  getActiveFormLibraryDefinitions,
 } from "@/lib/form-library-state";
 import {
   documentFormatOptions,
@@ -101,7 +101,7 @@ export function WorkflowBoxDocumentsEditor({
   const [selectedLibraryFormId, setSelectedLibraryFormId] = useState("");
   const availableLibraryForms = useMemo(
     () =>
-      getLatestFormLibraryDefinitions(formLibrary).filter(
+      getActiveFormLibraryDefinitions(formLibrary).filter(
         (definition) => definition.status === "ready",
       ),
     [formLibrary],

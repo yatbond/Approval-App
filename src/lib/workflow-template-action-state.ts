@@ -4,6 +4,7 @@ import { createWorkflowGraphFromTemplate, validateWorkflowTemplate } from "./wor
 import { publishWorkflowTemplateVersion } from "./workflow-system.ts";
 import {
   getActiveWorkflowRequestTemplates,
+  getWorkflowTemplateFamilyKey,
   isActiveWorkflowTemplateVersion,
 } from "./workflow-template-version-state.ts";
 
@@ -35,15 +36,12 @@ export function getWorkflowCreateTemplateActionState({
     return { didCreate: false, template: null };
   }
 
-  const hasDuplicate = existingTemplates.some(
-    (template) =>
-      !template.isArchived &&
-      normalizeComparableValue(template.name) === normalizeComparableValue(cleanName) &&
-      normalizeComparableValue(template.business) ===
-        normalizeComparableValue(selectedBusinessName) &&
-      normalizeComparableValue(template.department) ===
-        normalizeComparableValue(cleanDepartment),
-  );
+  const hasDuplicate = hasWorkflowTemplateIdentityConflict({
+    templates: existingTemplates,
+    name: cleanName,
+    business: selectedBusinessName,
+    department: cleanDepartment,
+  });
   if (hasDuplicate) {
     return {
       didCreate: false,
@@ -91,6 +89,41 @@ export function getWorkflowTemplateBaseOptions({
         activePublishedTemplateIds.has(template.id) ||
         isActiveWorkflowTemplateVersion(template, templates)),
   );
+}
+
+export function getWorkflowBuilderTemplateOptions(templates: WorkflowTemplate[]) {
+  const groups = new Map<string, WorkflowTemplate[]>();
+  templates
+    .filter((template) => template.isArchived !== true)
+    .forEach((template) => {
+      const familyKey = getWorkflowTemplateFamilyKey(template);
+      groups.set(familyKey, [...(groups.get(familyKey) || []), template]);
+    });
+
+  return Array.from(groups.values())
+    .map((versions) => {
+      const drafts = versions.filter((template) => template.isDraft !== false);
+      const published = versions.filter((template) => template.isDraft === false);
+      const candidates = drafts.length
+        ? drafts
+        : published.some((template) => template.isActiveVersion === true)
+          ? published.filter((template) => template.isActiveVersion === true)
+          : published;
+      return candidates.reduce((latest, template) => {
+        const versionDifference = (template.version || 1) - (latest.version || 1);
+        if (versionDifference !== 0) return versionDifference > 0 ? template : latest;
+        return (template.updatedAt || template.publishedAt || template.createdAt || "") >
+          (latest.updatedAt || latest.publishedAt || latest.createdAt || "")
+          ? template
+          : latest;
+      });
+    })
+    .sort(
+      (left, right) =>
+        left.name.localeCompare(right.name) ||
+        left.business.localeCompare(right.business) ||
+        left.department.localeCompare(right.department),
+    );
 }
 
 export function formatWorkflowTemplateOptionLabel(template: WorkflowTemplate) {
@@ -157,9 +190,11 @@ function isBlockingPublishIssue(
 
 export function getWorkflowDuplicateTemplateActionState({
   template,
+  existingTemplates = [],
   now = new Date(),
 }: {
   template: WorkflowTemplate | null;
+  existingTemplates?: WorkflowTemplate[];
   now?: Date;
 }): WorkflowTemplateActionState {
   if (!template) {
@@ -167,11 +202,15 @@ export function getWorkflowDuplicateTemplateActionState({
   }
 
   const id = `${template.id.replace(/-copy-\d+$/, "")}-copy-${now.getTime()}`;
+  const familyKey = getWorkflowTemplateFamilyKey(template);
+  const latestFamilyVersion = [template, ...existingTemplates]
+    .filter((item) => getWorkflowTemplateFamilyKey(item) === familyKey)
+    .reduce((latest, item) => Math.max(latest, item.version || 1), 1);
   const nextTemplate: WorkflowTemplate = {
     ...cloneTemplate(template),
     id,
-    name: `${template.name} copy`,
-    version: 1,
+    name: template.name,
+    version: latestFamilyVersion,
     isDraft: true,
     publishedAt: undefined,
     sourceTemplateId: template.id,
@@ -183,6 +222,29 @@ export function getWorkflowDuplicateTemplateActionState({
     selectedTemplateId: id,
     workflowEditorTab: "canvas",
   };
+}
+
+export function hasWorkflowTemplateIdentityConflict({
+  templates,
+  name,
+  business,
+  department,
+  excludeFamilyKey,
+}: {
+  templates: WorkflowTemplate[];
+  name: string;
+  business: string;
+  department: string;
+  excludeFamilyKey?: string;
+}) {
+  return templates.some(
+    (template) =>
+      !template.isArchived &&
+      (!excludeFamilyKey || getWorkflowTemplateFamilyKey(template) !== excludeFamilyKey) &&
+      normalizeComparableValue(template.name) === normalizeComparableValue(name) &&
+      normalizeComparableValue(template.business) === normalizeComparableValue(business) &&
+      normalizeComparableValue(template.department) === normalizeComparableValue(department),
+  );
 }
 
 function cloneTemplate(template: WorkflowTemplate): WorkflowTemplate {

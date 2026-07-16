@@ -4,6 +4,7 @@ export const workspaceTabIds = [
   "upload",
   "drafts",
   "workflow",
+  "forms",
   "admin",
 ] as const;
 

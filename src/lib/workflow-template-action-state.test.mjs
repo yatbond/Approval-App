@@ -6,6 +6,8 @@ import {
   getWorkflowPublishTemplateActionState,
   formatWorkflowTemplateOptionLabel,
   getWorkflowTemplateBaseOptions,
+  getWorkflowBuilderTemplateOptions,
+  hasWorkflowTemplateIdentityConflict,
 } from "./workflow-template-action-state.ts";
 
 const template = {
@@ -145,6 +147,17 @@ test("excludes inactive workflow versions from base options", () => {
     }).map((item) => item.id),
     ["template-1-v2"],
   );
+});
+
+test("builder lists one current record per workflow family", () => {
+  const options = getWorkflowBuilderTemplateOptions([
+    { ...template, id: "template-1-v1", version: 1, isDraft: false, isActiveVersion: false },
+    { ...template, id: "template-1-v2", sourceTemplateId: "template-1", version: 2, isDraft: false, isActiveVersion: true },
+    { ...template, id: "template-1-draft", sourceTemplateId: "template-1", version: 2, isDraft: true, updatedAt: "2026-07-16T02:00:00.000Z" },
+    { ...template, id: "other", name: "Site approval", department: "Operations" },
+  ]);
+
+  assert.deepEqual(options.map((item) => item.id), ["template-1-draft", "other"]);
 });
 
 test("does not create a duplicate workflow name inside the same business and department", () => {
@@ -330,7 +343,7 @@ test("duplicates a template as a new editable draft", () => {
 
   assert.equal(result.didCreate, true);
   assert.equal(result.template?.id, "template-1-copy-1782021600000");
-  assert.equal(result.template?.name, "Invoice approval copy");
+  assert.equal(result.template?.name, "Invoice approval");
   assert.equal(result.template?.version, 1);
   assert.equal(result.template?.isDraft, true);
   assert.equal(result.template?.publishedAt, undefined);
@@ -339,4 +352,39 @@ test("duplicates a template as a new editable draft", () => {
   assert.deepEqual(result.template?.graph, template.graph);
   assert.equal(result.selectedTemplateId, "template-1-copy-1782021600000");
   assert.equal(result.workflowEditorTab, "canvas");
+});
+
+test("drafting an older workflow version continues after the latest family version", () => {
+  const result = getWorkflowDuplicateTemplateActionState({
+    template: { ...template, id: "template-1-v1", version: 1, isDraft: false },
+    existingTemplates: [
+      { ...template, id: "template-1-v5", sourceTemplateId: "template-1", version: 5, isDraft: false },
+    ],
+    now: new Date("2026-06-21T07:00:00.000Z"),
+  });
+
+  assert.equal(result.template?.version, 5);
+});
+
+test("workflow identity conflicts ignore versions in the same family", () => {
+  assert.equal(
+    hasWorkflowTemplateIdentityConflict({
+      templates: [template],
+      name: "Invoice approval",
+      business: "Asia Allied Infrastructure",
+      department: "Finance",
+      excludeFamilyKey: "template-1",
+    }),
+    false,
+  );
+  assert.equal(
+    hasWorkflowTemplateIdentityConflict({
+      templates: [{ ...template, id: "other-family" }],
+      name: " invoice APPROVAL ",
+      business: "Asia Allied Infrastructure",
+      department: "Finance",
+      excludeFamilyKey: "template-1",
+    }),
+    true,
+  );
 });

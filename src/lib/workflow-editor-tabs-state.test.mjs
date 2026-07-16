@@ -8,7 +8,7 @@ import {
 test("puts Builder before Canvas in the workflow editor tabs", () => {
   assert.deepEqual(
     workflowEditorTabs.map((tab) => tab.id),
-    ["builder", "canvas", "library", "forms"],
+    ["builder", "canvas", "library"],
   );
 });
 

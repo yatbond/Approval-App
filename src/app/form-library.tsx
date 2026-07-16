@@ -1,7 +1,9 @@
 "use client";
 
-import { Archive, FileInput, Plus, Save, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { FileInput, LayoutTemplate, Library, Plus, Save, Trash2, Wrench } from "lucide-react";
+import { useState } from "react";
+import { FormLayoutEditor } from "@/app/form-layout-editor";
+import { FormVersionLibrary } from "@/app/form-version-library";
 import {
   createEmptyFormLibraryDraft,
   createFormLibraryField,
@@ -9,9 +11,13 @@ import {
   getFormLibraryFieldInputSource,
   getFormLibraryPreflightIssues,
   getFormParticipantNodes,
-  getLatestFormLibraryDefinitions,
   type FormLibraryDraft,
+  type FormLibrarySaveMode,
 } from "@/lib/form-library-state";
+import {
+  normalizeFormLayout,
+  renameFormLayoutField,
+} from "@/lib/form-layout-state";
 import {
   isNativeFormChoiceField,
   nativeFormFieldTypeOptions,
@@ -20,6 +26,7 @@ import type {
   FormLibraryDefinition,
   FormLibraryFieldInputSource,
   FormParticipantResolutionSource,
+  BusinessUnit,
   WorkflowField,
   WorkflowTemplate,
 } from "@/lib/types";
@@ -38,31 +45,39 @@ const participantSourceOptions: {
 
 export function FormLibrary({
   definitions,
+  businessDirectory,
   workflowTemplates,
   workspaceOwnerEmail,
   onSave,
   onArchive,
+  onActivate,
 }: {
   definitions: FormLibraryDefinition[];
+  businessDirectory: BusinessUnit[];
   workflowTemplates: WorkflowTemplate[];
   workspaceOwnerEmail: string;
-  onSave: (draft: FormLibraryDraft, existingDefinition: FormLibraryDefinition | null) => void;
+  onSave: (
+    draft: FormLibraryDraft,
+    existingDefinition: FormLibraryDefinition | null,
+    saveMode?: FormLibrarySaveMode,
+  ) => FormLibraryDefinition;
   onArchive: (definitionId: string) => void;
+  onActivate: (definitionId: string) => void;
 }) {
-  const [section, setSection] = useState<"active" | "archive">("active");
-  const latestDefinitions = useMemo(
-    () => getLatestFormLibraryDefinitions(definitions),
-    [definitions],
-  );
-  const visibleDefinitions = latestDefinitions.filter((definition) =>
-    section === "archive"
-      ? definition.status === "archived"
-      : definition.status !== "archived",
-  );
+  const [editorTab, setEditorTab] = useState<"builder" | "layout" | "library">("builder");
   const [selectedDefinitionId, setSelectedDefinitionId] = useState("");
   const selectedDefinition =
-    latestDefinitions.find((definition) => definition.id === selectedDefinitionId) || null;
-  const [draft, setDraft] = useState<FormLibraryDraft>(() => createEmptyFormLibraryDraft());
+    definitions.find((definition) => definition.id === selectedDefinitionId) || null;
+  const firstBusiness = businessDirectory[0];
+  const [draft, setDraft] = useState<FormLibraryDraft>(() =>
+    createEmptyFormLibraryDraft("native", {
+      business: firstBusiness?.name,
+      department: firstBusiness?.departments[0],
+    }),
+  );
+  const selectedBusiness = businessDirectory.find(
+    (business) => business.name === draft.business,
+  );
   const targetWorkflow = workflowTemplates.find(
     (template) => template.id === draft.targetWorkflowTemplateId,
   );
@@ -71,7 +86,19 @@ export function FormLibrary({
 
   function startNew(source: FormLibraryDefinition["source"]) {
     setSelectedDefinitionId("");
-    setDraft(createEmptyFormLibraryDraft(source));
+    setDraft(
+      createEmptyFormLibraryDraft(source, {
+        business: firstBusiness?.name,
+        department: firstBusiness?.departments[0],
+      }),
+    );
+    setEditorTab("builder");
+  }
+
+  function openDefinition(definition: FormLibraryDefinition) {
+    setSelectedDefinitionId(definition.id);
+    setDraft(definitionToDraft(definition));
+    setEditorTab("builder");
   }
 
   function updateField(index: number, patch: Partial<WorkflowField>) {
@@ -80,103 +107,89 @@ export function FormLibrary({
       fields: current.fields.map((field, fieldIndex) =>
         fieldIndex === index ? { ...field, ...patch } : field,
       ),
+      layout:
+        patch.name && current.fields[index]?.name !== patch.name
+          ? renameFormLayoutField(
+              normalizeFormLayout(current.layout, current.fields),
+              current.fields[index].name,
+              patch.name,
+            )
+          : current.layout,
     }));
   }
 
-  function save() {
-    onSave(draft, selectedDefinition);
+  function save(saveMode: FormLibrarySaveMode) {
+    const savedDefinition = onSave(draft, selectedDefinition, saveMode);
+    setSelectedDefinitionId(savedDefinition.id);
+    setDraft(definitionToDraft(savedDefinition));
   }
 
   return (
-    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(250px,320px)_minmax(0,1fr)]">
-      <aside className="min-w-0 rounded-md border border-[#e6e6e6] bg-white p-4 dark:border-neutral-700 dark:bg-neutral-950">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <h2 className="font-semibold text-neutral-900 dark:text-neutral-100">Form library</h2>
-            <InfoTip label="Reusable, versioned forms that can be assigned to Submit or Approval boxes." />
-          </div>
-          <span className="rounded-md border border-[#e6e6e6] px-2 py-1 text-xs text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-            {visibleDefinitions.length}
-          </span>
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => setSection("active")}
-            className={tabClassName(section === "active")}
-          >
-            Available
-          </button>
-          <button
-            type="button"
-            onClick={() => setSection("archive")}
-            className={tabClassName(section === "archive")}
-          >
-            Archived
-          </button>
-        </div>
-        <div className="mt-3 space-y-2">
-          {visibleDefinitions.map((definition) => (
-            <button
-              key={definition.id}
-              type="button"
-              onClick={() => {
-                setSelectedDefinitionId(definition.id);
-                setDraft(definitionToDraft(definition));
-              }}
-              className={`w-full rounded-md border p-3 text-left transition ${
-                selectedDefinitionId === definition.id
-                  ? "border-[#f7941d] bg-[#fff4e6] dark:bg-[#f7941d]/12"
-                  : "border-[#e6e6e6] hover:border-[#f7941d]/60 dark:border-neutral-700"
-              }`}
-            >
-              <span className="block break-words text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                {definition.name}
-              </span>
-              <span className="mt-1 block text-xs text-neutral-500 dark:text-neutral-400">
-                {definition.source === "native" ? "Approval App" : "Microsoft Forms"} · v{definition.version}
-              </span>
-              <span className={statusClassName(definition.status)}>
-                {formatStatus(definition.status)}
-              </span>
-            </button>
-          ))}
-          {!visibleDefinitions.length && (
-            <p className="rounded-md border border-dashed border-[#d2d2d2] px-3 py-5 text-center text-sm text-neutral-500 dark:border-neutral-700">
-              {section === "archive" ? "No archived forms." : "No reusable forms yet."}
+    <div className="min-w-0 space-y-4">
+      <section className="rounded-md border border-[#e6e6e6] bg-white p-4 dark:border-neutral-700 dark:bg-neutral-950">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Forms</h1>
+            <p className="mt-1 text-sm text-neutral-500">
+              Build reusable forms, arrange native layouts, and attach published versions to workflows.
             </p>
-          )}
-        </div>
-        {section === "active" && (
-          <div className="mt-4 grid gap-2">
-            <button
-              type="button"
-              onClick={() => startNew("native")}
-              title="Build a reusable form inside Approval App."
-              className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-[#f7941d]/50 bg-[#fff4e6] px-3 text-sm font-medium text-neutral-900 transition hover:bg-[#ffe8cc] dark:bg-[#f7941d]/12 dark:text-neutral-100"
-            >
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => startNew("native")} className={newFormButtonClassName}>
               <Plus size={15} /> Native form
             </button>
-            <button
-              type="button"
-              onClick={() => startNew("microsoft_forms")}
-              title="Register a Microsoft Form and map its response fields."
-              className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-[#e6e6e6] px-3 text-sm font-medium text-neutral-800 transition hover:border-[#f7941d]/60 dark:border-neutral-700 dark:text-neutral-100"
-            >
+            <button type="button" onClick={() => startNew("microsoft_forms")} className={newFormButtonClassName}>
               <FileInput size={15} /> Microsoft Form
             </button>
           </div>
-        )}
-      </aside>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {([
+            { id: "builder", label: "Builder", icon: Wrench },
+            { id: "layout", label: "Layout", icon: LayoutTemplate },
+            { id: "library", label: "Library", icon: Library },
+          ] as const).map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setEditorTab(tab.id)}
+                className={tabClassName(editorTab === tab.id)}
+              >
+                <Icon size={15} /> {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
+      {editorTab === "library" && (
+        <FormVersionLibrary
+          definitions={definitions}
+          onActivate={onActivate}
+          onArchive={onArchive}
+          onEdit={openDefinition}
+        />
+      )}
+
+      {editorTab === "layout" && (
+        <FormLayoutEditor draft={draft} setDraft={setDraft} />
+      )}
+
+      {editorTab === "builder" && (
       <section className="min-w-0 rounded-md border border-[#e6e6e6] bg-white p-4 dark:border-neutral-700 dark:bg-neutral-950 sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
               <h2 className="font-semibold text-neutral-900 dark:text-neutral-100">
-                {selectedDefinition ? "New form version" : "New form"}
+                {selectedDefinition?.isDraft
+                  ? `Edit ${selectedDefinition.name} draft`
+                  : selectedDefinition
+                    ? `Create a draft from ${selectedDefinition.name} v${selectedDefinition.version}`
+                    : "New form"}
               </h2>
-              <InfoTip label="Saving an edited form creates a new immutable version. Existing workflow versions remain pinned to the old form version." />
+            <InfoTip label="Drafts update in place. Publishing creates an immutable version; workflows already using an older version stay pinned to it." />
             </div>
             {selectedDefinition && (
               <p className="mt-1 text-xs text-neutral-500">
@@ -184,16 +197,6 @@ export function FormLibrary({
               </p>
             )}
           </div>
-          {selectedDefinition && selectedDefinition.status !== "archived" && (
-            <button
-              type="button"
-              onClick={() => onArchive(selectedDefinition.id)}
-              title="Remove this form from new workflow selection while keeping existing workflow versions valid."
-              className="flex min-h-9 items-center justify-center gap-2 rounded-md border border-rose-300 bg-rose-50 px-3 text-sm text-rose-800 hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-100"
-            >
-              <Archive size={15} /> Archive
-            </button>
-          )}
         </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -221,6 +224,57 @@ export function FormLibrary({
               rows={2}
               className={`${inputClassName} h-auto py-2`}
             />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs text-neutral-500">Company</span>
+            <select
+              value={draft.business}
+              onChange={(event) => {
+                const business = businessDirectory.find(
+                  (item) => item.name === event.target.value,
+                );
+                setDraft({
+                  ...draft,
+                  business: event.target.value,
+                  department: business?.departments[0] || "",
+                });
+              }}
+              className={inputClassName}
+            >
+              <option value="">Shared across companies</option>
+              {businessDirectory.map((business) => (
+                <option key={business.id} value={business.name}>
+                  {business.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs text-neutral-500">Department</span>
+            {selectedBusiness?.departments.length ? (
+              <select
+                value={draft.department}
+                onChange={(event) =>
+                  setDraft({ ...draft, department: event.target.value })
+                }
+                className={inputClassName}
+              >
+                {selectedBusiness.departments.map((department) => (
+                  <option key={department} value={department}>
+                    {department}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                value={draft.department}
+                onChange={(event) =>
+                  setDraft({ ...draft, department: event.target.value })
+                }
+                placeholder={draft.business ? "Department" : "All departments"}
+                className={inputClassName}
+              />
+            )}
           </label>
         </div>
 
@@ -796,17 +850,29 @@ export function FormLibrary({
               </ul>
             </div>
           )}
-          <button
-            type="button"
-            onClick={save}
-            disabled={preflightIssues.length > 0 || selectedDefinition?.status === "archived"}
-            title={preflightIssues[0] || "Save this immutable form version."}
-            className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-[#f7941d] bg-[#f7941d] px-4 font-medium text-[#231f20] transition hover:bg-[#df7f0a] disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
-          >
-            <Save size={16} /> {selectedDefinition ? "Save new version" : "Save form"}
-          </button>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={() => save("draft")}
+              disabled={selectedDefinition?.status === "archived"}
+              title="Save without making this version available to workflows."
+              className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#d2d2d2] bg-white px-4 font-medium text-neutral-900 transition hover:border-[#f7941d] disabled:cursor-not-allowed disabled:opacity-45 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+            >
+              <Save size={16} /> Save draft
+            </button>
+            <button
+              type="button"
+              onClick={() => save("publish")}
+              disabled={preflightIssues.length > 0 || selectedDefinition?.status === "archived"}
+              title={preflightIssues[0] || "Publish and activate this form version for new workflow attachments."}
+              className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#f7941d] bg-[#f7941d] px-4 font-medium text-[#231f20] transition hover:bg-[#df7f0a] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <Save size={16} /> Publish version
+            </button>
+          </div>
         </div>
       </section>
+      )}
     </div>
   );
 }
@@ -818,12 +884,14 @@ function definitionToDraft(definition: FormLibraryDefinition): FormLibraryDraft 
   return {
     name: definition.name,
     description: definition.description || "",
+    business: definition.business || "",
+    department: definition.department || "",
     source: definition.source,
     responseMode: definition.responseMode,
     responseUrl: definition.responseUrl || "",
     embedUrl: definition.embedUrl || "",
     targetWorkflowTemplateId: definition.targetWorkflowTemplateId || "",
-    versionComment: "",
+    versionComment: definition.isDraft === true ? definition.versionComment || "" : "",
     fields: definition.fields.map((field) => {
       const inputSource = getFormLibraryFieldInputSource(field, definition.source);
       return {
@@ -834,32 +902,23 @@ function definitionToDraft(definition: FormLibraryDefinition): FormLibraryDraft 
           : {}),
       };
     }),
+    layout: normalizeFormLayout(definition.layout, definition.fields),
     attachmentFields: definition.attachmentFields || [],
     participantMappings: definition.participantMappings || [],
   };
 }
 
 function tabClassName(active: boolean) {
-  return `min-h-9 rounded-md border px-3 text-sm transition ${
+  return `flex min-h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm transition ${
     active
       ? "border-[#f7941d] bg-[#fff4e6] text-neutral-900 dark:bg-[#f7941d]/12 dark:text-neutral-100"
       : "border-[#e6e6e6] text-neutral-600 hover:border-[#f7941d]/60 dark:border-neutral-700 dark:text-neutral-300"
   }`;
 }
 
-function statusClassName(status: FormLibraryDefinition["status"]) {
-  const tone = status === "ready"
-    ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-500/35 dark:bg-emerald-500/10 dark:text-emerald-200"
-    : status === "archived"
-      ? "border-neutral-300 bg-neutral-100 text-neutral-600 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-      : "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-200";
-  return `mt-2 inline-flex rounded-md border px-2 py-1 text-xs ${tone}`;
-}
-
-function formatStatus(status: FormLibraryDefinition["status"]) {
-  return status.replaceAll("_", " ").replace(/^./, (value) => value.toUpperCase());
-}
-
 function toFieldName(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "field";
 }
+
+const newFormButtonClassName =
+  "flex min-h-10 items-center justify-center gap-2 rounded-md border border-[#f7941d]/50 bg-[#fff4e6] px-3 text-sm font-medium text-neutral-900 transition hover:bg-[#ffe8cc] dark:bg-[#f7941d]/12 dark:text-neutral-100";

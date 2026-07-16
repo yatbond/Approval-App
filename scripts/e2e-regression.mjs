@@ -38,6 +38,7 @@ try {
   await signIn(page);
   await verifyPrimaryNavigation(page);
   await verifyWorkflowLibrary(page);
+  await verifyFormsWorkspace(page);
   await verifyQueueDecisionControls(page);
 
   for (const request of requests) {
@@ -67,7 +68,7 @@ async function signIn(page) {
 }
 
 async function verifyPrimaryNavigation(page) {
-  for (const label of ["Queue", "Tracking", "Drafts", "Workflow", "Admin"]) {
+  for (const label of ["Queue", "Tracking", "Drafts", "Workflow", "Forms", "Admin"]) {
     const link = page.getByRole("link", { name: label, exact: true });
     if ((await link.count()) !== 1) {
       throw new Error(`Expected one ${label} navigation link.`);
@@ -78,7 +79,23 @@ async function verifyPrimaryNavigation(page) {
 async function verifyWorkflowLibrary(page) {
   await page.goto(`${appUrl}/?tab=workflow`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Library", exact: true }).click();
-  await expectText(page, "Active workflows");
+  await expectText(page, "Workflow library");
+  await expectText(page, "Available");
+  await expectText(page, "Archived");
+}
+
+async function verifyFormsWorkspace(page) {
+  await page.goto(`${appUrl}/?tab=forms`, { waitUntil: "networkidle" });
+  await expectText(page, "Build reusable forms");
+  for (const label of ["Builder", "Layout", "Library"]) {
+    const button = page.getByRole("button", { name: label, exact: true });
+    if ((await button.count()) !== 1) {
+      throw new Error(`Expected one ${label} Forms workspace tab.`);
+    }
+  }
+  await page.getByRole("button", { name: "Library", exact: true }).click();
+  await expectText(page, "Form library");
+  await expectText(page, "Available");
   await expectText(page, "Archived");
 }
 

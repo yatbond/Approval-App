@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   attachLibraryFormToWorkflow,
+  activateFormLibraryDefinition,
   createEmptyFormLibraryDraft,
   createFormLibraryField,
   extractMicrosoftFormId,
   getFormLibraryPreflightIssues,
+  getActiveFormLibraryDefinitions,
   saveFormLibraryDraft,
 } from "./form-library-state.ts";
 
@@ -153,6 +155,65 @@ test("saving creates immutable versions and attaching pins the version", () => {
     attached.template.documents[0].formLibraryRef.attachmentFields,
     second.definition.attachmentFields,
   );
+  assert.deepEqual(
+    attached.template.documents[0].formLibraryRef.layout,
+    second.definition.layout,
+  );
+});
+
+test("draft forms update in place and publish as the active version", () => {
+  const draft = createEmptyFormLibraryDraft("native", {
+    business: "Chun Wo",
+    department: "Finance",
+  });
+  draft.name = "Payment intake";
+  const savedDraft = saveFormLibraryDraft({
+    library: [],
+    draft,
+    actorEmail: "admin@example.com",
+    saveMode: "draft",
+  });
+  const updatedDraft = saveFormLibraryDraft({
+    library: savedDraft.library,
+    draft: { ...draft, description: "Updated" },
+    actorEmail: "admin@example.com",
+    existingDefinition: savedDraft.definition,
+    saveMode: "draft",
+  });
+  assert.equal(updatedDraft.library.length, 1);
+  assert.equal(updatedDraft.definition.id, savedDraft.definition.id);
+  assert.equal(updatedDraft.definition.isDraft, true);
+  assert.equal(updatedDraft.definition.business, "Chun Wo");
+
+  const published = saveFormLibraryDraft({
+    library: updatedDraft.library,
+    draft: { ...draft, description: "Published" },
+    actorEmail: "admin@example.com",
+    existingDefinition: updatedDraft.definition,
+    saveMode: "publish",
+  });
+  assert.equal(published.library.length, 1);
+  assert.equal(published.definition.isDraft, false);
+  assert.equal(published.definition.isActiveVersion, true);
+  assert.equal(getActiveFormLibraryDefinitions(published.library)[0].id, published.definition.id);
+});
+
+test("activating an older published form version changes only the active version", () => {
+  const draft = { ...createEmptyFormLibraryDraft("native"), name: "Site intake" };
+  const first = saveFormLibraryDraft({
+    library: [],
+    draft,
+    actorEmail: "admin@example.com",
+  });
+  const second = saveFormLibraryDraft({
+    library: first.library,
+    draft,
+    actorEmail: "admin@example.com",
+    existingDefinition: first.definition,
+  });
+  const activated = activateFormLibraryDefinition(second.library, first.definition.id);
+  assert.equal(getActiveFormLibraryDefinitions(activated)[0].id, first.definition.id);
+  assert.equal(activated.find((item) => item.id === second.definition.id)?.isActiveVersion, false);
 });
 
 test("forms cannot be attached to End boxes", () => {

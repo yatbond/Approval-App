@@ -15,6 +15,7 @@ const defaultAuthenticatedRoutes = [
   "/?tab=drafts",
   "/?tab=upload",
   "/?tab=workflow",
+  "/?tab=forms",
   "/?tab=admin",
 ];
 

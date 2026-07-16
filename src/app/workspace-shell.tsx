@@ -9,6 +9,7 @@ import {
   LogOut,
   Plus,
   ReceiptText,
+  Rows3,
   Settings,
   ShieldCheck,
   X,
@@ -30,6 +31,7 @@ const tabDetails: Record<WorkspaceTab, { label: string; icon: React.ElementType 
   upload: { label: "Upload", icon: Plus },
   drafts: { label: "Drafts", icon: ReceiptText },
   workflow: { label: "Workflow", icon: Settings },
+  forms: { label: "Forms", icon: Rows3 },
   admin: { label: "Admin", icon: ShieldCheck },
 };
 
@@ -166,7 +168,7 @@ export function WorkspaceShell({
             </button>
           </div>
 
-          <nav className="grid max-w-full grid-cols-5 gap-1 p-2 lg:block lg:space-y-1 lg:p-3">
+          <nav className="grid max-w-full grid-cols-3 gap-1 p-2 sm:grid-cols-6 lg:block lg:space-y-1 lg:p-3">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;

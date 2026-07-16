@@ -8,8 +8,10 @@ import {
 } from "@/lib/confirmation-policy";
 import {
   archiveFormLibraryDefinition,
+  activateFormLibraryDefinition,
   saveFormLibraryDraft,
   type FormLibraryDraft,
+  type FormLibrarySaveMode,
 } from "@/lib/form-library-state";
 import type {
   AdminAuditEvent,
@@ -113,17 +115,31 @@ export function useWorkspaceAdminRecords({
   function saveFormLibraryRecord(
     draft: FormLibraryDraft,
     existingDefinition: FormLibraryDefinition | null,
+    saveMode: FormLibrarySaveMode = "publish",
   ) {
     const nextState = saveFormLibraryDraft({
       library: formLibrary,
       draft,
       actorEmail: activeUser.email,
       existingDefinition,
+      saveMode,
       workflowTemplates: templates,
     });
     setFormLibrary(nextState.library);
     void persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({ formLibrary: nextState.library }),
+    );
+    return nextState.definition;
+  }
+
+  function activateFormLibraryRecord(definitionId: string) {
+    const nextLibrary = activateFormLibraryDefinition(formLibrary, definitionId);
+    if (nextLibrary === formLibrary) {
+      return;
+    }
+    setFormLibrary(nextLibrary);
+    void persistWorkspaceSnapshot(
+      buildWorkspaceSnapshot({ formLibrary: nextLibrary }),
     );
   }
 
@@ -361,6 +377,7 @@ export function useWorkspaceAdminRecords({
   }
 
   return {
+    activateFormLibraryRecord,
     activateTemplateVersionRecord,
     adminRecordError,
     archiveFormLibraryRecord,

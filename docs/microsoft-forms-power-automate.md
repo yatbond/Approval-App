@@ -4,8 +4,8 @@ This runbook connects one registered Microsoft Form version to Approval App thro
 
 ## Prerequisites
 
-- Save the Microsoft Form in **Workflow > Forms** and confirm its status is **Ready**.
-- Open **Power Automate setup values** for the saved version.
+- Save and publish the Microsoft Form in **Forms > Builder**, then confirm its version is **Active** in **Forms > Library**.
+- Open **Power Automate setup values** for the saved form version in Forms Builder.
 - Configure `FORM_INTAKE_WEBHOOK_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` on the Vercel deployment.
 - The Power Automate HTTP action may require a Premium Power Automate license.
 

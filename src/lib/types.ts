@@ -134,16 +134,37 @@ export type FormLibraryAttachmentField = {
   required: boolean;
 };
 
+export type FormLayoutItem = {
+  fieldName: string;
+  width: "full" | "half";
+};
+
+export type FormLayoutSection = {
+  id: string;
+  title: string;
+  description?: string;
+  items: FormLayoutItem[];
+};
+
+export type FormLayout = {
+  sections: FormLayoutSection[];
+};
+
 export type FormLibraryDefinition = {
   id: string;
   formKey: string;
   name: string;
   description?: string;
+  business?: string;
+  department?: string;
   source: FormLibrarySource;
   version: number;
   versionComment?: string;
+  isDraft?: boolean;
+  isActiveVersion?: boolean;
   status: FormLibraryStatus;
   fields: WorkflowField[];
+  layout?: FormLayout;
   attachmentFields?: FormLibraryAttachmentField[];
   responseMode: FormLibraryResponseMode;
   responseUrl?: string;
@@ -171,6 +192,7 @@ export type WorkflowFormLibraryReference = {
   selectedFieldNames: string[];
   selectedAttachmentNames: string[];
   attachmentFields?: FormLibraryAttachmentField[];
+  layout?: FormLayout;
 };
 
 export type ExternalFormResponseRecord = {

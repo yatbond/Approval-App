@@ -126,7 +126,7 @@ test("uses the official logo and labeled mobile navigation", () => {
   assert.match(loginSource, /src="\/chunwo-logo\.svg"/);
   assert.match(loginSource, /src="\/chunwo-logo-dark\.svg"/);
   assert.match(darkLogoSource, /\.a\{fill:#ffffff;\}/);
-  assert.match(shellSource, /grid-cols-5/);
+  assert.match(shellSource, /sm:grid-cols-6/);
   assert.doesNotMatch(shellSource, /Approval App/);
 });
 

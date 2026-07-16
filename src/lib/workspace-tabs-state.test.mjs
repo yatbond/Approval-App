@@ -16,6 +16,7 @@ test("keeps upload as an internal request creation route", () => {
     "upload",
     "drafts",
     "workflow",
+    "forms",
     "admin",
   ]);
 });
@@ -26,6 +27,7 @@ test("omits upload from the main navigation because new request opens it", () =>
     "tracking",
     "drafts",
     "workflow",
+    "forms",
     "admin",
   ]);
 });
@@ -34,6 +36,7 @@ test("resolves requested workspace tabs with a queue fallback", () => {
   assert.equal(getInitialWorkspaceTab("upload"), "upload");
   assert.equal(getInitialWorkspaceTab("drafts"), "drafts");
   assert.equal(getInitialWorkspaceTab("workflow"), "workflow");
+  assert.equal(getInitialWorkspaceTab("forms"), "forms");
   assert.equal(getInitialWorkspaceTab("missing"), "queue");
   assert.equal(getInitialWorkspaceTab(), "queue");
 });

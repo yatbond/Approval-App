@@ -37,7 +37,6 @@ import { UserDirectoryDatalist } from "@/app/task-views";
 import { ConditionBoxDetails } from "@/app/condition-box-details";
 import { WorkflowTemplateLibrary } from "@/app/workflow-template-library";
 import { WorkflowTemplateBuilder } from "@/app/workflow-template-builder";
-import { FormLibrary } from "@/app/form-library";
 import {
   WorkflowBoxDocumentsEditor,
   type WorkflowBoxDocumentDraft,
@@ -105,7 +104,9 @@ import {
   getWorkflowDuplicateTemplateActionState,
   getWorkflowPublishTemplateActionState,
   getWorkflowTemplateBaseOptions,
+  hasWorkflowTemplateIdentityConflict,
 } from "@/lib/workflow-template-action-state";
+import { getWorkflowTemplateFamilyKey } from "@/lib/workflow-template-version-state";
 import {
   defaultWorkflowEditorTab,
   workflowEditorTabs,
@@ -141,7 +142,6 @@ import { InfoTip } from "./ui-hint";
 import { WorkflowHandoffEditor } from "./workflow-handoff-editor";
 import {
   attachLibraryFormToWorkflow,
-  type FormLibraryDraft,
 } from "@/lib/form-library-state";
 
 const WorkflowCanvas = dynamic(() => import("@/app/workflow-canvas"), {
@@ -171,8 +171,6 @@ export function WorkflowView({
   onRunWorkflowAction,
   onCreateWorkflowTestRequest,
   requestConfirmation,
-  onSaveFormLibrary,
-  onArchiveFormLibrary,
 }: {
   businessDirectory: BusinessUnit[];
   tasks: ApprovalTask[];
@@ -194,11 +192,6 @@ export function WorkflowView({
     testerEmail: string,
   ) => WorkflowTestRequestResult;
   requestConfirmation: (request: ConfirmationRequest) => Promise<boolean>;
-  onSaveFormLibrary: (
-    draft: FormLibraryDraft,
-    existingDefinition: import("@/lib/types").FormLibraryDefinition | null,
-  ) => void;
-  onArchiveFormLibrary: (definitionId: string) => void;
 }) {
   const workflow =
     workflowTemplates.find((template) => template.id === selectedTemplateId) ||
@@ -291,14 +284,22 @@ export function WorkflowView({
   const [workflowEditorTab, setWorkflowEditorTab] =
     useState<WorkflowEditorTab>(defaultWorkflowEditorTab);
   const firstBusiness = businessDirectory[0];
-  const [templateName, setTemplateName] = useState("General document approval");
-  const [businessId, setBusinessId] = useState(firstBusiness?.id || "");
+  const initialWorkflowBusiness = businessDirectory.find(
+    (business) => business.name === workflow?.business,
+  );
+  const [isCreatingTemplate, setIsCreatingTemplate] = useState(!workflow);
+  const [templateName, setTemplateName] = useState(
+    workflow?.name || "Untitled workflow",
+  );
+  const [businessId, setBusinessId] = useState(
+    initialWorkflowBusiness?.id || firstBusiness?.id || "",
+  );
   const { selectedBusiness } = getWorkflowTemplateBuilderBusinessState({
     businessDirectory,
     businessId,
   });
   const [departmentName, setDepartmentName] = useState(
-    selectedBusiness?.departments[0] || "",
+    workflow?.department || selectedBusiness?.departments[0] || "",
   );
   const [baseTemplateId, setBaseTemplateId] = useState("");
   const baseWorkflowTemplates = useMemo(
@@ -337,6 +338,7 @@ export function WorkflowView({
     }
 
     onCreateTemplate(nextState.template);
+    setIsCreatingTemplate(false);
     setSelectedTemplateId(nextState.selectedTemplateId || nextState.template.id);
     if (nextState.workflowEditorTab) {
       setWorkflowEditorTab(nextState.workflowEditorTab);
@@ -365,13 +367,23 @@ export function WorkflowView({
   }
 
   function duplicateTemplateAsDraft(template: WorkflowTemplate) {
-    const nextState = getWorkflowDuplicateTemplateActionState({ template });
+    const nextState = getWorkflowDuplicateTemplateActionState({
+      template,
+      existingTemplates: workflowTemplates,
+    });
     if (!nextState.didCreate || !nextState.template) {
       setWorkflowActionMessage(nextState.message || "");
       return;
     }
 
     onCreateTemplate(nextState.template);
+    setTemplateName(nextState.template.name);
+    const nextBusiness = businessDirectory.find(
+      (business) => business.name === nextState.template?.business,
+    );
+    if (nextBusiness) setBusinessId(nextBusiness.id);
+    setDepartmentName(nextState.template.department);
+    setIsCreatingTemplate(false);
     setSelectedTemplateId(nextState.selectedTemplateId || nextState.template.id);
     setWorkflowEditorTab(nextState.workflowEditorTab || "canvas");
     resetCanvasView();
@@ -390,10 +402,86 @@ export function WorkflowView({
     }
     setDepartmentName(nextState.departmentName);
     setSelectedTemplateId(nextState.selectedTemplateId);
+    setIsCreatingTemplate(false);
     setWorkflowEditorTab(nextState.workflowEditorTab);
     if (nextState.shouldResetCanvasView) {
       resetCanvasView();
     }
+  }
+
+  function selectTemplateInBuilder(templateId: string) {
+    const template = workflowTemplates.find((item) => item.id === templateId);
+    if (!template) return;
+    const nextState = getWorkflowTemplateLoadState({
+      template,
+      businessDirectory,
+      currentBusinessId: businessId,
+    });
+    setTemplateName(nextState.templateName);
+    if (nextState.shouldSetBusinessId) setBusinessId(nextState.businessId);
+    setDepartmentName(nextState.departmentName);
+    setSelectedTemplateId(nextState.selectedTemplateId);
+    setIsCreatingTemplate(false);
+    setWorkflowEditorTab("builder");
+  }
+
+  function selectTemplateInLibrary(templateId: string) {
+    const template = workflowTemplates.find((item) => item.id === templateId);
+    if (!template) return;
+    const nextState = getWorkflowTemplateLoadState({
+      template,
+      businessDirectory,
+      currentBusinessId: businessId,
+    });
+    setTemplateName(nextState.templateName);
+    if (nextState.shouldSetBusinessId) setBusinessId(nextState.businessId);
+    setDepartmentName(nextState.departmentName);
+    setSelectedTemplateId(nextState.selectedTemplateId);
+    setIsCreatingTemplate(false);
+  }
+
+  function startNewTemplate() {
+    const business = businessDirectory[0];
+    setIsCreatingTemplate(true);
+    setTemplateName("Untitled workflow");
+    setBusinessId(business?.id || "");
+    setDepartmentName(business?.departments[0] || "");
+    setBaseTemplateId("");
+    setWorkflowEditorTab("builder");
+    setWorkflowActionMessage("");
+  }
+
+  function saveTemplateDetails() {
+    if (!workflow || workflow.isDraft === false || !selectedBusiness) return;
+    const cleanName = templateName.trim();
+    const cleanDepartment = departmentName.trim();
+    if (!cleanName || !cleanDepartment) {
+      setWorkflowActionMessage("Add a workflow name and department before saving.");
+      return;
+    }
+    if (
+      hasWorkflowTemplateIdentityConflict({
+        templates: workflowTemplates,
+        name: cleanName,
+        business: selectedBusiness.name,
+        department: cleanDepartment,
+        excludeFamilyKey: getWorkflowTemplateFamilyKey(workflow),
+      })
+    ) {
+      setWorkflowActionMessage(
+        `A workflow named ${cleanName} already exists for ${selectedBusiness.name} / ${cleanDepartment}.`,
+      );
+      return;
+    }
+    saveWorkflowTemplate(
+      {
+        ...workflow,
+        name: cleanName,
+        business: selectedBusiness.name,
+        department: cleanDepartment,
+      },
+      "Updated workflow details",
+    );
   }
 
   function copyTemplateIntoCanvas() {
@@ -998,16 +1086,16 @@ export function WorkflowView({
       <section className="rounded-md border border-[#e6e6e6] bg-white">
         <div className="border-b border-[#e6e6e6] p-4">
           <h2 className="font-semibold">
-            {workflow ? workflow.name : "No templates"}
+            {isCreatingTemplate ? "New workflow" : workflow ? workflow.name : "No templates"}
           </h2>
-          {workflow ? (
+          {!isCreatingTemplate && workflow ? (
             <p className="text-sm text-neutral-400">
               {workflow.business} - {workflow.department}
             </p>
           ) : (
             <p className="text-sm text-neutral-400">Use Builder.</p>
           )}
-          {workflow && (
+          {!isCreatingTemplate && workflow && (
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
               <span className="rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-neutral-300">
                 Version {workflow.version || 1}
@@ -1027,7 +1115,9 @@ export function WorkflowView({
             </div>
           )}
           <p className="mt-2 text-sm text-neutral-400">
-            {workflowLifecycle.detail}
+            {isCreatingTemplate
+              ? "Enter the workflow details below, then continue on Canvas."
+              : workflowLifecycle.detail}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {workflowEditorTabs.map((tab) => {
@@ -1083,6 +1173,28 @@ export function WorkflowView({
             </p>
           )}
         </div>
+        {workflowEditorTab === "builder" && (
+          <WorkflowTemplateBuilder
+            templateName={templateName}
+            setTemplateName={setTemplateName}
+            businessDirectory={businessDirectory}
+            businessId={businessId}
+            setBusinessId={setBusinessId}
+            departmentName={departmentName}
+            setDepartmentName={setDepartmentName}
+            baseTemplateId={baseTemplateId}
+            setBaseTemplateId={setBaseTemplateId}
+            baseTemplates={baseWorkflowTemplates}
+            onCreateTemplate={createTemplate}
+            isCreating={isCreatingTemplate}
+            selectedTemplate={workflow || null}
+            workflowTemplates={workflowTemplates}
+            onSelectTemplate={selectTemplateInBuilder}
+            onStartNew={startNewTemplate}
+            onSaveDetails={saveTemplateDetails}
+            onCreateDraftVersion={() => workflow && duplicateTemplateAsDraft(workflow)}
+          />
+        )}
         {workflow && workflowEditorTab === "canvas" && (
           <div className="p-4">
             <div className="rounded-md border border-sky-400/30 bg-sky-400/10 p-4 text-sm text-sky-100 md:hidden">
@@ -1556,7 +1668,7 @@ export function WorkflowView({
           <WorkflowTemplateLibrary
             workflowTemplates={workflowTemplates}
             selectedTemplateId={workflow?.id || ""}
-            onSelectTemplate={setSelectedTemplateId}
+            onSelectTemplate={selectTemplateInLibrary}
             onLoadTemplate={loadTemplateIntoBuilder}
             onDuplicateTemplate={duplicateTemplateAsDraft}
             onDeleteTemplate={onDeleteTemplate}
@@ -1567,32 +1679,8 @@ export function WorkflowView({
           />
         )}
 
-        {workflowEditorTab === "forms" && (
-          <FormLibrary
-            definitions={formLibrary}
-            workflowTemplates={workflowTemplates}
-            workspaceOwnerEmail={activeUser.email}
-            onSave={onSaveFormLibrary}
-            onArchive={onArchiveFormLibrary}
-          />
-        )}
       </section>
 
-      {workflowEditorTab === "builder" && (
-        <WorkflowTemplateBuilder
-          templateName={templateName}
-          setTemplateName={setTemplateName}
-          businessDirectory={businessDirectory}
-          businessId={businessId}
-          setBusinessId={setBusinessId}
-          departmentName={departmentName}
-          setDepartmentName={setDepartmentName}
-          baseTemplateId={baseTemplateId}
-          setBaseTemplateId={setBaseTemplateId}
-          baseTemplates={baseWorkflowTemplates}
-          onCreateTemplate={createTemplate}
-        />
-      )}
     </div>
   );
 }

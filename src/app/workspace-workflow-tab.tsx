@@ -19,6 +19,7 @@ export default function WorkspaceWorkflowTab() {
 
   return (
     <WorkflowView
+      key={core.workspace.selectedTemplateId || "new-workflow"}
       businessDirectory={core.workspace.businessDirectory}
       tasks={core.workspace.tasks}
       workflowTemplates={core.workspace.templates}
@@ -38,8 +39,6 @@ export default function WorkspaceWorkflowTab() {
       activeUser={core.activeUser}
       onRunWorkflowAction={actions.runWorkflowAction}
       onCreateWorkflowTestRequest={actions.createWorkflowTestRequest}
-      onSaveFormLibrary={records.saveFormLibraryRecord}
-      onArchiveFormLibrary={records.archiveFormLibraryRecord}
     />
   );
 }
