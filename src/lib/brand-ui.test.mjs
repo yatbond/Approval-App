@@ -46,6 +46,10 @@ const darkLogoSource = await readFile(
   new URL("../../public/chunwo-logo-dark.svg", import.meta.url),
   "utf8",
 );
+const markLogoSource = await readFile(
+  new URL("../../public/chunwo-mark.svg", import.meta.url),
+  "utf8",
+);
 
 test("uses the official Chun Wo palette and typography", () => {
   for (const token of ["#f7941d", "#7b791c", "#231f20", "#e6e6e6", "#8a8a8a"]) {
@@ -123,11 +127,24 @@ test("keeps form-library inputs mounted while their labels change", () => {
 test("uses the official logo and labeled mobile navigation", () => {
   assert.match(shellSource, /src="\/chunwo-logo\.svg"/);
   assert.match(shellSource, /src="\/chunwo-logo-dark\.svg"/);
+  assert.match(shellSource, /src="\/chunwo-mark\.svg"/);
   assert.match(loginSource, /src="\/chunwo-logo\.svg"/);
   assert.match(loginSource, /src="\/chunwo-logo-dark\.svg"/);
   assert.match(darkLogoSource, /\.a\{fill:#ffffff;\}/);
+  assert.match(markLogoSource, /viewBox="0 0 167\.12 116\.21"/);
+  assert.match(markLogoSource, /fill="#7b791c"/);
+  assert.match(markLogoSource, /fill="#f7941d"/);
   assert.match(shellSource, /sm:grid-cols-6/);
   assert.doesNotMatch(shellSource, /Approval App/);
+});
+
+test("collapsed desktop sidebar uses icon-only navigation", () => {
+  assert.match(shellSource, /aria-label="Expand sidebar"/);
+  assert.match(shellSource, /<PanelLeftOpen className="size-\[18px\]"/);
+  assert.match(shellSource, /<Icon className="size-\[18px\] shrink-0"/);
+  assert.match(shellSource, /<span className="max-w-full truncate lg:hidden">\{tab\.label\}<\/span>/);
+  assert.match(shellSource, /!sidebarCollapsed && \(/);
+  assert.doesNotMatch(shellSource, /aria-label="Chun Wo"[\s\S]*h-1 w-8/);
 });
 
 test("uses black workflow and logo surfaces in dark mode", () => {

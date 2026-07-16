@@ -1,12 +1,13 @@
 "use client";
 
 import {
-  ArrowRightLeft,
   Bell,
   CheckCheck,
   ClipboardList,
   History,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   ReceiptText,
   Rows3,
@@ -130,42 +131,75 @@ export function WorkspaceShell({
         }`}
       >
         <aside className="max-w-full overflow-hidden border-b border-[#e6e6e6] bg-white lg:sticky lg:top-0 lg:h-screen lg:overflow-visible lg:border-b-0 lg:border-r">
-          <div
-            data-brand-lockup
-            className={`flex min-h-20 items-center gap-3 border-b border-[#e6e6e6] px-4 ${
-              sidebarCollapsed ? "lg:justify-center" : "lg:justify-start lg:px-5"
-            }`}
-          >
-            <Image
-              src="/chunwo-logo.svg"
-              alt="Chun Wo"
-              width={168}
-              height={45}
-              priority
-              className={`h-auto w-[156px] dark:hidden sm:w-[168px] ${sidebarCollapsed ? "lg:hidden" : ""}`}
-            />
-            <Image
-              src="/chunwo-logo-dark.svg"
-              alt="Chun Wo"
-              width={168}
-              height={45}
-              priority
-              className={`hidden h-auto w-[156px] dark:block sm:w-[168px] ${sidebarCollapsed ? "lg:hidden" : ""}`}
-            />
-            <span
-              aria-label="Chun Wo"
-              className={`hidden h-1 w-8 bg-[#f7941d] ${sidebarCollapsed ? "lg:block" : ""}`}
-            />
-            <button
-              type="button"
-              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              onClick={onToggleSidebar}
-              className={`ml-auto hidden size-10 shrink-0 items-center justify-center rounded-md border border-[#e6e6e6] bg-white text-[#4b4647] transition hover:border-[#f7941d] hover:bg-[#fff8ef] lg:flex ${
-                sidebarCollapsed ? "" : "ml-auto"
-              }`}
-            >
-              <ArrowRightLeft size={15} />
-            </button>
+          <div data-brand-lockup className="border-b border-[#e6e6e6]">
+            <div className="flex min-h-20 items-center px-4 lg:hidden">
+              <Image
+                src="/chunwo-logo.svg"
+                alt="Chun Wo"
+                width={168}
+                height={45}
+                priority
+                className="h-auto w-[156px] dark:hidden sm:w-[168px]"
+              />
+              <Image
+                src="/chunwo-logo-dark.svg"
+                alt="Chun Wo"
+                width={168}
+                height={45}
+                priority
+                className="hidden h-auto w-[156px] dark:block sm:w-[168px]"
+              />
+            </div>
+
+            {sidebarCollapsed ? (
+              <div className="hidden min-h-28 flex-col items-center justify-center gap-2 py-3 lg:flex">
+                <Image
+                  src="/chunwo-mark.svg"
+                  alt="Chun Wo"
+                  width={42}
+                  height={30}
+                  priority
+                  className="h-8 w-auto"
+                />
+                <button
+                  type="button"
+                  title="Expand sidebar"
+                  aria-label="Expand sidebar"
+                  onClick={onToggleSidebar}
+                  className="flex size-9 shrink-0 items-center justify-center rounded-md border border-[#e6e6e6] bg-white text-[#4b4647] transition hover:border-[#f7941d] hover:bg-[#fff8ef]"
+                >
+                  <PanelLeftOpen className="size-[18px]" />
+                </button>
+              </div>
+            ) : (
+              <div className="hidden min-h-20 items-center gap-2 px-4 lg:flex">
+                <Image
+                  src="/chunwo-logo.svg"
+                  alt="Chun Wo"
+                  width={168}
+                  height={45}
+                  priority
+                  className="h-auto w-[150px] dark:hidden"
+                />
+                <Image
+                  src="/chunwo-logo-dark.svg"
+                  alt="Chun Wo"
+                  width={168}
+                  height={45}
+                  priority
+                  className="hidden h-auto w-[150px] dark:block"
+                />
+                <button
+                  type="button"
+                  title="Collapse sidebar"
+                  aria-label="Collapse sidebar"
+                  onClick={onToggleSidebar}
+                  className="ml-auto flex size-10 shrink-0 items-center justify-center rounded-md border border-[#e6e6e6] bg-white text-[#4b4647] transition hover:border-[#f7941d] hover:bg-[#fff8ef]"
+                >
+                  <PanelLeftClose className="size-[18px]" />
+                </button>
+              </div>
+            )}
           </div>
 
           <nav className="grid max-w-full grid-cols-3 gap-1 p-2 sm:grid-cols-6 lg:block lg:space-y-1 lg:p-3">
@@ -178,22 +212,24 @@ export function WorkspaceShell({
                   key={tab.id}
                   href={`/?tab=${tab.id}`}
                   title={tab.label}
-                  className={`relative flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-md border px-1 text-[11px] transition lg:min-h-12 lg:w-full lg:flex-row lg:gap-2 lg:px-3 lg:text-sm ${
-                    sidebarCollapsed ? "lg:justify-center lg:px-2" : "lg:justify-start"
+                  aria-label={sidebarCollapsed ? tab.label : undefined}
+                  className={`relative flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-md border px-1 text-[11px] transition lg:min-h-12 lg:w-full lg:flex-row lg:gap-2 lg:text-sm ${
+                    sidebarCollapsed ? "lg:px-0" : "lg:justify-start lg:px-3"
                   } ${
                     active
                       ? "border-[#f7941d] bg-[#fff4e6] font-medium text-[#231f20]"
                       : "border-transparent text-[#666162] hover:border-[#e6e6e6] hover:bg-[#f7f7f5] hover:text-[#231f20]"
                   }`}
                 >
-                  <Icon size={18} />
-                  <span className={`max-w-full truncate lg:inline ${sidebarCollapsed ? "lg:hidden" : ""}`}>
-                    {tab.label}
-                  </span>
+                  <Icon className="size-[18px] shrink-0" />
+                  <span className="max-w-full truncate lg:hidden">{tab.label}</span>
+                  {!sidebarCollapsed && (
+                    <span className="hidden max-w-full truncate lg:inline">{tab.label}</span>
+                  )}
                   {showDraftBadge && (
                     <span
                       className={`absolute right-1 top-1 inline-flex min-w-5 items-center justify-center rounded-full border border-[#f7941d]/40 bg-[#fff4e6] px-1.5 text-[10px] font-semibold text-[#713d00] lg:static lg:text-xs ${
-                        sidebarCollapsed ? "lg:absolute lg:ml-7 lg:mt-[-18px]" : "lg:ml-auto"
+                        sidebarCollapsed ? "lg:absolute lg:right-0 lg:top-0" : "lg:ml-auto"
                       }`}
                     >
                       {draftItemCount > 99 ? "99+" : draftItemCount}
