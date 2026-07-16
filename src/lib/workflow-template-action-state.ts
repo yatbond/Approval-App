@@ -91,7 +91,10 @@ export function getWorkflowTemplateBaseOptions({
   );
 }
 
-export function getWorkflowBuilderTemplateOptions(templates: WorkflowTemplate[]) {
+export function getWorkflowBuilderTemplateOptions(
+  templates: WorkflowTemplate[],
+  selectedTemplateId?: string,
+) {
   const groups = new Map<string, WorkflowTemplate[]>();
   templates
     .filter((template) => template.isArchived !== true)
@@ -102,6 +105,13 @@ export function getWorkflowBuilderTemplateOptions(templates: WorkflowTemplate[])
 
   return Array.from(groups.values())
     .map((versions) => {
+      const selectedVersion = versions.find(
+        (template) => template.id === selectedTemplateId,
+      );
+      if (selectedVersion) {
+        return selectedVersion;
+      }
+
       const drafts = versions.filter((template) => template.isDraft !== false);
       const published = versions.filter((template) => template.isDraft === false);
       const candidates = drafts.length

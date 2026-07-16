@@ -462,6 +462,93 @@ test("submits a manual form request without a parsed upload", () => {
   assert.deepEqual(state.tasks[0].attachments, []);
 });
 
+test("submission only requires fields attached to the Submit stage", () => {
+  const submitField = {
+    name: "request_title",
+    label: "Request title",
+    type: "text",
+    required: true,
+    source: "manual",
+    instructions: "Requester enters the title.",
+    documentId: "submit-form",
+  };
+  const approvalField = {
+    name: "approval_reason",
+    label: "Approval reason",
+    type: "text",
+    required: true,
+    source: "manual",
+    instructions: "Approver enters the reason.",
+    documentId: "approval-form",
+  };
+  const stagedTemplate = {
+    ...template,
+    fields: [submitField, approvalField],
+    documents: [
+      {
+        id: "submit-form",
+        documentType: "Submit form",
+        format: "text",
+        inputMode: "manual_form",
+        required: true,
+        fields: [submitField],
+      },
+      {
+        id: "approval-form",
+        documentType: "Approval form",
+        format: "text",
+        inputMode: "manual_form",
+        required: true,
+        fields: [approvalField],
+      },
+    ],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+        {
+          id: "submit",
+          kind: "submit_request",
+          label: "Submit",
+          x: 120,
+          y: 0,
+          assigneeEmail: "requester@example.com",
+          documentIds: ["submit-form"],
+        },
+        {
+          id: "approval",
+          kind: "approval",
+          label: "Approval",
+          x: 240,
+          y: 0,
+          assigneeEmail: "approver@example.com",
+          documentIds: ["approval-form"],
+        },
+        { id: "end", kind: "end", label: "End", x: 360, y: 0 },
+      ],
+      edges: [
+        { id: "start-submit", sourceId: "start", targetId: "submit" },
+        { id: "submit-approval", sourceId: "submit", targetId: "approval" },
+        { id: "approval-end", sourceId: "approval", targetId: "end" },
+      ],
+    },
+  };
+
+  const state = getWorkspaceRequestSubmissionState({
+    selectedTemplate: stagedTemplate,
+    parseResult: null,
+    activeUser: actor,
+    fileName: "",
+    editedFields: { request_title: "New request" },
+    uploadedAttachments: [],
+    tasks: [],
+    taskId: "APR-STAGED",
+  });
+
+  assert.equal(state.didSubmit, true, state.submissionMessage);
+  assert.equal(state.selectedTaskId, "APR-STAGED");
+  assert.equal(state.tasks[0].extractedFields.approval_reason, undefined);
+});
+
 test("blocks a manual form request when a required manual value is missing", () => {
   const manualTemplate = {
     ...template,

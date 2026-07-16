@@ -7,6 +7,7 @@ import type {
 import {
   createApprovalTaskFromTemplate,
   getMissingRequiredSubmissionDocuments,
+  getSubmissionDocumentRequirements,
 } from "./request-builder.ts";
 import { isManualFormRequirement } from "./workflow-documents.ts";
 import { isMicrosoftFormsRequirement } from "./workflow-library-form-state.ts";
@@ -278,23 +279,29 @@ function getMissingRequiredExtractedFields({
   selectedTemplate: WorkflowTemplate;
   editedFields: Record<string, string>;
 }) {
-  const localDocumentFields = selectedTemplate.documents
+  const submissionDocuments = getSubmissionDocumentRequirements(selectedTemplate);
+  const localDocumentFields = submissionDocuments
     .filter((document) => !isMicrosoftFormsRequirement(document))
     .flatMap((document) => document.fields);
   const localDocumentFieldNames = new Set(localDocumentFields.map((field) => field.name));
   const microsoftFormsFieldNames = new Set(
-    selectedTemplate.documents
+    submissionDocuments
       .filter(isMicrosoftFormsRequirement)
       .flatMap((document) => document.fields.map((field) => field.name)),
+  );
+  const hasExplicitSubmitNode = Boolean(
+    selectedTemplate.graph?.nodes.some((node) => node.kind === "submit_request"),
   );
   const requiredFields = Array.from(
     new Map(
       [
-        ...selectedTemplate.fields.filter(
-          (field) =>
-            !microsoftFormsFieldNames.has(field.name) ||
-            localDocumentFieldNames.has(field.name),
-        ),
+        ...(hasExplicitSubmitNode
+          ? []
+          : selectedTemplate.fields.filter(
+              (field) =>
+                !microsoftFormsFieldNames.has(field.name) ||
+                localDocumentFieldNames.has(field.name),
+            )),
         ...localDocumentFields,
       ]
         .filter((field) => field.required)

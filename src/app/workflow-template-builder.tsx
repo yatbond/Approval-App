@@ -54,7 +54,10 @@ export function WorkflowTemplateBuilder({
       businessDirectory,
       businessId,
     });
-  const workflowOptions = getWorkflowBuilderTemplateOptions(workflowTemplates);
+  const workflowOptions = getWorkflowBuilderTemplateOptions(
+    workflowTemplates,
+    selectedTemplate?.id,
+  );
 
   return (
     <div className="border-t border-[#e6e6e6] p-4 dark:border-neutral-700">

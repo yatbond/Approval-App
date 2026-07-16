@@ -160,6 +160,32 @@ test("builder lists one current record per workflow family", () => {
   assert.deepEqual(options.map((item) => item.id), ["template-1-draft", "other"]);
 });
 
+test("builder keeps the selected published version represented when its family has a draft", () => {
+  const options = getWorkflowBuilderTemplateOptions(
+    [
+      {
+        ...template,
+        id: "template-1-v2",
+        sourceTemplateId: "template-1",
+        version: 2,
+        isDraft: false,
+        isActiveVersion: true,
+      },
+      {
+        ...template,
+        id: "template-1-draft",
+        sourceTemplateId: "template-1",
+        version: 1,
+        isDraft: true,
+      },
+      { ...template, id: "other", name: "Site approval", department: "Operations" },
+    ],
+    "template-1-v2",
+  );
+
+  assert.deepEqual(options.map((item) => item.id), ["template-1-v2", "other"]);
+});
+
 test("does not create a duplicate workflow name inside the same business and department", () => {
   const result = getWorkflowCreateTemplateActionState({
     templateName: " invoice APPROVAL ",
