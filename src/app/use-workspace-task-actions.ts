@@ -12,11 +12,6 @@ import {
   type ConfirmationRequest,
 } from "@/lib/confirmation-policy";
 import {
-  getPdfOcrRenderOptions,
-  renderPdfFileToPageImages,
-  shouldRenderPdfForVision,
-} from "@/lib/pdf-page-images";
-import {
   getTaskCorrectionUploadState,
   getTaskSharedFulfillmentDecisionState,
 } from "@/lib/shared-fulfillment-state";
@@ -38,7 +33,6 @@ import {
   getWorkspaceRecordTaskActionState,
   getWorkspaceRunnerTaskActionState,
 } from "@/lib/workspace-task-action-state";
-import { parseWorkspaceFile, uploadWorkspaceAttachmentFile } from "@/lib/workspace-file-api";
 import type { WorkspaceStateSnapshot } from "@/lib/workspace-persistence";
 import {
   createWorkflowTestRequestState,
@@ -222,6 +216,16 @@ export function useWorkspaceTaskActions({
     file: File;
   }) {
     try {
+      const [pdfPages, workspaceFiles] = await Promise.all([
+        import("@/lib/pdf-page-images"),
+        import("@/lib/workspace-file-api"),
+      ]);
+      const {
+        getPdfOcrRenderOptions,
+        renderPdfFileToPageImages,
+        shouldRenderPdfForVision,
+      } = pdfPages;
+      const { parseWorkspaceFile, uploadWorkspaceAttachmentFile } = workspaceFiles;
       const storage = await uploadWorkspaceAttachmentFile({ file });
       const pageImages = shouldRenderPdfForVision(file)
         ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
@@ -381,6 +385,16 @@ export function useWorkspaceTaskActions({
     file: File;
   }) {
     try {
+      const [pdfPages, workspaceFiles] = await Promise.all([
+        import("@/lib/pdf-page-images"),
+        import("@/lib/workspace-file-api"),
+      ]);
+      const {
+        getPdfOcrRenderOptions,
+        renderPdfFileToPageImages,
+        shouldRenderPdfForVision,
+      } = pdfPages;
+      const { parseWorkspaceFile, uploadWorkspaceAttachmentFile } = workspaceFiles;
       const storage = await uploadWorkspaceAttachmentFile({ file });
       const pageImages = shouldRenderPdfForVision(file)
         ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
@@ -476,6 +490,9 @@ export function useWorkspaceTaskActions({
     documentRequirement: WorkflowDocumentRequirement,
   ) {
     try {
+      const { uploadWorkspaceAttachmentFile } = await import(
+        "@/lib/workspace-file-api"
+      );
       const storage = await uploadWorkspaceAttachmentFile({
         file,
         documentRequirement,

@@ -1,7 +1,7 @@
 import { chromium } from "@playwright/test";
 import { performance } from "node:perf_hooks";
 
-const defaultRoutes = [
+const defaultPublicRoutes = [
   "/",
   "/login",
   "/login?mode=setup",
@@ -9,15 +9,37 @@ const defaultRoutes = [
   "/raw-probe",
   "/logout",
 ];
+const defaultAuthenticatedRoutes = [
+  "/?tab=queue",
+  "/?tab=tracking",
+  "/?tab=drafts",
+  "/?tab=upload",
+  "/?tab=workflow",
+  "/?tab=admin",
+];
 
 const baseUrl = process.env.PERF_BASE_URL || "http://127.0.0.1:3000";
-const repeats = Number.parseInt(process.env.PERF_REPEATS || "9", 10);
+const repeats = Number.parseInt(process.env.PERF_REPEATS || "30", 10);
 const warmups = Number.parseInt(process.env.PERF_WARMUPS || "2", 10);
+const cooldownMs = Number.parseInt(process.env.PERF_COOLDOWN_MS || "100", 10);
 const budgetMs = Number.parseFloat(process.env.PERF_BUDGET_MS || "50");
-const routes = (process.env.PERF_ROUTES || defaultRoutes.join(","))
+const budgetPercentile = Number.parseInt(
+  process.env.PERF_BUDGET_PERCENTILE || "50",
+  10,
+);
+const publicRoutes = (process.env.PERF_ROUTES || defaultPublicRoutes.join(","))
   .split(",")
   .map((route) => route.trim())
   .filter(Boolean);
+const authenticatedRoutes = (
+  process.env.PERF_AUTH_ROUTES || defaultAuthenticatedRoutes.join(",")
+)
+  .split(",")
+  .map((route) => route.trim())
+  .filter(Boolean);
+const authEmail = process.env.PERF_EMAIL || process.env.E2E_EMAIL || "";
+const authPassword = process.env.PERF_PASSWORD || process.env.E2E_PASSWORD || "";
+const blockWorkspaceSync = process.env.PERF_BLOCK_WORKSPACE_SYNC === "true";
 
 function percentile(values, percentileValue) {
   const sorted = [...values].sort((left, right) => left - right);
@@ -38,7 +60,11 @@ function formatMs(value) {
   return `${value.toFixed(1)} ms`;
 }
 
-async function measureRoute(browser, route) {
+function sleep(durationMs) {
+  return new Promise((resolve) => setTimeout(resolve, durationMs));
+}
+
+async function createAuthenticatedStorageState(browser) {
   const context = await browser.newContext({
     viewport: { width: 1366, height: 768 },
     deviceScaleFactor: 1,
@@ -46,51 +72,134 @@ async function measureRoute(browser, route) {
     serviceWorkers: "block",
   });
   const page = await context.newPage();
-  const url = new URL(route, baseUrl).toString();
 
-  for (let index = 0; index < warmups; index++) {
-    await page.goto(url, { waitUntil: "load" });
+  try {
+    await page.goto(new URL("/login", baseUrl).toString(), {
+      waitUntil: "domcontentloaded",
+    });
+    await page.locator('input[name="email"]').fill(authEmail);
+    await page.locator('input[name="password"]').fill(authPassword);
+    await Promise.all([
+      page.waitForURL((url) => !url.pathname.startsWith("/login"), {
+        timeout: 20_000,
+      }),
+      page.getByRole("button", { name: "Sign in", exact: true }).click(),
+    ]);
+    await page.waitForLoadState("load");
+    return await context.storageState();
+  } finally {
+    await context.close();
+  }
+}
+
+async function measureRoute(browser, route, storageState) {
+  const context = await browser.newContext({
+    viewport: { width: 1366, height: 768 },
+    deviceScaleFactor: 1,
+    isMobile: false,
+    serviceWorkers: "block",
+    ...(storageState ? { storageState } : {}),
+  });
+  const url = new URL(route, baseUrl).toString();
+  const createPage = async () => {
+    const page = await context.newPage();
+    if (blockWorkspaceSync) {
+      await page.route("**/api/workspace", (route) => route.abort());
+    }
+    return page;
+  };
+  const waitForWorkspaceView = async (page) => {
+    if (!storageState) {
+      return;
+    }
+    const routeTab = new URL(page.url()).searchParams.get("tab");
+    if (!routeTab) {
+      return;
+    }
+    const view = page.locator(`[data-workspace-view="${routeTab}"]`);
+    await view.waitFor({ state: "attached", timeout: 10_000 });
+    await view.locator("[data-workspace-view-loading]").waitFor({
+      state: "detached",
+      timeout: 10_000,
+    });
+  };
+
+  const warmupPage = await createPage();
+  try {
+    for (let index = 0; index < warmups; index++) {
+      await warmupPage.goto(url, { waitUntil: "load" });
+      await waitForWorkspaceView(warmupPage);
+    }
+  } finally {
+    await warmupPage.close();
   }
 
   const loadDurations = [];
   const domContentLoadedDurations = [];
+  const responseStartDurations = [];
+  const responseEndDurations = [];
   const responseDurations = [];
+  const readyDurations = [];
+  let finalUrl = url;
 
   for (let index = 0; index < repeats; index++) {
-    const startedAt = performance.now();
-    const response = await page.goto(url, { waitUntil: "load" });
-    const navigationFinishedAt = performance.now();
-    const timings = await page.evaluate(() => {
-      const navigation = performance.getEntriesByType("navigation")[0];
-      return navigation
-        ? {
-            domContentLoaded:
-              navigation.domContentLoadedEventEnd - navigation.startTime,
-            load: navigation.loadEventEnd - navigation.startTime,
-          }
-        : null;
-    });
+    const page = await createPage();
+    try {
+      const startedAt = performance.now();
+      const response = await page.goto(url, { waitUntil: "load" });
+      const navigationFinishedAt = performance.now();
+      const timings = await page.evaluate(() => {
+        const navigation = performance.getEntriesByType("navigation")[0];
+        return navigation
+          ? {
+              responseStart: navigation.responseStart - navigation.startTime,
+              responseEnd: navigation.responseEnd - navigation.startTime,
+              domContentLoaded:
+                navigation.domContentLoadedEventEnd - navigation.startTime,
+              load: navigation.loadEventEnd - navigation.startTime,
+            }
+          : null;
+      });
 
-    loadDurations.push(timings?.load ?? navigationFinishedAt - startedAt);
-    domContentLoadedDurations.push(
-      timings?.domContentLoaded ?? navigationFinishedAt - startedAt,
-    );
-    responseDurations.push(navigationFinishedAt - startedAt);
+      loadDurations.push(timings?.load ?? navigationFinishedAt - startedAt);
+      responseStartDurations.push(
+        timings?.responseStart ?? navigationFinishedAt - startedAt,
+      );
+      responseEndDurations.push(
+        timings?.responseEnd ?? navigationFinishedAt - startedAt,
+      );
+      domContentLoadedDurations.push(
+        timings?.domContentLoaded ?? navigationFinishedAt - startedAt,
+      );
+      responseDurations.push(navigationFinishedAt - startedAt);
+      await waitForWorkspaceView(page);
+      readyDurations.push(performance.now() - startedAt);
+      finalUrl = page.url();
 
-    if (!response?.ok() && response?.status() !== 304) {
-      throw new Error(`${route} returned HTTP ${response?.status()}`);
+      if (!response?.ok() && response?.status() !== 304) {
+        throw new Error(`${route} returned HTTP ${response?.status()}`);
+      }
+    } finally {
+      await page.close();
+      await sleep(cooldownMs);
     }
   }
 
-  const finalUrl = page.url();
   await context.close();
+
+  if (storageState && new URL(finalUrl).pathname.startsWith("/login")) {
+    throw new Error(`${route} redirected to login instead of loading authenticated content`);
+  }
 
   return {
     route,
     finalUrl,
     load: summarize(loadDurations),
+    responseStart: summarize(responseStartDurations),
+    responseEnd: summarize(responseEndDurations),
     domContentLoaded: summarize(domContentLoadedDurations),
     navigation: summarize(responseDurations),
+    ready: summarize(readyDurations),
   };
 }
 
@@ -98,8 +207,20 @@ const browser = await chromium.launch();
 const results = [];
 
 try {
-  for (const route of routes) {
+  for (const route of publicRoutes) {
     results.push(await measureRoute(browser, route));
+  }
+
+  if (authEmail && authPassword) {
+    const storageState = await createAuthenticatedStorageState(browser);
+    for (const route of authenticatedRoutes) {
+      results.push(await measureRoute(browser, route, storageState));
+    }
+  } else {
+    console.log(
+      "Authenticated workspace routes skipped. Set PERF_EMAIL and PERF_PASSWORD to measure them.",
+    );
+    console.log("");
   }
 } finally {
   await browser.close();
@@ -108,12 +229,16 @@ try {
 const failed = [];
 
 console.log(
-  `Measured ${routes.length} route(s), ${warmups} warmup(s), ${repeats} repeat(s), budget ${budgetMs} ms p95 load.`,
+  `Measured ${results.length} route(s), ${warmups} warmup(s), ${repeats} repeat(s), ${cooldownMs} ms cooldown, budget ${budgetMs} ms p${budgetPercentile} load.`,
 );
 console.log("");
 
+const routeWidth = Math.max(18, ...results.map((result) => result.route.length));
+
 for (const result of results) {
-  const status = result.load.p95 <= budgetMs ? "PASS" : "FAIL";
+  const budgetValue =
+    budgetPercentile === 95 ? result.load.p95 : result.load.median;
+  const status = budgetValue <= budgetMs ? "PASS" : "FAIL";
   if (status === "FAIL") {
     failed.push(result);
   }
@@ -121,12 +246,15 @@ for (const result of results) {
   console.log(
     [
       status.padEnd(4),
-      result.route.padEnd(18),
+      result.route.padEnd(routeWidth),
       `load p50=${formatMs(result.load.median)}`,
       `p95=${formatMs(result.load.p95)}`,
       `max=${formatMs(result.load.max)}`,
+      `ttfb p95=${formatMs(result.responseStart.p95)}`,
+      `response p95=${formatMs(result.responseEnd.p95)}`,
       `dom p95=${formatMs(result.domContentLoaded.p95)}`,
       `nav p95=${formatMs(result.navigation.p95)}`,
+      `ready p95=${formatMs(result.ready.p95)}`,
     ].join("  "),
   );
 }
@@ -135,7 +263,11 @@ if (failed.length) {
   console.log("");
   console.log("Routes over budget:");
   for (const result of failed) {
-    console.log(`- ${result.route}: p95 load ${formatMs(result.load.p95)}`);
+    const budgetValue =
+      budgetPercentile === 95 ? result.load.p95 : result.load.median;
+    console.log(
+      `- ${result.route}: p${budgetPercentile} load ${formatMs(budgetValue)}`,
+    );
   }
   process.exitCode = 1;
 }

@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 test("workspace delegates upload draft lifecycle to a focused hook", () => {
-  const workspaceSource = readFileSync("src/app/approval-workspace.tsx", "utf8");
+  const workspaceSource = readFileSync(
+    "src/app/workspace-upload-tab.tsx",
+    "utf8",
+  );
   const draftSource = readFileSync(
     "src/app/use-workspace-upload-drafts.ts",
     "utf8",
@@ -19,7 +22,10 @@ test("workspace delegates upload draft lifecycle to a focused hook", () => {
 });
 
 test("upload draft hook owns recoverable request state and stored cleanup", () => {
-  const workspaceSource = readFileSync("src/app/approval-workspace.tsx", "utf8");
+  const workspaceSource = readFileSync(
+    "src/app/workspace-upload-tab.tsx",
+    "utf8",
+  );
   const draftSource = readFileSync(
     "src/app/use-workspace-upload-drafts.ts",
     "utf8",
@@ -33,9 +39,21 @@ test("upload draft hook owns recoverable request state and stored cleanup", () =
 });
 
 test("workspace keeps only parser feedback adapters around draft actions", () => {
-  const workspaceSource = readFileSync("src/app/approval-workspace.tsx", "utf8");
+  const workspaceSource = readFileSync(
+    "src/app/workspace-upload-tab.tsx",
+    "utf8",
+  );
 
-  assert.equal(workspaceSource.includes("await confirmClearUploadRequestDraft()"), true);
-  assert.equal(workspaceSource.includes("selectUploadRequestDraftRowState(rowId)"), true);
-  assert.equal(workspaceSource.includes('setSubmissionMessage("Draft cleared.")'), true);
+  assert.equal(
+    workspaceSource.includes("await drafts.confirmClearUploadRequestDraft()"),
+    true,
+  );
+  assert.equal(
+    workspaceSource.includes("drafts.selectUploadRequestDraftRowState(rowId)"),
+    true,
+  );
+  assert.equal(
+    workspaceSource.includes('pipeline.setSubmissionMessage("Draft cleared.")'),
+    true,
+  );
 });

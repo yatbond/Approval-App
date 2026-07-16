@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 test("workspace delegates admin and template mutations to a focused controller", () => {
-  const workspaceSource = readFileSync("src/app/approval-workspace.tsx", "utf8");
+  const workspaceSource = readFileSync(
+    "src/app/use-workspace-admin-controller.ts",
+    "utf8",
+  );
   const controllerSource = readFileSync(
     "src/app/use-workspace-admin-records.ts",
     "utf8",
@@ -18,7 +21,10 @@ test("workspace delegates admin and template mutations to a focused controller",
 });
 
 test("template selection remains in the workspace because it resets request input", () => {
-  const workspaceSource = readFileSync("src/app/approval-workspace.tsx", "utf8");
+  const workspaceSource = readFileSync(
+    "src/app/workspace-upload-tab.tsx",
+    "utf8",
+  );
 
   assert.equal(workspaceSource.includes("function selectTemplateRecord("), true);
   assert.equal(workspaceSource.includes("setRequestParticipantEmails({});"), true);

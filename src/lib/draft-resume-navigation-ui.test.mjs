@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const workspaceSource = readFileSync(
-  new URL("../app/approval-workspace.tsx", import.meta.url),
+const workspaceCoreSource = readFileSync(
+  new URL("../app/approval-workspace-core.tsx", import.meta.url),
+  "utf8",
+);
+const workspaceDraftsSource = readFileSync(
+  new URL("../app/workspace-drafts-tab.tsx", import.meta.url),
   "utf8",
 );
 const uploadViewSource = readFileSync(
@@ -28,7 +32,7 @@ const uploadDraftStateSource = readFileSync(
 );
 
 test("resumed drafts keep Drafts active and use clear draft controls", () => {
-  assert.match(workspaceSource, /activeTab=\{navigationActiveTab\}/);
+  assert.match(workspaceCoreSource, /activeTab=\{navigationActiveTab\}/);
   assert.match(uploadDraftControlsSource, />\s*Draft controls\s*</);
   assert.match(
     uploadDraftControlsSource,
@@ -54,8 +58,14 @@ test("resumed drafts keep Drafts active and use clear draft controls", () => {
 
 test("draft badge and Drafts page use the same visible items", () => {
   assert.match(uploadDraftStateSource, /const uploadDraftResumeItems = useMemo/);
-  assert.match(workspaceSource, /draftItemCount: uploadDraftResumeItems\.length/);
-  assert.match(workspaceSource, /resumeItems=\{uploadDraftResumeItems\}/);
+  assert.match(
+    workspaceDraftsSource,
+    /setDraftItemCount\(drafts\.uploadDraftResumeItems\.length\)/,
+  );
+  assert.match(
+    workspaceDraftsSource,
+    /resumeItems=\{drafts\.uploadDraftResumeItems\}/,
+  );
   assert.match(uploadDraftsViewSource, /resumeItems: UploadDraftResumeItem\[\]/);
   assert.doesNotMatch(
     uploadDraftStateSource,

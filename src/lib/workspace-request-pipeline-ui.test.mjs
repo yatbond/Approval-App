@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 test("workspace delegates request parsing and submission to a focused pipeline", () => {
-  const workspaceSource = readFileSync("src/app/approval-workspace.tsx", "utf8");
+  const workspaceSource = readFileSync(
+    "src/app/workspace-upload-tab.tsx",
+    "utf8",
+  );
   const pipelineSource = readFileSync(
     "src/app/use-workspace-request-pipeline.ts",
     "utf8",
@@ -18,7 +21,10 @@ test("workspace delegates request parsing and submission to a focused pipeline",
 });
 
 test("request pipeline owns parse and submission status", () => {
-  const workspaceSource = readFileSync("src/app/approval-workspace.tsx", "utf8");
+  const workspaceSource = readFileSync(
+    "src/app/workspace-upload-tab.tsx",
+    "utf8",
+  );
   const pipelineSource = readFileSync(
     "src/app/use-workspace-request-pipeline.ts",
     "utf8",

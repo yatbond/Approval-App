@@ -1,6 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { hasSupabaseAuthCookie } from "@/lib/supabase/auth-cookies";
+import {
+  verifiedUserEmailHeader,
+  verifiedUserIdHeader,
+} from "@/lib/supabase/verified-user-headers";
 
 async function createSupabaseServerClient() {
   const cookieStore = await cookies();
@@ -30,6 +34,16 @@ async function createSupabaseServerClient() {
 }
 
 export async function getCurrentUser() {
+  const requestHeaders = await headers();
+  const verifiedUserId = requestHeaders.get(verifiedUserIdHeader);
+  const verifiedUserEmail = requestHeaders.get(verifiedUserEmailHeader);
+  if (verifiedUserId && verifiedUserEmail) {
+    return {
+      id: verifiedUserId,
+      email: verifiedUserEmail,
+    };
+  }
+
   const cookieStore = await cookies();
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 

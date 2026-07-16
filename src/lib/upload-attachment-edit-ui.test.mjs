@@ -11,7 +11,7 @@ const uploadRequestSetupSource = readFileSync(
   "utf8",
 );
 const workspaceSource = readFileSync(
-  new URL("../app/approval-workspace.tsx", import.meta.url),
+  new URL("../app/workspace-upload-tab.tsx", import.meta.url),
   "utf8",
 );
 const uploadDraftStateSource = readFileSync(

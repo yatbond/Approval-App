@@ -43,15 +43,18 @@ test("normalizes thrown and unknown delivery errors", () => {
 });
 
 test("workspace delegates delivery endpoints to the focused controller", () => {
-  const workspaceSource = readFileSync("src/app/approval-workspace.tsx", "utf8");
+  const actionControllerSource = readFileSync(
+    "src/app/use-workspace-action-controller.ts",
+    "utf8",
+  );
   const controllerSource = readFileSync(
     "src/app/use-workspace-email-delivery.ts",
     "utf8",
   );
 
-  assert.equal(workspaceSource.includes("useWorkspaceEmailDelivery"), true);
-  assert.equal(workspaceSource.includes("/api/email/task-notifications"), false);
-  assert.equal(workspaceSource.includes("/api/email/test"), false);
+  assert.equal(actionControllerSource.includes("useWorkspaceEmailDelivery"), true);
+  assert.equal(actionControllerSource.includes("/api/email/task-notifications"), false);
+  assert.equal(actionControllerSource.includes("/api/email/test"), false);
   assert.equal(controllerSource.includes("/api/email/task-notifications"), true);
   assert.equal(controllerSource.includes("/api/email/test"), true);
 });
