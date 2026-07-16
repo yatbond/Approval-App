@@ -6,14 +6,13 @@ import {
   type WorkspaceAdminDeactivation,
 } from "@/lib/normalized-workspace-store";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import {
+  getSupabaseRouteUser,
+  type SupabaseRouteUser,
+} from "@/lib/supabase/route-user";
 import { parseWorkspaceState, serializeWorkspaceState } from "@/lib/workspace-persistence";
 import type { WorkspaceStateSnapshot } from "@/lib/workspace-persistence";
 import { mergeExternalFormWorkspaceState } from "@/lib/external-form-workspace-merge";
-
-type WorkspaceRouteUser = {
-  id: string;
-  email: string;
-};
 
 type WorkspacePayload = {
   mode: "supabase";
@@ -23,27 +22,10 @@ type WorkspacePayload = {
   reason?: string;
 };
 
-async function getWorkspaceRouteUser(supabase: ReturnType<typeof createSupabaseRouteClient>) {
-  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
-  const claims = claimsData?.claims as { sub?: string; email?: string } | undefined;
-
-  if (!claimsError && claims?.sub && claims.email) {
-    return {
-      id: claims.sub,
-      email: claims.email,
-    };
-  }
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return user?.email ? { id: user.id, email: user.email } : null;
-}
-
 export async function GET(request: NextRequest) {
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
-  const user = await getWorkspaceRouteUser(supabase);
+  const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
     return NextResponse.json({ mode: "local", snapshot: null });
@@ -111,7 +93,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
-  const user = await getWorkspaceRouteUser(supabase);
+  const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
     return NextResponse.json({ mode: "local", reason: "Not signed in" });
@@ -184,7 +166,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
-  const user = await getWorkspaceRouteUser(supabase);
+  const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
     return NextResponse.json(
@@ -229,7 +211,7 @@ export async function PATCH(request: NextRequest) {
 
 async function saveWorkspaceSnapshot(
   supabase: ReturnType<typeof createSupabaseRouteClient>,
-  user: WorkspaceRouteUser,
+  user: SupabaseRouteUser,
   snapshot: WorkspaceStateSnapshot,
 ) {
   return supabase.from("workspace_snapshots").upsert(

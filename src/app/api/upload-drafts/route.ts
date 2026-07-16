@@ -5,11 +5,10 @@ import {
   type SavedUploadRequestDraft,
 } from "@/lib/upload-request-draft-state";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
-
-type UploadDraftRouteUser = {
-  id: string;
-  email: string;
-};
+import {
+  getSupabaseRouteUser,
+  type SupabaseRouteUser,
+} from "@/lib/supabase/route-user";
 
 type UploadDraftRow = {
   id: string;
@@ -21,29 +20,10 @@ type UploadDraftRow = {
   updated_at: string;
 };
 
-async function getUploadDraftRouteUser(
-  supabase: ReturnType<typeof createSupabaseRouteClient>,
-) {
-  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
-  const claims = claimsData?.claims as { sub?: string; email?: string } | undefined;
-
-  if (!claimsError && claims?.sub && claims.email) {
-    return {
-      id: claims.sub,
-      email: claims.email,
-    };
-  }
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return user?.email ? { id: user.id, email: user.email } : null;
-}
-
 export async function GET(request: NextRequest) {
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
-  const user = await getUploadDraftRouteUser(supabase);
+  const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
     return NextResponse.json(
@@ -70,7 +50,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
-  const user = await getUploadDraftRouteUser(supabase);
+  const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
     return NextResponse.json(
@@ -124,7 +104,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
-  const user = await getUploadDraftRouteUser(supabase);
+  const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
     return NextResponse.json(
@@ -152,7 +132,7 @@ export async function DELETE(request: NextRequest) {
 
 function rowToSavedDraft(
   row: UploadDraftRow,
-  user: UploadDraftRouteUser,
+  user: SupabaseRouteUser,
 ): SavedUploadRequestDraft | null {
   const parsedDraft = parseUploadRequestDraftList(
     JSON.stringify([
