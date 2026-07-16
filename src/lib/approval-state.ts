@@ -431,7 +431,6 @@ function routeAfterRejection(
     graph,
     task.currentNodeId,
     task.extractedFields,
-    completedNodeIds,
     nodeDecisions,
     "rejected",
   );
@@ -644,7 +643,6 @@ function routeAfterApproval(task: ApprovalTask, template?: WorkflowTemplate) {
     graph,
     task.currentNodeId,
     task.extractedFields,
-    completedNodeIds,
     nodeDecisions,
   );
   const notifiedNodeIds = addUnique(
@@ -809,7 +807,6 @@ function findNextActionableRoute(
   graph: WorkflowGraph,
   fromNodeId: string,
   extractedFields: Record<string, string>,
-  completedNodeIds: string[],
   nodeDecisions: ApprovalTask["nodeDecisions"],
   preferredBranchType: WorkflowGraphEdge["branchType"] = "approved",
 ) {
