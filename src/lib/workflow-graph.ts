@@ -10,6 +10,7 @@ import type {
   WorkflowTemplate,
 } from "@/lib/types";
 import { isNativeFormChoiceField } from "./workflow-native-form-state.ts";
+import { doesWorkflowNumericRuleMatch } from "./workflow-numeric-rule.ts";
 
 type LegacyDocumentNode = Omit<WorkflowGraphNode, "kind"> & { kind: "document" };
 type LegacyWorkflowGraphNode = WorkflowGraphNode | LegacyDocumentNode;
@@ -1244,7 +1245,7 @@ function canApprovalConditionStillMatch(
   }
 
   const numericMatches = conditionCase.numericRule
-    ? doesConditionNumericRuleMatch(conditionCase.numericRule, extractedFields)
+    ? doesWorkflowNumericRuleMatch(conditionCase.numericRule, extractedFields)
     : undefined;
 
   if (conditionCase.numericRule && conditionCase.join === "and" && !numericMatches) {
@@ -1280,7 +1281,7 @@ function doesConditionCaseMatch(
     ? doesApprovalConditionRuleMatch(conditionCase.approvalRule, nodeDecisions)
     : undefined;
   const numericMatches = conditionCase.numericRule
-    ? doesConditionNumericRuleMatch(conditionCase.numericRule, extractedFields)
+    ? doesWorkflowNumericRuleMatch(conditionCase.numericRule, extractedFields)
     : undefined;
 
   if (approvalMatches === undefined) {
@@ -1315,37 +1316,6 @@ function doesApprovalConditionRuleMatch(
   }
 
   return approvedCount >= approvalRule.minimumApproved;
-}
-
-function doesConditionNumericRuleMatch(
-  rule: NonNullable<WorkflowConditionCase["numericRule"]>,
-  extractedFields: Record<string, string>,
-) {
-  const rawFieldValue = extractedFields[rule.field] || "";
-  const fieldValue = normalizeComparableValue(rawFieldValue);
-  const ruleValue = normalizeComparableValue(rule.value);
-
-  if (rule.operator === "contains") {
-    return rawFieldValue.toLowerCase().includes(rule.value.toLowerCase());
-  }
-
-  if (typeof fieldValue === "number" && typeof ruleValue === "number") {
-    if (rule.operator === "=") return fieldValue === ruleValue;
-    if (rule.operator === "!=") return fieldValue !== ruleValue;
-    if (rule.operator === ">") return fieldValue > ruleValue;
-    if (rule.operator === ">=") return fieldValue >= ruleValue;
-    if (rule.operator === "<") return fieldValue < ruleValue;
-    if (rule.operator === "<=") return fieldValue <= ruleValue;
-  }
-
-  if (rule.operator === "=") return rawFieldValue === rule.value;
-  if (rule.operator === "!=") return rawFieldValue !== rule.value;
-  return false;
-}
-
-function normalizeComparableValue(value: string) {
-  const number = Number(value.replace(/[^0-9.-]/g, ""));
-  return Number.isFinite(number) && value.trim() ? number : value;
 }
 
 export function addWorkflowDocumentToNode(

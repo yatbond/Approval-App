@@ -10,6 +10,7 @@ import type {
   WorkflowTemplate,
 } from "@/lib/types";
 import { createWorkflowGraphFromTemplate, findInitialWorkflowRoute } from "./workflow-graph.ts";
+import { doesWorkflowNumericRuleMatch } from "./workflow-numeric-rule.ts";
 
 const closedStatuses = new Set<ApprovalTask["status"]>(["approved", "cancelled"]);
 const assignedTaskActions = new Set<ApprovalAction>([
@@ -992,7 +993,7 @@ function canApprovalConditionStillMatch(
   }
 
   const numericMatches = conditionCase.numericRule
-    ? doesRuleMatch(conditionCase.numericRule, extractedFields)
+    ? doesWorkflowNumericRuleMatch(conditionCase.numericRule, extractedFields)
     : undefined;
 
   if (conditionCase.numericRule && conditionCase.join === "and" && !numericMatches) {
@@ -1028,7 +1029,7 @@ function doesConditionCaseMatch(
     ? doesApprovalRuleMatch(conditionCase.approvalRule, nodeDecisions)
     : undefined;
   const numericMatches = conditionCase.numericRule
-    ? doesRuleMatch(conditionCase.numericRule, extractedFields)
+    ? doesWorkflowNumericRuleMatch(conditionCase.numericRule, extractedFields)
     : undefined;
 
   if (approvalMatches === undefined) {
@@ -1084,43 +1085,12 @@ function chooseNextEdge(
       (edge) =>
         edge.branchType === "condition" &&
         edge.rule &&
-        doesRuleMatch(edge.rule, extractedFields),
+        doesWorkflowNumericRuleMatch(edge.rule, extractedFields),
     ) ||
     outgoing.find((edge) => edge.branchType === "main") ||
     outgoing.find((edge) => edge.branchType === "condition") ||
     outgoing[0]
   );
-}
-
-function doesRuleMatch(
-  rule: NonNullable<WorkflowGraphEdge["rule"]>,
-  extractedFields: Record<string, string>,
-) {
-  const rawFieldValue = extractedFields[rule.field] || "";
-  const fieldValue = normalizeComparableValue(rawFieldValue);
-  const ruleValue = normalizeComparableValue(rule.value);
-
-  if (rule.operator === "contains") {
-    return rawFieldValue.toLowerCase().includes(rule.value.toLowerCase());
-  }
-
-  if (typeof fieldValue === "number" && typeof ruleValue === "number") {
-    if (rule.operator === "=") return fieldValue === ruleValue;
-    if (rule.operator === "!=") return fieldValue !== ruleValue;
-    if (rule.operator === ">") return fieldValue > ruleValue;
-    if (rule.operator === ">=") return fieldValue >= ruleValue;
-    if (rule.operator === "<") return fieldValue < ruleValue;
-    if (rule.operator === "<=") return fieldValue <= ruleValue;
-  }
-
-  if (rule.operator === "=") return rawFieldValue === rule.value;
-  if (rule.operator === "!=") return rawFieldValue !== rule.value;
-  return false;
-}
-
-function normalizeComparableValue(value: string) {
-  const number = Number(value.replace(/[^0-9.-]/g, ""));
-  return Number.isFinite(number) && value.trim() ? number : value;
 }
 
 function collectOutgoingNotifications(
