@@ -13,16 +13,10 @@ import {
   isManualFormRequirement,
 } from "@/lib/workflow-documents";
 import { isLibraryFormRequirement } from "@/lib/workflow-library-form-state";
-import {
-  isNativeFormChoiceField,
-  nativeFormFieldTypeOptions,
-  parseNativeFormOptions,
-} from "@/lib/workflow-native-form-state";
 import type {
   DocumentFormat,
   ExtractionTrainingExample,
   FormLibraryDefinition,
-  WorkflowDocumentInputMode,
   WorkflowDocumentRequirement,
   WorkflowField,
   WorkflowGraphNode,
@@ -32,7 +26,6 @@ import type {
 export type WorkflowBoxDocumentDraft = {
   documentType: string;
   format: DocumentFormat;
-  inputMode: WorkflowDocumentInputMode;
   required: boolean;
 };
 
@@ -93,7 +86,6 @@ export function WorkflowBoxDocumentsEditor({
   const [requirementDraft, setRequirementDraft] = useState<WorkflowBoxDocumentDraft>({
     documentType: "Supporting document",
     format: "pdf",
-    inputMode: "upload",
     required: true,
   });
   const [selectedLibraryFormId, setSelectedLibraryFormId] = useState("");
@@ -159,27 +151,55 @@ export function WorkflowBoxDocumentsEditor({
           }
           const isManualForm = isManualFormRequirement(document);
 
+          if (isManualForm) {
+            return (
+              <div
+                key={document.id}
+                className="rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/35 dark:bg-amber-500/10"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                      {document.documentType}
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
+                      Legacy embedded form. New forms can only be attached from the Form Library.
+                    </p>
+                    <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                      {document.fields.length} field(s). Remove this requirement and attach its published Form Library version to replace it.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveRequirement(document.id)}
+                    title="Remove this legacy embedded form from the selected workflow box."
+                    aria-label={`Remove ${document.documentType}`}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md border border-rose-300 bg-rose-50 text-rose-800 transition hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-100"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div
               key={document.id}
               className="rounded-md border border-[#e6e6e6] bg-white p-2"
             >
               <p className="mb-2 text-xs font-semibold uppercase text-neutral-500 dark:text-neutral-400">
-                {isManualForm ? "Legacy embedded form" : "Document requirement"}
+                Document requirement
               </p>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1 space-y-2">
                   <label className="block">
                     <span className="mb-1 block text-xs text-neutral-500">
-                      {isManualForm ? "Form section name" : "Document type"}
+                      Document type
                     </span>
                     <input
                       value={document.documentType}
-                      title={
-                        isManualForm
-                          ? "Heading shown above this group of fields in the request form."
-                          : "Business meaning of this document, such as Invoice, Doctor slip, or Delivery note."
-                      }
+                      title="Business meaning of this document, such as Invoice, Doctor slip, or Delivery note."
                       onChange={(event) =>
                         onUpdateRequirement(document.id, {
                           documentType: event.target.value,
@@ -188,8 +208,7 @@ export function WorkflowBoxDocumentsEditor({
                       className="h-9 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-sm outline-none focus:border-emerald-400/60"
                     />
                   </label>
-                  {!isManualForm && (
-                    <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
                       <label className="block">
                         <span className="mb-1 block text-xs text-neutral-500">
                           Format
@@ -224,12 +243,9 @@ export function WorkflowBoxDocumentsEditor({
                         />
                         Required upload
                       </label>
-                    </div>
-                  )}
+                  </div>
                   <p className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-1 text-xs text-neutral-500">
-                    {isManualForm
-                      ? "This older embedded form remains editable for compatibility. New forms must be attached from the Form Library."
-                      : "Requester uploads this document. AI/OCR can extract the configured fields."}
+                    Requester uploads this document. AI/OCR can extract the configured fields.
                   </p>
                 </div>
                 <button
@@ -245,21 +261,17 @@ export function WorkflowBoxDocumentsEditor({
               <div className="mt-3 space-y-3 border-t border-[#e6e6e6] pt-3">
                 <div className="rounded-md border border-sky-500/20 bg-sky-500/10 p-2">
                   <p className="text-xs font-semibold text-sky-100">
-                    {isManualForm ? "Form fields" : "Extraction fields"}
+                    Extraction fields
                   </p>
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-semibold text-neutral-400">
-                    {isManualForm ? "Build the fields users complete" : "Edit fields"}
+                    Edit fields
                   </p>
                   <button
                     type="button"
                     onClick={() => onAddField(document.id)}
-                    title={
-                      isManualForm
-                        ? "Add another field to this form section."
-                        : "Add another field to extract from this document."
-                    }
+                    title="Add another field to extract from this document."
                     className="flex min-h-7 items-center justify-center gap-1 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 text-xs text-sky-100 transition hover:bg-sky-400/20"
                   >
                     <Plus size={12} /> Add field
@@ -291,90 +303,17 @@ export function WorkflowBoxDocumentsEditor({
                         <X size={13} />
                       </button>
                     </div>
-                    {isManualForm && (
-                      <label className="block">
-                        <span className="mb-1 block text-xs text-neutral-500">
-                          Field type
-                        </span>
-                        <select
-                          value={field.type}
-                          title="Choose how this field is completed in the request form."
-                          onChange={(event) =>
-                            onUpdateField(document.id, fieldIndex, {
-                              type: event.target.value as WorkflowField["type"],
-                              options: isNativeFormChoiceField(
-                                event.target.value as WorkflowField["type"],
-                              )
-                                ? field.options
-                                : undefined,
-                            })
-                          }
-                          className="h-9 w-full rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none focus:border-emerald-400/60"
-                        >
-                          {nativeFormFieldTypeOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
                     <input
                       value={field.instructions}
-                      title={
-                        isManualForm
-                          ? "Optional guidance shown below this field."
-                          : "Instruction for the extractor, for example where to find the value or how to interpret it."
-                      }
+                      title="Instruction for the extractor, for example where to find the value or how to interpret it."
                       onChange={(event) =>
                         onUpdateField(document.id, fieldIndex, {
                           instructions: event.target.value,
                         })
                       }
-                      placeholder={
-                        isManualForm ? "Help text (optional)" : "Extraction instruction"
-                      }
+                      placeholder="Extraction instruction"
                       className="h-9 w-full rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
                     />
-                    {isManualForm &&
-                      field.type !== "checkbox" &&
-                      !isNativeFormChoiceField(field.type) && (
-                        <input
-                          value={field.placeholder || ""}
-                          title="Optional example or prompt shown before the user enters a value."
-                          onChange={(event) =>
-                            onUpdateField(document.id, fieldIndex, {
-                              placeholder: event.target.value,
-                            })
-                          }
-                          placeholder="Placeholder (optional)"
-                          className="h-9 w-full rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
-                        />
-                      )}
-                    {isManualForm && isNativeFormChoiceField(field.type) && (
-                      <label className="block">
-                        <span className="mb-1 block text-xs text-neutral-500">
-                          Choices, one per line
-                        </span>
-                        <textarea
-                          value={(field.options || []).join("\n")}
-                          title="Enter the choices users can select, one per line."
-                          onChange={(event) =>
-                            onUpdateField(document.id, fieldIndex, {
-                              options: event.target.value.split(/\r?\n/),
-                            })
-                          }
-                          onBlur={(event) =>
-                            onUpdateField(document.id, fieldIndex, {
-                              options: parseNativeFormOptions(event.target.value),
-                            })
-                          }
-                          rows={3}
-                          placeholder={"Option 1\nOption 2"}
-                          className="w-full rounded-md border border-[#e6e6e6] bg-white px-2 py-2 text-xs outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
-                        />
-                      </label>
-                    )}
                     <label className="flex items-center gap-2 text-xs text-neutral-400">
                       <input
                         type="checkbox"
@@ -393,18 +332,16 @@ export function WorkflowBoxDocumentsEditor({
                 {!document.fields.length && (
                   <p className="text-xs text-neutral-500">No fields yet.</p>
                 )}
-                {!isManualForm && (
-                  <TemplateDocumentRecognitionPanel
-                    document={document}
-                    template={template}
-                    onAddField={(field, example) =>
-                      onAddRecognizedField(document.id, field, example)
-                    }
-                    onSaveSample={(sample) =>
-                      onUpdateRequirement(document.id, { sample })
-                    }
-                  />
-                )}
+                <TemplateDocumentRecognitionPanel
+                  document={document}
+                  template={template}
+                  onAddField={(field, example) =>
+                    onAddRecognizedField(document.id, field, example)
+                  }
+                  onSaveSample={(sample) =>
+                    onUpdateRequirement(document.id, { sample })
+                  }
+                />
               </div>
             </div>
           );
@@ -421,7 +358,7 @@ export function WorkflowBoxDocumentsEditor({
             Add a requirement
           </p>
           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-            Attach a published form or require a document upload.
+            Attach a published Form Library version or add a document upload requirement.
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             <button
@@ -439,7 +376,7 @@ export function WorkflowBoxDocumentsEditor({
                   : "border-[#d2d2d2] bg-white text-neutral-700 hover:border-[#f7941d] dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
               }`}
             >
-              <Library size={16} /> Attach form
+              <Library size={16} /> Attach form from Library
             </button>
             <button
               type="button"
@@ -456,7 +393,7 @@ export function WorkflowBoxDocumentsEditor({
                   : "border-[#d2d2d2] bg-white text-neutral-700 hover:border-[#f7941d] dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
               }`}
             >
-              <FilePlus2 size={16} /> Add document
+              <FilePlus2 size={16} /> Add document upload
             </button>
           </div>
         </div>
@@ -519,7 +456,6 @@ export function WorkflowBoxDocumentsEditor({
                   setRequirementDraft((current) => ({
                     ...current,
                     documentType: event.target.value,
-                    inputMode: "upload",
                   }))
                 }
                 placeholder="Document type, e.g. Invoice"

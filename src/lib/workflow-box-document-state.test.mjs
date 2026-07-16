@@ -98,7 +98,7 @@ test("adds a document requirement to a submit request box", () => {
   );
 });
 
-test("adds a manual form requirement to a submit request box", () => {
+test("rejects embedded form requirements because forms must come from the library", () => {
   const result = getWorkflowAddBoxDocumentState({
     template,
     selectedNodeId: "review-1",
@@ -109,22 +109,10 @@ test("adds a manual form requirement to a submit request box", () => {
     required: true,
   });
 
-  assert.equal(result.didUpdate, true);
-  assert.deepEqual(result.resetForm, {
-    documentType: "Supporting document",
-    format: "pdf",
-    inputMode: "upload",
-    required: true,
-  });
-
-  const document = result.template.documents[0];
-  assert.equal(document.inputMode, "manual_form");
-  assert.equal(document.format, "text");
-  assert.equal(document.fields[0].source, "manual");
-  assert.equal(
-    document.fields[0].instructions,
-    "Describe what the requester should enter for this form field.",
-  );
+  assert.equal(result.didUpdate, false);
+  assert.equal(result.resetForm, null);
+  assert.equal(result.label, "Forms must be attached from the Form Library.");
+  assert.equal(result.template.documents.length, 0);
 });
 
 test("does not update without a selected node or document type", () => {

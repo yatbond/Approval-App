@@ -178,7 +178,7 @@ test("sample recognition reloads saved sample values when fields are revisited",
   assert.equal(source.includes("clearSampleTrainingDraft();"), false);
 });
 
-test("submit boxes expose a native form builder and request renderer", () => {
+test("workflow boxes attach forms from the library and render them in requests", () => {
   const workflowSource = readFileSync("src/app/workflow-view.tsx", "utf8");
   const boxDocumentsSource = readFileSync(
     "src/app/workflow-box-documents-editor.tsx",
@@ -205,9 +205,13 @@ test("submit boxes expose a native form builder and request renderer", () => {
 
   assert.equal(workflowSource.includes("WorkflowBoxDocumentsEditor"), true);
   assert.equal(boxDocumentsSource.includes("Request requirements"), true);
-  assert.equal(boxDocumentsSource.includes("Form section name"), true);
-  assert.equal(boxDocumentsSource.includes("Build the fields users complete"), true);
-  assert.equal(boxDocumentsSource.includes("nativeFormFieldTypeOptions"), true);
+  assert.equal(boxDocumentsSource.includes("Form section name"), false);
+  assert.equal(boxDocumentsSource.includes("Build the fields users complete"), false);
+  assert.equal(boxDocumentsSource.includes("nativeFormFieldTypeOptions"), false);
+  assert.equal(
+    boxDocumentsSource.includes("New forms can only be attached from the Form Library."),
+    true,
+  );
   assert.equal(uploadSource.includes("UploadRequestDataPanel"), true);
   assert.equal(uploadDataSource.includes("import { NativeFormFieldInput }"), true);
   assert.equal(uploadSetupSource.includes("Complete required form fields"), true);
@@ -225,7 +229,8 @@ test("submit boxes expose a native form builder and request renderer", () => {
     true,
   );
   assert.equal(boxDocumentsSource.includes("WorkflowLibraryFormSummary"), true);
-  assert.equal(boxDocumentsSource.includes("Attach form from library"), true);
+  assert.equal(boxDocumentsSource.includes("Attach form from Library"), true);
+  assert.equal(boxDocumentsSource.includes("Add document upload"), true);
   assert.equal(boxDocumentsSource.includes("Add document requirement"), true);
   assert.equal(boxDocumentsSource.includes("Select published form"), true);
   assert.equal(boxDocumentsSource.includes("Add separate requirement"), false);

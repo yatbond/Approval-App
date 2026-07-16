@@ -29,7 +29,7 @@ The codebase is the source of truth for implemented behavior. This PRD covers:
 
 ## 2. Product Summary
 
-The Approval Workflow Platform is a responsive web application for document-heavy business approvals. It lets authorized users create reusable workflow templates, build native request forms inside Submit boxes, start requests, extract structured values from uploaded documents, route work through sequential or parallel approvals, collaborate on missing information, track progress, and retain an auditable history.
+The Approval Workflow Platform is a responsive web application for document-heavy business approvals. It lets authorized users create reusable workflow templates, build and publish reusable forms in the Form Library, attach those forms to Submit or Approval boxes, start requests, extract structured values from uploaded documents, route work through sequential or parallel approvals, collaborate on missing information, track progress, and retain an auditable history.
 
 The initial organizational scope is the Chun Wo group and its businesses and departments. The product is designed to support different approval structures without requiring a custom application for each process.
 
@@ -249,7 +249,7 @@ Each request data field has one explicit input source:
 
 AI-derived fields select the attachment question to parse and can provide an optional extraction instruction. The extracted result is written into the same editable request field map as manual answers, so the submitter or box owner can review and correct it before submission or approval. Required extracted values block progression when extraction does not produce a value.
 
-Native form values use the same request field map as AI/OCR values. They therefore participate in draft autosave, conditions, handoff visibility, tracking, and audit behavior without a separate form data model. Existing templates stored with an embedded `inputMode: manual_form` remain compatible and editable, but new forms must be created and published in the Form Library before attachment to a workflow box.
+Native form values use the same request field map as AI/OCR values. They therefore participate in draft autosave, conditions, handoff visibility, tracking, and audit behavior without a separate form data model. Existing templates stored with an embedded `inputMode: manual_form` remain readable and runnable for compatibility, but the workflow editor treats them as read-only legacy requirements. Users can remove them and attach a published Form Library version; all new forms must be created and published in the Form Library before attachment to a workflow box.
 
 ### 9.4 Reusable Form Library
 

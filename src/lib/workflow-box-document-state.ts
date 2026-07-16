@@ -28,16 +28,17 @@ export function getWorkflowAddBoxDocumentState({
   required,
 }: WorkflowAddBoxDocumentStateInput) {
   const trimmedDocumentType = documentType.trim();
-  if (!selectedNodeId || !trimmedDocumentType) {
+  if (!selectedNodeId || !trimmedDocumentType || inputMode !== "upload") {
     return {
       didUpdate: false,
       template,
-      label: "",
+      label:
+        inputMode === "manual_form"
+          ? "Forms must be attached from the Form Library."
+          : "",
       resetForm: null,
     };
   }
-
-  const isManualForm = inputMode === "manual_form";
 
   return {
     didUpdate: true,
@@ -52,10 +53,8 @@ export function getWorkflowAddBoxDocumentState({
           label: "New field",
           type: "text",
           required: false,
-          source: isManualForm ? "manual" : fieldSourceForDocumentFormat(format),
-          instructions: isManualForm
-            ? "Describe what the requester should enter for this form field."
-            : "Describe what should be extracted from this document.",
+          source: fieldSourceForDocumentFormat(format),
+          instructions: "Describe what should be extracted from this document.",
         },
       ],
     }),
