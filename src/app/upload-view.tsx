@@ -630,7 +630,7 @@ export function UploadView({
         <div className="border-b border-[#e6e6e6] p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Current request information</h2>
-            <InfoTip label="Corrections here become training examples for workflow-specific extraction." />
+            <InfoTip label="Review and complete the extracted information for this request. Changes stay with this draft and do not train the workflow template." />
           </div>
         </div>
 

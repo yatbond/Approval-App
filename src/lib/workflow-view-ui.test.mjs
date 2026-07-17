@@ -93,33 +93,36 @@ test("handoff document visibility is limited to all selected or none", () => {
 test("sample recognition trains existing fields with a large box selector", () => {
   const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
 
-  assert.equal(source.includes("Field to train"), true);
+  assert.equal(source.includes("Field to refine"), true);
   assert.equal(source.includes("+ New field"), true);
   assert.equal(source.includes("Large extraction selector"), true);
-  assert.equal(source.includes("Use this large view to zoom, pan, and draw the sample box."), true);
-  assert.equal(source.includes("location hint, not an exact rule"), true);
+  assert.equal(
+    source.includes("Use this large view to zoom, pan, and draw around the correct sample answer."),
+    true,
+  );
+  assert.equal(source.includes("Selected area saved as a hint, not an exact rule."), true);
   assert.equal(source.includes("Field, e.g. Invoice total"), false);
 });
 
 test("sample recognition supports training multiple fields from one upload", () => {
   const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
 
-  assert.equal(source.includes("Saved sample fields"), true);
-  assert.equal(source.includes("No sample fields saved yet."), true);
-  assert.equal(source.includes("Save and next field"), true);
+  assert.equal(source.includes("Saved training examples"), true);
+  assert.equal(source.includes("No training examples saved yet."), true);
+  assert.equal(source.includes("Save training example"), true);
   assert.equal(source.includes("selectNextUnsavedField"), true);
 });
 
 test("sample recognition can full-auto detect the selected field before saving", () => {
   const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
 
-  assert.equal(source.includes("Full Auto Detect"), true);
+  assert.equal(source.includes("Test auto extraction"), true);
   assert.equal(source.includes("recognizeSampleField"), true);
   assert.equal(source.includes("setSampleFile(file)"), true);
   assert.equal(source.includes("setSamplePageImages(pageImages)"), true);
   assert.equal(
     source.includes(
-      "Recognize the selected field from the uploaded sample using the current instruction.",
+      "Test whether AI can find this field from the whole sample document using the current instruction.",
     ),
     true,
   );
@@ -148,9 +151,9 @@ test("sample recognition actions fit inside the narrow workflow side panel", () 
 
 test("sample recognition actions prioritize manual extract before full auto and save", () => {
   const source = readFileSync("src/app/template-document-recognition-panel.tsx", "utf8");
-  const manualIndex = source.indexOf("Manual Extract");
-  const fullAutoIndex = source.indexOf("Full Auto Detect");
-  const saveIndex = source.indexOf("Save and next field");
+  const manualIndex = source.indexOf("Train with selected area");
+  const fullAutoIndex = source.indexOf("Test auto extraction");
+  const saveIndex = source.indexOf("Save training example");
 
   assert.notEqual(manualIndex, -1);
   assert.notEqual(fullAutoIndex, -1);
@@ -159,6 +162,8 @@ test("sample recognition actions prioritize manual extract before full auto and 
   assert.equal(fullAutoIndex < saveIndex, true);
   assert.equal(source.includes("AI Recognize"), false);
   assert.equal(source.includes("Extract box"), false);
+  assert.equal(source.includes("Manual Extract"), false);
+  assert.equal(source.includes("Full Auto Detect"), false);
 });
 
 test("sample recognition persists in-progress training edits with the sample draft", () => {

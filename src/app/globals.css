@@ -255,6 +255,12 @@ html:not([data-theme="dark"]) .text-\[\#8a8a8a\] {
   color: #666162 !important;
 }
 
+/* Low-number rose utilities are pale foregrounds by default and disappear on light surfaces. */
+html:not([data-theme="dark"]) .text-rose-100,
+html:not([data-theme="dark"]) .text-rose-200 {
+  color: #9f1239 !important;
+}
+
 .validation-error {
   border-color: #fda4af;
   background-color: #fff1f2;

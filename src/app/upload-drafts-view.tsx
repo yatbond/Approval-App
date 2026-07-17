@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { FileText, RotateCcw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { InfoTip } from "./ui-hint";
 import {
@@ -27,20 +27,13 @@ export function UploadDraftsView({
 
   return (
     <section className="rounded-md border border-[#e6e6e6] bg-white">
-      <div className="flex flex-col gap-3 border-b border-[#e6e6e6] p-5 md:flex-row md:items-start md:justify-between">
+      <div className="border-b border-[#e6e6e6] p-5">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">Drafts</h2>
             <InfoTip label="Resume interrupted uploads, OCR review, highlighted fields, and saved attachments." />
           </div>
         </div>
-        <Link
-          href="/?tab=upload"
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
-        >
-          <Plus size={16} />
-          New
-        </Link>
       </div>
 
       {resumeItems.length === 0 ? (

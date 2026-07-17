@@ -43,6 +43,14 @@ test("resumed drafts keep Drafts active and use clear draft controls", () => {
   assert.match(uploadDraftControlsSource, />\s*Discard current work\s*</);
   assert.match(uploadRequestSetupSource, />\s*Request setup\s*</);
   assert.match(uploadViewSource, />\s*Current request information\s*</);
+  assert.match(
+    uploadViewSource,
+    /Changes stay with this draft and do not train the workflow template\./,
+  );
+  assert.doesNotMatch(
+    uploadViewSource,
+    /Corrections here become training examples for workflow-specific extraction\./,
+  );
   assert.ok(
     uploadViewSource.indexOf("<UploadRequestSetupPanel") <
       uploadViewSource.indexOf(">Current request information<"),
@@ -54,6 +62,7 @@ test("resumed drafts keep Drafts active and use clear draft controls", () => {
   );
   assert.doesNotMatch(uploadDraftControlsSource, />\s*Work\s*</);
   assert.doesNotMatch(uploadDraftControlsSource, />\s*Draft progress\s*</);
+  assert.doesNotMatch(uploadDraftsViewSource, />\s*New\s*</);
 });
 
 test("draft badge and Drafts page use the same visible items", () => {

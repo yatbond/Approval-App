@@ -50,6 +50,10 @@ const markLogoSource = await readFile(
   new URL("../../public/chunwo-mark.svg", import.meta.url),
   "utf8",
 );
+const infoTipSource = await readFile(
+  new URL("../app/ui-hint.tsx", import.meta.url),
+  "utf8",
+);
 
 test("uses the official Chun Wo palette and typography", () => {
   for (const token of ["#f7941d", "#7b791c", "#231f20", "#e6e6e6", "#8a8a8a"]) {
@@ -105,6 +109,20 @@ test("keeps dark mode foregrounds and placeholders readable", () => {
     globalsSource,
     /html\[data-theme="dark"\] ::placeholder[\s\S]*color: #aaa4a5/,
   );
+});
+
+test("keeps danger text readable on light surfaces", () => {
+  assert.match(
+    globalsSource,
+    /html:not\(\[data-theme="dark"\]\) \.text-rose-100,[\s\S]*color: #9f1239 !important/,
+  );
+});
+
+test("shows only the app tooltip and closes it when another opens", () => {
+  assert.doesNotMatch(infoTipSource, /title=\{label\}/);
+  assert.match(infoTipSource, /approval-info-tip-open/);
+  assert.match(infoTipSource, /role="tooltip"/);
+  assert.match(infoTipSource, /aria-describedby=\{isOpen \? tooltipId : undefined\}/);
 });
 
 test("labels editable admin fields and saved-draft actions", () => {

@@ -607,10 +607,11 @@ export function TemplateDocumentRecognitionPanel({
                         evidence: suggestion.evidence,
                       })
                     }
+                    title="Add this as a field to extract from future uploads. The shown value is saved only as a training example."
                     className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-sky-400/40 bg-sky-400/12 px-2 text-xs text-sky-100"
                   >
                     <Plus size={12} />
-                    Use
+                    Add field
                   </button>
                 </div>
               </div>
@@ -623,7 +624,7 @@ export function TemplateDocumentRecognitionPanel({
         <div className="mt-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2">
           <div className="mb-3 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-2">
             <p className="text-xs font-semibold text-neutral-300">
-              Saved sample fields
+              Saved training examples
             </p>
             {savedSampleFields.length ? (
               <div className="mt-2 space-y-2">
@@ -640,7 +641,7 @@ export function TemplateDocumentRecognitionPanel({
                     </p>
                     {field.hasAnchor && (
                       <p className="mt-0.5 text-[11px] text-emerald-100/70">
-                        Includes box location hint
+                        Includes selected-area hint
                       </p>
                     )}
                   </div>
@@ -648,11 +649,11 @@ export function TemplateDocumentRecognitionPanel({
               </div>
             ) : (
               <p className="mt-1 text-xs text-neutral-500">
-                No sample fields saved yet.
+                No training examples saved yet.
               </p>
             )}
           </div>
-          <p className="text-xs font-semibold text-neutral-300">Add fields</p>
+          <p className="text-xs font-semibold text-neutral-300">Train or test a field</p>
           {selectedPreviewPage ? (
             <>
               {previewPages.length > 1 && (
@@ -704,12 +705,15 @@ export function TemplateDocumentRecognitionPanel({
           ) : (
             <p className="mt-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 py-2 text-xs text-neutral-400">
               Saved sample text is available for AI recognition. Upload the
-              sample again to use Manual Extract.
+              sample again to train with a selected area.
             </p>
           )}
           <div className="mt-2 grid gap-2">
             <label className="grid gap-1 text-xs text-neutral-400">
-              <span>Field to train</span>
+              <span className="inline-flex items-center gap-1">
+                Field to refine
+                <InfoTip label="Choose the future extraction field. Training examples help AI find this field in later uploads, but the sample answer is not reused as the request value." />
+              </span>
               <select
                 value={effectiveSelectedFieldName}
                 onChange={(event) => selectTrainingField(event.target.value)}
@@ -751,8 +755,8 @@ export function TemplateDocumentRecognitionPanel({
             </label>
             <label className="grid gap-1 text-xs text-neutral-400">
               <span className="inline-flex items-center gap-1">
-                Sample value
-                <InfoTip label="The correct answer from this sample document, used as a training example for future uploads." />
+                Correct sample answer
+                <InfoTip label="The correct answer in this sample only. Future requests will extract their own value from their uploaded document." />
               </span>
               <input
                 value={fieldValue}
@@ -760,13 +764,13 @@ export function TemplateDocumentRecognitionPanel({
                   setFieldValue(event.target.value);
                   persistTrainingDraft({ value: event.target.value });
                 }}
-                placeholder="Sample value"
+                placeholder="Correct answer from this sample"
                 className="h-8 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none"
               />
             </label>
             {fieldAnchor && (
               <p className="rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-xs text-emerald-100">
-                Box saved as a location hint, not an exact rule.
+                Selected area saved as a hint, not an exact rule.
               </p>
             )}
             <div className="grid gap-2">
@@ -777,17 +781,17 @@ export function TemplateDocumentRecognitionPanel({
                 className="flex min-h-9 items-center justify-center gap-1 whitespace-normal rounded-md border border-sky-400/40 bg-sky-400/12 px-2 py-2 text-center text-xs leading-tight text-sky-100 disabled:opacity-40"
               >
                 <Maximize2 size={12} />
-                Manual Extract
+                Train with selected area
               </button>
               <button
                 type="button"
                 onClick={recognizeSampleField}
                 disabled={!(sampleFile || document.sample) || !activeFieldLabel || isParsing}
-                title="Recognize the selected field from the uploaded sample using the current instruction."
+                title="Test whether AI can find this field from the whole sample document using the current instruction."
                 className="flex min-h-9 items-center justify-center gap-1 whitespace-normal rounded-md border border-violet-400/40 bg-violet-400/12 px-2 py-2 text-center text-xs leading-tight text-violet-100 disabled:opacity-40"
               >
                 {isParsing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                Full Auto Detect
+                Test auto extraction
               </button>
               <button
                 type="button"
@@ -796,7 +800,7 @@ export function TemplateDocumentRecognitionPanel({
                 className="flex min-h-9 items-center justify-center gap-1 whitespace-normal rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 py-2 text-center text-xs leading-tight text-emerald-100 disabled:opacity-40"
               >
                 <Plus size={12} />
-                Save and next field
+                Save training example
               </button>
             </div>
           </div>
@@ -817,7 +821,7 @@ export function TemplateDocumentRecognitionPanel({
                   Large extraction selector
                 </p>
                 <p className="mt-1 text-xs text-neutral-400">
-                  Use this large view to zoom, pan, and draw the sample box.
+                  Use this large view to zoom, pan, and draw around the correct sample answer.
                 </p>
               </div>
               <button
@@ -857,7 +861,7 @@ export function TemplateDocumentRecognitionPanel({
                 <span className="w-10 text-right">{boxSelectorZoom}%</span>
               </label>
               <p className="text-xs text-neutral-500">
-                The saved box is a soft location hint, not an exact rule.
+                The selected area is a soft hint, not an exact rule.
               </p>
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-4">
