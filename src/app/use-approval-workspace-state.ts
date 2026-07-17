@@ -25,6 +25,7 @@ import {
   loadRemoteWorkspaceState,
   saveRemoteWorkspaceState,
 } from "@/lib/workspace-sync";
+import { getWorkspaceAutosaveDelay } from "@/lib/workspace-autosave";
 import type {
   AdminAuditEvent,
   ApprovalTask,
@@ -35,7 +36,6 @@ import type {
 } from "@/lib/types";
 
 const workspaceStorageKey = "approval-workflow-workspace-v1";
-const remoteAutosaveDelayMs = 30_000;
 
 function readSavedWorkspaceState() {
   if (typeof window === "undefined") {
@@ -102,6 +102,13 @@ export function useApprovalWorkspaceState({
   const [remoteWorkspaceReady, setRemoteWorkspaceReady] = useState(false);
   const lastRemoteSnapshotRef = useRef<string | null>(null);
   const localWorkspaceDirtyRef = useRef(false);
+  const autosaveTargetRef = useRef<{
+    snapshot: WorkspaceStateSnapshot;
+    serialized: string;
+  } | null>(null);
+  const autosaveFailureCountRef = useRef(0);
+  const remoteSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const [autosaveRetryVersion, setAutosaveRetryVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -248,18 +255,57 @@ export function useApprovalWorkspaceState({
     }
 
     if (lastRemoteSnapshotRef.current === serializedSnapshot) {
+      if (autosaveTargetRef.current?.serialized === serializedSnapshot) {
+        autosaveTargetRef.current = null;
+      }
+      autosaveFailureCountRef.current = 0;
       return;
     }
 
+    if (autosaveTargetRef.current?.serialized !== serializedSnapshot) {
+      autosaveTargetRef.current = { snapshot, serialized: serializedSnapshot };
+      autosaveFailureCountRef.current = 0;
+    }
+
+    let cancelled = false;
     const timeoutId = window.setTimeout(async () => {
-      const result = await saveRemoteWorkspaceState(snapshot);
+      const target = autosaveTargetRef.current;
+      if (!target || target.serialized !== serializedSnapshot) {
+        return;
+      }
+
+      const queuedSave = remoteSaveQueueRef.current.then(() => {
+        if (autosaveTargetRef.current?.serialized !== target.serialized) {
+          return null;
+        }
+        return saveRemoteWorkspaceState(target.snapshot);
+      });
+      remoteSaveQueueRef.current = queuedSave.then(
+        () => undefined,
+        () => undefined,
+      );
+      const result = await queuedSave;
+      if (cancelled || !result) {
+        return;
+      }
+
       setWorkspaceSyncMode(result.mode);
       if (result.mode === "supabase") {
-        lastRemoteSnapshotRef.current = serializedSnapshot;
+        lastRemoteSnapshotRef.current = target.serialized;
+        if (autosaveTargetRef.current?.serialized === target.serialized) {
+          autosaveTargetRef.current = null;
+        }
+        autosaveFailureCountRef.current = 0;
+      } else if (autosaveTargetRef.current?.serialized === target.serialized) {
+        autosaveFailureCountRef.current += 1;
       }
-    }, remoteAutosaveDelayMs);
-    return () => window.clearTimeout(timeoutId);
-  }, [adminAuditEvents, businessDirectory, effectiveRoleAssignments, formLibrary, localWorkspaceReady, remoteWorkspaceReady, selectedTemplateId, tasks, templates]);
+      setAutosaveRetryVersion((version) => version + 1);
+    }, getWorkspaceAutosaveDelay(autosaveFailureCountRef.current));
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [adminAuditEvents, autosaveRetryVersion, businessDirectory, effectiveRoleAssignments, formLibrary, localWorkspaceReady, remoteWorkspaceReady, selectedTemplateId, tasks, templates]);
 
   const currentWorkspaceSnapshot = useMemo(
     () => ({
@@ -278,10 +324,25 @@ export function useApprovalWorkspaceState({
     localWorkspaceDirtyRef.current = true;
     const serializedSnapshot = serializeWorkspaceState(snapshot);
     window.localStorage.setItem(workspaceStorageKey, serializedSnapshot);
-    const result = await saveRemoteWorkspaceState(snapshot);
+    autosaveTargetRef.current = { snapshot, serialized: serializedSnapshot };
+    autosaveFailureCountRef.current = 0;
+    const queuedSave = remoteSaveQueueRef.current.then(() =>
+      saveRemoteWorkspaceState(snapshot),
+    );
+    remoteSaveQueueRef.current = queuedSave.then(
+      () => undefined,
+      () => undefined,
+    );
+    const result = await queuedSave;
     setWorkspaceSyncMode(result.mode);
     if (result.mode === "supabase") {
       lastRemoteSnapshotRef.current = serializedSnapshot;
+      if (autosaveTargetRef.current?.serialized === serializedSnapshot) {
+        autosaveTargetRef.current = null;
+      }
+    } else if (autosaveTargetRef.current?.serialized === serializedSnapshot) {
+      autosaveFailureCountRef.current += 1;
+      setAutosaveRetryVersion((version) => version + 1);
     }
     return result;
   }

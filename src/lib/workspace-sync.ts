@@ -23,12 +23,16 @@ export async function loadRemoteWorkspaceState(): Promise<WorkspaceSyncResult> {
 
 export async function saveRemoteWorkspaceState(
   snapshot: WorkspaceStateSnapshot,
+  timeoutMs = 30_000,
 ): Promise<WorkspaceSyncResult> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch("/api/workspace", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ snapshot }),
+      signal: controller.signal,
     });
     if (!response.ok) {
       return { mode: "local", reason: `POST failed: ${response.status}` };
@@ -40,6 +44,8 @@ export async function saveRemoteWorkspaceState(
       mode: "local",
       reason: error instanceof Error ? error.message : "Remote save failed",
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

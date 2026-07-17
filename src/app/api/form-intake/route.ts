@@ -7,6 +7,7 @@ import { processExternalFormIntake } from "@/lib/external-form-processing";
 import { extractExternalFormAttachmentAnswers } from "@/lib/external-form-attachment-extraction";
 import { saveNormalizedWorkspaceState } from "@/lib/normalized-workspace-store";
 import { parseWorkspaceState, serializeWorkspaceState } from "@/lib/workspace-persistence";
+import { createWorkspaceSnapshotHash } from "@/lib/workspace-snapshot-hash";
 
 export async function GET() {
   const configured = Boolean(
@@ -190,6 +191,7 @@ export async function POST(request: Request) {
       .from("workspace_snapshots")
       .update({
         snapshot: JSON.parse(serializeWorkspaceState(result.snapshot)),
+        snapshot_hash: createWorkspaceSnapshotHash(result.snapshot),
         updated_at: new Date().toISOString(),
       })
       .eq("owner_email", workspaceRow.owner_email);

@@ -87,6 +87,7 @@ test("saves remote workspace state to the workspace API", async () => {
     assert.equal(calls[0].init.method, "POST");
     assert.deepEqual(calls[0].init.headers, { "content-type": "application/json" });
     assert.deepEqual(JSON.parse(calls[0].init.body), { snapshot });
+    assert.ok(calls[0].init.signal instanceof AbortSignal);
     assert.deepEqual(result, { mode: "supabase", snapshot });
   } finally {
     globalThis.fetch = originalFetch;
@@ -122,6 +123,25 @@ test("reports fetch errors during remote workspace save", async () => {
       mode: "local",
       reason: "write failed",
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("aborts a remote workspace save after its timeout", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) =>
+    new Promise((_resolve, reject) => {
+      init.signal.addEventListener("abort", () => {
+        reject(new DOMException("The operation was aborted", "AbortError"));
+      });
+    });
+
+  try {
+    const result = await saveRemoteWorkspaceState({ approvalTasks: [] }, 5);
+
+    assert.equal(result.mode, "local");
+    assert.match(result.reason, /aborted/i);
   } finally {
     globalThis.fetch = originalFetch;
   }

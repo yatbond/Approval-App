@@ -68,3 +68,38 @@ test("escalates overdue task to current node escalation email", () => {
   assert.deepEqual(result.pendingOwners, ["finance.head@example.com"]);
   assert.equal(result.auditTrail[0].action, "escalated");
 });
+
+test("preserves task and array identity when escalation state is unchanged", () => {
+  const task = {
+    id: "APR-2",
+    title: "Invoice",
+    workflow: "Finance approval",
+    workflowTemplateId: "finance",
+    requester: "Mandy",
+    requesterEmail: "mandy@example.com",
+    department: "Finance",
+    status: "overdue",
+    due: "Overdue",
+    dueAt: "2026-06-19T01:00:00.000Z",
+    value: "HKD 1,000",
+    currentStep: "Finance review",
+    currentOwner: "reviewer@example.com",
+    currentNodeId: "review-1",
+    pendingNodeIds: ["review-1"],
+    pendingOwners: ["reviewer@example.com"],
+    participants: ["mandy@example.com", "reviewer@example.com"],
+    lastAction: "Waiting",
+    extractedFields: {},
+    auditTrail: [],
+  };
+  const tasks = [task];
+
+  const result = applyEscalationChecks(
+    tasks,
+    [],
+    new Date("2026-06-20T01:00:00.000Z"),
+  );
+
+  assert.equal(result, tasks);
+  assert.equal(result[0], task);
+});

@@ -6,7 +6,14 @@ export function applyEscalationChecks(
   templates: WorkflowTemplate[],
   now = new Date(),
 ) {
-  return tasks.map((task) => escalateTaskIfNeeded(task, templates, now));
+  let changed = false;
+  const checkedTasks = tasks.map((task) => {
+    const checkedTask = escalateTaskIfNeeded(task, templates, now);
+    changed ||= checkedTask !== task;
+    return checkedTask;
+  });
+
+  return changed ? checkedTasks : tasks;
 }
 
 function escalateTaskIfNeeded(
@@ -32,7 +39,9 @@ function escalateTaskIfNeeded(
   const escalationEmail = currentNode?.escalationEmail?.trim();
 
   if (!escalationEmail || task.currentOwner === escalationEmail) {
-    return task.status === "escalated" ? task : { ...task, status: "overdue" };
+    return task.status === "overdue" || task.status === "escalated"
+      ? task
+      : { ...task, status: "overdue" };
   }
 
   const timestamp = formatTimestamp(now);

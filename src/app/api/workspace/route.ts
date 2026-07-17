@@ -13,12 +13,14 @@ import {
 import { parseWorkspaceState, serializeWorkspaceState } from "@/lib/workspace-persistence";
 import type { WorkspaceStateSnapshot } from "@/lib/workspace-persistence";
 import { mergeExternalFormWorkspaceState } from "@/lib/external-form-workspace-merge";
+import { createWorkspaceSnapshotHash } from "@/lib/workspace-snapshot-hash";
 
 type WorkspacePayload = {
   mode: "supabase";
   source: "normalized" | "snapshot";
   snapshot: WorkspaceStateSnapshot | null;
   snapshotBackup?: "saved" | "failed";
+  unchanged?: boolean;
   reason?: string;
 };
 
@@ -109,6 +111,31 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const incomingSnapshotHash = createWorkspaceSnapshotHash(incomingSnapshot);
+  const { data: snapshotMetadata, error: snapshotMetadataError } = await supabase
+    .from("workspace_snapshots")
+    .select("snapshot_hash")
+    .eq("owner_email", user.email)
+    .maybeSingle();
+
+  if (snapshotMetadataError) {
+    return NextResponse.json(
+      { mode: "local", reason: snapshotMetadataError.message },
+      { status: 503 },
+    );
+  }
+
+  if (snapshotMetadata?.snapshot_hash === incomingSnapshotHash) {
+    const payload: WorkspacePayload = {
+      mode: "supabase",
+      source: "normalized",
+      snapshotBackup: "saved",
+      unchanged: true,
+      snapshot: incomingSnapshot,
+    };
+    return NextResponse.json(payload);
+  }
+
   let persistedSnapshot: WorkspaceStateSnapshot | null = null;
   try {
     persistedSnapshot = await loadNormalizedWorkspaceState(
@@ -119,6 +146,7 @@ export async function POST(request: NextRequest) {
     // The normal save path below still reports database failures.
   }
   const snapshot = mergeExternalFormWorkspaceState(incomingSnapshot, persistedSnapshot);
+  const snapshotHash = createWorkspaceSnapshotHash(snapshot);
 
   const snapshotSave = await saveWorkspaceSnapshot(supabase, user, snapshot);
 
@@ -149,6 +177,18 @@ export async function POST(request: NextRequest) {
       source: "normalized",
       snapshotBackup: "failed",
       reason: snapshotSave.error.message,
+      snapshot,
+    };
+    return NextResponse.json(payload);
+  }
+
+  const hashSave = await saveWorkspaceSnapshotHash(supabase, user, snapshotHash);
+  if (hashSave.error) {
+    const payload: WorkspacePayload = {
+      mode: "supabase",
+      source: "normalized",
+      snapshotBackup: "saved",
+      reason: hashSave.error.message,
       snapshot,
     };
     return NextResponse.json(payload);
@@ -219,10 +259,22 @@ async function saveWorkspaceSnapshot(
       owner_user_id: user.id,
       owner_email: user.email,
       snapshot: JSON.parse(serializeWorkspaceState(snapshot)),
+      snapshot_hash: null,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "owner_email" },
   );
+}
+
+function saveWorkspaceSnapshotHash(
+  supabase: ReturnType<typeof createSupabaseRouteClient>,
+  user: SupabaseRouteUser,
+  snapshotHash: string,
+) {
+  return supabase
+    .from("workspace_snapshots")
+    .update({ snapshot_hash: snapshotHash })
+    .eq("owner_email", user.email);
 }
 
 function parseAdminDeactivation(value: unknown): WorkspaceAdminDeactivation | null {
