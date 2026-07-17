@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { approvalTasks } from "@/lib/mock-data";
 import { seededBusinessDirectory } from "@/lib/business-directory";
 import { applyEscalationChecks } from "@/lib/approval-escalation";
@@ -25,7 +25,10 @@ import {
   loadRemoteWorkspaceState,
   saveRemoteWorkspaceState,
 } from "@/lib/workspace-sync";
-import { getWorkspaceAutosaveDelay } from "@/lib/workspace-autosave";
+import {
+  getWorkspaceAutosaveDelay,
+  initialWorkspaceAutosaveMonitor,
+} from "@/lib/workspace-autosave";
 import type {
   AdminAuditEvent,
   ApprovalTask,
@@ -109,6 +112,33 @@ export function useApprovalWorkspaceState({
   const autosaveFailureCountRef = useRef(0);
   const remoteSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [autosaveRetryVersion, setAutosaveRetryVersion] = useState(0);
+  const [workspaceAutosaveMonitor, setWorkspaceAutosaveMonitor] = useState(
+    initialWorkspaceAutosaveMonitor,
+  );
+
+  const adoptCompactedRemoteSnapshot = useCallback(
+    (snapshot: WorkspaceStateSnapshot, expectedSerialized: string) => {
+      const compactedSnapshot = sanitizeWorkspaceStateSnapshot(snapshot);
+      const compactedSerialized = serializeWorkspaceState(compactedSnapshot);
+      if (
+        compactedSerialized === expectedSerialized ||
+        autosaveTargetRef.current?.serialized !== expectedSerialized
+      ) {
+        return compactedSerialized;
+      }
+
+      window.localStorage.setItem(workspaceStorageKey, compactedSerialized);
+      setTasks(compactedSnapshot.approvalTasks);
+      setBusinessDirectory(compactedSnapshot.businessDirectory);
+      setTemplates(compactedSnapshot.workflowTemplates);
+      setFormLibrary(compactedSnapshot.formLibrary || []);
+      setRoleAssignments(compactedSnapshot.userRoleAssignments || []);
+      setAdminAuditEvents(compactedSnapshot.adminAuditEvents || []);
+      setSelectedTemplateId(compactedSnapshot.selectedTemplateId);
+      return compactedSerialized;
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -274,10 +304,20 @@ export function useApprovalWorkspaceState({
         return;
       }
 
+      let attemptStartedAt = 0;
       const queuedSave = remoteSaveQueueRef.current.then(() => {
         if (autosaveTargetRef.current?.serialized !== target.serialized) {
           return null;
         }
+        attemptStartedAt = Date.now();
+        setWorkspaceAutosaveMonitor((current) => ({
+          ...current,
+          status: autosaveFailureCountRef.current ? "retrying" : "saving",
+          lastAttemptAt: new Date(attemptStartedAt).toISOString(),
+          payloadBytes: new TextEncoder().encode(target.serialized).byteLength,
+          retryCount: autosaveFailureCountRef.current,
+          error: undefined,
+        }));
         return saveRemoteWorkspaceState(target.snapshot);
       });
       remoteSaveQueueRef.current = queuedSave.then(
@@ -291,7 +331,9 @@ export function useApprovalWorkspaceState({
 
       setWorkspaceSyncMode(result.mode);
       if (result.mode === "supabase") {
-        lastRemoteSnapshotRef.current = target.serialized;
+        lastRemoteSnapshotRef.current = result.snapshot
+          ? adoptCompactedRemoteSnapshot(result.snapshot, target.serialized)
+          : target.serialized;
         if (autosaveTargetRef.current?.serialized === target.serialized) {
           autosaveTargetRef.current = null;
         }
@@ -299,13 +341,35 @@ export function useApprovalWorkspaceState({
       } else if (autosaveTargetRef.current?.serialized === target.serialized) {
         autosaveFailureCountRef.current += 1;
       }
+      setWorkspaceAutosaveMonitor((current) => ({
+        ...current,
+        status: result.mode === "supabase" ? "saved" : "failed",
+        ...(result.mode === "supabase"
+          ? { lastSuccessAt: new Date().toISOString() }
+          : {}),
+        payloadBytes:
+          result.monitoring?.payloadBytes || current.payloadBytes,
+        persistedBytes:
+          result.monitoring?.persistedBytes || current.persistedBytes,
+        durationMs:
+          result.monitoring?.durationMs || Math.max(0, Date.now() - attemptStartedAt),
+        retryCount:
+          result.mode === "supabase" ? 0 : autosaveFailureCountRef.current,
+        failureCount:
+          current.failureCount + (result.mode === "local" ? 1 : 0),
+        unchangedCount:
+          current.unchangedCount + (result.unchanged ? 1 : 0),
+        assetsUploaded: result.monitoring?.assetsUploaded || 0,
+        removedBase64Bytes: result.monitoring?.removedBase64Bytes || 0,
+        error: result.mode === "local" ? result.reason : undefined,
+      }));
       setAutosaveRetryVersion((version) => version + 1);
     }, getWorkspaceAutosaveDelay(autosaveFailureCountRef.current));
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [adminAuditEvents, autosaveRetryVersion, businessDirectory, effectiveRoleAssignments, formLibrary, localWorkspaceReady, remoteWorkspaceReady, selectedTemplateId, tasks, templates]);
+  }, [adminAuditEvents, adoptCompactedRemoteSnapshot, autosaveRetryVersion, businessDirectory, effectiveRoleAssignments, formLibrary, localWorkspaceReady, remoteWorkspaceReady, selectedTemplateId, tasks, templates]);
 
   const currentWorkspaceSnapshot = useMemo(
     () => ({
@@ -326,9 +390,19 @@ export function useApprovalWorkspaceState({
     window.localStorage.setItem(workspaceStorageKey, serializedSnapshot);
     autosaveTargetRef.current = { snapshot, serialized: serializedSnapshot };
     autosaveFailureCountRef.current = 0;
-    const queuedSave = remoteSaveQueueRef.current.then(() =>
-      saveRemoteWorkspaceState(snapshot),
-    );
+    let attemptStartedAt = 0;
+    const queuedSave = remoteSaveQueueRef.current.then(() => {
+      attemptStartedAt = Date.now();
+      setWorkspaceAutosaveMonitor((current) => ({
+        ...current,
+        status: "saving",
+        lastAttemptAt: new Date(attemptStartedAt).toISOString(),
+        payloadBytes: new TextEncoder().encode(serializedSnapshot).byteLength,
+        retryCount: 0,
+        error: undefined,
+      }));
+      return saveRemoteWorkspaceState(snapshot);
+    });
     remoteSaveQueueRef.current = queuedSave.then(
       () => undefined,
       () => undefined,
@@ -336,7 +410,9 @@ export function useApprovalWorkspaceState({
     const result = await queuedSave;
     setWorkspaceSyncMode(result.mode);
     if (result.mode === "supabase") {
-      lastRemoteSnapshotRef.current = serializedSnapshot;
+      lastRemoteSnapshotRef.current = result.snapshot
+        ? adoptCompactedRemoteSnapshot(result.snapshot, serializedSnapshot)
+        : serializedSnapshot;
       if (autosaveTargetRef.current?.serialized === serializedSnapshot) {
         autosaveTargetRef.current = null;
       }
@@ -344,6 +420,27 @@ export function useApprovalWorkspaceState({
       autosaveFailureCountRef.current += 1;
       setAutosaveRetryVersion((version) => version + 1);
     }
+    setWorkspaceAutosaveMonitor((current) => ({
+      ...current,
+      status: result.mode === "supabase" ? "saved" : "failed",
+      ...(result.mode === "supabase"
+        ? { lastSuccessAt: new Date().toISOString() }
+        : {}),
+      payloadBytes: result.monitoring?.payloadBytes || current.payloadBytes,
+      persistedBytes:
+        result.monitoring?.persistedBytes || current.persistedBytes,
+      durationMs:
+        result.monitoring?.durationMs || Math.max(0, Date.now() - attemptStartedAt),
+      retryCount:
+        result.mode === "supabase" ? 0 : autosaveFailureCountRef.current,
+      failureCount:
+        current.failureCount + (result.mode === "local" ? 1 : 0),
+      unchangedCount:
+        current.unchangedCount + (result.unchanged ? 1 : 0),
+      assetsUploaded: result.monitoring?.assetsUploaded || 0,
+      removedBase64Bytes: result.monitoring?.removedBase64Bytes || 0,
+      error: result.mode === "local" ? result.reason : undefined,
+    }));
     return result;
   }
 
@@ -382,6 +479,7 @@ export function useApprovalWorkspaceState({
     tasks,
     templates,
     userDirectory,
+    workspaceAutosaveMonitor,
     workspaceSyncMode,
   };
 }

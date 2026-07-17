@@ -251,6 +251,7 @@ export type WorkflowDocumentSamplePage = {
   pageNumber: number;
   mimeType: string;
   imageBase64?: string;
+  storagePath?: string;
   pageText?: string;
 };
 

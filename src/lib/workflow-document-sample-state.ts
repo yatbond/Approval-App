@@ -171,7 +171,7 @@ export function getSamplePageImages(
 }
 
 function toSamplePage(
-  page: DocumentPreviewPage | PdfPageImageInput,
+  page: DocumentPreviewPage | PdfPageImageInput | WorkflowDocumentSamplePage,
   options: { includeImage: boolean },
 ): WorkflowDocumentSamplePage {
   return {
@@ -179,6 +179,9 @@ function toSamplePage(
     mimeType: page.mimeType,
     ...(options.includeImage && page.imageBase64
       ? { imageBase64: page.imageBase64 }
+      : {}),
+    ...("storagePath" in page && page.storagePath
+      ? { storagePath: page.storagePath }
       : {}),
     ...(page.pageText ? { pageText: page.pageText } : {}),
   };
@@ -215,7 +218,7 @@ function sanitizeSamplePages(
 }
 
 function hasStoredImage(pages: WorkflowDocumentSamplePage[]) {
-  return pages.some((page) => Boolean(page.imageBase64));
+  return pages.some((page) => Boolean(page.imageBase64 || page.storagePath));
 }
 
 function sanitizeWorkflowDocumentSampleTrainingDraft(

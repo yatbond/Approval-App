@@ -1,9 +1,21 @@
 import type { WorkspaceStateSnapshot } from "@/lib/workspace-persistence";
 import type { WorkspaceAdminDeactivation } from "@/lib/normalized-workspace-store";
+import type { WorkspaceSaveMonitoring } from "@/lib/workspace-autosave";
 
 export type WorkspaceSyncResult =
-  | { mode: "supabase"; snapshot?: WorkspaceStateSnapshot }
-  | { mode: "local"; reason?: string; snapshot?: null };
+  | {
+      mode: "supabase";
+      snapshot?: WorkspaceStateSnapshot;
+      unchanged?: boolean;
+      monitoring?: WorkspaceSaveMonitoring;
+    }
+  | {
+      mode: "local";
+      reason?: string;
+      snapshot?: null;
+      unchanged?: false;
+      monitoring?: WorkspaceSaveMonitoring;
+    };
 
 export async function loadRemoteWorkspaceState(): Promise<WorkspaceSyncResult> {
   try {
@@ -35,7 +47,14 @@ export async function saveRemoteWorkspaceState(
       signal: controller.signal,
     });
     if (!response.ok) {
-      return { mode: "local", reason: `POST failed: ${response.status}` };
+      const failure = await readWorkspaceSaveFailure(response);
+      return {
+        mode: "local",
+        reason: failure.reason
+          ? `POST failed: ${response.status} - ${failure.reason}`
+          : `POST failed: ${response.status}`,
+        ...(failure.monitoring ? { monitoring: failure.monitoring } : {}),
+      };
     }
 
     return (await response.json()) as WorkspaceSyncResult;
@@ -46,6 +65,21 @@ export async function saveRemoteWorkspaceState(
     };
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+async function readWorkspaceSaveFailure(response: Response) {
+  try {
+    const payload = (await response.json()) as {
+      reason?: unknown;
+      monitoring?: WorkspaceSaveMonitoring;
+    };
+    return {
+      reason: typeof payload.reason === "string" ? payload.reason : "",
+      monitoring: payload.monitoring,
+    };
+  } catch {
+    return { reason: "", monitoring: undefined };
   }
 }
 

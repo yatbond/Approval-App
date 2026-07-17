@@ -4,6 +4,7 @@ import {
   Bell,
   CheckCheck,
   ClipboardList,
+  Cloud,
   History,
   LogOut,
   PanelLeftClose,
@@ -19,6 +20,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TaskNotification } from "@/lib/workflow-system";
+import {
+  formatWorkspaceAutosaveBytes,
+  type WorkspaceAutosaveMonitor,
+} from "@/lib/workspace-autosave";
 import { ThemeToggle } from "./theme-toggle";
 import {
   getNewRequestHref,
@@ -43,6 +48,7 @@ const tabs = workspaceNavigationTabIds.map((id) => ({
 
 export function WorkspaceShell({
   activeTab,
+  autosaveMonitor,
   children,
   draftItemCount,
   sessionUser,
@@ -53,6 +59,7 @@ export function WorkspaceShell({
   onToggleSidebar,
 }: {
   activeTab: WorkspaceTab;
+  autosaveMonitor: WorkspaceAutosaveMonitor;
   children: ReactNode;
   draftItemCount: number;
   sessionUser: string;
@@ -63,11 +70,13 @@ export function WorkspaceShell({
   onToggleSidebar: () => void;
 }) {
   const notificationMenuRef = useRef<HTMLDivElement>(null);
+  const syncMenuRef = useRef<HTMLDivElement>(null);
   const notificationStorageKey = useMemo(
     () => `approval-notifications-read:${sessionUser.trim().toLowerCase()}`,
     [sessionUser],
   );
   const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
+  const [syncMenuOpen, setSyncMenuOpen] = useState(false);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
   const readNotificationIdSet = useMemo(
     () => new Set(readNotificationIds),
@@ -104,6 +113,21 @@ export function WorkspaceShell({
     document.addEventListener("pointerdown", closeNotificationMenu);
     return () => document.removeEventListener("pointerdown", closeNotificationMenu);
   }, [notificationMenuOpen]);
+
+  useEffect(() => {
+    if (!syncMenuOpen) {
+      return;
+    }
+
+    function closeSyncMenu(event: PointerEvent) {
+      if (!syncMenuRef.current?.contains(event.target as Node)) {
+        setSyncMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", closeSyncMenu);
+    return () => document.removeEventListener("pointerdown", closeSyncMenu);
+  }, [syncMenuOpen]);
 
   function saveReadNotificationIds(nextIds: string[]) {
     const uniqueIds = Array.from(new Set(nextIds));
@@ -323,8 +347,70 @@ export function WorkspaceShell({
               <div className="hidden min-h-10 items-center rounded-md border border-[#e6e6e6] bg-white px-3 text-sm text-[#4b4647] md:flex">
                 {sessionUser}
               </div>
-              <div className="hidden min-h-10 items-center rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-xs text-[#666162] xl:flex">
-                {syncLabel}
+              <div ref={syncMenuRef} className="relative">
+                <button
+                  type="button"
+                  title="View autosave status"
+                  aria-label="View autosave status"
+                  aria-expanded={syncMenuOpen}
+                  aria-haspopup="dialog"
+                  onClick={() => setSyncMenuOpen((open) => !open)}
+                  className="flex size-10 items-center justify-center gap-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] text-xs text-[#666162] transition hover:border-[#f7941d] hover:bg-[#fff8ef] dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 xl:h-10 xl:w-auto xl:px-3"
+                >
+                  <Cloud size={16} />
+                  <span className="hidden xl:inline">{syncLabel}</span>
+                </button>
+                {syncMenuOpen && (
+                  <div
+                    role="dialog"
+                    aria-label="Autosave status"
+                    className="fixed inset-x-3 top-3 z-50 w-auto rounded-md border border-[#e6e6e6] bg-white p-4 text-[#231f20] shadow-xl dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 sm:w-72"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold">Autosave status</p>
+                      <span className="text-xs text-[#666162] dark:text-neutral-400">
+                        {syncLabel}
+                      </span>
+                    </div>
+                    <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs">
+                      <dt className="text-[#666162] dark:text-neutral-400">Last saved</dt>
+                      <dd className="text-right">
+                        {autosaveMonitor.lastSuccessAt
+                          ? new Date(autosaveMonitor.lastSuccessAt).toLocaleString()
+                          : "Not yet"}
+                      </dd>
+                      <dt className="text-[#666162] dark:text-neutral-400">Upload</dt>
+                      <dd className="text-right">
+                        {formatWorkspaceAutosaveBytes(autosaveMonitor.payloadBytes)}
+                      </dd>
+                      <dt className="text-[#666162] dark:text-neutral-400">Stored snapshot</dt>
+                      <dd className="text-right">
+                        {formatWorkspaceAutosaveBytes(autosaveMonitor.persistedBytes)}
+                      </dd>
+                      <dt className="text-[#666162] dark:text-neutral-400">Duration</dt>
+                      <dd className="text-right">{autosaveMonitor.durationMs} ms</dd>
+                      <dt className="text-[#666162] dark:text-neutral-400">Retries</dt>
+                      <dd className="text-right">{autosaveMonitor.retryCount}</dd>
+                      <dt className="text-[#666162] dark:text-neutral-400">Failures</dt>
+                      <dd className="text-right">{autosaveMonitor.failureCount}</dd>
+                      <dt className="text-[#666162] dark:text-neutral-400">Unchanged skips</dt>
+                      <dd className="text-right">{autosaveMonitor.unchangedCount}</dd>
+                      <dt className="text-[#666162] dark:text-neutral-400">Images moved</dt>
+                      <dd className="text-right">{autosaveMonitor.assetsUploaded}</dd>
+                      <dt className="text-[#666162] dark:text-neutral-400">Snapshot reduced</dt>
+                      <dd className="text-right">
+                        {formatWorkspaceAutosaveBytes(
+                          autosaveMonitor.removedBase64Bytes,
+                        )}
+                      </dd>
+                    </dl>
+                    {autosaveMonitor.error && (
+                      <p className="mt-3 break-words border-t border-[#e6e6e6] pt-3 text-xs text-rose-700 dark:border-neutral-800 dark:text-rose-300">
+                        {autosaveMonitor.error}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
               <ThemeToggle />
               <Link

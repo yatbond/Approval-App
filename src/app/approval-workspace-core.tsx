@@ -197,11 +197,13 @@ export function ApprovalWorkspaceCoreProvider({
         baseNotifications: [],
         draftItemCount,
         taskNotifications: userTaskNotifications,
+        workspaceAutosaveStatus: workspace.workspaceAutosaveMonitor.status,
         workspaceSyncMode: workspace.workspaceSyncMode,
       }),
     [
       draftItemCount,
       userTaskNotifications,
+      workspace.workspaceAutosaveMonitor.status,
       workspace.workspaceSyncMode,
     ],
   );
@@ -232,6 +234,7 @@ export function ApprovalWorkspaceCoreProvider({
         sessionUser={sessionUser}
         sidebarCollapsed={sidebarCollapsed}
         syncLabel={shellState.syncLabel}
+        autosaveMonitor={workspace.workspaceAutosaveMonitor}
         draftItemCount={shellState.draftItemCount}
         notifications={userTaskNotifications}
         onRequestSignOut={() => void confirmSignOut()}

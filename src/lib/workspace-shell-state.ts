@@ -1,3 +1,5 @@
+import type { WorkspaceAutosaveMonitor } from "./workspace-autosave.ts";
+
 type UnreadNotification = {
   unread: boolean;
 };
@@ -24,11 +26,13 @@ export function getWorkspaceShellState({
   baseNotifications,
   draftItemCount = 0,
   taskNotifications,
+  workspaceAutosaveStatus = "idle",
   workspaceSyncMode,
 }: {
   baseNotifications: UnreadNotification[];
   draftItemCount?: number;
   taskNotifications: UnreadNotification[];
+  workspaceAutosaveStatus?: WorkspaceAutosaveMonitor["status"];
   workspaceSyncMode: WorkspaceSyncMode;
 }) {
   return {
@@ -37,7 +41,11 @@ export function getWorkspaceShellState({
       baseNotifications.filter((item) => item.unread).length +
       taskNotifications.filter((item) => item.unread).length,
     syncLabel:
-      workspaceSyncMode === "loading"
+      workspaceAutosaveStatus === "saving"
+        ? "Saving..."
+        : workspaceAutosaveStatus === "retrying"
+          ? "Retrying autosave"
+          : workspaceSyncMode === "loading"
         ? "Sync checking"
         : workspaceSyncMode === "supabase"
           ? "Saved to Supabase"

@@ -14,6 +14,18 @@ import { parseWorkspaceState, serializeWorkspaceState } from "@/lib/workspace-pe
 import type { WorkspaceStateSnapshot } from "@/lib/workspace-persistence";
 import { mergeExternalFormWorkspaceState } from "@/lib/external-form-workspace-merge";
 import { createWorkspaceSnapshotHash } from "@/lib/workspace-snapshot-hash";
+import { buildWorkspaceSampleAssetPlan } from "@/lib/workspace-sample-assets";
+
+const workspaceAssetBucket = "approval-documents";
+
+type WorkspaceSaveMonitoring = {
+  payloadBytes: number;
+  persistedBytes: number;
+  durationMs: number;
+  unchanged: boolean;
+  assetsUploaded: number;
+  removedBase64Bytes: number;
+};
 
 type WorkspacePayload = {
   mode: "supabase";
@@ -22,7 +34,12 @@ type WorkspacePayload = {
   snapshotBackup?: "saved" | "failed";
   unchanged?: boolean;
   reason?: string;
+  monitoring?: WorkspaceSaveMonitoring;
 };
+
+type WorkspaceSavePayload =
+  | WorkspacePayload
+  | { mode: "local"; reason: string; unchanged?: false };
 
 export async function GET(request: NextRequest) {
   const response = NextResponse.next();
@@ -93,6 +110,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
   const user = await getSupabaseRouteUser(supabase);
@@ -101,15 +119,55 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ mode: "local", reason: "Not signed in" });
   }
 
-  const body = (await request.json()) as { snapshot?: unknown };
+  const bodyText = await request.text();
+  const payloadBytes = Buffer.byteLength(bodyText);
+  let body: { snapshot?: unknown };
+  try {
+    body = JSON.parse(bodyText) as { snapshot?: unknown };
+  } catch {
+    return NextResponse.json(
+      { mode: "local", reason: "Invalid workspace request" },
+      { status: 400 },
+    );
+  }
   const serializedSnapshot = JSON.stringify(body.snapshot);
-  const incomingSnapshot = serializedSnapshot ? parseWorkspaceState(serializedSnapshot) : null;
-  if (!incomingSnapshot) {
+  const parsedIncomingSnapshot = serializedSnapshot
+    ? parseWorkspaceState(serializedSnapshot)
+    : null;
+  if (!parsedIncomingSnapshot) {
     return NextResponse.json(
       { mode: "local", reason: "Invalid workspace snapshot" },
       { status: 400 },
     );
   }
+
+  const assetPlan = buildWorkspaceSampleAssetPlan(parsedIncomingSnapshot, user.id);
+  const incomingSnapshot = assetPlan.snapshot;
+  let persistedBytes = Buffer.byteLength(serializeWorkspaceState(incomingSnapshot));
+  let assetsUploaded = 0;
+  const finishSave = (payload: WorkspaceSavePayload, status = 200) => {
+    const monitoring: WorkspaceSaveMonitoring = {
+      payloadBytes,
+      persistedBytes,
+      durationMs: Date.now() - startedAt,
+      unchanged: Boolean(payload.unchanged),
+      assetsUploaded,
+      removedBase64Bytes: assetPlan.removedBase64Bytes,
+    };
+    const logEntry = {
+      event: "workspace_autosave",
+      outcome: status >= 400 ? "failed" : "saved",
+      status,
+      requestId: request.headers.get("x-vercel-id") || "local",
+      ...monitoring,
+    };
+    if (status >= 400) {
+      console.error(JSON.stringify(logEntry));
+    } else {
+      console.info(JSON.stringify(logEntry));
+    }
+    return NextResponse.json({ ...payload, monitoring }, { status });
+  };
 
   const incomingSnapshotHash = createWorkspaceSnapshotHash(incomingSnapshot);
   const { data: snapshotMetadata, error: snapshotMetadataError } = await supabase
@@ -119,9 +177,9 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (snapshotMetadataError) {
-    return NextResponse.json(
+    return finishSave(
       { mode: "local", reason: snapshotMetadataError.message },
-      { status: 503 },
+      503,
     );
   }
 
@@ -133,7 +191,28 @@ export async function POST(request: NextRequest) {
       unchanged: true,
       snapshot: incomingSnapshot,
     };
-    return NextResponse.json(payload);
+    return finishSave(payload);
+  }
+
+  if (assetPlan.assets.length) {
+    const uploadResults = await Promise.all(
+      assetPlan.assets.map((asset) =>
+        supabase.storage
+          .from(workspaceAssetBucket)
+          .upload(asset.storagePath, asset.bytes, {
+            contentType: asset.contentType,
+            upsert: true,
+          }),
+      ),
+    );
+    const failedUpload = uploadResults.find((result) => result.error);
+    if (failedUpload?.error) {
+      return finishSave(
+        { mode: "local", reason: failedUpload.error.message },
+        503,
+      );
+    }
+    assetsUploaded = assetPlan.assets.length;
   }
 
   let persistedSnapshot: WorkspaceStateSnapshot | null = null;
@@ -147,6 +226,7 @@ export async function POST(request: NextRequest) {
   }
   const snapshot = mergeExternalFormWorkspaceState(incomingSnapshot, persistedSnapshot);
   const snapshotHash = createWorkspaceSnapshotHash(snapshot);
+  persistedBytes = Buffer.byteLength(serializeWorkspaceState(snapshot));
 
   const snapshotSave = await saveWorkspaceSnapshot(supabase, user, snapshot);
 
@@ -166,9 +246,7 @@ export async function POST(request: NextRequest) {
           : "Normalized save failed",
       snapshot,
     };
-    return NextResponse.json(payload, {
-      status: snapshotSave.error ? 503 : 200,
-    });
+    return finishSave(payload, snapshotSave.error ? 503 : 200);
   }
 
   if (snapshotSave.error) {
@@ -179,7 +257,7 @@ export async function POST(request: NextRequest) {
       reason: snapshotSave.error.message,
       snapshot,
     };
-    return NextResponse.json(payload);
+    return finishSave(payload);
   }
 
   const hashSave = await saveWorkspaceSnapshotHash(supabase, user, snapshotHash);
@@ -191,7 +269,7 @@ export async function POST(request: NextRequest) {
       reason: hashSave.error.message,
       snapshot,
     };
-    return NextResponse.json(payload);
+    return finishSave(payload);
   }
 
   const payload: WorkspacePayload = {
@@ -200,7 +278,7 @@ export async function POST(request: NextRequest) {
     snapshotBackup: "saved",
     snapshot,
   };
-  return NextResponse.json(payload);
+  return finishSave(payload);
 }
 
 export async function PATCH(request: NextRequest) {

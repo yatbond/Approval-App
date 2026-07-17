@@ -1,7 +1,7 @@
 "use client";
 
 import { Image as ImageIcon, Loader2, Maximize2, Plus, Sparkles, Upload, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { MouseEvent } from "react";
 import {
   buildPreviewPagesFromPdfImages,
@@ -38,6 +38,10 @@ import {
   getSamplePreviewPages,
   saveWorkflowDocumentSampleTrainingDraft,
 } from "@/lib/workflow-document-sample-state";
+import {
+  hasStoredWorkflowSampleAssets,
+  hydrateWorkflowDocumentSampleAssets,
+} from "@/lib/workflow-sample-assets-client";
 import type {
   ExtractionTrainingExample,
   WorkflowDocumentRequirement,
@@ -123,6 +127,38 @@ export function TemplateDocumentRecognitionPanel({
     bounds: { width: number; height: number };
   } | null>(null);
   const [highlightRect, setHighlightRect] = useState<NormalizedRect | null>(null);
+
+  useEffect(() => {
+    if (!document.sample || !hasStoredWorkflowSampleAssets(document.sample)) {
+      return;
+    }
+
+    let cancelled = false;
+    hydrateWorkflowDocumentSampleAssets(document.sample)
+      .then((hydratedSample) => {
+        if (cancelled) {
+          return;
+        }
+        const hydratedPageImages = getSamplePageImages(hydratedSample);
+        const hydratedPreviewPages = getSamplePreviewPages(hydratedSample);
+        setSamplePageImages(hydratedPageImages);
+        setPreviewPages(hydratedPreviewPages);
+        setSelectedPreviewPageId((current) =>
+          hydratedPreviewPages.some((page) => page.id === current)
+            ? current
+            : hydratedPreviewPages[0]?.id || "",
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setParseError("Stored sample preview could not be loaded.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [document.sample]);
 
   const selectedFieldStillExists = document.fields.some(
     (field) => field.name === selectedFieldName,

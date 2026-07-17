@@ -75,4 +75,22 @@ test("formats workspace sync status labels", () => {
     }).syncLabel,
     "Saved locally",
   );
+  assert.equal(
+    getWorkspaceShellState({
+      baseNotifications: [],
+      taskNotifications: [],
+      workspaceAutosaveStatus: "saving",
+      workspaceSyncMode: "supabase",
+    }).syncLabel,
+    "Saving...",
+  );
+  assert.equal(
+    getWorkspaceShellState({
+      baseNotifications: [],
+      taskNotifications: [],
+      workspaceAutosaveStatus: "retrying",
+      workspaceSyncMode: "local",
+    }).syncLabel,
+    "Retrying autosave",
+  );
 });
