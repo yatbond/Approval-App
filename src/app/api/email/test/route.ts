@@ -1,7 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sendTaskNotificationEmails } from "@/lib/email-delivery";
+import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { getSupabaseRouteUser } from "@/lib/supabase/route-user";
 
 export async function POST(request: NextRequest) {
+  const response = NextResponse.next();
+  const supabase = createSupabaseRouteClient(request, response);
+  const user = await getSupabaseRouteUser(supabase);
+
+  if (!user) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+
   const body = (await request.json().catch(() => ({}))) as {
     to?: string;
   };

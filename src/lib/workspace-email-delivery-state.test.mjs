@@ -58,3 +58,24 @@ test("workspace delegates delivery endpoints to the focused controller", () => {
   assert.equal(controllerSource.includes("/api/email/task-notifications"), true);
   assert.equal(controllerSource.includes("/api/email/test"), true);
 });
+
+test("email test endpoint requires a verified signed-in user", () => {
+  const routeSource = readFileSync("src/app/api/email/test/route.ts", "utf8");
+
+  assert.equal(routeSource.includes("createSupabaseRouteClient"), true);
+  assert.equal(routeSource.includes("getSupabaseRouteUser"), true);
+  assert.match(routeSource, /if \(!user\)/);
+  assert.match(routeSource, /status: 401/);
+});
+
+test("workflow email endpoint requires a verified signed-in user", () => {
+  const routeSource = readFileSync(
+    "src/app/api/email/task-notifications/route.ts",
+    "utf8",
+  );
+
+  assert.equal(routeSource.includes("createSupabaseRouteClient"), true);
+  assert.equal(routeSource.includes("getSupabaseRouteUser"), true);
+  assert.match(routeSource, /if \(!user\)/);
+  assert.match(routeSource, /status: 401/);
+});

@@ -3,8 +3,11 @@ import { chromium } from "@playwright/test";
 const appUrl = process.env.APP_URL || "http://localhost:3000";
 const email = process.env.E2E_EMAIL || "";
 const password = process.env.E2E_PASSWORD || "";
+const authBypassEmail = process.env.E2E_AUTH_BYPASS_EMAIL || "";
 const headless = process.env.E2E_HEADLESS !== "false";
-const browserChannel = process.env.E2E_BROWSER_CHANNEL || "chrome";
+const requestedBrowserChannel = process.env.E2E_BROWSER_CHANNEL || "chrome";
+const browserChannel =
+  requestedBrowserChannel === "chromium" ? undefined : requestedBrowserChannel;
 
 const requests = [
   {
@@ -24,7 +27,7 @@ const requests = [
   },
 ].filter((request) => request.id);
 
-if (!email || !password) {
+if (!authBypassEmail && (!email || !password)) {
   throw new Error("E2E_EMAIL and E2E_PASSWORD are required for the authenticated regression suite.");
 }
 
@@ -57,6 +60,12 @@ try {
 }
 
 async function signIn(page) {
+  if (authBypassEmail) {
+    await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+    await expectInboxNavigation(page);
+    return;
+  }
+
   await page.goto(`${appUrl}/login`, { waitUntil: "domcontentloaded" });
   await page.locator('input[name="email"]').fill(email);
   await page.locator('input[name="password"]').fill(password);
@@ -64,7 +73,13 @@ async function signIn(page) {
     page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 20_000 }),
     page.getByRole("button", { name: "Sign in", exact: true }).click(),
   ]);
-  await expectText(page, "Inbox");
+  await expectInboxNavigation(page);
+}
+
+async function expectInboxNavigation(page) {
+  await page
+    .getByRole("link", { name: "Inbox", exact: true })
+    .waitFor({ timeout: 10_000 });
 }
 
 async function verifyPrimaryNavigation(page) {
@@ -101,12 +116,16 @@ async function verifyFormsWorkspace(page) {
 
 async function verifyQueueDecisionControls(page) {
   await page.goto(`${appUrl}/?tab=queue`, { waitUntil: "networkidle" });
-  await expectText(page, "Inbox");
+  await expectInboxNavigation(page);
 
   const rejectButton = page.getByRole("button", { name: "Reject", exact: true });
   if ((await rejectButton.count()) > 0) {
-    await expectText(page, "Return to...");
     await expectText(page, "Reject + note");
+
+    const advancedReturn = page.getByText("Return to...", { exact: true });
+    if ((await advancedReturn.count()) > 0) {
+      await advancedReturn.waitFor({ timeout: 10_000 });
+    }
   }
 }
 

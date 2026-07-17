@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   buildParseLogEvent,
@@ -71,4 +72,13 @@ test("builds parse log events without raw image or text payloads", () => {
   });
   assert.equal(JSON.stringify(event).includes("very-large-base64-payload"), false);
   assert.equal(JSON.stringify(event).includes("Ming Kee Construction"), false);
+});
+
+test("parse endpoint requires a verified signed-in user", () => {
+  const routeSource = readFileSync("src/app/api/parse/route.ts", "utf8");
+
+  assert.equal(routeSource.includes("createSupabaseRouteClient"), true);
+  assert.equal(routeSource.includes("getSupabaseRouteUser"), true);
+  assert.match(routeSource, /if \(!user\)/);
+  assert.match(routeSource, /status: 401/);
 });

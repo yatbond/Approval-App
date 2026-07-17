@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import * as XLSX from "xlsx";
 import {
   chooseParserStrategy,
@@ -7,6 +7,8 @@ import {
   extractPdfFieldsWithPageImagesAndPdfFallback,
 } from "@/lib/parser";
 import { buildParseLogEvent, isPdfPageContext } from "@/lib/parse-route-state";
+import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { getSupabaseRouteUser } from "@/lib/supabase/route-user";
 import { normalizeWorkflowFieldsForParsing } from "@/lib/workflow-parse-fields";
 import type { PdfPageImageInput } from "@/lib/parser";
 import type { ExtractionTrainingExample, WorkflowField } from "@/lib/types";
@@ -38,7 +40,15 @@ const fallbackFields: WorkflowField[] = [
   },
 ];
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const response = NextResponse.next();
+  const supabase = createSupabaseRouteClient(request, response);
+  const user = await getSupabaseRouteUser(supabase);
+
+  if (!user) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+
   const requestId = createParseRequestId();
   const formData = await request.formData();
   const file = formData.get("file");
