@@ -21,4 +21,8 @@ test("workspace writes short-circuit completed identical snapshots", () => {
   assert.match(workspaceRouteSource, /unchanged: true/);
   assert.match(workspaceRouteSource, /snapshot_hash: null/);
   assert.match(workspaceRouteSource, /saveWorkspaceSnapshotHash/);
+  assert.match(
+    workspaceRouteSource,
+    /if \(status >= 400 \|\| !payload\.unchanged\)/,
+  );
 });

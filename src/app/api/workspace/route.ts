@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
     };
     const logEntry = {
       event: "workspace_autosave",
-      outcome: status >= 400 ? "failed" : "saved",
+      outcome: status >= 400 ? "failed" : payload.unchanged ? "skipped" : "saved",
       status,
       requestId: request.headers.get("x-vercel-id") || "local",
       ...monitoring,
@@ -167,30 +167,29 @@ export async function POST(request: NextRequest) {
     } else {
       console.info(JSON.stringify(logEntry));
     }
-    await recordWorkflowOperationEvent(supabase, {
-      ownerUserId: user.id,
-      ownerEmail: user.email,
-      operationType: "autosave",
-      outcome:
-        status >= 400 ? "failed" : payload.unchanged ? "skipped" : "succeeded",
-      durationMs: monitoring.durationMs,
-      message:
-        status >= 400
-          ? payload.reason || "Workspace autosave failed."
-          : payload.unchanged
-            ? "No workspace changes to save."
+    if (status >= 400 || !payload.unchanged) {
+      await recordWorkflowOperationEvent(supabase, {
+        ownerUserId: user.id,
+        ownerEmail: user.email,
+        operationType: "autosave",
+        outcome: status >= 400 ? "failed" : "succeeded",
+        durationMs: monitoring.durationMs,
+        message:
+          status >= 400
+            ? payload.reason || "Workspace autosave failed."
             : "Workspace saved.",
-      details: {
-        status,
-        payloadBytes: monitoring.payloadBytes,
-        persistedBytes: monitoring.persistedBytes,
-        assetsUploaded: monitoring.assetsUploaded,
-        removedBase64Bytes: monitoring.removedBase64Bytes,
-        source: "source" in payload ? payload.source : "local",
-        snapshotBackup:
-          "snapshotBackup" in payload ? payload.snapshotBackup || null : null,
-      },
-    });
+        details: {
+          status,
+          payloadBytes: monitoring.payloadBytes,
+          persistedBytes: monitoring.persistedBytes,
+          assetsUploaded: monitoring.assetsUploaded,
+          removedBase64Bytes: monitoring.removedBase64Bytes,
+          source: "source" in payload ? payload.source : "local",
+          snapshotBackup:
+            "snapshotBackup" in payload ? payload.snapshotBackup || null : null,
+        },
+      });
+    }
     return NextResponse.json({ ...payload, monitoring }, { status });
   };
 
