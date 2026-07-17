@@ -338,13 +338,6 @@ export function useWorkspaceUploadDrafts({
           return;
         }
 
-        const mergedById = new Map<string, SavedUploadRequestDraft>();
-        [...localDrafts, ...remoteDrafts].forEach((draft) => {
-          const current = mergedById.get(draft.id);
-          if (!current || draft.savedAt > current.savedAt) {
-            mergedById.set(draft.id, draft);
-          }
-        });
         const visibleRemoteDrafts = getCreatorVisibleUploadRequestDrafts({
           drafts: remoteDrafts,
           activeUserEmail,
@@ -369,16 +362,12 @@ export function useWorkspaceUploadDrafts({
           );
         }
 
-        const merged = getNamedSavedUploadRequestDrafts(
-          getCreatorVisibleUploadRequestDrafts({
-            drafts: Array.from(mergedById.values()),
-            activeUserEmail,
-            activeUserId: "",
-          }),
-        );
+        // Supabase is authoritative after a successful load. The local list is
+        // only an immediate/offline cache and must not resurrect remote deletes.
+        const syncedDrafts = getNamedSavedUploadRequestDrafts(visibleRemoteDrafts);
         const activeUploadDraftId =
           localStorage.getItem(uploadRequestActiveDraftIdStorageKey) || "";
-        const activeUploadDraft = merged.find(
+        const activeUploadDraft = syncedDrafts.find(
           (draft) => draft.id === activeUploadDraftId,
         );
         if (activeUploadDraft) {
@@ -389,10 +378,10 @@ export function useWorkspaceUploadDrafts({
           setUploadDraftTitle("");
           localStorage.removeItem(uploadRequestActiveDraftIdStorageKey);
         }
-        setSavedUploadDrafts(merged);
+        setSavedUploadDrafts(syncedDrafts);
         localStorage.setItem(
           uploadRequestDraftListStorageKey,
-          serializeUploadRequestDraftList(merged),
+          serializeUploadRequestDraftList(syncedDrafts),
         );
       })
       .catch(() => {

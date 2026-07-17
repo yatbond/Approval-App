@@ -81,3 +81,15 @@ test("draft badge and Drafts page use the same visible items", () => {
     /\(uploadDraftStatus\.hasDraft \? 1 : 0\) \+ savedUploadDrafts\.length/,
   );
 });
+
+test("successful Supabase draft loads replace the local fallback cache", () => {
+  assert.match(
+    uploadDraftStateSource,
+    /const syncedDrafts = getNamedSavedUploadRequestDrafts\(visibleRemoteDrafts\)/,
+  );
+  assert.match(
+    uploadDraftStateSource,
+    /serializeUploadRequestDraftList\(syncedDrafts\)/,
+  );
+  assert.doesNotMatch(uploadDraftStateSource, /const mergedById/);
+});
