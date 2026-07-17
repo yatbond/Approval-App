@@ -11,6 +11,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      TZ: Asia/Hong_Kong
 
     steps:
       - name: Check out repository
@@ -66,3 +68,4 @@ jobs:
         with:
           name: approval-app-server-log
           path: /tmp/approval-app.log
+          if-no-files-found: ignore
