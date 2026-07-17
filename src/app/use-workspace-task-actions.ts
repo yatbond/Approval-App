@@ -30,6 +30,7 @@ import type {
 } from "@/lib/types";
 import type { UserDirectoryEntry } from "@/lib/user-directory";
 import { persistWorkspaceCollaborationTransition } from "@/lib/workspace-collaboration-api";
+import { recordWorkspaceOperation } from "@/lib/workspace-operation-api";
 import {
   getWorkspaceRecordTaskActionState,
   getWorkspaceRunnerTaskActionState,
@@ -92,6 +93,7 @@ export function useWorkspaceTaskActions({
     if (!selectedTask || actionSubmissionTaskIdRef.current) {
       return;
     }
+    const startedAt = Date.now();
 
     const nextState = getWorkspaceRecordTaskActionState({
       tasks,
@@ -124,6 +126,19 @@ export function useWorkspaceTaskActions({
       if (changedTask) {
         void sendWorkflowEmailNotifications(changedTask);
       }
+      void recordWorkspaceOperation({
+        operationType: "routing",
+        outcome: "succeeded",
+        requestNo: selectedTask.id,
+        durationMs: Date.now() - startedAt,
+        message: `Workflow action ${action} saved.`,
+        details: {
+          action,
+          fromNodeId: selectedTask.currentNodeId || null,
+          toNodeId: changedTask?.currentNodeId || null,
+          returnTargetNodeIds,
+        },
+      });
       if (nextState.shouldClearInputs) {
         setComment("");
         setTargetEmail("");
@@ -131,6 +146,17 @@ export function useWorkspaceTaskActions({
       setActionError(nextState.actionError);
     } catch (error) {
       setTasks(tasks);
+      void recordWorkspaceOperation({
+        operationType: "routing",
+        outcome: "failed",
+        requestNo: selectedTask.id,
+        durationMs: Date.now() - startedAt,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to save this task decision.",
+        details: { action, returnTargetNodeIds },
+      });
       setActionError(
         error instanceof Error
           ? error.message

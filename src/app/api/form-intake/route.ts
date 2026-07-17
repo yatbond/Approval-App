@@ -8,6 +8,7 @@ import { extractExternalFormAttachmentAnswers } from "@/lib/external-form-attach
 import { saveNormalizedWorkspaceState } from "@/lib/normalized-workspace-store";
 import { parseWorkspaceState, serializeWorkspaceState } from "@/lib/workspace-persistence";
 import { createWorkspaceSnapshotHash } from "@/lib/workspace-snapshot-hash";
+import { recordWorkflowOperationEvent } from "@/lib/workflow-operation-monitor";
 
 export async function GET() {
   const configured = Boolean(
@@ -23,6 +24,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   const secret = process.env.FORM_INTAKE_WEBHOOK_SECRET;
   if (!secret || secret.length < 24) {
     return Response.json(
@@ -134,6 +136,29 @@ export async function POST(request: Request) {
       { status: 422 },
     );
   }
+  const recordFormIntake = (
+    outcome: "succeeded" | "failed" | "skipped",
+    message: string,
+    requestNo?: string,
+    details: Record<string, unknown> = {},
+  ) =>
+    recordWorkflowOperationEvent(supabase, {
+      ownerUserId: workspaceRow.owner_user_id,
+      ownerEmail: workspaceRow.owner_email,
+      operationType: "form_intake",
+      outcome,
+      requestNo,
+      durationMs: Date.now() - startedAt,
+      message,
+      details: {
+        provider: intake.provider,
+        formKey: intake.formKey,
+        formVersion: intake.formVersion,
+        responseMode: intake.responseMode,
+        submissionId: data.id,
+        ...details,
+      },
+    });
 
   const definition = snapshot.formLibrary.find(
     (item) =>
@@ -153,6 +178,7 @@ export async function POST(request: Request) {
     : { success: true as const, answers: {} };
   if (!extractionResult.success) {
     await markSubmissionFailed(data.id, "failed", extractionResult.message);
+    await recordFormIntake("failed", extractionResult.message, intake.approvalRequestNo);
     return Response.json(
       {
         accepted: false,
@@ -171,6 +197,12 @@ export async function POST(request: Request) {
   });
   if (!result.success) {
     await markSubmissionFailed(data.id, result.status, result.message);
+    await recordFormIntake(
+      "failed",
+      result.message,
+      intake.approvalRequestNo,
+      { status: result.status },
+    );
     return Response.json(
       {
         accepted: false,
@@ -202,6 +234,7 @@ export async function POST(request: Request) {
         ? processingError.message
         : "The form response could not update the approval workspace.";
     await markSubmissionFailed(data.id, "failed", message);
+    await recordFormIntake("failed", message, result.requestNo);
     return Response.json(
       { accepted: false, submissionId: data.id, status: "failed", reason: message },
       { status: 503 },
@@ -219,6 +252,10 @@ export async function POST(request: Request) {
       processed_at: processedAt,
     })
     .eq("id", data.id);
+  await recordFormIntake("succeeded", result.message, result.requestNo, {
+    status: "processed",
+    extractedAttachmentFields: Object.keys(extractionResult.answers).length,
+  });
   return Response.json({
     accepted: true,
     submissionId: data.id,

@@ -43,6 +43,7 @@ try {
   await verifyWorkflowLibrary(page);
   await verifyFormsWorkspace(page);
   await verifyQueueDecisionControls(page);
+  await verifyOperationalHealth(page);
 
   for (const request of requests) {
     await verifyTrackedRequest(page, request);
@@ -126,6 +127,22 @@ async function verifyQueueDecisionControls(page) {
     if ((await advancedReturn.count()) > 0) {
       await advancedReturn.waitFor({ timeout: 10_000 });
     }
+  }
+}
+
+async function verifyOperationalHealth(page) {
+  await page.goto(`${appUrl}/?tab=admin`, { waitUntil: "networkidle" });
+  await expectText(page, "System health");
+  await expectText(page, "Last 24 hours");
+  for (const label of [
+    "Autosave",
+    "Document extraction",
+    "Email notification",
+    "Form intake",
+    "Collaboration",
+    "Workflow routing",
+  ]) {
+    await expectText(page, label);
   }
 }
 

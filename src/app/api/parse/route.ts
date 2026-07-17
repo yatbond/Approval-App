@@ -12,6 +12,7 @@ import { getSupabaseRouteUser } from "@/lib/supabase/route-user";
 import { normalizeWorkflowFieldsForParsing } from "@/lib/workflow-parse-fields";
 import type { PdfPageImageInput } from "@/lib/parser";
 import type { ExtractionTrainingExample, WorkflowField } from "@/lib/types";
+import { recordWorkflowOperationEvent } from "@/lib/workflow-operation-monitor";
 
 const fallbackFields: WorkflowField[] = [
   {
@@ -41,6 +42,7 @@ const fallbackFields: WorkflowField[] = [
 ];
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
   const user = await getSupabaseRouteUser(supabase);
@@ -114,6 +116,21 @@ export async function POST(request: NextRequest) {
         parserPath: "excel-table",
         parsed,
       });
+      await recordWorkflowOperationEvent(supabase, {
+        ownerUserId: user.id,
+        ownerEmail: user.email,
+        operationType: "extraction",
+        outcome: "succeeded",
+        durationMs: Date.now() - startedAt,
+        message: `Extracted ${Object.keys(parsed.fields).length} field(s) from ${file.name}.`,
+        details: {
+          requestId,
+          parserPath: "excel-table",
+          strategy,
+          fileName: file.name,
+          fieldCount: Object.keys(parsed.fields).length,
+        },
+      });
       return NextResponse.json({
         ...parsed,
         diagnostics: { requestId, parserPath: "excel-table" },
@@ -138,6 +155,22 @@ export async function POST(request: NextRequest) {
         pageImages,
         parserPath: "image-ai",
         parsed,
+      });
+      await recordWorkflowOperationEvent(supabase, {
+        ownerUserId: user.id,
+        ownerEmail: user.email,
+        operationType: "extraction",
+        outcome: "succeeded",
+        durationMs: Date.now() - startedAt,
+        message: `Extracted ${Object.keys(parsed.fields).length} field(s) from ${file.name}.`,
+        details: {
+          requestId,
+          parserPath: "image-ai",
+          strategy,
+          fileName: file.name,
+          fieldCount: Object.keys(parsed.fields).length,
+          suggestionCount: parsed.suggestedFields?.length || 0,
+        },
       });
       return NextResponse.json({
         ...parsed,
@@ -174,11 +207,29 @@ export async function POST(request: NextRequest) {
       parserPath,
       parsed,
     });
+    await recordWorkflowOperationEvent(supabase, {
+      ownerUserId: user.id,
+      ownerEmail: user.email,
+      operationType: "extraction",
+      outcome: "succeeded",
+      durationMs: Date.now() - startedAt,
+      message: `Extracted ${Object.keys(parsed.fields).length} field(s) from ${file.name}.`,
+      details: {
+        requestId,
+        parserPath,
+        strategy,
+        fileName: file.name,
+        fieldCount: Object.keys(parsed.fields).length,
+        suggestionCount: parsed.suggestedFields?.length || 0,
+      },
+    });
     return NextResponse.json({
       ...parsed,
       diagnostics: { requestId, parserPath },
     });
   } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown parse error";
     console.error(
       "[approval-app:parse]",
       JSON.stringify({
@@ -189,9 +240,23 @@ export async function POST(request: NextRequest) {
         strategy,
         fieldLabels,
         pageImageCount: pageImages.length,
-        error: error instanceof Error ? error.message : "Unknown parse error",
+        error: errorMessage,
       }),
     );
+    await recordWorkflowOperationEvent(supabase, {
+      ownerUserId: user.id,
+      ownerEmail: user.email,
+      operationType: "extraction",
+      outcome: "failed",
+      durationMs: Date.now() - startedAt,
+      message: errorMessage,
+      details: {
+        requestId,
+        strategy,
+        fileName: file.name,
+        pageImageCount: pageImages.length,
+      },
+    });
     throw error;
   }
 }

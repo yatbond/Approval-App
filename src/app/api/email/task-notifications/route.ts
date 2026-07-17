@@ -7,8 +7,10 @@ import {
   buildTaskNotifications,
   type TaskNotification,
 } from "@/lib/workflow-system";
+import { recordWorkflowOperationEvent } from "@/lib/workflow-operation-monitor";
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
   const user = await getSupabaseRouteUser(supabase);
@@ -36,6 +38,24 @@ export async function POST(request: NextRequest) {
 
   const result = await sendTaskNotificationEmails({
     notifications,
+  });
+  const failed = result.failures.length > 0;
+  await recordWorkflowOperationEvent(supabase, {
+    ownerUserId: user.id,
+    ownerEmail: user.email,
+    operationType: "notification",
+    outcome: failed ? "failed" : "succeeded",
+    requestNo: body.task?.id || notifications[0]?.requestId,
+    durationMs: Date.now() - startedAt,
+    message: failed
+      ? `${result.failures.length} notification(s) failed.`
+      : `${result.sent} notification(s) sent.`,
+    details: {
+      sent: result.sent,
+      failed: result.failures.length,
+      skipped: result.skipped,
+      mode: result.mode,
+    },
   });
 
   return NextResponse.json(result, {

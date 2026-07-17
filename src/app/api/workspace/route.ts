@@ -15,6 +15,7 @@ import type { WorkspaceStateSnapshot } from "@/lib/workspace-persistence";
 import { mergeExternalFormWorkspaceState } from "@/lib/external-form-workspace-merge";
 import { createWorkspaceSnapshotHash } from "@/lib/workspace-snapshot-hash";
 import { buildWorkspaceSampleAssetPlan } from "@/lib/workspace-sample-assets";
+import { recordWorkflowOperationEvent } from "@/lib/workflow-operation-monitor";
 
 const workspaceAssetBucket = "approval-documents";
 
@@ -145,7 +146,7 @@ export async function POST(request: NextRequest) {
   const incomingSnapshot = assetPlan.snapshot;
   let persistedBytes = Buffer.byteLength(serializeWorkspaceState(incomingSnapshot));
   let assetsUploaded = 0;
-  const finishSave = (payload: WorkspaceSavePayload, status = 200) => {
+  const finishSave = async (payload: WorkspaceSavePayload, status = 200) => {
     const monitoring: WorkspaceSaveMonitoring = {
       payloadBytes,
       persistedBytes,
@@ -166,6 +167,30 @@ export async function POST(request: NextRequest) {
     } else {
       console.info(JSON.stringify(logEntry));
     }
+    await recordWorkflowOperationEvent(supabase, {
+      ownerUserId: user.id,
+      ownerEmail: user.email,
+      operationType: "autosave",
+      outcome:
+        status >= 400 ? "failed" : payload.unchanged ? "skipped" : "succeeded",
+      durationMs: monitoring.durationMs,
+      message:
+        status >= 400
+          ? payload.reason || "Workspace autosave failed."
+          : payload.unchanged
+            ? "No workspace changes to save."
+            : "Workspace saved.",
+      details: {
+        status,
+        payloadBytes: monitoring.payloadBytes,
+        persistedBytes: monitoring.persistedBytes,
+        assetsUploaded: monitoring.assetsUploaded,
+        removedBase64Bytes: monitoring.removedBase64Bytes,
+        source: "source" in payload ? payload.source : "local",
+        snapshotBackup:
+          "snapshotBackup" in payload ? payload.snapshotBackup || null : null,
+      },
+    });
     return NextResponse.json({ ...payload, monitoring }, { status });
   };
 
