@@ -34,6 +34,10 @@ const workflowVersionActivationMigration = readFileSync(
   "supabase/migrations/20260628093000_add_workflow_template_version_activation_columns.sql",
   "utf8",
 );
+const adminBusinessSoftDeleteMigration = readFileSync(
+  "supabase/migrations/20260718110000_allow_admin_business_soft_deletes.sql",
+  "utf8",
+);
 
 test("migration allows template creators to insert and update their own template versions", () => {
   assert.match(
@@ -145,4 +149,18 @@ test("migration stores workflow version activation and comments in dedicated col
     workflowVersionActivationMigration,
     /workflow_template_versions_active_version_idx/i,
   );
+});
+
+test("migration lets active admins read rows after business soft deletes", () => {
+  assert.match(
+    adminBusinessSoftDeleteMigration,
+    /create policy "admins read all business units"/i,
+  );
+  assert.match(
+    adminBusinessSoftDeleteMigration,
+    /create policy "admins read all business departments"/i,
+  );
+  assert.match(adminBusinessSoftDeleteMigration, /for select/i);
+  assert.match(adminBusinessSoftDeleteMigration, /p\.is_admin/i);
+  assert.match(adminBusinessSoftDeleteMigration, /p\.is_active/i);
 });
