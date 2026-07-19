@@ -363,7 +363,12 @@ export function AdminView({
               ) : null}
             </div>
           ) : null}
-          <div className="mt-3 max-h-[42vh] space-y-2 overflow-y-auto pr-1 xl:max-h-96">
+          <div
+            className="mt-3 max-h-[42vh] space-y-2 overflow-y-auto pr-1 xl:max-h-96"
+            role="region"
+            aria-label="Active user directory"
+            tabIndex={0}
+          >
             {displayedDirectory.map((user) => (
               <div
                 key={user.id}
@@ -402,7 +407,12 @@ export function AdminView({
             <h2 className="font-semibold">Roles</h2>
             <InfoTip label="Assign business, department, and workflow role for routing." />
           </div>
-          <div className="mt-3 max-h-[56vh] space-y-3 overflow-y-auto pr-1 xl:max-h-[560px]">
+          <div
+            className="mt-3 max-h-[56vh] space-y-3 overflow-y-auto pr-1 xl:max-h-[560px]"
+            role="region"
+            aria-label="Role assignments"
+            tabIndex={0}
+          >
             {roleAssignments.map((assignment, index) => {
               const assignedBusiness =
                 businessDirectory.find(
@@ -422,6 +432,7 @@ export function AdminView({
                   <select
                     value={assignment.role}
                     title="Role used for workflow routing and administration."
+                    aria-label={`Role for ${assignment.name}`}
                     onChange={(event) =>
                       setRoleAssignments((items) =>
                         items.map((item, itemIndex) =>
@@ -445,6 +456,7 @@ export function AdminView({
                   <select
                     value={assignment.businessId}
                     title="Business this user is assigned to."
+                    aria-label={`Business for ${assignment.name}`}
                     onChange={(event) => {
                       const nextBusiness = businessDirectory.find(
                         (business) => business.id === event.target.value,
@@ -472,6 +484,7 @@ export function AdminView({
                   <select
                     value={assignment.department}
                     title="Department this user is assigned to."
+                    aria-label={`Department for ${assignment.name}`}
                     onChange={(event) =>
                       setRoleAssignments((items) =>
                         items.map((item, itemIndex) =>

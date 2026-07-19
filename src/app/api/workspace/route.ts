@@ -174,6 +174,9 @@ export async function POST(request: NextRequest) {
       removedBase64Bytes: assetPlan.removedBase64Bytes,
     };
     const logEntry = {
+      timestamp: new Date().toISOString(),
+      level: status >= 400 ? "error" : "info",
+      service: "approval-workflow",
       event: "workspace_autosave",
       outcome: status >= 400 ? "failed" : payload.unchanged ? "skipped" : "saved",
       status,

@@ -1,5 +1,6 @@
 import { type NextRequest } from "next/server";
 import { approvalError, approvalJson, createApprovalServerContext } from "@/lib/approval-server";
+import { readBoundedJson } from "@/lib/bounded-request";
 
 export async function GET(request: NextRequest) {
   const resolved = await createApprovalServerContext(request);
@@ -24,7 +25,10 @@ export async function POST(request: NextRequest) {
   if (!actor.isAdmin && !actor.effectiveRoles?.includes("superuser")) {
     return approvalJson(cookieSource, correlationId, { error: "Forbidden" }, 403);
   }
-  const body = (await request.json().catch(() => ({}))) as { id?: string };
+  const bounded = await readBoundedJson(request, 2_000);
+  const body = bounded.ok && bounded.value && typeof bounded.value === "object"
+    ? bounded.value as { id?: string }
+    : {};
   if (!body.id || !/^[0-9a-f-]{36}$/i.test(body.id)) {
     return approvalJson(cookieSource, correlationId, { error: "Valid outbox id is required" }, 400);
   }

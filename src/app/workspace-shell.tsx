@@ -74,7 +74,11 @@ export function WorkspaceShell({
   onToggleSidebar: () => void;
 }) {
   const notificationMenuRef = useRef<HTMLDivElement>(null);
+  const notificationTriggerRef = useRef<HTMLButtonElement>(null);
+  const notificationDialogRef = useRef<HTMLDivElement>(null);
   const syncMenuRef = useRef<HTMLDivElement>(null);
+  const syncTriggerRef = useRef<HTMLButtonElement>(null);
+  const syncDialogRef = useRef<HTMLDivElement>(null);
   const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
   const [syncMenuOpen, setSyncMenuOpen] = useState(false);
   const unreadCount = notifications.filter((notification) => notification.unread).length;
@@ -90,8 +94,20 @@ export function WorkspaceShell({
       }
     }
 
+    function closeNotificationMenuWithKeyboard(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setNotificationMenuOpen(false);
+        window.requestAnimationFrame(() => notificationTriggerRef.current?.focus());
+      }
+    }
+
     document.addEventListener("pointerdown", closeNotificationMenu);
-    return () => document.removeEventListener("pointerdown", closeNotificationMenu);
+    document.addEventListener("keydown", closeNotificationMenuWithKeyboard);
+    notificationDialogRef.current?.querySelector<HTMLElement>("button, a[href]")?.focus();
+    return () => {
+      document.removeEventListener("pointerdown", closeNotificationMenu);
+      document.removeEventListener("keydown", closeNotificationMenuWithKeyboard);
+    };
   }, [notificationMenuOpen]);
 
   useEffect(() => {
@@ -105,8 +121,21 @@ export function WorkspaceShell({
       }
     }
 
+
+    function closeSyncMenuWithKeyboard(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setSyncMenuOpen(false);
+        window.requestAnimationFrame(() => syncTriggerRef.current?.focus());
+      }
+    }
+
     document.addEventListener("pointerdown", closeSyncMenu);
-    return () => document.removeEventListener("pointerdown", closeSyncMenu);
+    document.addEventListener("keydown", closeSyncMenuWithKeyboard);
+    syncDialogRef.current?.focus();
+    return () => {
+      document.removeEventListener("pointerdown", closeSyncMenu);
+      document.removeEventListener("keydown", closeSyncMenuWithKeyboard);
+    };
   }, [syncMenuOpen]);
 
   function markNotificationRead(notificationId: string) {
@@ -241,8 +270,10 @@ export function WorkspaceShell({
             <div className="flex flex-wrap items-center justify-end gap-2">
               <div ref={notificationMenuRef} className="relative">
                 <button
+                  ref={notificationTriggerRef}
                   type="button"
                   title="Open notifications"
+                  aria-label={`Open notifications, ${unreadCount} unread`}
                   aria-expanded={notificationMenuOpen}
                   aria-haspopup="dialog"
                   onClick={() => setNotificationMenuOpen((open) => !open)}
@@ -253,6 +284,7 @@ export function WorkspaceShell({
                 </button>
                 {notificationMenuOpen && (
                   <div
+                    ref={notificationDialogRef}
                     role="dialog"
                     aria-label="Notifications"
                     className="fixed inset-x-3 top-3 z-50 w-auto overflow-hidden rounded-md border border-[#e6e6e6] bg-white text-[#231f20] shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 sm:w-[min(22rem,calc(100vw-1.5rem))]"
@@ -265,6 +297,7 @@ export function WorkspaceShell({
                       <button
                         type="button"
                         title="Close notifications"
+                        aria-label="Close notifications"
                         onClick={() => setNotificationMenuOpen(false)}
                         className="flex size-9 shrink-0 items-center justify-center rounded-md border border-[#e6e6e6] bg-white"
                       >
@@ -320,6 +353,7 @@ export function WorkspaceShell({
               </div>
               <div ref={syncMenuRef} className="relative">
                 <button
+                  ref={syncTriggerRef}
                   type="button"
                   title="View autosave status"
                   aria-label="View autosave status"
@@ -333,8 +367,10 @@ export function WorkspaceShell({
                 </button>
                 {syncMenuOpen && (
                   <div
+                    ref={syncDialogRef}
                     role="dialog"
                     aria-label="Autosave status"
+                    tabIndex={-1}
                     className="fixed inset-x-3 top-3 z-50 w-auto rounded-md border border-[#e6e6e6] bg-white p-4 text-[#231f20] shadow-xl dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 sm:w-72"
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -396,6 +432,7 @@ export function WorkspaceShell({
                 type="button"
                 onClick={onRequestSignOut}
                 title="Sign out"
+                aria-label="Sign out"
                 className="flex size-10 items-center justify-center rounded-md border border-[#e6e6e6] bg-white text-[#4b4647] transition hover:border-[#f7941d] hover:bg-[#fff8ef]"
               >
                 <LogOut size={16} />

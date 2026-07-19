@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { approvalActionCommandSchema } from "@/lib/approval-api-contracts";
 import { executeApprovalCommand } from "@/lib/approval-server-data";
+import { readBoundedJson } from "@/lib/bounded-request";
 import {
   approvalError,
   approvalJson,
@@ -125,16 +126,6 @@ export async function POST(
     "dependency_unavailable",
     "The action could not be completed. No partial change was committed.",
   );
-}
-
-async function readBoundedJson(request: NextRequest, maxBytes: number) {
-  try {
-    const text = await request.text();
-    if (Buffer.byteLength(text) > maxBytes) return { ok: false as const };
-    return { ok: true as const, value: JSON.parse(text) as unknown };
-  } catch {
-    return { ok: false as const };
-  }
 }
 
 function error(

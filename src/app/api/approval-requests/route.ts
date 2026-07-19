@@ -13,6 +13,7 @@ import {
   createApprovalServerContext,
   safeApprovalLog,
 } from "@/lib/approval-server";
+import { readBoundedJson } from "@/lib/bounded-request";
 
 export async function GET(request: NextRequest) {
   const resolved = await createApprovalServerContext(request);
@@ -54,12 +55,8 @@ export async function POST(request: NextRequest) {
   const resolved = await createApprovalServerContext(request);
   if (!resolved.ok) return approvalError(resolved);
   const { session, service, actor, cookieSource, correlationId } = resolved.context;
-  let value: unknown;
-  try {
-    const text = await request.text();
-    if (Buffer.byteLength(text) > 64_000) throw new Error("oversized");
-    value = JSON.parse(text) as unknown;
-  } catch {
+  const body = await readBoundedJson(request, 64_000);
+  if (!body.ok) {
     return approvalJson(
       cookieSource,
       correlationId,
@@ -67,7 +64,7 @@ export async function POST(request: NextRequest) {
       400,
     );
   }
-  const parsed = approvalRequestSubmissionSchema.safeParse(value);
+  const parsed = approvalRequestSubmissionSchema.safeParse(body.value);
   if (!parsed.success) {
     return approvalJson(
       cookieSource,

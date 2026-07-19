@@ -201,7 +201,14 @@ export function safeApprovalLog(
   correlationId: string,
   fields: Record<string, string | number | boolean | null>,
 ) {
-  console.info(JSON.stringify({ event, correlationId, ...fields }));
+  console.info(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    level: "info",
+    service: "approval-workflow",
+    event,
+    correlationId,
+    ...fields,
+  }));
 }
 
 function createApprovalServiceClient() {

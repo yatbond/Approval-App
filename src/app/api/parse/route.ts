@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import * as XLSX from "xlsx";
 import {
   chooseParserStrategy,
   extractImageFields,
@@ -14,6 +13,12 @@ import { normalizeWorkflowFieldsForParsing } from "@/lib/workflow-parse-fields";
 import type { PdfPageImageInput } from "@/lib/parser";
 import type { ExtractionTrainingExample, WorkflowField } from "@/lib/types";
 import { recordWorkflowOperationEvent } from "@/lib/workflow-operation-monitor";
+import {
+  parseBoundedWorkbook,
+  SpreadsheetLimitError,
+  spreadsheetLimits,
+} from "@/lib/spreadsheet-parser";
+import { readBoundedFormData } from "@/lib/bounded-request";
 
 const fallbackFields: WorkflowField[] = [
   {
@@ -53,7 +58,14 @@ export async function POST(request: NextRequest) {
   }
 
   const requestId = createParseRequestId();
-  const formData = await request.formData();
+  const body = await readBoundedFormData(request, 26 * 1024 * 1024);
+  if (!body.ok) {
+    return createSupabaseJsonResponse(response,
+      { error: body.reason === "too_large" ? "Document request exceeds the 26 MB limit." : "Invalid document form." },
+      { status: body.reason === "too_large" ? 413 : 400 },
+    );
+  }
+  const formData = body.value;
   const file = formData.get("file");
   const languageHint = String(formData.get("languageHint") || "mixed English and Chinese");
   const fields = parseWorkflowFields(formData.get("fieldsJson")) || fallbackFields;
@@ -65,6 +77,18 @@ export async function POST(request: NextRequest) {
   }
 
   const strategy = chooseParserStrategy(file);
+  if (strategy === "excel-table" && file.size > spreadsheetLimits.maxFileBytes) {
+    return createSupabaseJsonResponse(response,
+      { error: "Spreadsheet exceeds the 5 MB limit." },
+      { status: 413 },
+    );
+  }
+  if (file.size > 25 * 1024 * 1024) {
+    return createSupabaseJsonResponse(response,
+      { error: "Document exceeds the 25 MB limit." },
+      { status: 413 },
+    );
+  }
   const buffer = Buffer.from(await file.arrayBuffer());
   const fieldLabels = fields.map((field) => field.label || field.name);
 
@@ -82,22 +106,13 @@ export async function POST(request: NextRequest) {
 
   try {
     if (strategy === "excel-table") {
-      const workbook = XLSX.read(buffer, { type: "buffer" });
-      const sheets = workbook.SheetNames.map((sheetName) => {
-        const worksheet = workbook.Sheets[sheetName];
-        return {
-          sheetName,
-          rows: XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-            defval: "",
-          }),
-        };
-      });
+      const sheets = await parseBoundedWorkbook(buffer);
 
       const parsed = {
         strategy,
         fields: {
-          "Workbook sheets": String(workbook.SheetNames.length),
-          "First sheet": workbook.SheetNames[0] || "",
+          "Workbook sheets": String(sheets.length),
+          "First sheet": sheets[0]?.sheetName || "",
           "Rows parsed": String(sheets.reduce((sum, sheet) => sum + sheet.rows.length, 0)),
         },
         confidence: {
@@ -229,11 +244,17 @@ export async function POST(request: NextRequest) {
       diagnostics: { requestId, parserPath },
     });
   } catch (error) {
+    if (error instanceof SpreadsheetLimitError) {
+      return createSupabaseJsonResponse(response, { error: error.message }, { status: 413 });
+    }
     const errorMessage =
       error instanceof Error ? error.message : "Unknown parse error";
     console.error(
-      "[approval-app:parse]",
       JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: "error",
+        service: "approval-workflow",
+        event: "document_parse_failed",
         requestId,
         stage: "error",
         fileName: file.name || "document",
@@ -349,7 +370,13 @@ function logParseComplete({
 }
 
 function logParseEvent(event: Record<string, unknown>) {
-  console.info("[approval-app:parse]", JSON.stringify(event));
+  console.info(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    level: "info",
+    service: "approval-workflow",
+    event: "document_parse",
+    ...event,
+  }));
 }
 
 function createParseRequestId() {

@@ -14,6 +14,9 @@ export async function GET(request: Request) {
   try {
     const result = await runDurableApprovalOperations({ runKey });
     console.info(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      service: "approval-workflow",
       event: "approval_operations_completed",
       runKey,
       durationMs: Date.now() - startedAt,
@@ -22,6 +25,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, runKey, ...result });
   } catch (error) {
     console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: "error",
+      service: "approval-workflow",
       event: "approval_operations_failed",
       runKey,
       durationMs: Date.now() - startedAt,

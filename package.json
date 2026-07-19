@@ -2,6 +2,9 @@
   "name": "approval-app",
   "version": "0.1.0",
   "private": true,
+  "overrides": {
+    "postcss": "8.5.10"
+  },
   "engines": {
     "node": ">=22.6.0"
   },
@@ -23,6 +26,10 @@
     "test:e2e:collaboration": "node scripts/test-authoritative-collaboration-browser.mjs",
     "test:db:durable-operations": "node scripts/test-durable-operations.mjs",
     "test:api:durable-operations": "node scripts/test-durable-operations-api.mjs",
+    "test:security:phase7": "node scripts/test-phase7-security.mjs",
+    "test:load:phase7": "node scripts/test-phase7-load.mjs",
+    "test:a11y:phase7": "node scripts/test-phase7-accessibility.mjs",
+    "test:restore:phase7": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-phase7-backup-restore.ps1",
     "test:db:migration-seed": "node scripts/test-authoritative-migration-backfill.mjs seed",
     "test:db:migration-verify": "node scripts/test-authoritative-migration-backfill.mjs verify",
     "verify": "npm run typecheck && npm run lint && npm test && npm run build",
@@ -39,10 +46,11 @@
     "pdfjs-dist": "^6.0.227",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "xlsx": "^0.18.5",
+    "read-excel-file": "^9.3.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.56.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
@@ -50,6 +58,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
+    "fflate": "^0.8.3",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { approvalError, approvalJson, createApprovalServerContext } from "@/lib/approval-server";
+import { readBoundedJson } from "@/lib/bounded-request";
 
 export async function GET(request: NextRequest) {
   const resolved = await createApprovalServerContext(request);
@@ -41,7 +42,10 @@ export async function PATCH(request: NextRequest) {
   const resolved = await createApprovalServerContext(request);
   if (!resolved.ok) return approvalError(resolved);
   const { actor, service, cookieSource, correlationId } = resolved.context;
-  const body = (await request.json().catch(() => ({}))) as { ids?: unknown; all?: unknown };
+  const bounded = await readBoundedJson(request, 12_000);
+  const body = bounded.ok && bounded.value && typeof bounded.value === "object"
+    ? bounded.value as { ids?: unknown; all?: unknown }
+    : {};
   const ids = Array.isArray(body.ids)
     ? body.ids.filter((id): id is string => typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id)).slice(0, 100)
     : [];
