@@ -565,6 +565,7 @@ export function TemplateDocumentRecognitionPanel({
               if (file) {
                 void parseSampleFile(file);
               }
+              event.currentTarget.value = "";
             }}
           />
         </label>

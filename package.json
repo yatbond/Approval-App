@@ -2,6 +2,9 @@
   "name": "approval-app",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.6.0"
+  },
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
@@ -9,7 +12,10 @@
     "perf:pages": "node scripts/measure-page-load.mjs",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/lib/*.test.mjs",
+    "typegen": "next typegen",
+    "typecheck": "npm run typegen && tsc --noEmit",
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types \"src/**/*.test.mjs\"",
+    "verify": "npm run typecheck && npm run lint && npm test && npm run build",
     "e2e:drafts": "node scripts/e2e-drafts-smoke.mjs",
     "e2e:regression": "node scripts/e2e-regression.mjs"
   },

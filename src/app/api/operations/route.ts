@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { getDevelopmentAuthBypassUser } from "@/lib/supabase/development-auth-bypass";
 import { getSupabaseRouteUser } from "@/lib/supabase/route-user";
+import { createSupabaseJsonResponse } from "@/lib/supabase/route-response";
 import {
   recordWorkflowOperationEvent,
   summarizeWorkflowOperationEvents,
@@ -13,12 +15,24 @@ import {
 const outcomes: WorkflowOperationOutcome[] = ["succeeded", "failed", "skipped"];
 
 export async function GET(request: NextRequest) {
+  const developmentUser = getDevelopmentAuthBypassUser({
+    nodeEnv: process.env.NODE_ENV,
+    email: process.env.E2E_AUTH_BYPASS_EMAIL,
+  });
+  if (developmentUser) {
+    return NextResponse.json({
+      windowHours: 24,
+      generatedAt: new Date().toISOString(),
+      summary: summarizeWorkflowOperationEvents([]),
+    });
+  }
+
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+    return createSupabaseJsonResponse(response, { error: "Not signed in" }, { status: 401 });
   }
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -32,14 +46,14 @@ export async function GET(request: NextRequest) {
     .limit(500);
 
   if (error) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { error: "Operation health is unavailable.", reason: error.message },
       { status: 503 },
     );
   }
 
   const events = (data || []) as WorkflowOperationEventRow[];
-  return NextResponse.json({
+  return createSupabaseJsonResponse(response, {
     windowHours: 24,
     generatedAt: new Date().toISOString(),
     summary: summarizeWorkflowOperationEvents(events),
@@ -47,12 +61,20 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const developmentUser = getDevelopmentAuthBypassUser({
+    nodeEnv: process.env.NODE_ENV,
+    email: process.env.E2E_AUTH_BYPASS_EMAIL,
+  });
+  if (developmentUser) {
+    return NextResponse.json({ recorded: true });
+  }
+
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+    return createSupabaseJsonResponse(response, { error: "Not signed in" }, { status: 401 });
   }
 
   const body = (await request.json().catch(() => ({}))) as {
@@ -67,7 +89,7 @@ export async function POST(request: NextRequest) {
     !workflowOperationTypes.includes(body.operationType as WorkflowOperationType) ||
     !outcomes.includes(body.outcome as WorkflowOperationOutcome)
   ) {
-    return NextResponse.json({ error: "Invalid operation event." }, { status: 400 });
+    return createSupabaseJsonResponse(response, { error: "Invalid operation event." }, { status: 400 });
   }
 
   const recorded = await recordWorkflowOperationEvent(supabase, {
@@ -84,5 +106,5 @@ export async function POST(request: NextRequest) {
         : {},
   });
 
-  return NextResponse.json({ recorded }, { status: recorded ? 200 : 503 });
+  return createSupabaseJsonResponse(response, { recorded }, { status: recorded ? 200 : 503 });
 }

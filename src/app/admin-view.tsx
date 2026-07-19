@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, Check, Mail, Plus, X } from "lucide-react";
+import { Check, Mail, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { OperationalHealthPanel } from "./operational-health-panel";
@@ -14,7 +14,6 @@ import {
   updateDepartment,
 } from "@/lib/business-directory";
 import { getAdminBusinessSelectionState } from "@/lib/admin-view-state";
-import { notifications } from "@/lib/mock-data";
 import type {
   AdminAuditEvent,
   BusinessUnit,
@@ -316,7 +315,7 @@ export function AdminView({
             <InfoTip label="Lightweight roles inferred from requests and workflow templates." />
           </div>
           <div className="mt-3 max-h-[42vh] space-y-2 overflow-y-auto pr-1 xl:max-h-96">
-            {userDirectory.slice(0, 10).map((user) => (
+            {userDirectory.map((user) => (
               <div
                 key={user.email}
                 className="rounded-md border border-[#e6e6e6] bg-white p-2 text-sm"
@@ -335,7 +334,7 @@ export function AdminView({
             <InfoTip label="Assign business, department, and workflow role for routing." />
           </div>
           <div className="mt-3 max-h-[56vh] space-y-3 overflow-y-auto pr-1 xl:max-h-[560px]">
-            {roleAssignments.slice(0, 8).map((assignment, index) => {
+            {roleAssignments.map((assignment, index) => {
               const assignedBusiness =
                 businessDirectory.find(
                   (business) => business.id === assignment.businessId,
@@ -540,19 +539,6 @@ export function AdminView({
                 </p>
               </Link>
             ))}
-            {notifications.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-md border border-[#e6e6e6] bg-white p-3"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium">{item.title}</p>
-                  {item.unread && <span className="size-2 rounded-full bg-amber-300" />}
-                </div>
-                <p className="mt-1 text-xs text-neutral-400">{item.body}</p>
-                <p className="mt-2 text-xs text-neutral-500">{item.time}</p>
-              </div>
-            ))}
           </div>
         </div>
 
@@ -580,33 +566,6 @@ export function AdminView({
                 No audit yet.
               </p>
             )}
-          </div>
-        </div>
-
-        <div className="rounded-md border border-[#e6e6e6] bg-white p-4">
-          <h2 className="font-semibold">Delegation</h2>
-          <div className="mt-3 space-y-3">
-            <label className="block">
-              <span className="mb-1 block text-xs text-neutral-400">To</span>
-              <input
-                defaultValue="Alex Ho"
-                className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs text-neutral-400">Period</span>
-              <input
-                defaultValue="2026-06-19 to 2026-06-26"
-                className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
-              />
-            </label>
-            <button
-              type="button"
-              className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-3 text-sm text-sky-100 transition hover:bg-sky-400/20"
-            >
-              <CalendarClock size={16} />
-              Save delegation
-            </button>
           </div>
         </div>
       </section>

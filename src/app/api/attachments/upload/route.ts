@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { createSupabaseJsonResponse } from "@/lib/supabase/route-response";
 
 const attachmentBucket = "approval-documents";
 
@@ -11,7 +12,7 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user?.email) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { error: "Sign in before uploading documents." },
       { status: 401 },
     );
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file");
   if (!(file instanceof File)) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { error: "No document file was provided." },
       { status: 400 },
     );
@@ -38,10 +39,10 @@ export async function POST(request: NextRequest) {
     });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 503 });
+    return createSupabaseJsonResponse(response, { error: error.message }, { status: 503 });
   }
 
-  return NextResponse.json({
+  return createSupabaseJsonResponse(response, {
     bucket: attachmentBucket,
     storagePath,
   });

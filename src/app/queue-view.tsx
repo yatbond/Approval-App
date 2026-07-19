@@ -397,6 +397,7 @@ export function QueueView({
                           if (file) {
                             onAttachTaskDocument(file, document);
                           }
+                          event.currentTarget.value = "";
                         }}
                       />
                     </label>

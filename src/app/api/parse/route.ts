@@ -8,6 +8,7 @@ import {
 } from "@/lib/parser";
 import { buildParseLogEvent, isPdfPageContext } from "@/lib/parse-route-state";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { createSupabaseJsonResponse } from "@/lib/supabase/route-response";
 import { getSupabaseRouteUser } from "@/lib/supabase/route-user";
 import { normalizeWorkflowFieldsForParsing } from "@/lib/workflow-parse-fields";
 import type { PdfPageImageInput } from "@/lib/parser";
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+    return createSupabaseJsonResponse(response, { error: "Not signed in" }, { status: 401 });
   }
 
   const requestId = createParseRequestId();
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
   const examples = parseExtractionExamples(formData.get("examplesJson"));
 
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: "File is required." }, { status: 400 });
+    return createSupabaseJsonResponse(response, { error: "File is required." }, { status: 400 });
   }
 
   const strategy = chooseParserStrategy(file);
@@ -131,7 +132,7 @@ export async function POST(request: NextRequest) {
           fieldCount: Object.keys(parsed.fields).length,
         },
       });
-      return NextResponse.json({
+      return createSupabaseJsonResponse(response, {
         ...parsed,
         diagnostics: { requestId, parserPath: "excel-table" },
       });
@@ -172,7 +173,7 @@ export async function POST(request: NextRequest) {
           suggestionCount: parsed.suggestedFields?.length || 0,
         },
       });
-      return NextResponse.json({
+      return createSupabaseJsonResponse(response, {
         ...parsed,
         diagnostics: { requestId, parserPath: "image-ai" },
       });
@@ -223,7 +224,7 @@ export async function POST(request: NextRequest) {
         suggestionCount: parsed.suggestedFields?.length || 0,
       },
     });
-    return NextResponse.json({
+    return createSupabaseJsonResponse(response, {
       ...parsed,
       diagnostics: { requestId, parserPath },
     });

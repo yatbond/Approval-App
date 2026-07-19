@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { saveCollaborationMirrorState } from "@/lib/collaboration-mirror-store";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { createSupabaseJsonResponse } from "@/lib/supabase/route-response";
 import { getSupabaseRouteUser } from "@/lib/supabase/route-user";
 import type { ApprovalTask } from "@/lib/types";
 import type { TaskNotification } from "@/lib/workflow-system";
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest) {
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", reason: "Not signed in" },
       { status: 401 },
     );
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
     notifications?: TaskNotification[];
   };
   if (!body.task?.id || !Array.isArray(body.notifications)) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", reason: "A task and notifications array are required." },
       { status: 400 },
     );
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
         notifications: body.notifications.length,
       },
     });
-    return NextResponse.json({ mode: "supabase" });
+    return createSupabaseJsonResponse(response, { mode: "supabase" });
   } catch (error) {
     const message =
       error instanceof Error
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
       durationMs: Date.now() - startedAt,
       message,
     });
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       {
         mode: "local",
         reason: message,

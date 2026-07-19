@@ -6,6 +6,8 @@ import {
   type WorkspaceAdminDeactivation,
 } from "@/lib/normalized-workspace-store";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { getDevelopmentAuthBypassUser } from "@/lib/supabase/development-auth-bypass";
+import { createSupabaseJsonResponse } from "@/lib/supabase/route-response";
 import {
   getSupabaseRouteUser,
   type SupabaseRouteUser,
@@ -43,12 +45,21 @@ type WorkspaceSavePayload =
   | { mode: "local"; reason: string; unchanged?: false };
 
 export async function GET(request: NextRequest) {
+  if (
+    getDevelopmentAuthBypassUser({
+      nodeEnv: process.env.NODE_ENV,
+      email: process.env.E2E_AUTH_BYPASS_EMAIL,
+    })
+  ) {
+    return NextResponse.json({ mode: "local", snapshot: null });
+  }
+
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json({ mode: "local", snapshot: null });
+    return createSupabaseJsonResponse(response, { mode: "local", snapshot: null });
   }
 
   const { data, error } = await supabase
@@ -58,7 +69,7 @@ export async function GET(request: NextRequest) {
     .maybeSingle();
 
   if (error) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", snapshot: null, reason: error.message },
       { status: 503 },
     );
@@ -84,11 +95,11 @@ export async function GET(request: NextRequest) {
           formLibrary: fallbackSnapshot?.formLibrary || [],
         },
       };
-      return NextResponse.json(payload);
+      return createSupabaseJsonResponse(response, payload);
     }
   } catch (normalizedError) {
     if (!fallbackSnapshot) {
-      return NextResponse.json(
+      return createSupabaseJsonResponse(response,
         {
           mode: "local",
           snapshot: null,
@@ -107,7 +118,7 @@ export async function GET(request: NextRequest) {
     source: "snapshot",
     snapshot: fallbackSnapshot,
   };
-  return NextResponse.json(payload);
+  return createSupabaseJsonResponse(response, payload);
 }
 
 export async function POST(request: NextRequest) {
@@ -117,7 +128,7 @@ export async function POST(request: NextRequest) {
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json({ mode: "local", reason: "Not signed in" });
+    return createSupabaseJsonResponse(response, { mode: "local", reason: "Not signed in" });
   }
 
   const bodyText = await request.text();
@@ -126,7 +137,7 @@ export async function POST(request: NextRequest) {
   try {
     body = JSON.parse(bodyText) as { snapshot?: unknown };
   } catch {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", reason: "Invalid workspace request" },
       { status: 400 },
     );
@@ -136,7 +147,7 @@ export async function POST(request: NextRequest) {
     ? parseWorkspaceState(serializedSnapshot)
     : null;
   if (!parsedIncomingSnapshot) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", reason: "Invalid workspace snapshot" },
       { status: 400 },
     );
@@ -190,7 +201,7 @@ export async function POST(request: NextRequest) {
         },
       });
     }
-    return NextResponse.json({ ...payload, monitoring }, { status });
+    return createSupabaseJsonResponse(response, { ...payload, monitoring }, { status });
   };
 
   const incomingSnapshotHash = createWorkspaceSnapshotHash(incomingSnapshot);
@@ -311,7 +322,7 @@ export async function PATCH(request: NextRequest) {
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", reason: "Not signed in" },
       { status: 401 },
     );
@@ -322,7 +333,7 @@ export async function PATCH(request: NextRequest) {
     record?: unknown;
   };
   if (body.action !== "deactivate_admin_record") {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", reason: "Unsupported workspace action" },
       { status: 400 },
     );
@@ -330,7 +341,7 @@ export async function PATCH(request: NextRequest) {
 
   const record = parseAdminDeactivation(body.record);
   if (!record) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", reason: "Invalid admin deactivation record" },
       { status: 400 },
     );
@@ -338,9 +349,9 @@ export async function PATCH(request: NextRequest) {
 
   try {
     await deactivateWorkspaceAdminRecord(supabase, record);
-    return NextResponse.json({ mode: "supabase" });
+    return createSupabaseJsonResponse(response, { mode: "supabase" });
   } catch (error) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       {
         mode: "local",
         reason:
