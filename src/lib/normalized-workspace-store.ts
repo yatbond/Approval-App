@@ -242,6 +242,7 @@ export async function deactivateWorkspaceAdminRecord(
 export async function loadNormalizedWorkspaceState(
   supabase: SupabaseLike,
   selectedTemplateId: string,
+  { includeApprovalRuntime = true }: { includeApprovalRuntime?: boolean } = {},
 ): Promise<WorkspaceStateSnapshot | null> {
   const businesses = await selectRows<BusinessDbRow>(
     supabase
@@ -265,14 +266,16 @@ export async function loadNormalizedWorkspaceState(
       )
       .order("updated_at", { ascending: false }),
   );
-  const requests = await selectRows<RequestDbRow>(
-    supabase
-      .from("approval_requests")
-      .select(
-        "id,request_no,requester_name,requester_email,title,workflow_name,department_name,status,due_label,due_at,value_label,current_step,current_node_id,current_owner_email,pending_node_ids,pending_owner_emails,completed_node_ids,notified_node_ids,node_decisions,active_branch_id,extracted_fields,participants,last_action,task_snapshot,workflow_template_versions(template_key,version_number)",
+  const requests = includeApprovalRuntime
+    ? await selectRows<RequestDbRow>(
+        supabase
+          .from("approval_requests")
+          .select(
+            "id,request_no,requester_name,requester_email,title,workflow_name,department_name,status,due_label,due_at,value_label,current_step,current_node_id,current_owner_email,pending_node_ids,pending_owner_emails,completed_node_ids,notified_node_ids,node_decisions,active_branch_id,extracted_fields,participants,last_action,task_snapshot,workflow_template_versions(template_key,version_number)",
+          )
+          .order("updated_at", { ascending: false }),
       )
-      .order("updated_at", { ascending: false }),
-  );
+    : [];
 
   if (!templates.length && !requests.length) {
     return null;
@@ -426,6 +429,40 @@ function mapTemplateRow(row: TemplateDbRow): NormalizedWorkflowTemplateVersionRo
     supportedLanguages: row.supported_languages,
     templateSnapshot: {
       ...snapshot,
+      id:
+        typeof snapshot.id === "string" && snapshot.id
+          ? snapshot.id
+          : row.template_key,
+      name:
+        typeof snapshot.name === "string" && snapshot.name
+          ? snapshot.name
+          : row.name,
+      business:
+        typeof snapshot.business === "string"
+          ? snapshot.business
+          : row.business_units?.name || "",
+      department:
+        typeof snapshot.department === "string"
+          ? snapshot.department
+          : row.business_departments?.name || "",
+      documentTypes: Array.isArray(snapshot.documentTypes)
+        ? snapshot.documentTypes
+        : [],
+      documents: Array.isArray(snapshot.documents)
+        ? snapshot.documents
+        : Array.isArray(row.document_requirements)
+          ? row.document_requirements
+          : [],
+      languages: Array.isArray(snapshot.languages)
+        ? snapshot.languages
+        : row.supported_languages || [],
+      fields: Array.isArray(snapshot.fields) ? snapshot.fields : [],
+      steps: Array.isArray(snapshot.steps) ? snapshot.steps : [],
+      graph: (isJsonObject(snapshot.graph)
+        ? snapshot.graph
+        : isJsonObject(row.graph)
+          ? row.graph
+          : { nodes: [], edges: [] }) as NormalizedWorkflowTemplateVersionRow["graph"],
       databaseVersionId: row.id,
       version: row.version_number,
       isActiveVersion: row.is_active_version === true,

@@ -7,6 +7,7 @@ import {
   createApprovalServerContext,
   safeApprovalLog,
 } from "@/lib/approval-server";
+import { getApprovalRolloutDecision } from "@/lib/approval-rollout";
 
 export async function POST(
   request: NextRequest,
@@ -15,6 +16,13 @@ export async function POST(
   const resolved = await createApprovalServerContext(request);
   if (!resolved.ok) return approvalError(resolved);
   const { session, service, actor, cookieSource, correlationId } = resolved.context;
+  const rollout = await getApprovalRolloutDecision(service, actor.id);
+  if (!rollout.commandEnabled) {
+    return approvalJson(cookieSource, correlationId, {
+      error: { code: "cutover_paused", message: "Approval changes are temporarily paused during a controlled rollout." },
+      rollout: { mode: rollout.mode },
+    }, 503);
+  }
   const { requestNo: rawRequestNo } = await context.params;
   const requestNo = rawRequestNo.trim();
   const text = await request.text().catch(() => "");

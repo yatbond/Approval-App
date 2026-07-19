@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { approvalActionCommandSchema } from "@/lib/approval-api-contracts";
 import { executeApprovalCommand } from "@/lib/approval-server-data";
 import { readBoundedJson } from "@/lib/bounded-request";
+import { getApprovalRolloutDecision } from "@/lib/approval-rollout";
 import {
   approvalError,
   approvalJson,
@@ -16,6 +17,13 @@ export async function POST(
   const resolved = await createApprovalServerContext(request);
   if (!resolved.ok) return approvalError(resolved);
   const { session, service, actor, cookieSource, correlationId } = resolved.context;
+  const rollout = await getApprovalRolloutDecision(service, actor.id);
+  if (!rollout.commandEnabled) {
+    return approvalJson(cookieSource, correlationId, {
+      error: { code: "cutover_paused", message: "Approval changes are temporarily paused during a controlled rollout." },
+      rollout: { mode: rollout.mode },
+    }, 503);
+  }
   const { requestNo: rawRequestNo } = await context.params;
   const requestNo = rawRequestNo.trim();
   if (!requestNo || requestNo.length > 100) {

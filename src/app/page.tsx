@@ -2,6 +2,7 @@ import ApprovalWorkspaceLoader from "@/app/approval-workspace-loader";
 import { getDepartments, getWorkflowTemplates } from "@/lib/supabase-data";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { loadApprovalRolloutDecisionForServer } from "@/lib/approval-rollout";
 import {
   getInitialWorkspaceTab,
   isNewRequestStartRequested,
@@ -21,9 +22,10 @@ export default async function Home({
     redirect("/login");
   }
 
-  const [departments, workflowTemplates] = await Promise.all([
+  const [departments, workflowTemplates, rollout] = await Promise.all([
     getDepartments(),
     getWorkflowTemplates(),
+    loadApprovalRolloutDecisionForServer(user.id),
   ]);
 
   return (
@@ -32,6 +34,7 @@ export default async function Home({
       sessionUser={user.email || "Signed in"}
       departments={departments}
       workflowTemplates={workflowTemplates}
+      allowLegacyReadFallback={rollout.legacyReadFallbackAllowed}
       requestId={params.request || ""}
       startNewRequest={isNewRequestStartRequested(params.new)}
     />

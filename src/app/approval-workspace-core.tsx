@@ -39,6 +39,7 @@ import { getLocalUploadDraftCount } from "@/lib/upload-draft-badge-state";
 import type { UserDirectoryEntry } from "@/lib/user-directory";
 
 export type ApprovalWorkspaceProps = {
+  allowLegacyReadFallback: boolean;
   initialTab: WorkspaceTab;
   sessionUser: string;
   departments: string[];
@@ -97,6 +98,7 @@ function readLocalDraftCount(activeUserEmail: string) {
 }
 
 export function ApprovalWorkspaceCoreProvider({
+  allowLegacyReadFallback,
   children,
   departments,
   initialTab,
@@ -151,6 +153,7 @@ export function ApprovalWorkspaceCoreProvider({
   }, []);
   const workspace = useApprovalWorkspaceState({
     activeUser,
+    allowLegacyReadFallback,
     requestId,
     workflowTemplates,
   });

@@ -85,6 +85,7 @@ export async function GET(request: NextRequest) {
     const normalizedSnapshot = await loadNormalizedWorkspaceState(
       supabase,
       fallbackSnapshot?.selectedTemplateId || "",
+      { includeApprovalRuntime: false },
     );
 
     if (normalizedSnapshot) {

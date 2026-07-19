@@ -4,6 +4,7 @@ import { Check, Mail, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { OperationalHealthPanel } from "./operational-health-panel";
+import { RolloutStatusPanel } from "./rollout-status-panel";
 import { InfoTip } from "./ui-hint";
 import {
   addBusiness,
@@ -330,6 +331,7 @@ export function AdminView({
       </section>
 
       <section className="space-y-4">
+        <RolloutStatusPanel />
         <OperationalHealthPanel />
         <div className="rounded-md border border-[#e6e6e6] bg-white p-4">
           <div className="flex items-center gap-2">

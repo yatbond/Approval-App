@@ -49,7 +49,10 @@ function requestCacheKey(email: string) {
   return `approval-workflow-request-cache-v2:${email.trim().toLowerCase()}`;
 }
 
-function readSavedWorkspaceState(activeUserEmail: string) {
+function readSavedWorkspaceState(
+  activeUserEmail: string,
+  allowLegacyReadFallback: boolean,
+) {
   if (typeof window === "undefined") {
     return null;
   }
@@ -57,6 +60,10 @@ function readSavedWorkspaceState(activeUserEmail: string) {
   const saved = window.localStorage.getItem(workspaceStorageKey);
   const parsed = saved ? parseWorkspaceState(saved) : null;
   if (!parsed) return null;
+  if (!allowLegacyReadFallback) {
+    window.localStorage.removeItem(requestCacheKey(activeUserEmail));
+    return { ...parsed, approvalTasks: [] };
+  }
   try {
     const cached = JSON.parse(
       window.localStorage.getItem(requestCacheKey(activeUserEmail)) || "null",
@@ -71,10 +78,12 @@ function readSavedWorkspaceState(activeUserEmail: string) {
 
 export function useApprovalWorkspaceState({
   activeUser,
+  allowLegacyReadFallback,
   requestId,
   workflowTemplates,
 }: {
   activeUser: UserDirectoryEntry;
+  allowLegacyReadFallback: boolean;
   requestId: string;
   workflowTemplates: WorkflowTemplate[];
 }) {
@@ -82,11 +91,11 @@ export function useApprovalWorkspaceState({
     () =>
       createDefaultWorkspaceSnapshot({
         activeUser,
-        approvalTasks,
+        approvalTasks: allowLegacyReadFallback ? approvalTasks : [],
         businessDirectory: seededBusinessDirectory,
         workflowTemplates,
       }),
-    [activeUser, workflowTemplates],
+    [activeUser, allowLegacyReadFallback, workflowTemplates],
   );
   const [savedWorkspaceState, setSavedWorkspaceState] =
     useState<WorkspaceStateSnapshot | null>(null);
@@ -116,7 +125,7 @@ export function useApprovalWorkspaceState({
     getInitialSelectedTaskId({
       requestId,
       savedApprovalTasks: [],
-      seedApprovalTasks: approvalTasks,
+      seedApprovalTasks: allowLegacyReadFallback ? approvalTasks : [],
     }),
   );
   const [workspaceSyncMode, setWorkspaceSyncMode] = useState<"loading" | "supabase" | "local">(
@@ -169,7 +178,10 @@ export function useApprovalWorkspaceState({
         return;
       }
 
-      const saved = readSavedWorkspaceState(activeUser.email);
+      const saved = readSavedWorkspaceState(
+        activeUser.email,
+        allowLegacyReadFallback,
+      );
       if (saved) {
         const serializedSnapshot = serializeWorkspaceState(saved);
         lastRemoteSnapshotRef.current = serializedSnapshot;
@@ -185,7 +197,7 @@ export function useApprovalWorkspaceState({
           getInitialSelectedTaskId({
             requestId,
             savedApprovalTasks: saved.approvalTasks,
-            seedApprovalTasks: approvalTasks,
+            seedApprovalTasks: allowLegacyReadFallback ? approvalTasks : [],
           }),
         );
         setWorkspaceSyncMode("local");
@@ -198,7 +210,7 @@ export function useApprovalWorkspaceState({
       cancelled = true;
       window.clearTimeout(loadTimerId);
     };
-  }, [activeUser.email, requestId]);
+  }, [activeUser.email, allowLegacyReadFallback, requestId]);
 
   useEffect(() => {
     if (!shouldLoadRemoteWorkspace({ localWorkspaceReady, savedWorkspaceState })) {
@@ -356,6 +368,10 @@ export function useApprovalWorkspaceState({
 
   useEffect(() => {
     if (!localWorkspaceReady) return;
+    if (!allowLegacyReadFallback) {
+      window.localStorage.removeItem(requestCacheKey(activeUser.email));
+      return;
+    }
     const timeoutId = window.setTimeout(() => {
       window.localStorage.setItem(
         requestCacheKey(activeUser.email),
@@ -363,7 +379,7 @@ export function useApprovalWorkspaceState({
       );
     }, 250);
     return () => window.clearTimeout(timeoutId);
-  }, [activeUser.email, localWorkspaceReady, tasks]);
+  }, [activeUser.email, allowLegacyReadFallback, localWorkspaceReady, tasks]);
 
   useEffect(() => {
     if (!localWorkspaceReady) {
@@ -491,13 +507,17 @@ export function useApprovalWorkspaceState({
     const configurationSnapshot = { ...snapshot, approvalTasks: [] };
     const serializedSnapshot = serializeWorkspaceState(configurationSnapshot);
     window.localStorage.setItem(workspaceStorageKey, serializedSnapshot);
-    window.localStorage.setItem(
-      requestCacheKey(activeUser.email),
-      JSON.stringify({
-        schemaVersion: requestCacheVersion,
-        tasks: snapshot.approvalTasks,
-      }),
-    );
+    if (allowLegacyReadFallback) {
+      window.localStorage.setItem(
+        requestCacheKey(activeUser.email),
+        JSON.stringify({
+          schemaVersion: requestCacheVersion,
+          tasks: snapshot.approvalTasks,
+        }),
+      );
+    } else {
+      window.localStorage.removeItem(requestCacheKey(activeUser.email));
+    }
     autosaveTargetRef.current = {
       snapshot: configurationSnapshot,
       serialized: serializedSnapshot,

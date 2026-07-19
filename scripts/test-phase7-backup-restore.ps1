@@ -39,9 +39,18 @@ select json_build_object(
   'notifications', (select count(*) from public.approval_notifications),
   'outbox', (select count(*) from public.approval_email_outbox),
   'profiles', (select count(*) from public.profiles),
+  'rolloutSettings', (select count(*) from public.approval_rollout_settings),
+  'rolloutEvents', (select count(*) from public.approval_rollout_events),
+  'readMismatches', (select count(*) from public.approval_read_comparison_mismatches),
+  'rolloutMode', (select mode from public.approval_rollout_settings where singleton),
+  'legacyFreezeTriggers', (
+    select count(*) from pg_trigger
+    where tgname = 'legacy_runtime_write_frozen' and not tgisinternal
+  ),
   'storageObjects', (select count(*) from storage.objects),
   'migrations', (select count(*) from supabase_migrations.schema_migrations),
-  'operationalFunction', to_regprocedure('public.get_approval_operational_metrics()') is not null
+  'operationalFunction', to_regprocedure('public.get_approval_operational_metrics()') is not null,
+  'rolloutFunction', to_regprocedure('public.get_approval_rollout_decision(uuid)') is not null
 )::text;
 "@
   $source = (& docker exec $Container psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres -c $comparisonSql).Trim()

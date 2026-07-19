@@ -6,6 +6,7 @@ import {
   createApprovalServerContext,
   safeApprovalLog,
 } from "@/lib/approval-server";
+import { auditApprovalRuntimeProjection } from "@/lib/approval-rollout";
 
 export async function GET(
   request: NextRequest,
@@ -13,7 +14,7 @@ export async function GET(
 ) {
   const resolved = await createApprovalServerContext(request);
   if (!resolved.ok) return approvalError(resolved);
-  const { session, actor, cookieSource, correlationId } = resolved.context;
+  const { session, service, actor, cookieSource, correlationId } = resolved.context;
   const { requestNo: rawRequestNo } = await context.params;
   const requestNo = rawRequestNo.trim();
   if (!requestNo || requestNo.length > 100) {
@@ -34,6 +35,7 @@ export async function GET(
         404,
       );
     }
+    await auditApprovalRuntimeProjection(service, requestNo);
     return approvalJson(cookieSource, correlationId, { request: approvalRequest });
   } catch (error) {
     safeApprovalLog("request_detail_failed", correlationId, {

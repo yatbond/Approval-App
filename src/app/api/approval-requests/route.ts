@@ -14,6 +14,7 @@ import {
   safeApprovalLog,
 } from "@/lib/approval-server";
 import { readBoundedJson } from "@/lib/bounded-request";
+import { getApprovalRolloutDecision } from "@/lib/approval-rollout";
 
 export async function GET(request: NextRequest) {
   const resolved = await createApprovalServerContext(request);
@@ -55,6 +56,13 @@ export async function POST(request: NextRequest) {
   const resolved = await createApprovalServerContext(request);
   if (!resolved.ok) return approvalError(resolved);
   const { session, service, actor, cookieSource, correlationId } = resolved.context;
+  const rollout = await getApprovalRolloutDecision(service, actor.id);
+  if (!rollout.commandEnabled) {
+    return approvalJson(cookieSource, correlationId, {
+      error: { code: "cutover_paused", message: "Approval changes are temporarily paused during a controlled rollout." },
+      rollout: { mode: rollout.mode },
+    }, 503);
+  }
   const body = await readBoundedJson(request, 64_000);
   if (!body.ok) {
     return approvalJson(

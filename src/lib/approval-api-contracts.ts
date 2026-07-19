@@ -180,6 +180,7 @@ export type ApprovalApiErrorCode =
   | "invalid_target"
   | "business_precondition_failed"
   | "rate_limited"
+  | "cutover_paused"
   | "dependency_unavailable";
 
 export function canonicalPayloadHash(value: unknown) {

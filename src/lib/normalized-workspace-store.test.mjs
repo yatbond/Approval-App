@@ -617,7 +617,7 @@ test("reconstructs malformed legacy template and task snapshots from canonical c
         graph: template.graph,
         document_requirements: [],
         supported_languages: ["English"],
-        template_snapshot: null,
+        template_snapshot: { schemaVersion: 1 },
         business_units: { name: "Asia Allied Infrastructure" },
         business_departments: { name: "Finance" },
         is_active: true,
@@ -663,6 +663,7 @@ test("reconstructs malformed legacy template and task snapshots from canonical c
   assert.equal(snapshot.workflowTemplates[0].name, "Finance invoice approval");
   assert.equal(snapshot.approvalTasks[0].id, "APR-MALFORMED");
   assert.equal(snapshot.approvalTasks[0].title, task.title);
+  assert.deepEqual(snapshot.workflowTemplates[0].fields, []);
   assert.deepEqual(snapshot.approvalTasks[0].auditTrail, []);
 });
 
