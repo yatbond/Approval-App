@@ -1093,6 +1093,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = ''
+set lock_timeout = '3s'
 as $$
 declare
   v_request public.approval_requests%rowtype;

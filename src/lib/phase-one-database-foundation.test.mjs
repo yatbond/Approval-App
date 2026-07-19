@@ -24,6 +24,7 @@ test("authoritative migration versions and normalizes request runtime", () => {
 
 test("command primitive locks, versions, deduplicates, and commits atomically", () => {
   assert.match(migration, /for update;/i);
+  assert.match(migration, /set lock_timeout = '3s'/i);
   assert.match(
     migration,
     /unique \(approval_request_id, actor_id, idempotency_key\)/i,

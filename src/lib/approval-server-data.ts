@@ -352,12 +352,14 @@ export async function executeApprovalCommand({
   actor,
   requestNo,
   command,
+  correlationId,
 }: {
   session: SupabaseClient;
   service: SupabaseClient;
   actor: ApprovalRuntimeProfile;
   requestNo: string;
   command: ApprovalActionCommand;
+  correlationId?: string;
 }): Promise<ApprovalCommandResult> {
   let row: ApprovalRequestRecord | null;
   try {
@@ -447,7 +449,13 @@ export async function executeApprovalCommand({
         ...transition.nextState,
         currentOwnerId,
       },
-      p_event: transition.event,
+      p_event: {
+        ...transition.event,
+        details: {
+          ...transition.event.details,
+          ...(correlationId ? { correlationId } : {}),
+        },
+      },
       p_notifications: notifications,
     },
   );

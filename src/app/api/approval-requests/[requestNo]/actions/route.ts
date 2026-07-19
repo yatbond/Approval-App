@@ -44,6 +44,7 @@ export async function POST(
     actor,
     requestNo,
     command: parsed.data,
+    correlationId,
   });
   safeApprovalLog("approval_command", correlationId, {
     requestNo,

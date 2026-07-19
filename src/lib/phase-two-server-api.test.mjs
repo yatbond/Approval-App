@@ -40,6 +40,7 @@ test("server action path derives actor and persistence fields", () => {
   assert.match(data, /canonicalPayloadHash\(\{ requestNo, command \}\)/);
   assert.match(data, /computeApprovalTransition/);
   assert.match(data, /currentOwnerId/);
+  assert.match(data, /details:[\s\S]*correlationId/);
   assert.doesNotMatch(data, /command\.actor/i);
   assert.doesNotMatch(data, /command\.timestamp/i);
 });

@@ -17,6 +17,8 @@
     "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types \"src/**/*.test.mjs\"",
     "test:db:authoritative": "node scripts/test-authoritative-db.mjs",
     "test:api:authoritative": "node scripts/test-authoritative-api.mjs",
+    "test:db:concurrency": "node scripts/test-authoritative-concurrency.mjs",
+    "test:db:lock-timeout": "node scripts/test-authoritative-lock-timeout.mjs",
     "test:e2e:two-browser": "node scripts/test-authoritative-two-browser.mjs",
     "test:db:migration-seed": "node scripts/test-authoritative-migration-backfill.mjs seed",
     "test:db:migration-verify": "node scripts/test-authoritative-migration-backfill.mjs verify",

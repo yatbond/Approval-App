@@ -200,7 +200,14 @@ async function testReassignmentAndApproval() {
   };
   const approved = await action(requestNo, approveBody, cookies.target);
   assert.equal(approved.status, 200);
-  assert.equal((await approved.json()).request.task.status, "approved");
+  const approvalCorrelationId = approved.headers.get("x-correlation-id");
+  const approvedPayload = await approved.json();
+  assert.equal(approvedPayload.request.task.status, "approved");
+  assert.ok(approvalCorrelationId);
+  assert.equal(
+    approvedPayload.request.events.at(-1).details.correlationId,
+    approvalCorrelationId,
+  );
 
   const approvalReplay = await action(requestNo, approveBody, cookies.target);
   assert.equal(approvalReplay.status, 200);
