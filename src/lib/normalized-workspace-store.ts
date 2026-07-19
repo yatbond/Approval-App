@@ -4,8 +4,6 @@ import {
   type NormalizedApprovalRequestAttachmentRow,
   type NormalizedApprovalRequestEventRow,
   type NormalizedApprovalRequestRow,
-  type NormalizedBusinessDepartmentRow,
-  type NormalizedBusinessUnitRow,
   type NormalizedWorkflowTemplateVersionRow,
 } from "./normalized-workspace.ts";
 import type { WorkspaceStateSnapshot } from "./workspace-persistence.ts";
@@ -30,15 +28,15 @@ type SupabaseMutationResult = {
   count?: number | null;
 };
 
-type SupabaseLike = Pick<SupabaseClient, "from">;
+type SupabaseLike = Pick<SupabaseClient, "from" | "rpc">;
 
 export type WorkspaceAdminDeactivation =
   | { type: "business"; businessId: string }
   | { type: "department"; businessId: string; departmentName: string }
   | { type: "template"; templateKey: string; versionNumber: number };
 
-function isPresent<T>(value: T | null | undefined): value is T {
-  return value !== null && value !== undefined;
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 type AuthenticatedUser = {
@@ -145,45 +143,55 @@ export async function saveNormalizedWorkspaceState(
   snapshot: WorkspaceStateSnapshot,
   user: AuthenticatedUser,
 ) {
-  const savedAt = new Date().toISOString();
   const rows = buildNormalizedWorkspaceRows(snapshot, {
     userId: user.id,
     email: user.email,
   });
-  validateRequestTemplateReferences(rows.approvalRequests, rows.workflowTemplateVersions);
-  const businesses = await upsertBusinessUnits(supabase, rows.businessUnits, savedAt);
-  const departments = await upsertBusinessDepartments(
-    supabase,
-    rows.businessDepartments,
-    rows.businessUnits,
-    businesses,
-    savedAt,
+  if (
+    !rows.businessUnits.length &&
+    !rows.businessDepartments.length &&
+    !rows.workflowTemplateVersions.length
+  ) {
+    return;
+  }
+
+  const businessNameByClientId = new Map(
+    rows.businessUnits.map((business) => [business.clientId, business.name]),
   );
-  const templates = await upsertTemplates(
-    supabase,
-    rows.workflowTemplateVersions,
-    businesses,
-    departments,
-    savedAt,
-  );
-  const requests = await upsertApprovalRequests(
-    supabase,
-    rows.approvalRequests,
-    templates,
-    user,
-  );
-  await upsertApprovalRequestEvents(
-    supabase,
-    rows.approvalRequestEvents,
-    requests,
-    user,
-  );
-  await upsertApprovalRequestAttachments(
-    supabase,
-    rows.approvalRequestAttachments,
-    requests,
-    user,
-  );
+  const configuration = {
+    schemaVersion: 1,
+    businessUnits: rows.businessUnits.map((business) => ({
+      name: business.name,
+      isActive: true,
+    })),
+    businessDepartments: rows.businessDepartments.map((department) => ({
+      businessName:
+        businessNameByClientId.get(department.businessClientId) || "",
+      name: department.name,
+      isActive: true,
+    })),
+    workflowTemplateVersions: rows.workflowTemplateVersions.map((template) => ({
+      templateKey: template.templateKey,
+      versionNumber: template.versionNumber,
+      name: template.name,
+      businessName: template.businessName,
+      departmentName: template.departmentName,
+      graph: template.graph || { nodes: [], edges: [] },
+      documentRequirements: template.documentRequirements,
+      supportedLanguages: template.supportedLanguages,
+      templateSnapshot: template.templateSnapshot,
+      isActive: template.isActive !== false,
+      isActiveVersion: template.isActiveVersion === true,
+      versionComment: template.versionComment || "",
+    })),
+  };
+
+  const { error } = await supabase.rpc("save_workspace_configuration", {
+    p_configuration: configuration,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
 }
 
 export async function deactivateWorkspaceAdminRecord(
@@ -228,27 +236,6 @@ export async function deactivateWorkspaceAdminRecord(
       .eq("template_key", command.templateKey)
       .eq("version_number", command.versionNumber),
     "No active template version matched this delete request.",
-  );
-}
-
-function validateRequestTemplateReferences(
-  requests: NormalizedApprovalRequestRow[],
-  templates: NormalizedWorkflowTemplateVersionRow[],
-) {
-  const templateKeys = new Set(
-    templates.map((template) => `${template.templateKey}:${template.versionNumber}`),
-  );
-  const missingTemplateRequest = requests.find(
-    (request) =>
-      !templateKeys.has(`${request.workflowTemplateKey}:${request.workflowTemplateVersion}`),
-  );
-
-  if (!missingTemplateRequest) {
-    return;
-  }
-
-  throw new Error(
-    `Approval request ${missingTemplateRequest.requestNo} references missing workflow template ${missingTemplateRequest.workflowTemplateKey || "(none)"} version ${missingTemplateRequest.workflowTemplateVersion}.`,
   );
 }
 
@@ -404,282 +391,27 @@ async function loadCollaborationMirrors(
   };
 }
 
-async function upsertBusinessUnits(
-  supabase: SupabaseLike,
-  rows: NormalizedBusinessUnitRow[],
-  savedAt: string,
-) {
-  if (!rows.length) {
-    return [];
-  }
-
-  return selectRows<BusinessDbRow>(
-    supabase
-      .from("business_units")
-      .upsert(
-        rows.map((row) => ({
-          name: row.name,
-          is_active: true,
-          updated_at: savedAt,
-        })),
-        { onConflict: "name" },
-      )
-      .select("id,name"),
-  );
-}
-
-async function upsertBusinessDepartments(
-  supabase: SupabaseLike,
-  rows: NormalizedBusinessDepartmentRow[],
-  businessRows: NormalizedBusinessUnitRow[],
-  businesses: BusinessDbRow[],
-  savedAt: string,
-) {
-  if (!rows.length) {
-    return [];
-  }
-
-  const businessNameByClientId = new Map(
-    businessRows.map((business) => [business.clientId, business.name]),
-  );
-  const businessIdByName = new Map(
-    businesses.map((business) => [business.name, business.id]),
-  );
-  const payload = rows
-    .map((row) => {
-      const businessName = businessNameByClientId.get(row.businessClientId);
-      const businessId = businessName ? businessIdByName.get(businessName) : undefined;
-      return businessId
-        ? {
-            business_unit_id: businessId,
-            name: row.name,
-            is_active: true,
-            updated_at: savedAt,
-          }
-        : null;
-    })
-    .filter(isPresent);
-
-  if (!payload.length) {
-    return [];
-  }
-
-  return selectRows<DepartmentDbRow>(
-    supabase
-      .from("business_departments")
-      .upsert(payload, { onConflict: "business_unit_id,name" })
-      .select("id,business_unit_id,name"),
-  );
-}
-
-async function upsertTemplates(
-  supabase: SupabaseLike,
-  rows: NormalizedWorkflowTemplateVersionRow[],
-  businesses: BusinessDbRow[],
-  departments: DepartmentDbRow[],
-  savedAt: string,
-) {
-  if (!rows.length) {
-    return [];
-  }
-
-  const businessIdByName = new Map(
-    businesses.map((business) => [business.name, business.id]),
-  );
-  const departmentIdByBusinessAndName = new Map(
-    departments.map((department) => [
-      `${department.business_unit_id}:${department.name}`,
-      department.id,
-    ]),
-  );
-
-  const payload = rows.map((row) => {
-    const businessId = businessIdByName.get(row.businessName);
-    const departmentId = businessId
-      ? departmentIdByBusinessAndName.get(`${businessId}:${row.departmentName}`)
-      : undefined;
-
-    return {
-      template_key: row.templateKey,
-      version_number: row.versionNumber,
-      name: row.name,
-      business_unit_id: businessId,
-      department_id: departmentId,
-      graph: row.graph || { nodes: [], edges: [] },
-      document_requirements: row.documentRequirements,
-      supported_languages: row.supportedLanguages,
-      template_snapshot: row.templateSnapshot,
-      is_active: row.isActive !== false,
-      is_active_version: row.isActiveVersion === true,
-      version_comment: row.versionComment || "",
-      created_by: row.createdBy,
-      updated_at: savedAt,
-    };
-  });
-
-  return selectRows<{ id: string; template_key: string; version_number: number }>(
-    supabase
-      .from("workflow_template_versions")
-      .upsert(payload, { onConflict: "template_key,version_number" })
-      .select("id,template_key,version_number"),
-  );
-}
-
-async function upsertApprovalRequests(
-  supabase: SupabaseLike,
-  rows: NormalizedApprovalRequestRow[],
-  templates: { id: string; template_key: string; version_number: number }[],
-  user: AuthenticatedUser,
-) {
-  if (!rows.length) {
-    return [];
-  }
-
-  const templateIdByKeyVersion = new Map(
-    templates.map((template) => [
-      `${template.template_key}:${template.version_number}`,
-      template.id,
-    ]),
-  );
-  const payload = rows
-    .map((row) => {
-      const templateId = templateIdByKeyVersion.get(
-        `${row.workflowTemplateKey}:${row.workflowTemplateVersion}`,
-      );
-      return {
-        request_no: row.requestNo,
-        workflow_template_version_id: templateId,
-        requester_id: row.requesterEmail === user.email ? user.id : null,
-        requester_name: row.requesterName,
-        requester_email: row.requesterEmail,
-        title: row.title,
-        workflow_name: row.workflowName,
-        department_name: row.department,
-        status: row.status,
-        due_label: row.dueLabel,
-        due_at: row.dueAt || null,
-        value_label: row.valueLabel,
-        current_step: row.currentStep,
-        current_node_id: row.currentNodeId || null,
-        current_owner_email: row.currentOwnerEmail,
-        pending_node_ids: row.pendingNodeIds,
-        pending_owner_emails: row.pendingOwnerEmails,
-        completed_node_ids: row.completedNodeIds,
-        notified_node_ids: row.notifiedNodeIds,
-        node_decisions: row.nodeDecisions,
-        active_branch_id: row.activeBranchId || null,
-        extracted_fields: row.extractedFields,
-        participants: row.participants,
-        last_action: row.lastAction,
-        task_snapshot: row.taskSnapshot,
-        updated_at: new Date().toISOString(),
-      };
-    })
-    .filter(isPresent);
-
-  if (!payload.length) {
-    return [];
-  }
-
-  return selectRows<{ id: string; request_no: string }>(
-    supabase
-      .from("approval_requests")
-      .upsert(payload, { onConflict: "request_no" })
-      .select("id,request_no"),
-  );
-}
-
-async function upsertApprovalRequestEvents(
-  supabase: SupabaseLike,
-  rows: NormalizedApprovalRequestEventRow[],
-  requests: { id: string; request_no: string }[],
-  user: AuthenticatedUser,
-) {
-  if (!rows.length || !requests.length) {
-    return;
-  }
-
-  const requestIdByNo = new Map(
-    requests.map((request) => [request.request_no, request.id]),
-  );
-  const payload = rows
-    .map((row) => {
-      const requestId = requestIdByNo.get(row.approvalRequestNo);
-      return requestId
-        ? {
-            approval_request_id: requestId,
-            event_key: row.eventKey,
-            action: row.action,
-            actor_name: row.actorName,
-            actor_id: row.actorEmail === user.email ? user.id : null,
-            actor_email: row.actorEmail,
-            detail: row.detail,
-            target_email: row.targetEmail || null,
-            created_at: row.createdAt,
-          }
-        : null;
-    })
-    .filter(isPresent);
-
-  if (!payload.length) {
-    return;
-  }
-
-  await throwIfError(
-    supabase
-      .from("approval_request_events")
-      .upsert(payload, { onConflict: "approval_request_id,event_key" }),
-  );
-}
-
-async function upsertApprovalRequestAttachments(
-  supabase: SupabaseLike,
-  rows: NormalizedApprovalRequestAttachmentRow[],
-  requests: { id: string; request_no: string }[],
-  user: AuthenticatedUser,
-) {
-  if (!rows.length || !requests.length) {
-    return;
-  }
-
-  const requestIdByNo = new Map(
-    requests.map((request) => [request.request_no, request.id]),
-  );
-  const payload = rows
-    .map((row) => {
-      const requestId = requestIdByNo.get(row.approvalRequestNo);
-      return requestId
-        ? {
-            approval_request_id: requestId,
-            attachment_key: row.attachmentKey,
-            file_name: row.fileName,
-            document_id: row.documentId || null,
-            document_type: row.documentType,
-            document_format: row.documentFormat,
-            workflow_node_id: row.workflowNodeId || null,
-            storage_path: row.storagePath || null,
-            public_url: row.publicUrl || null,
-            uploaded_by: row.uploadedByEmail === user.email ? user.id : null,
-            uploaded_by_email: row.uploadedByEmail,
-            created_at: row.createdAt,
-          }
-        : null;
-    })
-    .filter(isPresent);
-
-  if (!payload.length) {
-    return;
-  }
-
-  await throwIfError(
-    supabase
-      .from("approval_request_attachments")
-      .upsert(payload, { onConflict: "approval_request_id,attachment_key" }),
-  );
-}
-
 function mapTemplateRow(row: TemplateDbRow): NormalizedWorkflowTemplateVersionRow {
-  const snapshot = row.template_snapshot as NormalizedWorkflowTemplateVersionRow["templateSnapshot"];
+  const snapshot = (
+    isJsonObject(row.template_snapshot)
+      ? row.template_snapshot
+      : {
+          id: row.template_key,
+          name: row.name,
+          business: row.business_units?.name || "",
+          department: row.business_departments?.name || "",
+          documentTypes: [],
+          documents: Array.isArray(row.document_requirements)
+            ? row.document_requirements
+            : [],
+          languages: row.supported_languages || [],
+          fields: [],
+          steps: [],
+          graph: isJsonObject(row.graph)
+            ? row.graph
+            : { nodes: [], edges: [] },
+        }
+  ) as NormalizedWorkflowTemplateVersionRow["templateSnapshot"];
   const isArchived = row.is_active === false;
   return {
     templateKey: row.template_key,
@@ -710,7 +442,36 @@ function mapRequestRow(
   row: RequestDbRow,
   collaborationMirrors: CollaborationMirrorRows,
 ): NormalizedApprovalRequestRow {
-  const snapshot = row.task_snapshot as NormalizedApprovalRequestRow["taskSnapshot"];
+  const snapshot = (
+    isJsonObject(row.task_snapshot)
+      ? row.task_snapshot
+      : {
+          id: row.request_no,
+          title: row.title,
+          workflow: row.workflow_name,
+          requester: row.requester_name,
+          requesterEmail: row.requester_email,
+          department: row.department_name,
+          status: row.status,
+          due: row.due_label,
+          ...(row.due_at ? { dueAt: row.due_at } : {}),
+          value: row.value_label,
+          currentStep: row.current_step,
+          currentOwner: row.current_owner_email,
+          ...(row.current_node_id ? { currentNodeId: row.current_node_id } : {}),
+          pendingNodeIds: row.pending_node_ids || [],
+          pendingOwners: row.pending_owner_emails || [],
+          completedNodeIds: row.completed_node_ids || [],
+          notifiedNodeIds: row.notified_node_ids || [],
+          nodeDecisions: row.node_decisions || {},
+          ...(row.active_branch_id ? { activeBranchId: row.active_branch_id } : {}),
+          participants: row.participants || [],
+          lastAction: row.last_action,
+          extractedFields: row.extracted_fields || {},
+          attachments: [],
+          auditTrail: [],
+        }
+  ) as NormalizedApprovalRequestRow["taskSnapshot"];
   const collaborationRequests = payloadsForRequest<TaskCollaborationRequest>(
     collaborationMirrors.collaborationRequests,
     row.request_no,

@@ -64,131 +64,7 @@ function createSnapshot(overrides = {}) {
   };
 }
 
-test("does not deactivate directory rows during a general workspace save", async () => {
-  const supabase = new FakeSupabase({
-    business_units: [
-      { id: "business-kept-db", name: "Asia Allied Infrastructure", is_active: true },
-      { id: "business-other-db", name: "Other Workspace Business", is_active: true },
-    ],
-    business_departments: [
-      {
-        id: "dept-other-db",
-        business_unit_id: "business-other-db",
-        name: "Other Department",
-        is_active: true,
-      },
-    ],
-    workflow_template_versions: [
-      {
-        id: "template-other-db",
-        template_key: "template-other",
-        version_number: 1,
-        is_active: true,
-      },
-    ],
-  });
-
-  await saveNormalizedWorkspaceState(supabase, createSnapshot(), user);
-
-  assert.equal(
-    supabase.operations.some(
-      (operation) =>
-        operation.type === "update" &&
-        operation.payload.is_active === false,
-    ),
-    false,
-  );
-});
-
-test("throws instead of dropping approval requests that have no normalized template", async () => {
-  const snapshot = createSnapshot({
-    workflowTemplates: [],
-    approvalTasks: [
-      {
-        ...createSnapshot().approvalTasks[0],
-        workflowTemplateId: "template-deleted",
-        workflowTemplateVersion: 1,
-      },
-    ],
-  });
-
-  await assert.rejects(
-    () => saveNormalizedWorkspaceState(new FakeSupabase(), snapshot, user),
-    /APR-1.*missing workflow template/i,
-  );
-});
-
-test("does not mutate normalized tables when request template preflight fails", async () => {
-  const supabase = new FakeSupabase({
-    business_units: [
-      { id: "business-old-db", name: "Old Business", is_active: true },
-    ],
-    workflow_template_versions: [
-      {
-        id: "template-old-db",
-        template_key: "template-old",
-        version_number: 1,
-        is_active: true,
-      },
-    ],
-  });
-  const snapshot = createSnapshot({
-    workflowTemplates: [],
-    approvalTasks: [
-      {
-        ...createSnapshot().approvalTasks[0],
-        workflowTemplateId: "template-deleted",
-      },
-    ],
-  });
-
-  await assert.rejects(
-    () => saveNormalizedWorkspaceState(supabase, snapshot, user),
-    /APR-1.*missing workflow template/i,
-  );
-
-  assert.deepEqual(supabase.operations, []);
-});
-
-test("does not write normalized rows when the workspace snapshot is empty", async () => {
-  const supabase = new FakeSupabase();
-
-  await saveNormalizedWorkspaceState(
-    supabase,
-    createSnapshot({
-      selectedTemplateId: "",
-      businessDirectory: [],
-      workflowTemplates: [],
-      approvalTasks: [],
-    }),
-    user,
-  );
-
-  assert.deepEqual(supabase.operations, []);
-});
-
-test("skips department writes when business upsert returns no database ids", async () => {
-  const supabase = new FakeSupabase({}, { emptyUpsertTables: ["business_units"] });
-
-  await saveNormalizedWorkspaceState(
-    supabase,
-    createSnapshot({
-      workflowTemplates: [],
-      approvalTasks: [],
-    }),
-    user,
-  );
-
-  assert.deepEqual(
-    supabase.operations.map((operation) => ({
-      type: operation.type,
-      table: operation.table,
-    })),
-    [{ type: "upsert", table: "business_units" }],
-  );
-});
-
-test("saves approval request audit events and attachments to child tables", async () => {
+test("saves configuration with one atomic RPC and excludes runtime rows", async () => {
   const supabase = new FakeSupabase();
   const snapshot = createSnapshot({
     approvalTasks: [
@@ -224,42 +100,76 @@ test("saves approval request audit events and attachments to child tables", asyn
 
   await saveNormalizedWorkspaceState(supabase, snapshot, user);
 
-  const eventUpsert = supabase.operations.find(
-    (operation) => operation.table === "approval_request_events",
+  assert.equal(supabase.operations.length, 1);
+  const operation = supabase.operations[0];
+  assert.equal(operation.type, "rpc");
+  assert.equal(operation.name, "save_workspace_configuration");
+  assert.equal(operation.args.p_configuration.schemaVersion, 1);
+  assert.deepEqual(operation.args.p_configuration.businessUnits, [
+    { name: "Asia Allied Infrastructure", isActive: true },
+  ]);
+  assert.deepEqual(operation.args.p_configuration.businessDepartments, [
+    {
+      businessName: "Asia Allied Infrastructure",
+      name: "Finance",
+      isActive: true,
+    },
+  ]);
+  assert.equal(
+    operation.args.p_configuration.workflowTemplateVersions[0].templateKey,
+    "template-finance",
   );
-  const attachmentUpsert = supabase.operations.find(
-    (operation) => operation.table === "approval_request_attachments",
+  assert.equal(JSON.stringify(operation.args).includes("approvalRequests"), false);
+  assert.equal(JSON.stringify(operation.args).includes("approvalRequestEvents"), false);
+  assert.equal(JSON.stringify(operation.args).includes("approvalRequestAttachments"), false);
+  assert.equal(JSON.stringify(operation.args).includes("APR-1-event-1"), false);
+  assert.equal(JSON.stringify(operation.args).includes("attachment-1"), false);
+});
+
+test("ignores stale runtime references during configuration persistence", async () => {
+  const supabase = new FakeSupabase();
+  const snapshot = createSnapshot({
+    workflowTemplates: [],
+    approvalTasks: [
+      {
+        ...createSnapshot().approvalTasks[0],
+        workflowTemplateId: "template-deleted",
+      },
+    ],
+  });
+
+  await saveNormalizedWorkspaceState(supabase, snapshot, user);
+
+  assert.equal(supabase.operations.length, 1);
+  assert.equal(supabase.operations[0].type, "rpc");
+  assert.equal(JSON.stringify(supabase.operations[0].args).includes("APR-1"), false);
+});
+
+test("propagates an atomic configuration RPC failure", async () => {
+  const supabase = new FakeSupabase({}, { rpcError: "Atomic configuration failed." });
+
+  await assert.rejects(
+    () => saveNormalizedWorkspaceState(supabase, createSnapshot(), user),
+    /Atomic configuration failed/,
+  );
+  assert.equal(supabase.operations.length, 1);
+});
+
+test("does not call the configuration RPC for an empty workspace", async () => {
+  const supabase = new FakeSupabase();
+
+  await saveNormalizedWorkspaceState(
+    supabase,
+    createSnapshot({
+      selectedTemplateId: "",
+      businessDirectory: [],
+      workflowTemplates: [],
+      approvalTasks: [],
+    }),
+    user,
   );
 
-  assert.deepEqual(eventUpsert.payload, [
-    {
-      approval_request_id: "request-1",
-      event_key: "APR-1-event-1",
-      action: "submitted",
-      actor_name: "Mandy Chan",
-      actor_id: "user-1",
-      actor_email: "mandy@example.com",
-      detail: "Request submitted.",
-      target_email: "reviewer@example.com",
-      created_at: "2026-06-27T08:00:00.000Z",
-    },
-  ]);
-  assert.deepEqual(attachmentUpsert.payload, [
-    {
-      approval_request_id: "request-1",
-      attachment_key: "attachment-1",
-      file_name: "invoice.pdf",
-      document_id: "invoice-doc",
-      document_type: "Invoice PDF",
-      document_format: "pdf",
-      workflow_node_id: "review-1",
-      storage_path: "requests/APR-1/invoice.pdf",
-      public_url: null,
-      uploaded_by: "user-1",
-      uploaded_by_email: "mandy@example.com",
-      created_at: "2026-06-27T08:01:00.000Z",
-    },
-  ]);
+  assert.deepEqual(supabase.operations, []);
 });
 
 test("uses the same archived template key for historical requests and template FKs", async () => {
@@ -284,20 +194,10 @@ test("uses the same archived template key for historical requests and template F
 
   await saveNormalizedWorkspaceState(supabase, snapshot, user);
 
-  const templateUpsert = supabase.operations.find(
-    (operation) =>
-      operation.type === "upsert" &&
-      operation.table === "workflow_template_versions",
-  );
-  const requestUpsert = supabase.operations.find(
-    (operation) =>
-      operation.type === "upsert" &&
-      operation.table === "approval_requests",
-  );
-
-  assert.equal(templateUpsert.payload[0].template_key, "template-request-id");
-  assert.equal(templateUpsert.payload[0].is_active, false);
-  assert.equal(requestUpsert.payload[0].workflow_template_version_id, "template-1");
+  const configuration = supabase.operations[0].args.p_configuration;
+  assert.equal(configuration.workflowTemplateVersions[0].templateKey, "template-request-id");
+  assert.equal(configuration.workflowTemplateVersions[0].isActive, false);
+  assert.equal(JSON.stringify(configuration).includes("approvalRequests"), false);
 });
 
 test("saves workflow version activation and comments to dedicated template columns", async () => {
@@ -316,14 +216,10 @@ test("saves workflow version activation and comments to dedicated template colum
 
   await saveNormalizedWorkspaceState(supabase, snapshot, user);
 
-  const templateUpsert = supabase.operations.find(
-    (operation) =>
-      operation.type === "upsert" &&
-      operation.table === "workflow_template_versions",
-  );
-
-  assert.equal(templateUpsert.payload[0].is_active_version, true);
-  assert.equal(templateUpsert.payload[0].version_comment, "Current finance routing.");
+  const savedTemplate =
+    supabase.operations[0].args.p_configuration.workflowTemplateVersions[0];
+  assert.equal(savedTemplate.isActiveVersion, true);
+  assert.equal(savedTemplate.versionComment, "Current finance routing.");
 });
 
 test("soft-deactivates a business and its departments through an explicit admin action", async () => {
@@ -683,7 +579,7 @@ test("restores directory rows, event targets, and attachment metadata from norma
         document_format: "pdf",
         workflow_node_id: "review-1",
         storage_path: "requests/APR-1/invoice.pdf",
-        public_url: null,
+        public_url: "https://files.example.com/requests/APR-1/invoice.pdf",
         uploaded_by_email: "mandy@example.com",
         created_at: "2026-06-27T08:55:00.000Z",
       },
@@ -703,6 +599,71 @@ test("restores directory rows, event targets, and attachment metadata from norma
   assert.equal(snapshot.approvalTasks[0].auditTrail[0].targetEmail, "reviewer@example.com");
   assert.equal(snapshot.approvalTasks[0].attachments[0].workflowNodeId, "review-1");
   assert.equal(snapshot.approvalTasks[0].attachments[0].storagePath, "requests/APR-1/invoice.pdf");
+  assert.equal(
+    snapshot.approvalTasks[0].attachments[0].publicUrl,
+    "https://files.example.com/requests/APR-1/invoice.pdf",
+  );
+});
+
+test("reconstructs malformed legacy template and task snapshots from canonical columns", async () => {
+  const task = createSnapshot().approvalTasks[0];
+  const supabase = new FakeSupabase({
+    workflow_template_versions: [
+      {
+        id: "template-finance-db",
+        template_key: "template-finance",
+        version_number: 2,
+        name: "Finance invoice approval",
+        graph: template.graph,
+        document_requirements: [],
+        supported_languages: ["English"],
+        template_snapshot: null,
+        business_units: { name: "Asia Allied Infrastructure" },
+        business_departments: { name: "Finance" },
+        is_active: true,
+      },
+    ],
+    approval_requests: [
+      {
+        id: "request-malformed",
+        request_no: "APR-MALFORMED",
+        requester_name: task.requester,
+        requester_email: task.requesterEmail,
+        title: task.title,
+        workflow_name: task.workflow,
+        department_name: task.department,
+        status: task.status,
+        due_label: task.due,
+        due_at: null,
+        value_label: task.value,
+        current_step: task.currentStep,
+        current_node_id: null,
+        current_owner_email: task.currentOwner,
+        pending_node_ids: [],
+        pending_owner_emails: [],
+        completed_node_ids: [],
+        notified_node_ids: [],
+        node_decisions: {},
+        active_branch_id: null,
+        extracted_fields: task.extractedFields,
+        participants: task.participants,
+        last_action: task.lastAction,
+        task_snapshot: ["invalid", "legacy", "shape"],
+        workflow_template_versions: {
+          template_key: "template-finance",
+          version_number: 2,
+        },
+      },
+    ],
+  });
+
+  const snapshot = await loadNormalizedWorkspaceState(supabase, "template-finance");
+
+  assert.equal(snapshot.workflowTemplates[0].id, "template-finance");
+  assert.equal(snapshot.workflowTemplates[0].name, "Finance invoice approval");
+  assert.equal(snapshot.approvalTasks[0].id, "APR-MALFORMED");
+  assert.equal(snapshot.approvalTasks[0].title, task.title);
+  assert.deepEqual(snapshot.approvalTasks[0].auditTrail, []);
 });
 
 test("hydrates collaboration state from mirror tables during normalized load", async () => {
@@ -842,6 +803,16 @@ class FakeSupabase {
 
   from(table) {
     return new FakeQuery(this, table);
+  }
+
+  async rpc(name, args) {
+    this.operations.push({ type: "rpc", name, args });
+    return {
+      data: this.options.rpcData ?? {},
+      error: this.options.rpcError
+        ? { message: this.options.rpcError }
+        : null,
+    };
   }
 
   select(table, filters) {
