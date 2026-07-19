@@ -14,7 +14,6 @@ import {
 } from "@/lib/supabase/route-user";
 import { parseWorkspaceState, serializeWorkspaceState } from "@/lib/workspace-persistence";
 import type { WorkspaceStateSnapshot } from "@/lib/workspace-persistence";
-import { mergeExternalFormWorkspaceState } from "@/lib/external-form-workspace-merge";
 import { createWorkspaceSnapshotHash } from "@/lib/workspace-snapshot-hash";
 import { buildWorkspaceSampleAssetPlan } from "@/lib/workspace-sample-assets";
 import { recordWorkflowOperationEvent } from "@/lib/workflow-operation-monitor";
@@ -75,8 +74,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const fallbackSnapshot = data?.snapshot
+  const parsedFallbackSnapshot = data?.snapshot
     ? parseWorkspaceState(JSON.stringify(data.snapshot))
+    : null;
+  const fallbackSnapshot = parsedFallbackSnapshot
+    ? { ...parsedFallbackSnapshot, approvalTasks: [] }
     : null;
 
   try {
@@ -91,6 +93,7 @@ export async function GET(request: NextRequest) {
         source: "normalized",
         snapshot: {
           ...normalizedSnapshot,
+          approvalTasks: [],
           userRoleAssignments: fallbackSnapshot?.userRoleAssignments || [],
           formLibrary: fallbackSnapshot?.formLibrary || [],
         },
@@ -153,7 +156,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const assetPlan = buildWorkspaceSampleAssetPlan(parsedIncomingSnapshot, user.id);
+  const configurationSnapshot = {
+    ...parsedIncomingSnapshot,
+    approvalTasks: [],
+  };
+  const assetPlan = buildWorkspaceSampleAssetPlan(configurationSnapshot, user.id);
   const incomingSnapshot = assetPlan.snapshot;
   let persistedBytes = Buffer.byteLength(serializeWorkspaceState(incomingSnapshot));
   let assetsUploaded = 0;
@@ -250,16 +257,7 @@ export async function POST(request: NextRequest) {
     assetsUploaded = assetPlan.assets.length;
   }
 
-  let persistedSnapshot: WorkspaceStateSnapshot | null = null;
-  try {
-    persistedSnapshot = await loadNormalizedWorkspaceState(
-      supabase,
-      incomingSnapshot.selectedTemplateId,
-    );
-  } catch {
-    // The normal save path below still reports database failures.
-  }
-  const snapshot = mergeExternalFormWorkspaceState(incomingSnapshot, persistedSnapshot);
+  const snapshot = { ...incomingSnapshot, approvalTasks: [] };
   const snapshotHash = createWorkspaceSnapshotHash(snapshot);
   persistedBytes = Buffer.byteLength(serializeWorkspaceState(snapshot));
 

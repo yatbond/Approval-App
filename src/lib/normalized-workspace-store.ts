@@ -426,6 +426,7 @@ function mapTemplateRow(row: TemplateDbRow): NormalizedWorkflowTemplateVersionRo
     supportedLanguages: row.supported_languages,
     templateSnapshot: {
       ...snapshot,
+      databaseVersionId: row.id,
       version: row.version_number,
       isActiveVersion: row.is_active_version === true,
       versionComment: row.version_comment || snapshot.versionComment || "",

@@ -214,12 +214,17 @@ export function QueueView({
     isOriginatorAction: originatorAction,
     isExpanded: contributorRequestExpanded,
   });
-  const availableActions = getQueueActionList({
+  const configuredActions = getQueueActionList({
     isOriginatorAction: originatorAction,
     hasPendingReassignmentRequest: Boolean(pendingReassignmentRequest),
     showReassignActions,
     actionMode: queueActionMode,
   });
+  const availableActions = selectedTask.availableActions
+    ? configuredActions.filter((action) =>
+        selectedTask.availableActions?.includes(action),
+      )
+    : configuredActions;
   const rejectReturnTargetOptions = getRejectReturnTargetOptions({
     task: selectedTask,
     template: selectedTemplate,

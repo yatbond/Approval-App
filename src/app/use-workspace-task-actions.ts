@@ -6,6 +6,10 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import {
+  ApprovalApiError,
+  executeCanonicalApprovalAction,
+} from "@/lib/approval-client";
 import { buildCollaborationNotifications } from "@/lib/collaboration-notification-state";
 import {
   getApprovalActionConfirmation,
@@ -50,6 +54,7 @@ export function useWorkspaceTaskActions({
   activeUser,
   buildWorkspaceSnapshot,
   persistWorkspaceSnapshot,
+  refreshCanonicalTasks,
   requestConfirmation,
   selectedTask,
   sendWorkflowEmailNotifications,
@@ -63,6 +68,7 @@ export function useWorkspaceTaskActions({
     patch?: Partial<WorkspaceStateSnapshot>,
   ) => WorkspaceStateSnapshot;
   persistWorkspaceSnapshot: (snapshot: WorkspaceStateSnapshot) => Promise<unknown>;
+  refreshCanonicalTasks: () => Promise<ApprovalTask[] | null>;
   requestConfirmation: (request: ConfirmationRequest) => Promise<boolean>;
   selectedTask: ApprovalTask | null;
   sendWorkflowEmailNotifications: (
@@ -85,6 +91,9 @@ export function useWorkspaceTaskActions({
   const [actionError, setActionError] = useState("");
   const [actionSubmissionTaskId, setActionSubmissionTaskId] = useState("");
   const actionSubmissionTaskIdRef = useRef("");
+  const retryCommandRef = useRef<{ signature: string; idempotencyKey: string } | null>(
+    null,
+  );
 
   async function recordAction(
     action: ApprovalAction,
@@ -94,19 +103,21 @@ export function useWorkspaceTaskActions({
       return;
     }
     const startedAt = Date.now();
+    const isCanonicalTask = Number.isInteger(selectedTask.stateVersion);
+    const nextState = isCanonicalTask
+      ? null
+      : getWorkspaceRecordTaskActionState({
+          tasks,
+          selectedTask,
+          templates,
+          activeUser,
+          action,
+          comment,
+          targetEmail,
+          returnTargetNodeIds,
+        });
 
-    const nextState = getWorkspaceRecordTaskActionState({
-      tasks,
-      selectedTask,
-      templates,
-      activeUser,
-      action,
-      comment,
-      targetEmail,
-      returnTargetNodeIds,
-    });
-
-    if (!nextState.didApply) {
+    if (nextState && !nextState.didApply) {
       if (nextState.actionError) {
         setActionError(nextState.actionError);
       }
@@ -115,16 +126,63 @@ export function useWorkspaceTaskActions({
 
     actionSubmissionTaskIdRef.current = selectedTask.id;
     setActionSubmissionTaskId(selectedTask.id);
-    setTasks(nextState.tasks);
+    const commandSignature = JSON.stringify({
+      taskId: selectedTask.id,
+      version: selectedTask.stateVersion,
+      action,
+      comment: comment.trim(),
+      targetEmail: targetEmail.trim().toLowerCase(),
+      returnTargetNodeIds,
+    });
+    const idempotencyKey =
+      retryCommandRef.current?.signature === commandSignature
+        ? retryCommandRef.current.idempotencyKey
+        : crypto.randomUUID();
+    retryCommandRef.current = { signature: commandSignature, idempotencyKey };
     try {
-      await persistWorkspaceSnapshot(
-        buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
-      );
-      const changedTask = nextState.tasks.find(
-        (task) => task.id === selectedTask.id,
-      );
+      let changedTask: ApprovalTask | undefined;
+      if (isCanonicalTask) {
+        if (
+          selectedTask.availableActions &&
+          !selectedTask.availableActions.includes(action)
+        ) {
+          await refreshCanonicalTasks();
+          throw new ApprovalApiError(
+            "This action is no longer available. The request has been refreshed.",
+            409,
+            "stale_version",
+          );
+        }
+        const result = await executeCanonicalApprovalAction({
+          task: selectedTask,
+          action,
+          idempotencyKey,
+          comment,
+          targetEmail,
+          returnTargetNodeIds,
+        });
+        changedTask = result.task;
+        setTasks((current) =>
+          current.map((task) =>
+            task.id === result.task.id ? result.task : task,
+          ),
+        );
+      } else {
+        if (!nextState) {
+          throw new Error("The local approval transition could not be prepared.");
+        }
+        setTasks(nextState.tasks);
+        await persistWorkspaceSnapshot(
+          buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
+        );
+        changedTask = nextState.tasks.find(
+          (task) => task.id === selectedTask.id,
+        );
+      }
       if (changedTask) {
-        void sendWorkflowEmailNotifications(changedTask);
+        if (!isCanonicalTask) {
+          void sendWorkflowEmailNotifications(changedTask);
+        }
       }
       void recordWorkspaceOperation({
         operationType: "routing",
@@ -139,13 +197,25 @@ export function useWorkspaceTaskActions({
           returnTargetNodeIds,
         },
       });
-      if (nextState.shouldClearInputs) {
+      if (isCanonicalTask || nextState?.shouldClearInputs) {
         setComment("");
         setTargetEmail("");
       }
-      setActionError(nextState.actionError);
+      setActionError(nextState?.actionError || "");
+      retryCommandRef.current = null;
     } catch (error) {
-      setTasks(tasks);
+      if (error instanceof ApprovalApiError && error.canonicalTask) {
+        setTasks((current) =>
+          current.map((task) =>
+            task.id === error.canonicalTask?.id ? error.canonicalTask : task,
+          ),
+        );
+      } else if (!isCanonicalTask) {
+        setTasks(tasks);
+      }
+      if (error instanceof ApprovalApiError && error.status < 500) {
+        retryCommandRef.current = null;
+      }
       void recordWorkspaceOperation({
         operationType: "routing",
         outcome: "failed",
@@ -158,9 +228,11 @@ export function useWorkspaceTaskActions({
         details: { action, returnTargetNodeIds },
       });
       setActionError(
-        error instanceof Error
-          ? error.message
-          : "Unable to save this task decision.",
+        error instanceof ApprovalApiError && error.status === 409
+          ? `${error.message} The latest server version is now shown.`
+          : error instanceof Error
+            ? error.message
+            : "Unable to save this task decision.",
       );
     } finally {
       actionSubmissionTaskIdRef.current = "";

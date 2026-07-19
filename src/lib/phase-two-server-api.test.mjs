@@ -17,6 +17,7 @@ test("request submission is service-only, idempotent, and atomic", () => {
   assert.match(migration, /insert into public\.approval_submission_receipts/i);
   assert.match(migration, /insert into public\.approval_request_participants/i);
   assert.match(migration, /insert into public\.approval_request_assignments/i);
+  assert.match(migration, /insert into public\.approval_request_attachments/i);
   assert.match(migration, /insert into public\.approval_request_events/i);
   assert.match(migration, /insert into public\.approval_notifications/i);
   assert.match(migration, /insert into public\.approval_email_outbox/i);

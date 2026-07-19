@@ -16,6 +16,7 @@ import {
 } from "./approval-runtime.ts";
 import { createApprovalTaskFromTemplate } from "./request-builder.ts";
 import type { WorkflowTemplate } from "./types.ts";
+import { applyWorkflowParticipantEmails } from "./workflow-participant-assignment-state.ts";
 
 const requestColumns = [
   "id",
@@ -140,10 +141,14 @@ export async function submitApprovalRequest({
     : null;
   if (!template) return { kind: "invalid_template" };
 
+  const assignedTemplate = applyWorkflowParticipantEmails(
+    template,
+    submission.participantEmails,
+  );
   const task = createApprovalTaskFromTemplate({
     id: requestNo,
     requester: { name: actor.fullName, email: actor.email },
-    template,
+    template: assignedTemplate,
     extractedFields: submission.extractedFields,
   });
   const submissionTask = {
@@ -221,6 +226,7 @@ export async function submitApprovalRequest({
       participantProfileIds: profiles.map((profile) => profile.id),
       lastAction: submissionTask.lastAction,
       taskSnapshot: submissionTask,
+      attachments: submission.attachments,
     },
     p_notifications: notifications,
   });
@@ -583,6 +589,7 @@ function requestSummary(row: ApprovalRequestRecord, actor: ApprovalRuntimeProfil
     dueLabel: row.due_label,
     lastAction: row.last_action,
     updatedAt: row.updated_at,
+    task: { ...task, auditTrail: undefined, attachments: undefined },
     availableActions: getAvailableApprovalActions(task, actor),
   };
 }

@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { approvalTasks } from "@/lib/mock-data";
+import {
+  ApprovalApiError,
+  loadCanonicalApprovalRequest,
+  loadCanonicalApprovalTasks,
+} from "@/lib/approval-client";
 import { seededBusinessDirectory } from "@/lib/business-directory";
 import { applyEscalationChecks } from "@/lib/approval-escalation";
 import {
@@ -39,14 +44,30 @@ import type {
 } from "@/lib/types";
 
 const workspaceStorageKey = "approval-workflow-workspace-v1";
+const requestCacheVersion = 2;
 
-function readSavedWorkspaceState() {
+function requestCacheKey(email: string) {
+  return `approval-workflow-request-cache-v2:${email.trim().toLowerCase()}`;
+}
+
+function readSavedWorkspaceState(activeUserEmail: string) {
   if (typeof window === "undefined") {
     return null;
   }
 
   const saved = window.localStorage.getItem(workspaceStorageKey);
-  return saved ? parseWorkspaceState(saved) : null;
+  const parsed = saved ? parseWorkspaceState(saved) : null;
+  if (!parsed) return null;
+  try {
+    const cached = JSON.parse(
+      window.localStorage.getItem(requestCacheKey(activeUserEmail)) || "null",
+    ) as { schemaVersion?: number; tasks?: ApprovalTask[] } | null;
+    return cached?.schemaVersion === requestCacheVersion && Array.isArray(cached.tasks)
+      ? { ...parsed, approvalTasks: cached.tasks }
+      : parsed;
+  } catch {
+    return parsed;
+  }
 }
 
 export function useApprovalWorkspaceState({
@@ -103,6 +124,9 @@ export function useApprovalWorkspaceState({
     "loading",
   );
   const [remoteWorkspaceReady, setRemoteWorkspaceReady] = useState(false);
+  const [canonicalTasksReady, setCanonicalTasksReady] = useState(false);
+  const [canonicalTaskError, setCanonicalTaskError] = useState("");
+  const canonicalTasksReadyRef = useRef(false);
   const lastRemoteSnapshotRef = useRef<string | null>(null);
   const localWorkspaceDirtyRef = useRef(false);
   const autosaveTargetRef = useRef<{
@@ -128,7 +152,6 @@ export function useApprovalWorkspaceState({
       }
 
       window.localStorage.setItem(workspaceStorageKey, compactedSerialized);
-      setTasks(compactedSnapshot.approvalTasks);
       setBusinessDirectory(compactedSnapshot.businessDirectory);
       setTemplates(compactedSnapshot.workflowTemplates);
       setFormLibrary(compactedSnapshot.formLibrary || []);
@@ -147,7 +170,7 @@ export function useApprovalWorkspaceState({
         return;
       }
 
-      const saved = readSavedWorkspaceState();
+      const saved = readSavedWorkspaceState(activeUser.email);
       if (saved) {
         const serializedSnapshot = serializeWorkspaceState(saved);
         lastRemoteSnapshotRef.current = serializedSnapshot;
@@ -176,7 +199,7 @@ export function useApprovalWorkspaceState({
       cancelled = true;
       window.clearTimeout(loadTimerId);
     };
-  }, [requestId]);
+  }, [activeUser.email, requestId]);
 
   useEffect(() => {
     if (!shouldLoadRemoteWorkspace({ localWorkspaceReady, savedWorkspaceState })) {
@@ -205,7 +228,6 @@ export function useApprovalWorkspaceState({
         const remoteSnapshot = serializeWorkspaceState(repairedSnapshot);
         if (!localWorkspaceDirtyRef.current) {
           lastRemoteSnapshotRef.current = remoteSnapshot;
-          setTasks(repairedSnapshot.approvalTasks);
           setBusinessDirectory(repairedSnapshot.businessDirectory);
           setTemplates(repairedSnapshot.workflowTemplates);
           setFormLibrary(repairedSnapshot.formLibrary || []);
@@ -239,9 +261,90 @@ export function useApprovalWorkspaceState({
     };
   }, [localWorkspaceReady, savedWorkspaceState]);
 
+  const refreshCanonicalTasks = useCallback(async () => {
+    try {
+      const canonicalTasks = await loadCanonicalApprovalTasks("tracking");
+      setTasks((current) =>
+        canonicalTasks.map((task) => {
+          const existing = current.find(
+            (item) =>
+              item.id === task.id && item.stateVersion === task.stateVersion,
+          );
+          return existing?.auditTrail.length
+            ? {
+                ...task,
+                auditTrail: existing.auditTrail,
+                attachments: existing.attachments || [],
+              }
+            : task;
+        }),
+      );
+      canonicalTasksReadyRef.current = true;
+      setCanonicalTasksReady(true);
+      setCanonicalTaskError("");
+      setWorkspaceSyncMode("supabase");
+      setSelectedTaskId((current) => {
+        if (requestId && canonicalTasks.some((task) => task.id === requestId)) {
+          return requestId;
+        }
+        return canonicalTasks.some((task) => task.id === current)
+          ? current
+          : canonicalTasks[0]?.id || "";
+      });
+      return canonicalTasks;
+    } catch (error) {
+      setCanonicalTaskError(
+        error instanceof ApprovalApiError
+          ? error.message
+          : "Unable to refresh approval requests.",
+      );
+      return null;
+    }
+  }, [requestId]);
+
+  useEffect(() => {
+    if (!localWorkspaceReady) return;
+    const refresh = () => void refreshCanonicalTasks();
+    const initialRefreshId = window.setTimeout(refresh, 0);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.clearTimeout(initialRefreshId);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [localWorkspaceReady, refreshCanonicalTasks]);
+
+  useEffect(() => {
+    if (!canonicalTasksReady || !selectedTaskId) return;
+    let cancelled = false;
+    void loadCanonicalApprovalRequest(selectedTaskId)
+      .then((detail) => {
+        if (cancelled) return;
+        setTasks((current) =>
+          current.map((task) => (task.id === detail.id ? detail : task)),
+        );
+      })
+      .catch((error: unknown) => {
+        if (!cancelled && error instanceof ApprovalApiError && error.status !== 404) {
+          setCanonicalTaskError(error.message);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canonicalTasksReady, selectedTaskId]);
+
   useEffect(() => {
     const applyChecks = () => {
-      setTasks((items) => applyEscalationChecks(items, templates));
+      if (!canonicalTasksReadyRef.current) {
+        setTasks((items) => applyEscalationChecks(items, templates));
+      }
     };
     applyChecks();
     const intervalId = window.setInterval(applyChecks, 60_000);
@@ -264,12 +367,23 @@ export function useApprovalWorkspaceState({
   }, [businessDirectory, roleAssignments, userDirectory]);
 
   useEffect(() => {
+    if (!localWorkspaceReady) return;
+    const timeoutId = window.setTimeout(() => {
+      window.localStorage.setItem(
+        requestCacheKey(activeUser.email),
+        JSON.stringify({ schemaVersion: requestCacheVersion, tasks }),
+      );
+    }, 250);
+    return () => window.clearTimeout(timeoutId);
+  }, [activeUser.email, localWorkspaceReady, tasks]);
+
+  useEffect(() => {
     if (!localWorkspaceReady) {
       return;
     }
 
     const snapshot = {
-      approvalTasks: tasks,
+      approvalTasks: [],
       businessDirectory,
       workflowTemplates: templates,
       formLibrary,
@@ -369,7 +483,7 @@ export function useApprovalWorkspaceState({
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [adminAuditEvents, adoptCompactedRemoteSnapshot, autosaveRetryVersion, businessDirectory, effectiveRoleAssignments, formLibrary, localWorkspaceReady, remoteWorkspaceReady, selectedTemplateId, tasks, templates]);
+  }, [activeUser.email, adminAuditEvents, adoptCompactedRemoteSnapshot, autosaveRetryVersion, businessDirectory, effectiveRoleAssignments, formLibrary, localWorkspaceReady, remoteWorkspaceReady, selectedTemplateId, tasks, templates]);
 
   const currentWorkspaceSnapshot = useMemo(
     () => ({
@@ -386,9 +500,20 @@ export function useApprovalWorkspaceState({
 
   async function persistWorkspaceSnapshot(snapshot: WorkspaceStateSnapshot) {
     localWorkspaceDirtyRef.current = true;
-    const serializedSnapshot = serializeWorkspaceState(snapshot);
+    const configurationSnapshot = { ...snapshot, approvalTasks: [] };
+    const serializedSnapshot = serializeWorkspaceState(configurationSnapshot);
     window.localStorage.setItem(workspaceStorageKey, serializedSnapshot);
-    autosaveTargetRef.current = { snapshot, serialized: serializedSnapshot };
+    window.localStorage.setItem(
+      requestCacheKey(activeUser.email),
+      JSON.stringify({
+        schemaVersion: requestCacheVersion,
+        tasks: snapshot.approvalTasks,
+      }),
+    );
+    autosaveTargetRef.current = {
+      snapshot: configurationSnapshot,
+      serialized: serializedSnapshot,
+    };
     autosaveFailureCountRef.current = 0;
     let attemptStartedAt = 0;
     const queuedSave = remoteSaveQueueRef.current.then(() => {
@@ -401,7 +526,7 @@ export function useApprovalWorkspaceState({
         retryCount: 0,
         error: undefined,
       }));
-      return saveRemoteWorkspaceState(snapshot);
+      return saveRemoteWorkspaceState(configurationSnapshot);
     });
     remoteSaveQueueRef.current = queuedSave.then(
       () => undefined,
@@ -464,7 +589,10 @@ export function useApprovalWorkspaceState({
     buildWorkspaceSnapshot,
     effectiveRoleAssignments,
     formLibrary,
+    canonicalTaskError,
+    canonicalTasksReady,
     persistWorkspaceSnapshot,
+    refreshCanonicalTasks,
     roleAssignments,
     selectedTaskId,
     selectedTemplateId,

@@ -94,6 +94,25 @@ export const approvalRequestSubmissionSchema = z
       .record(z.string().trim().min(1).max(200), z.string().max(4_000))
       .refine((value) => Object.keys(value).length <= 200, "Too many extracted fields")
       .default({}),
+    participantEmails: z
+      .record(z.string().trim().min(1).max(200), z.string().email().max(320))
+      .refine((value) => Object.keys(value).length <= 100, "Too many participant assignments")
+      .default({}),
+    attachments: z
+      .array(
+        z
+          .object({
+            fileName: z.string().trim().min(1).max(500),
+            documentId: z.string().trim().max(200).optional(),
+            documentType: z.string().trim().min(1).max(200),
+            format: z.enum(["pdf", "image", "spreadsheet", "ad_hoc"]),
+            workflowNodeId: z.string().trim().max(200).optional(),
+            storagePath: z.string().trim().min(3).max(1_000),
+          })
+          .strict(),
+      )
+      .max(50)
+      .default([]),
     idempotencyKey,
   })
   .strict();

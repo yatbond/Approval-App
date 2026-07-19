@@ -44,6 +44,7 @@ declare
   v_profile_id uuid;
   v_unknown_key text;
   v_notification jsonb;
+  v_attachment jsonb;
   v_recipient public.profiles%rowtype;
   v_event_id uuid := gen_random_uuid();
   v_notification_id uuid;
@@ -80,7 +81,8 @@ begin
     'participants',
     'participantProfileIds',
     'lastAction',
-    'taskSnapshot'
+    'taskSnapshot',
+    'attachments'
   )
   limit 1;
   if v_unknown_key is not null then
@@ -136,8 +138,10 @@ begin
      or jsonb_typeof(p_request -> 'participants') <> 'array'
      or jsonb_typeof(p_request -> 'completedNodeIds') <> 'array'
      or jsonb_typeof(p_request -> 'notifiedNodeIds') <> 'array'
+     or jsonb_typeof(p_request -> 'attachments') <> 'array'
      or jsonb_array_length(p_request -> 'pendingOwnerProfileIds') > 100
-     or jsonb_array_length(p_request -> 'participantProfileIds') > 200 then
+     or jsonb_array_length(p_request -> 'participantProfileIds') > 200
+     or jsonb_array_length(p_request -> 'attachments') > 50 then
     return jsonb_build_object('outcome', 'invalid_submission');
   end if;
 
@@ -270,6 +274,47 @@ begin
       'currentVersion', v_request.state_version
     )
   );
+
+  for v_attachment in
+    select value from jsonb_array_elements(p_request -> 'attachments')
+  loop
+    if jsonb_typeof(v_attachment) <> 'object'
+       or length(trim(coalesce(v_attachment ->> 'fileName', ''))) not between 1 and 500
+       or length(trim(coalesce(v_attachment ->> 'documentType', ''))) not between 1 and 200
+       or coalesce(v_attachment ->> 'format', '') not in (
+         'pdf', 'image', 'spreadsheet', 'ad_hoc'
+       )
+       or length(trim(coalesce(v_attachment ->> 'storagePath', ''))) not between 3 and 1000
+       or strpos(v_attachment ->> 'storagePath', '..') > 0
+       or not starts_with(v_attachment ->> 'storagePath', v_actor.id::text || '/') then
+      raise exception using errcode = '22023', message = 'invalid submission attachment';
+    end if;
+
+    insert into public.approval_request_attachments (
+      approval_request_id,
+      attachment_key,
+      file_name,
+      storage_path,
+      document_id,
+      document_type,
+      document_format,
+      workflow_node_id,
+      uploaded_by,
+      uploaded_by_email
+    )
+    values (
+      v_request.id,
+      gen_random_uuid()::text,
+      trim(v_attachment ->> 'fileName'),
+      trim(v_attachment ->> 'storagePath'),
+      nullif(trim(v_attachment ->> 'documentId'), ''),
+      trim(v_attachment ->> 'documentType'),
+      v_attachment ->> 'format',
+      nullif(trim(v_attachment ->> 'workflowNodeId'), ''),
+      v_actor.id,
+      v_actor.email
+    );
+  end loop;
 
   insert into public.approval_request_participants (
     approval_request_id,

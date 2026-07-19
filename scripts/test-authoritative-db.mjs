@@ -380,6 +380,16 @@ async function testAtomicSubmission(templateFixture) {
     participantProfileIds: [identities.requester.id, identities.actor.id],
     lastAction: "Submitted by authoritative API",
     taskSnapshot: { id: requestNo, status: "pending" },
+    attachments: [
+      {
+        fileName: "invoice.pdf",
+        documentId: "invoice-pdf",
+        documentType: "Invoice",
+        format: "pdf",
+        workflowNodeId: "approval-1",
+        storagePath: `${identities.requester.id}/invoice-pdf/invoice.pdf`,
+      },
+    ],
   };
   const notifications = [
     {
@@ -428,6 +438,7 @@ async function testAtomicSubmission(templateFixture) {
     ["approval_requests", 1],
     ["approval_submission_receipts", 1],
     ["approval_request_events", 1],
+    ["approval_request_attachments", 1],
     ["approval_notifications", 1],
     ["approval_email_outbox", 1],
   ]) {

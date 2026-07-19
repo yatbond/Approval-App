@@ -1,10 +1,15 @@
 "use client";
 
 import {
+  useRef,
   useState,
   type Dispatch,
   type SetStateAction,
 } from "react";
+import {
+  ApprovalApiError,
+  submitCanonicalApprovalRequest,
+} from "@/lib/approval-client";
 import {
   buildPreviewPagesFromPdfImages,
   readImageFileAsPreviewPage,
@@ -48,7 +53,6 @@ import {
   getWorkspaceRequestSubmissionState,
 } from "@/lib/workspace-request-submission-state";
 import type { WorkflowParticipantEmailMap } from "@/lib/workflow-participant-assignment-state";
-import type { TaskNotification } from "@/lib/workflow-system";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -94,7 +98,6 @@ export function useWorkspaceRequestPipeline({
   selectedTemplate,
   selectedUploadDraftId,
   selectedUploadRequestDraftRowId,
-  sendWorkflowEmailNotifications,
   setDocumentPreviewPages,
   setEditedFields,
   setFileName,
@@ -129,10 +132,6 @@ export function useWorkspaceRequestPipeline({
   selectedTemplate: WorkflowTemplate;
   selectedUploadDraftId: string;
   selectedUploadRequestDraftRowId: string;
-  sendWorkflowEmailNotifications: (
-    task: ApprovalTask,
-    notificationsOverride?: TaskNotification[],
-  ) => Promise<void>;
   setDocumentPreviewPages: StateSetter<DocumentPreviewPage[]>;
   setEditedFields: StateSetter<Record<string, string>>;
   setFileName: StateSetter<string>;
@@ -153,6 +152,7 @@ export function useWorkspaceRequestPipeline({
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState("");
   const [submissionMessage, setSubmissionMessage] = useState("");
+  const submissionRetryKeysRef = useRef<Map<string, string>>(new Map());
 
   async function parseFile(
     file: File,
@@ -427,17 +427,56 @@ export function useWorkspaceRequestPipeline({
           )
         : templates;
 
-    setTasks(nextState.tasks);
     const submittedTask = nextState.tasks.find(
       (task) => task.id === nextState.selectedTaskId,
     );
-    if (submittedTask) {
-      void sendWorkflowEmailNotifications(submittedTask);
+    if (!submittedTask) {
+      setSubmissionMessage("The request preview could not be prepared.");
+      return;
     }
+    if (!selectedTemplate.databaseVersionId) {
+      setSubmissionMessage(
+        "Refresh the published workflow before submitting this request.",
+      );
+      return;
+    }
+    const submissionSignature = JSON.stringify({
+      templateVersionId: selectedTemplate.databaseVersionId,
+      fileName,
+      editedFields,
+      participantEmails,
+      attachments: uploadedAttachments.map((attachment) => attachment.storagePath || ""),
+    });
+    const idempotencyKey =
+      submissionRetryKeysRef.current.get(submissionSignature) || crypto.randomUUID();
+    submissionRetryKeysRef.current.set(submissionSignature, idempotencyKey);
+    let canonicalTask: ApprovalTask;
+    try {
+      const result = await submitCanonicalApprovalRequest({
+        templateVersionId: selectedTemplate.databaseVersionId,
+        title: submittedTask.title,
+        valueLabel: submittedTask.value,
+        extractedFields: editedFields,
+        participantEmails,
+        attachments: uploadedAttachments,
+        idempotencyKey,
+      });
+      canonicalTask = result.task;
+      submissionRetryKeysRef.current.delete(submissionSignature);
+    } catch (error) {
+      if (error instanceof ApprovalApiError && error.status < 500) {
+        submissionRetryKeysRef.current.delete(submissionSignature);
+      }
+      setSubmissionMessage(
+        error instanceof Error ? error.message : "Unable to submit this request.",
+      );
+      return;
+    }
+    setTasks((current) => [canonicalTask, ...current.filter((task) => task.id !== canonicalTask.id)]);
     if (nextTemplates !== templates) {
       setTemplates(nextTemplates);
     }
-    setSelectedTaskId(nextState.selectedTaskId);
+    setSelectedTaskId(canonicalTask.id);
     if (nextState.shouldClearUploadedAttachments) {
       resetUploadRequestDraftState();
     }
@@ -447,13 +486,16 @@ export function useWorkspaceRequestPipeline({
     localStorage.removeItem(uploadRequestDraftStorageKey);
     const syncResult = await persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({
-        approvalTasks: nextState.tasks,
+        approvalTasks: [
+          canonicalTask,
+          ...tasks.filter((task) => task.id !== canonicalTask.id),
+        ],
         workflowTemplates: nextTemplates,
       }),
     );
     setSubmissionMessage(
       getWorkspaceRequestSubmissionPersistenceMessage({
-        submissionMessage: nextState.submissionMessage,
+        submissionMessage: `${canonicalTask.id} submitted and routed to ${canonicalTask.currentOwner}. It is now visible in Tracking.`,
         syncMode: syncResult.mode,
         syncReason: syncResult.mode === "local" ? syncResult.reason : undefined,
       }),
@@ -512,19 +554,74 @@ export function useWorkspaceRequestPipeline({
               : template,
           )
         : templates;
-    const previousTaskIds = new Set(tasks.map((task) => task.id));
-    const submittedTasks = nextState.tasks.filter(
-      (task) => !previousTaskIds.has(task.id),
+    if (!selectedTemplate.databaseVersionId) {
+      setSubmissionMessage(
+        "Refresh the published workflow before submitting these requests.",
+      );
+      return;
+    }
+    const batchSignatures: string[] = [];
+    const canonicalTasks: ApprovalTask[] = [];
+    try {
+      for (const draft of uploadRequestDraftRows) {
+        const preview = getWorkspaceRequestSubmissionState({
+          selectedTemplate,
+          participantEmails,
+          parseResult: draft.parseResult,
+          activeUser,
+          fileName: draft.fileName,
+          editedFields: draft.editedFields,
+          uploadedAttachments: draft.uploadedAttachments,
+          tasks: [],
+        });
+        const previewTask = preview.tasks[0];
+        if (!preview.didSubmit || !previewTask) {
+          throw new Error(preview.submissionMessage || "Unable to prepare batch request.");
+        }
+        const signature = JSON.stringify({
+          templateVersionId: selectedTemplate.databaseVersionId,
+          draftId: draft.id,
+          editedFields: draft.editedFields,
+          participantEmails,
+          attachments: draft.uploadedAttachments.map(
+            (attachment) => attachment.storagePath || "",
+          ),
+        });
+        batchSignatures.push(signature);
+        const idempotencyKey =
+          submissionRetryKeysRef.current.get(signature) || crypto.randomUUID();
+        submissionRetryKeysRef.current.set(signature, idempotencyKey);
+        const result = await submitCanonicalApprovalRequest({
+          templateVersionId: selectedTemplate.databaseVersionId,
+          title: previewTask.title,
+          valueLabel: previewTask.value,
+          extractedFields: draft.editedFields,
+          participantEmails,
+          attachments: draft.uploadedAttachments,
+          idempotencyKey,
+        });
+        canonicalTasks.push(result.task);
+      }
+    } catch (error) {
+      setSubmissionMessage(
+        error instanceof Error ? error.message : "Unable to submit request batch.",
+      );
+      return;
+    }
+    batchSignatures.forEach((signature) =>
+      submissionRetryKeysRef.current.delete(signature),
     );
-
-    setTasks(nextState.tasks);
-    submittedTasks.forEach((task) => {
-      void sendWorkflowEmailNotifications(task);
-    });
+    const nextCanonicalTasks = [
+      ...canonicalTasks,
+      ...tasks.filter(
+        (task) => !canonicalTasks.some((submitted) => submitted.id === task.id),
+      ),
+    ];
+    setTasks(nextCanonicalTasks);
     if (nextTemplates !== templates) {
       setTemplates(nextTemplates);
     }
-    setSelectedTaskId(nextState.selectedTaskId);
+    setSelectedTaskId(canonicalTasks[0]?.id || "");
     if (nextState.shouldClearUploadedAttachments) {
       resetUploadRequestDraftState();
     }
@@ -534,13 +631,13 @@ export function useWorkspaceRequestPipeline({
     localStorage.removeItem(uploadRequestDraftStorageKey);
     const syncResult = await persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({
-        approvalTasks: nextState.tasks,
+        approvalTasks: nextCanonicalTasks,
         workflowTemplates: nextTemplates,
       }),
     );
     setSubmissionMessage(
       getWorkspaceRequestSubmissionPersistenceMessage({
-        submissionMessage: nextState.submissionMessage,
+        submissionMessage: `${canonicalTasks.length} requests submitted. They are now visible in Tracking.`,
         syncMode: syncResult.mode,
         syncReason: syncResult.mode === "local" ? syncResult.reason : undefined,
       }),

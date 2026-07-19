@@ -498,6 +498,7 @@ export type WorkflowGraph = {
 
 export type WorkflowTemplate = {
   id: string;
+  databaseVersionId?: string;
   name: string;
   business: string;
   department: string;
@@ -550,6 +551,8 @@ export type UserRoleAssignment = {
 
 export type ApprovalTask = {
   id: string;
+  stateVersion?: number;
+  availableActions?: ApprovalAction[];
   title: string;
   workflow: string;
   workflowTemplateId?: string;
