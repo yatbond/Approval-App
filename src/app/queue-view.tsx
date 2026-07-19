@@ -93,6 +93,11 @@ const actionConfig: Record<
     icon: UserPlus,
     tone: "border-violet-500/40 bg-violet-500/10 text-violet-100 hover:bg-violet-500/20",
   },
+  revoke_delegation: {
+    label: "Revoke delegation",
+    icon: ArrowRightLeft,
+    tone: "border-amber-500/40 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20",
+  },
   amend_resubmit: {
     label: "Resubmit",
     icon: Send,

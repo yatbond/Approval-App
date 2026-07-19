@@ -44,6 +44,7 @@ export default function WorkspaceActionTab() {
           activeUserEmail={core.activeUser.email}
           userDirectory={core.workspace.userDirectory}
           onSubmitContributorUpload={actions.submitContributorRequestUpload}
+          onSubmitSharedFulfillmentUpload={actions.submitSharedFulfillmentUpload}
           onDecideSharedFulfillment={actions.decideSharedFulfillment}
           onSubmitCorrectionUpload={actions.submitCorrectionUpload}
         />

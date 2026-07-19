@@ -89,6 +89,140 @@ create table if not exists public.approval_request_assignments (
   check (length(reason) <= 2000)
 );
 
+create table if not exists public.approval_scoped_role_assignments (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  role text not null,
+  business_unit_id uuid references public.business_units(id),
+  department_id uuid references public.business_departments(id),
+  workflow_template_id uuid references public.workflow_templates(id),
+  source text not null default 'admin',
+  is_active boolean not null default true,
+  starts_at timestamptz not null default now(),
+  expires_at timestamptz,
+  created_by uuid references public.profiles(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (role in (
+    'superuser',
+    'requester',
+    'originator',
+    'approver',
+    'reviewer',
+    'fyi',
+    'participant'
+  )),
+  check (expires_at is null or expires_at > starts_at),
+  check (source in ('profile', 'admin', 'migration'))
+);
+
+create unique index if not exists approval_scoped_role_assignments_scope_key
+on public.approval_scoped_role_assignments (
+  profile_id,
+  role,
+  coalesce(business_unit_id, '00000000-0000-0000-0000-000000000000'::uuid),
+  coalesce(department_id, '00000000-0000-0000-0000-000000000000'::uuid),
+  coalesce(workflow_template_id, '00000000-0000-0000-0000-000000000000'::uuid)
+);
+
+create index if not exists approval_scoped_role_assignments_active_profile_idx
+on public.approval_scoped_role_assignments (profile_id, is_active, expires_at);
+
+insert into public.approval_scoped_role_assignments (
+  profile_id,
+  role,
+  created_by,
+  source
+)
+select
+  p.id,
+  case when p.is_admin then 'superuser' else
+    case
+      when p.role in ('requester', 'originator', 'approver', 'reviewer', 'fyi', 'participant')
+        then p.role
+      else 'participant'
+    end
+  end,
+  p.id,
+  'profile'
+from public.profiles p
+where p.is_active
+  and not exists (
+    select 1
+    from public.approval_scoped_role_assignments a
+    where a.profile_id = p.id
+      and a.role = case when p.is_admin then 'superuser' else
+        case
+          when p.role in ('requester', 'originator', 'approver', 'reviewer', 'fyi', 'participant')
+            then p.role
+          else 'participant'
+        end
+      end
+      and a.business_unit_id is null
+      and a.department_id is null
+      and a.workflow_template_id is null
+  );
+
+create or replace function private.sync_profile_scoped_role_assignment()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_role text := case when new.is_admin then 'superuser' else
+    case
+      when new.role in ('requester', 'originator', 'approver', 'reviewer', 'fyi', 'participant')
+        then new.role
+      else 'participant'
+    end
+  end;
+begin
+  update public.approval_scoped_role_assignments a
+  set is_active = false,
+      updated_at = statement_timestamp()
+  where a.profile_id = new.id
+    and a.source = 'profile'
+    and a.role <> v_role
+    and a.is_active;
+
+  update public.approval_scoped_role_assignments a
+  set is_active = new.is_active,
+      expires_at = null,
+      updated_at = statement_timestamp()
+  where a.profile_id = new.id
+    and a.role = v_role
+    and a.business_unit_id is null
+    and a.department_id is null
+    and a.workflow_template_id is null;
+
+  if not found then
+    insert into public.approval_scoped_role_assignments (
+      profile_id,
+      role,
+      source,
+      is_active,
+      created_by
+    ) values (
+      new.id,
+      v_role,
+      'profile',
+      new.is_active,
+      new.id
+    );
+  end if;
+  return new;
+end
+$$;
+
+drop trigger if exists profiles_sync_scoped_role_assignment on public.profiles;
+create trigger profiles_sync_scoped_role_assignment
+after insert or update of role, is_admin, is_active on public.profiles
+for each row execute function private.sync_profile_scoped_role_assignment();
+
+revoke all on function private.sync_profile_scoped_role_assignment()
+from public, anon, authenticated, service_role;
+
 create table if not exists public.approval_command_receipts (
   id uuid primary key default gen_random_uuid(),
   approval_request_id uuid not null references public.approval_requests(id) on delete cascade,
@@ -586,7 +720,18 @@ as $$
     from public.profiles p
     where p.id = p_user_id
       and p.is_active
-      and p.is_admin
+      and (
+        p.is_admin
+        or exists (
+          select 1
+          from public.approval_scoped_role_assignments a
+          where a.profile_id = p.id
+            and a.role = 'superuser'
+            and a.is_active
+            and a.starts_at <= statement_timestamp()
+            and (a.expires_at is null or a.expires_at > statement_timestamp())
+        )
+      )
   );
 $$;
 
@@ -656,6 +801,7 @@ to authenticated;
 
 alter table public.approval_request_participants enable row level security;
 alter table public.approval_request_assignments enable row level security;
+alter table public.approval_scoped_role_assignments enable row level security;
 alter table public.approval_command_receipts enable row level security;
 alter table public.approval_migration_issues enable row level security;
 alter table public.approval_notifications enable row level security;
@@ -713,6 +859,14 @@ using (
     approval_request_assignments.approval_request_id,
     (select auth.uid())
   ))
+);
+
+create policy "users read own scoped roles"
+on public.approval_scoped_role_assignments for select
+to authenticated
+using (
+  profile_id = (select auth.uid())
+  or (select private.is_active_approval_admin((select auth.uid())))
 );
 
 create policy "actors read own command receipts"
@@ -811,6 +965,7 @@ revoke all privileges on table
   public.approval_request_events,
   public.approval_request_participants,
   public.approval_request_assignments,
+  public.approval_scoped_role_assignments,
   public.approval_command_receipts,
   public.approval_migration_issues,
   public.approval_notifications,
@@ -822,6 +977,7 @@ grant select on table
   public.approval_request_events,
   public.approval_request_participants,
   public.approval_request_assignments,
+  public.approval_scoped_role_assignments,
   public.approval_command_receipts,
   public.approval_migration_issues,
   public.approval_notifications,
@@ -847,6 +1003,7 @@ revoke all privileges on table
   public.approval_request_events,
   public.approval_request_participants,
   public.approval_request_assignments,
+  public.approval_scoped_role_assignments,
   public.approval_command_receipts,
   public.approval_migration_issues,
   public.approval_notifications,
@@ -857,6 +1014,7 @@ grant select, insert on public.approval_request_events to service_role;
 grant select, insert, update on public.approval_requests to service_role;
 grant select, insert, update on public.approval_request_participants to service_role;
 grant select, insert, update on public.approval_request_assignments to service_role;
+grant select, insert, update on public.approval_scoped_role_assignments to service_role;
 grant select on public.approval_command_receipts to service_role;
 grant select, insert, update on public.approval_migration_issues to service_role;
 grant select, insert, update on public.approval_notifications to service_role;
@@ -900,6 +1058,45 @@ for each row execute function private.prevent_approval_event_mutation();
 revoke all on function private.prevent_approval_event_mutation()
 from public, anon, authenticated, service_role;
 
+create or replace function public.validate_active_directory_emails(
+  p_emails text[]
+)
+returns text[]
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_invalid text[];
+begin
+  if cardinality(coalesce(p_emails, '{}'::text[])) > 100 then
+    raise exception using errcode = '22023', message = 'too many directory assignments';
+  end if;
+
+  select coalesce(array_agg(candidate.email order by candidate.email), '{}'::text[])
+  into v_invalid
+  from (
+    select distinct lower(trim(email)) as email
+    from unnest(coalesce(p_emails, '{}'::text[])) as input(email)
+    where length(trim(coalesce(email, ''))) between 3 and 320
+  ) candidate
+  where not exists (
+    select 1
+    from public.profiles p
+    where p.is_active
+      and lower(p.email) = candidate.email
+  );
+
+  return v_invalid;
+end
+$$;
+
+revoke all on function public.validate_active_directory_emails(text[])
+from public, anon, service_role;
+grant execute on function public.validate_active_directory_emails(text[])
+to authenticated;
+
 -- Atomic, admin-only workspace configuration save. Runtime request rows are
 -- intentionally not accepted by this function.
 create or replace function public.save_workspace_configuration(
@@ -920,6 +1117,8 @@ declare
   v_business_count integer := 0;
   v_department_count integer := 0;
   v_template_count integer := 0;
+  v_assignment_emails text[];
+  v_invalid_assignment_emails text[];
 begin
   if v_actor_id is null
      or not (select private.is_active_approval_admin(v_actor_id)) then
@@ -1009,6 +1208,40 @@ begin
        or v_department_id is null
        or jsonb_typeof(coalesce(v_template -> 'templateSnapshot', '{}'::jsonb)) <> 'object' then
       raise exception using errcode = '22023', message = 'invalid workflow template version';
+    end if;
+
+    if coalesce((v_template ->> 'isActiveVersion')::boolean, false) then
+      select coalesce(array_agg(email), '{}'::text[])
+      into v_assignment_emails
+      from (
+        select step ->> 'approverEmail' as email
+        from jsonb_array_elements(
+          coalesce(v_template -> 'templateSnapshot' -> 'steps', '[]'::jsonb)
+        ) step
+        union all
+        select step ->> 'escalationEmail'
+        from jsonb_array_elements(
+          coalesce(v_template -> 'templateSnapshot' -> 'steps', '[]'::jsonb)
+        ) step
+        union all
+        select node ->> 'assigneeEmail'
+        from jsonb_array_elements(
+          coalesce(v_template -> 'templateSnapshot' -> 'graph' -> 'nodes', '[]'::jsonb)
+        ) node
+        union all
+        select node ->> 'escalationEmail'
+        from jsonb_array_elements(
+          coalesce(v_template -> 'templateSnapshot' -> 'graph' -> 'nodes', '[]'::jsonb)
+        ) node
+      ) configured
+      where length(trim(coalesce(email, ''))) > 0;
+
+      v_invalid_assignment_emails := public.validate_active_directory_emails(
+        v_assignment_emails
+      );
+      if cardinality(v_invalid_assignment_emails) > 0 then
+        raise exception using errcode = '23503', message = 'inactive or missing template assignment';
+      end if;
     end if;
 
     insert into public.workflow_template_versions (
@@ -1117,6 +1350,12 @@ declare
   v_pending_ids uuid[] := '{}'::uuid[];
   v_pending_id uuid;
   v_pending_email text;
+  v_participant_ids uuid[] := '{}'::uuid[];
+  v_participant_id uuid;
+  v_participant_email text;
+  v_collaboration_item jsonb;
+  v_collaboration_state jsonb;
+  v_attachment jsonb;
   v_event_action text;
 begin
   if length(trim(coalesce(p_request_no, ''))) not between 1 and 100
@@ -1145,6 +1384,7 @@ begin
     'cancel',
     'request_contributor',
     'submit_contribution',
+    'submit_shared_fulfillment',
     'confirm_fulfillment',
     'request_correction',
     'submit_correction',
@@ -1170,6 +1410,7 @@ begin
       when 'cancel' then 'cancelled'
       when 'request_contributor' then 'contribution_requested'
       when 'submit_contribution' then 'contribution_submitted'
+      when 'submit_shared_fulfillment' then 'shared_fulfillment_submitted'
       when 'confirm_fulfillment' then 'shared_fulfillment_confirmed'
       when 'request_correction' then 'correction_requested'
       when 'submit_correction' then 'correction_submitted'
@@ -1224,7 +1465,15 @@ begin
     return jsonb_build_object('outcome', 'rate_limited', 'retryAfterSeconds', 60);
   end if;
 
-  v_is_admin := v_actor.is_admin;
+  v_is_admin := v_actor.is_admin or exists (
+    select 1
+    from public.approval_scoped_role_assignments s
+    where s.profile_id = p_actor_id
+      and s.role = 'superuser'
+      and s.is_active
+      and s.starts_at <= statement_timestamp()
+      and (s.expires_at is null or s.expires_at > statement_timestamp())
+  );
   v_is_actor := v_request.current_owner_id = p_actor_id
     or exists (
       select 1
@@ -1255,6 +1504,7 @@ begin
     'reject_with_comment',
     'reassign',
     'delegate',
+    'revoke_delegation',
     'acknowledge_fyi'
   ) then
     if not (v_is_admin or v_is_actor) then
@@ -1302,6 +1552,9 @@ begin
     'nodeDecisions',
     'activeBranchId',
     'extractedFields',
+    'participants',
+    'collaborationState',
+    'assignmentExpiresAt',
     'lastAction',
     'taskSnapshot',
     'completedAt'
@@ -1359,6 +1612,43 @@ begin
     end if;
   end if;
 
+  if p_next_state ? 'participants' then
+    if jsonb_typeof(p_next_state -> 'participants') <> 'array'
+       or jsonb_array_length(p_next_state -> 'participants') > 200 then
+      return jsonb_build_object('outcome', 'invalid_command', 'field', 'participants');
+    end if;
+    for v_participant_email in
+      select distinct lower(trim(value))
+      from jsonb_array_elements_text(p_next_state -> 'participants')
+      where length(trim(value)) between 3 and 320
+    loop
+      select p.id into v_participant_id
+      from public.profiles p
+      where lower(p.email) = v_participant_email
+        and p.is_active;
+      if not found then
+        return jsonb_build_object('outcome', 'invalid_target');
+      end if;
+      v_participant_ids := array_append(v_participant_ids, v_participant_id);
+    end loop;
+    if cardinality(v_participant_ids) <> jsonb_array_length(p_next_state -> 'participants') then
+      return jsonb_build_object('outcome', 'invalid_target');
+    end if;
+  end if;
+
+  if p_next_state ? 'collaborationState' then
+    v_collaboration_state := p_next_state -> 'collaborationState';
+    if jsonb_typeof(v_collaboration_state) <> 'object'
+       or jsonb_typeof(v_collaboration_state -> 'collaborationRequests') <> 'array'
+       or jsonb_typeof(v_collaboration_state -> 'sharedFulfillments') <> 'array'
+       or jsonb_typeof(v_collaboration_state -> 'correctionRequests') <> 'array'
+       or jsonb_array_length(v_collaboration_state -> 'collaborationRequests') > 100
+       or jsonb_array_length(v_collaboration_state -> 'sharedFulfillments') > 200
+       or jsonb_array_length(v_collaboration_state -> 'correctionRequests') > 200 then
+      return jsonb_build_object('outcome', 'invalid_command', 'field', 'collaborationState');
+    end if;
+  end if;
+
   if p_next_state ? 'status'
      and coalesce(p_next_state ->> 'status', '') not in (
        'pending',
@@ -1371,6 +1661,14 @@ begin
        'cancelled'
      ) then
     return jsonb_build_object('outcome', 'invalid_command', 'field', 'status');
+  end if;
+
+  if p_next_state ? 'assignmentExpiresAt'
+     and (
+       nullif(p_next_state ->> 'assignmentExpiresAt', '') is null
+       or (p_next_state ->> 'assignmentExpiresAt')::timestamptz <= statement_timestamp()
+     ) then
+    return jsonb_build_object('outcome', 'invalid_command', 'field', 'assignmentExpiresAt');
   end if;
 
   if v_event_action not in (
@@ -1462,6 +1760,11 @@ begin
           then array(select jsonb_array_elements_text(p_next_state -> 'pendingOwnerEmails'))
         else r.pending_owner_emails
       end,
+      participants = case
+        when p_next_state ? 'participants'
+          then array(select jsonb_array_elements_text(p_next_state -> 'participants'))
+        else r.participants
+      end,
       node_decisions = case
         when p_next_state ? 'nodeDecisions' then p_next_state -> 'nodeDecisions'
         else r.node_decisions
@@ -1547,6 +1850,7 @@ begin
         assignment_type,
         status,
         assigned_by,
+        expires_at,
         reason
       )
       select
@@ -1556,6 +1860,11 @@ begin
         case when trim(p_action) = 'delegate' then 'delegate' else 'owner' end,
         'active',
         v_actor.id,
+        case
+          when trim(p_action) = 'delegate'
+            then nullif(p_next_state ->> 'assignmentExpiresAt', '')::timestamptz
+          else null
+        end,
         left(concat('Pending owner after ', trim(p_action)), 2000)
       where not exists (
         select 1
@@ -1638,6 +1947,160 @@ begin
       active_until = null,
       updated_at = statement_timestamp();
   end loop;
+
+  foreach v_participant_id in array v_participant_ids
+  loop
+    insert into public.approval_request_participants (
+      approval_request_id,
+      profile_id,
+      participant_role,
+      visibility_reason,
+      workflow_node_id,
+      created_by
+    )
+    values (
+      v_request.id,
+      v_participant_id,
+      case
+        when trim(p_action) in ('request_contributor', 'submit_contribution')
+          then 'contributor'
+        else 'observer'
+      end,
+      left(concat('Participant after ', trim(p_action)), 200),
+      coalesce(v_result_request.current_node_id, ''),
+      v_actor.id
+    )
+    on conflict (approval_request_id, profile_id, participant_role, workflow_node_id)
+    do update set
+      is_active = true,
+      active_until = null,
+      updated_at = statement_timestamp();
+  end loop;
+
+  if p_next_state ? 'collaborationState' then
+    for v_collaboration_item in
+      select value from jsonb_array_elements(
+        v_collaboration_state -> 'collaborationRequests'
+      )
+    loop
+      if jsonb_typeof(v_collaboration_item) <> 'object'
+         or length(trim(coalesce(v_collaboration_item ->> 'id', ''))) not between 1 and 500
+         or length(trim(coalesce(v_collaboration_item ->> 'contributorEmail', ''))) not between 3 and 320
+         or coalesce(v_collaboration_item ->> 'status', '') not in ('requested', 'submitted', 'cancelled') then
+        raise exception using errcode = '22023', message = 'invalid collaboration request';
+      end if;
+      insert into public.workflow_collaboration_requests (
+        id, approval_request_no, contributor_email, contributor_name,
+        requested_by_email, status, due_at, blocks_approval, payload,
+        created_at, updated_at
+      ) values (
+        trim(v_collaboration_item ->> 'id'), v_request.request_no,
+        lower(trim(v_collaboration_item ->> 'contributorEmail')),
+        left(coalesce(v_collaboration_item ->> 'contributorName', ''), 500),
+        lower(trim(coalesce(v_collaboration_item ->> 'requestedByEmail', v_actor.email))),
+        v_collaboration_item ->> 'status', nullif(v_collaboration_item ->> 'dueAt', ''),
+        coalesce((v_collaboration_item ->> 'blocksApproval')::boolean, true),
+        v_collaboration_item, statement_timestamp(), statement_timestamp()
+      )
+      on conflict (id) do update set
+        status = excluded.status,
+        due_at = excluded.due_at,
+        blocks_approval = excluded.blocks_approval,
+        payload = excluded.payload,
+        updated_at = statement_timestamp();
+    end loop;
+
+    for v_collaboration_item in
+      select value from jsonb_array_elements(
+        v_collaboration_state -> 'sharedFulfillments'
+      )
+    loop
+      if jsonb_typeof(v_collaboration_item) <> 'object'
+         or length(trim(coalesce(v_collaboration_item ->> 'id', ''))) not between 1 and 500
+         or coalesce(v_collaboration_item ->> 'status', '') not in (
+           'pending_confirmation', 'confirmed', 'rejected', 'superseded'
+         ) then
+        raise exception using errcode = '22023', message = 'invalid shared fulfillment';
+      end if;
+      insert into public.workflow_shared_fulfillments (
+        id, approval_request_no, requirement_node_id, document_id,
+        document_type, assigned_submitter_email, uploader_email,
+        attachment_id, status, required, payload, created_at, updated_at
+      ) values (
+        trim(v_collaboration_item ->> 'id'), v_request.request_no,
+        left(coalesce(v_collaboration_item ->> 'requirementNodeId', ''), 500),
+        left(coalesce(v_collaboration_item ->> 'documentId', ''), 500),
+        left(coalesce(v_collaboration_item ->> 'documentType', ''), 500),
+        lower(trim(coalesce(v_collaboration_item ->> 'assignedSubmitterEmail', ''))),
+        lower(trim(coalesce(v_collaboration_item ->> 'uploaderEmail', ''))),
+        left(coalesce(v_collaboration_item ->> 'attachmentId', ''), 500),
+        v_collaboration_item ->> 'status',
+        coalesce((v_collaboration_item ->> 'required')::boolean, true),
+        v_collaboration_item, statement_timestamp(), statement_timestamp()
+      )
+      on conflict (id) do update set
+        status = excluded.status,
+        payload = excluded.payload,
+        updated_at = statement_timestamp();
+    end loop;
+
+    for v_collaboration_item in
+      select value from jsonb_array_elements(
+        v_collaboration_state -> 'correctionRequests'
+      )
+    loop
+      if jsonb_typeof(v_collaboration_item) <> 'object'
+         or length(trim(coalesce(v_collaboration_item ->> 'id', ''))) not between 1 and 500
+         or coalesce(v_collaboration_item ->> 'status', '') not in ('requested', 'submitted', 'cancelled') then
+        raise exception using errcode = '22023', message = 'invalid correction request';
+      end if;
+      insert into public.workflow_correction_requests (
+        id, approval_request_no, shared_fulfillment_id, requested_by_email,
+        assigned_submitter_email, uploader_email, status, blocks_approval,
+        rejection_note, payload, created_at, updated_at
+      ) values (
+        trim(v_collaboration_item ->> 'id'), v_request.request_no,
+        left(coalesce(v_collaboration_item ->> 'sharedFulfillmentId', ''), 500),
+        lower(trim(coalesce(v_collaboration_item ->> 'requestedByEmail', ''))),
+        lower(trim(coalesce(v_collaboration_item ->> 'assignedSubmitterEmail', ''))),
+        lower(trim(coalesce(v_collaboration_item ->> 'uploaderEmail', ''))),
+        v_collaboration_item ->> 'status',
+        coalesce((v_collaboration_item ->> 'blocksApproval')::boolean, true),
+        left(coalesce(v_collaboration_item ->> 'rejectionNote', ''), 4000),
+        v_collaboration_item, statement_timestamp(), statement_timestamp()
+      )
+      on conflict (id) do update set
+        status = excluded.status,
+        payload = excluded.payload,
+        updated_at = statement_timestamp();
+    end loop;
+
+    if v_collaboration_state ? 'attachment' then
+      v_attachment := v_collaboration_state -> 'attachment';
+      if jsonb_typeof(v_attachment) <> 'object'
+         or length(trim(coalesce(v_attachment ->> 'key', ''))) not between 1 and 500
+         or length(trim(coalesce(v_attachment ->> 'fileName', ''))) not between 1 and 500
+         or length(trim(coalesce(v_attachment ->> 'storagePath', ''))) not between 3 and 1000
+         or (v_attachment ->> 'storagePath') like '%..%'
+         or not (v_attachment ->> 'storagePath') like concat(v_actor.id::text, '/%')
+         or coalesce(v_attachment ->> 'format', '') not in (
+           'text', 'pdf', 'image', 'excel_csv', 'ad_hoc'
+         ) then
+        raise exception using errcode = '22023', message = 'invalid collaboration attachment';
+      end if;
+      insert into public.approval_request_attachments (
+        approval_request_id, attachment_key, file_name, document_id,
+        document_type, document_format, workflow_node_id, storage_path,
+        uploaded_by, uploaded_by_email, created_at
+      ) values (
+        v_request.id, trim(v_attachment ->> 'key'), trim(v_attachment ->> 'fileName'),
+        nullif(v_attachment ->> 'documentId', ''), trim(v_attachment ->> 'documentType'),
+        v_attachment ->> 'format', nullif(v_attachment ->> 'workflowNodeId', ''),
+        trim(v_attachment ->> 'storagePath'), v_actor.id, v_actor.email,
+        statement_timestamp()
+      );
+    end if;
+  end if;
 
   if p_event ? 'targetProfileId'
      and p_event -> 'targetProfileId' <> 'null'::jsonb then

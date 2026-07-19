@@ -282,7 +282,7 @@ begin
        or length(trim(coalesce(v_attachment ->> 'fileName', ''))) not between 1 and 500
        or length(trim(coalesce(v_attachment ->> 'documentType', ''))) not between 1 and 200
        or coalesce(v_attachment ->> 'format', '') not in (
-         'pdf', 'image', 'spreadsheet', 'ad_hoc'
+         'text', 'pdf', 'image', 'excel_csv', 'ad_hoc'
        )
        or length(trim(coalesce(v_attachment ->> 'storagePath', ''))) not between 3 and 1000
        or strpos(v_attachment ->> 'storagePath', '..') > 0

@@ -54,6 +54,19 @@ export type ApprovalRuntimeProfile = {
   role: string;
   isAdmin: boolean;
   isActive: boolean;
+  effectiveRoles?: string[];
+  scopeAssignments?: Array<{
+    role: string;
+    businessUnitId: string | null;
+    departmentId: string | null;
+    workflowTemplateId: string | null;
+    startsAt: string;
+    expiresAt: string | null;
+  }>;
+  departmentId?: string | null;
+  departmentName?: string | null;
+  businessUnitId?: string | null;
+  businessName?: string | null;
 };
 
 export type ApprovalTransition = {
@@ -129,16 +142,34 @@ export function getAvailableApprovalActions(
     emailsMatch(task.currentOwner, actor.email) ||
     Boolean(task.pendingOwners?.some((email) => emailsMatch(email, actor.email)));
   if (ownsCurrentWork && isActionableBy(task, actor.email)) {
-    actions.push(
-      "approve",
-      "approve_with_comment",
-      "reject",
-      "reject_with_comment",
-      "reassign",
-      "delegate",
-    );
+    if (!hasBlockingCollaboration(task)) {
+      actions.push("approve", "approve_with_comment");
+    }
+    actions.push("reject", "reject_with_comment", "reassign", "delegate");
+    if (
+      task.status === "delegated" &&
+      emailsMatch(task.currentOwner, actor.email) &&
+      (task.pendingOwners || []).some((email) => !emailsMatch(email, task.currentOwner))
+    ) {
+      actions.push("revoke_delegation");
+    }
   }
   return actions;
+}
+
+function hasBlockingCollaboration(task: ApprovalTask) {
+  return (
+    (task.collaborationRequests || []).some(
+      (request) => request.status === "requested" && request.blocksApproval !== false,
+    ) ||
+    (task.sharedFulfillments || []).some(
+      (fulfillment) =>
+        fulfillment.required && fulfillment.status === "pending_confirmation",
+    ) ||
+    (task.correctionRequests || []).some(
+      (request) => request.status === "requested" && request.blocksApproval,
+    )
+  );
 }
 
 export function computeApprovalTransition({
@@ -171,7 +202,7 @@ export function computeApprovalTransition({
         }
       : task;
   const targetEmail = "targetProfileId" in command ? target?.email : undefined;
-  const nextTask = applyTaskAction(actionTask, {
+  const appliedTask = applyTaskAction(actionTask, {
     action: command.action,
     actor: { name: actor.fullName, email: actor.email } satisfies ApprovalActor,
     ...(command.comment ? { comment: command.comment } : {}),
@@ -181,6 +212,14 @@ export function computeApprovalTransition({
       : {}),
     template: task.workflowTemplateSnapshot,
   });
+  const nextTask =
+    command.action === "delegate"
+      ? {
+          ...appliedTask,
+          delegationExpiresAt:
+            command.expiresAt || new Date(now.getTime() + 7 * 86_400_000).toISOString(),
+        }
+      : appliedTask;
 
   if (nextTask === actionTask || sameRuntimeState(actionTask, nextTask)) {
     return null;
@@ -212,6 +251,9 @@ export function computeApprovalTransition({
       notifiedNodeIds: nextTask.notifiedNodeIds || [],
       pendingNodeIds: nextTask.pendingNodeIds || [],
       pendingOwnerEmails: nextTask.pendingOwners || [],
+      ...(command.action === "delegate"
+        ? { assignmentExpiresAt: nextTask.delegationExpiresAt }
+        : {}),
       nodeDecisions: nextTask.nodeDecisions || {},
       activeBranchId: nextTask.activeBranchId || "",
       extractedFields: nextTask.extractedFields,
@@ -248,7 +290,7 @@ function auditActionFor(action: ApprovalAction): AuditEvent["action"] {
   ) {
     return "reassigned";
   }
-  if (action === "delegate") return "delegated";
+  if (action === "delegate" || action === "revoke_delegation") return "delegated";
   if (action === "amend_resubmit") return "resubmitted";
   return "cancelled";
 }

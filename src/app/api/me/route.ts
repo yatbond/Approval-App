@@ -12,7 +12,8 @@ export async function GET(request: NextRequest) {
   if (developmentProfile) {
     return approvalJson(NextResponse.next(), randomUUID(), {
       profile: developmentProfile,
-      effectiveRoles: ["superuser"],
+      effectiveRoles: developmentProfile.effectiveRoles,
+      scopeAssignments: developmentProfile.scopeAssignments,
       scope: { business: null, department: null },
     });
   }
@@ -24,17 +25,16 @@ export async function GET(request: NextRequest) {
   if (actor.id) {
     const { data: profile } = await service
       .from("profiles")
-      .select(
-        "department_id,business_departments(id,name,business_unit_id,business_units(id,name))",
-      )
+      .select("department_id,departments(id,name)")
       .eq("id", actor.id)
       .maybeSingle();
-    const related = profile?.business_departments;
+    const related = profile?.departments;
     department = Array.isArray(related) ? related[0] || null : related || null;
   }
   return approvalJson(cookieSource, correlationId, {
     profile: actor,
-    effectiveRoles: actor.isAdmin ? [actor.role, "superuser"] : [actor.role],
+    effectiveRoles: actor.effectiveRoles || [actor.role],
+    scopeAssignments: actor.scopeAssignments || [],
     scope: { department },
   });
 }

@@ -17,20 +17,25 @@ const users = {
   target: await createIdentity("target", true),
   unrelated: await createIdentity("unrelated", true),
   inactive: await createIdentity("inactive", false),
+  admin: await createIdentity("admin", true, true),
 };
 const templateVersionId = await createTemplate();
+await assignCrossScope(users.unrelated.id);
 const cookies = {
   requester: await signIn(users.requester.email),
   actor: await signIn(users.actor.email),
   target: await signIn(users.target.email),
   unrelated: await signIn(users.unrelated.email),
   inactive: await signIn(users.inactive.email),
+  admin: await signIn(users.admin.email),
 };
 
 await testAuthAndQueries();
+await testDirectoryPagination();
 await testReassignmentAndApproval();
 await testDelegation();
 await testRejectResubmitAndCancel();
+await testCollaborationAndCorrectionLifecycle();
 
 console.log("Authoritative API integration suite passed.");
 
@@ -47,18 +52,124 @@ async function testAuthAndQueries() {
   assert.equal(me.status, 200);
   assert.match(me.headers.get("cache-control") || "", /no-store/);
   assert.ok(me.headers.get("x-correlation-id"));
-  assert.equal((await me.json()).profile.id, users.requester.id);
+  const mePayload = await me.json();
+  assert.equal(mePayload.profile.id, users.requester.id);
+  assert.ok(mePayload.effectiveRoles.includes("originator"));
+  assert.ok(
+    mePayload.scopeAssignments.some(
+      (assignment) => assignment.role === "originator",
+    ),
+  );
 
   const directory = await api(`/api/directory?query=${runId}&limit=20`, {
     cookie: cookies.requester,
   });
   assert.equal(directory.status, 200);
-  assert.ok((await directory.json()).users.length >= 4);
+  const directoryPayload = await directory.json();
+  assert.ok(directoryPayload.users.length >= 4);
+  assert.ok(
+    directoryPayload.users.every(
+      (user) => Array.isArray(user.effectiveRoles) && user.effectiveRoles.length,
+    ),
+  );
+
+  const unboundedDirectory = await api("/api/directory?query=&limit=50", {
+    cookie: cookies.requester,
+  });
+  assert.equal(unboundedDirectory.status, 403);
 
   const invalidDirectory = await api("/api/directory?query=%25%2Cis_admin.eq.true", {
     cookie: cookies.requester,
   });
   assert.equal(invalidDirectory.status, 400);
+}
+
+async function testDirectoryPagination() {
+  const created = await Promise.all(
+    Array.from({ length: 53 }, async (_, index) => {
+      const email = `directory-${runId}-${String(index).padStart(2, "0")}@example.com`;
+      const { data, error } = await service.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name: `Directory ${runId} ${index}` },
+      });
+      assert.ifError(error);
+      return {
+        id: data.user.id,
+        email,
+        full_name: `Directory ${runId} ${index}`,
+        role: "participant",
+        is_admin: false,
+        is_active: true,
+      };
+    }),
+  );
+  const { error: profileError } = await service.from("profiles").upsert(created);
+  assert.ifError(profileError);
+
+  const adminMe = await api("/api/me", { cookie: cookies.admin });
+  assert.equal(adminMe.status, 200);
+  assert.ok((await adminMe.json()).effectiveRoles.includes("superuser"));
+
+  const { data: templateRow, error: templateReadError } = await service
+    .from("workflow_template_versions")
+    .select("template_snapshot")
+    .eq("id", templateVersionId)
+    .single();
+  assert.ifError(templateReadError);
+  const invalidPublishedTemplate = {
+    ...templateRow.template_snapshot,
+    isDraft: false,
+    graph: {
+      ...templateRow.template_snapshot.graph,
+      nodes: templateRow.template_snapshot.graph.nodes.map((node) =>
+        node.id === "approval-1"
+          ? { ...node, assigneeEmail: `missing-${runId}@example.com` }
+          : node,
+      ),
+    },
+  };
+  const invalidPublish = await api("/api/workspace", {
+    method: "POST",
+    cookie: cookies.admin,
+    body: {
+      snapshot: {
+        approvalTasks: [],
+        businessDirectory: [],
+        workflowTemplates: [invalidPublishedTemplate],
+        formLibrary: [],
+        userRoleAssignments: [],
+        adminAuditEvents: [],
+        selectedTemplateId: invalidPublishedTemplate.id,
+      },
+    },
+  });
+  assert.equal(invalidPublish.status, 422);
+  assert.match((await invalidPublish.json()).reason, /inactive or missing/i);
+
+  const first = await api(
+    `/api/directory?query=${encodeURIComponent(`directory-${runId}`)}&limit=50`,
+    { cookie: cookies.admin },
+  );
+  assert.equal(first.status, 200);
+  const firstPayload = await first.json();
+  assert.equal(firstPayload.users.length, 50);
+  assert.ok(firstPayload.nextCursor);
+
+  const second = await api(
+    `/api/directory?query=${encodeURIComponent(`directory-${runId}`)}&limit=50&cursor=${encodeURIComponent(firstPayload.nextCursor)}`,
+    { cookie: cookies.admin },
+  );
+  assert.equal(second.status, 200);
+  const secondPayload = await second.json();
+  assert.equal(secondPayload.users.length, 3);
+  assert.equal(secondPayload.nextCursor, null);
+  const ids = new Set([
+    ...firstPayload.users.map((user) => user.id),
+    ...secondPayload.users.map((user) => user.id),
+  ]);
+  assert.equal(ids.size, 53);
 }
 
 async function testReassignmentAndApproval() {
@@ -153,6 +264,18 @@ async function testReassignmentAndApproval() {
   );
   assert.equal(invalidTarget.status, 422);
 
+  const crossScopeTarget = await action(
+    requestNo,
+    {
+      action: "reassign",
+      expectedVersion: 0,
+      idempotencyKey: `cross-scope-${runId}`,
+      targetProfileId: users.unrelated.id,
+    },
+    cookies.actor,
+  );
+  assert.equal(crossScopeTarget.status, 422);
+
   const reassigned = await action(
     requestNo,
     {
@@ -245,6 +368,60 @@ async function testDelegation() {
     cookies.target,
   );
   assert.equal(approved.status, 200);
+
+  const revokedRequestNo = await submitRequest(
+    "delegation revocation",
+    `phase2-submit-${runId}-revoke`,
+  );
+  const delegatedForRevocation = await action(
+    revokedRequestNo,
+    {
+      action: "delegate",
+      expectedVersion: 0,
+      idempotencyKey: `delegate-revoke-setup-${runId}`,
+      targetProfileId: users.target.id,
+    },
+    cookies.actor,
+  );
+  assert.equal(delegatedForRevocation.status, 200);
+  const delegatedForRevocationPayload = await delegatedForRevocation.json();
+  assert.ok(delegatedForRevocationPayload.request.task.delegationExpiresAt);
+  assert.ok(
+    delegatedForRevocationPayload.request.availableActions.includes(
+      "revoke_delegation",
+    ),
+  );
+  const revoked = await action(
+    revokedRequestNo,
+    {
+      action: "revoke_delegation",
+      expectedVersion: 1,
+      idempotencyKey: `delegate-revoke-${runId}`,
+    },
+    cookies.actor,
+  );
+  assert.equal(revoked.status, 200);
+  assert.equal((await revoked.json()).request.task.status, "pending");
+  const revokedDelegateAttempt = await action(
+    revokedRequestNo,
+    {
+      action: "approve",
+      expectedVersion: 2,
+      idempotencyKey: `revoked-delegate-${runId}`,
+    },
+    cookies.target,
+  );
+  assert.equal(revokedDelegateAttempt.status, 403);
+  const ownerAfterRevocation = await action(
+    revokedRequestNo,
+    {
+      action: "approve",
+      expectedVersion: 2,
+      idempotencyKey: `owner-after-revoke-${runId}`,
+    },
+    cookies.actor,
+  );
+  assert.equal(ownerAfterRevocation.status, 200);
 }
 
 async function testRejectResubmitAndCancel() {
@@ -323,6 +500,305 @@ async function submitRequest(label, idempotencyKey) {
   return (await response.json()).request.requestNo;
 }
 
+async function testCollaborationAndCorrectionLifecycle() {
+  const contributorRequestNo = await submitRequest(
+    "contributor lifecycle",
+    `phase5-submit-${runId}-a`,
+  );
+  const requested = await collaboration(
+    contributorRequestNo,
+    {
+      action: "request_contributor",
+      expectedVersion: 0,
+      idempotencyKey: `phase5-contributor-${runId}`,
+      targetProfileId: users.target.id,
+      requestNote: "Please provide the supporting schedule.",
+      blocksApproval: true,
+    },
+    cookies.actor,
+  );
+  assert.equal(requested.status, 200);
+  const requestedPayload = await requested.json();
+  const collaborationRequestId =
+    requestedPayload.request.task.collaborationRequests[0].id;
+  assert.equal(requestedPayload.request.version, 1);
+
+  const blockedApproval = await action(
+    contributorRequestNo,
+    {
+      action: "approve",
+      expectedVersion: 1,
+      idempotencyKey: `phase5-blocked-${runId}`,
+    },
+    cookies.actor,
+  );
+  assert.equal(blockedApproval.status, 403);
+
+  const unrelatedContribution = await collaboration(
+    contributorRequestNo,
+    {
+      action: "submit_contribution",
+      expectedVersion: 1,
+      idempotencyKey: `phase5-unrelated-${runId}`,
+      collaborationRequestId,
+      attachment: attachment(users.unrelated, "unrelated.txt"),
+      extractedFields: { note: "forged" },
+    },
+    cookies.unrelated,
+  );
+  assert.equal(unrelatedContribution.status, 404);
+
+  const invalidAttachment = await collaboration(
+    contributorRequestNo,
+    {
+      action: "submit_contribution",
+      expectedVersion: 1,
+      idempotencyKey: `phase5-invalid-path-${runId}`,
+      collaborationRequestId,
+      attachment: {
+        ...attachment(users.target, "invalid.txt"),
+        storagePath: `${users.actor.id}/phase5/invalid.txt`,
+      },
+      extractedFields: {},
+    },
+    cookies.target,
+  );
+  assert.equal(invalidAttachment.status, 503);
+  const afterInvalidAttachment = await api(
+    `/api/approval-requests/${contributorRequestNo}`,
+    { cookie: cookies.target },
+  );
+  assert.equal((await afterInvalidAttachment.json()).request.version, 1);
+
+  const contributed = await collaboration(
+    contributorRequestNo,
+    {
+      action: "submit_contribution",
+      expectedVersion: 1,
+      idempotencyKey: `phase5-contributed-${runId}`,
+      collaborationRequestId,
+      attachment: attachment(users.target, "schedule.txt"),
+      extractedFields: { schedule: "Submitted" },
+    },
+    cookies.target,
+  );
+  assert.equal(contributed.status, 200);
+  assert.equal(
+    (await contributed.json()).request.task.collaborationRequests[0].status,
+    "submitted",
+  );
+  const contributorApproved = await action(
+    contributorRequestNo,
+    {
+      action: "approve",
+      expectedVersion: 2,
+      idempotencyKey: `phase5-contributor-approve-${runId}`,
+    },
+    cookies.actor,
+  );
+  assert.equal(contributorApproved.status, 200);
+
+  const correctionRequestNo = await submitRequest(
+    "shared correction lifecycle",
+    `phase5-submit-${runId}-b`,
+  );
+  await enableTemplateSharedFulfillment(correctionRequestNo);
+  const ownerImpersonation = await collaboration(
+    correctionRequestNo,
+    {
+      action: "submit_shared_fulfillment",
+      expectedVersion: 0,
+      idempotencyKey: `phase5-owner-share-${runId}`,
+      requirementNodeId: "submit-target",
+      documentId: "supporting-schedule",
+      assignedSubmitterProfileId: users.target.id,
+      attachment: {
+        ...attachment(users.actor, "owner-forged.txt"),
+        documentId: "supporting-schedule",
+        documentType: "Supporting schedule",
+        workflowNodeId: "submit-target",
+      },
+      extractedFields: {},
+    },
+    cookies.actor,
+  );
+  assert.equal(ownerImpersonation.status, 403);
+
+  const shared = await collaboration(
+    correctionRequestNo,
+    {
+      action: "submit_shared_fulfillment",
+      expectedVersion: 0,
+      idempotencyKey: `phase5-shared-${runId}`,
+      requirementNodeId: "submit-target",
+      documentId: "supporting-schedule",
+      assignedSubmitterProfileId: users.target.id,
+      attachment: {
+        ...attachment(users.requester, "shared.txt"),
+        documentId: "supporting-schedule",
+        documentType: "Supporting schedule",
+        workflowNodeId: "submit-target",
+      },
+      extractedFields: { amount: "100" },
+    },
+    cookies.requester,
+  );
+  assert.equal(shared.status, 200);
+  const sharedPayload = await shared.json();
+  const fulfillmentId = sharedPayload.request.task.sharedFulfillments[0].id;
+
+  const rejected = await collaboration(
+    correctionRequestNo,
+    {
+      action: "decide_shared_fulfillment",
+      expectedVersion: 1,
+      idempotencyKey: `phase5-reject-shared-${runId}`,
+      fulfillmentId,
+      decision: "reject",
+      note: "The amount is incorrect.",
+    },
+    cookies.actor,
+  );
+  assert.equal(rejected.status, 200);
+  const rejectedPayload = await rejected.json();
+  const correctionRequestId = rejectedPayload.request.task.correctionRequests[0].id;
+  assert.equal(rejectedPayload.request.task.correctionRequests[0].status, "requested");
+
+  const correctionBlocked = await action(
+    correctionRequestNo,
+    {
+      action: "approve",
+      expectedVersion: 2,
+      idempotencyKey: `phase5-correction-block-${runId}`,
+    },
+    cookies.actor,
+  );
+  assert.equal(correctionBlocked.status, 403);
+
+  const corrected = await collaboration(
+    correctionRequestNo,
+    {
+      action: "submit_correction",
+      expectedVersion: 2,
+      idempotencyKey: `phase5-corrected-${runId}`,
+      correctionRequestId,
+      attachment: attachment(users.target, "corrected.txt"),
+      extractedFields: { amount: "200" },
+    },
+    cookies.target,
+  );
+  assert.equal(corrected.status, 200);
+  const correctedPayload = await corrected.json();
+  const correctedFulfillmentId =
+    correctedPayload.request.task.correctionRequests[0].resolvedByFulfillmentId;
+
+  const confirmed = await collaboration(
+    correctionRequestNo,
+    {
+      action: "decide_shared_fulfillment",
+      expectedVersion: 3,
+      idempotencyKey: `phase5-confirm-correction-${runId}`,
+      fulfillmentId: correctedFulfillmentId,
+      decision: "confirm",
+    },
+    cookies.actor,
+  );
+  assert.equal(confirmed.status, 200);
+  const finalApproval = await action(
+    correctionRequestNo,
+    {
+      action: "approve",
+      expectedVersion: 4,
+      idempotencyKey: `phase5-correction-approve-${runId}`,
+    },
+    cookies.actor,
+  );
+  assert.equal(finalApproval.status, 200);
+
+  const { data: collaborationRows, error: collaborationRowsError } = await service
+    .from("approval_requests")
+    .select("id")
+    .in("request_no", [contributorRequestNo, correctionRequestNo]);
+  assert.ifError(collaborationRowsError);
+  const { data: notifications, error: notificationError } = await service
+    .from("approval_notifications")
+    .select("recipient_id")
+    .in("approval_request_id", collaborationRows.map((row) => row.id));
+  assert.ifError(notificationError);
+  assert.ok(notifications.length > 0);
+  assert.ok(
+    notifications.every((row) =>
+      [users.actor.id, users.target.id, users.requester.id].includes(row.recipient_id),
+    ),
+  );
+}
+
+async function enableTemplateSharedFulfillment(requestNo) {
+  const { data: request, error: readError } = await service
+    .from("approval_requests")
+    .select("pinned_template_snapshot")
+    .eq("request_no", requestNo)
+    .single();
+  assert.ifError(readError);
+  const snapshot = request.pinned_template_snapshot;
+  const sharedSnapshot = {
+    ...snapshot,
+    documents: [
+      ...(snapshot.documents || []),
+      {
+        id: "supporting-schedule",
+        documentType: "Supporting schedule",
+        required: true,
+        acceptedFormats: ["text"],
+        fields: [],
+      },
+    ],
+    graph: {
+      ...snapshot.graph,
+      nodes: [
+        ...snapshot.graph.nodes,
+        {
+          id: "submit-source",
+          kind: "submit_request",
+          label: "Shared source",
+          x: 0,
+          y: 200,
+          assigneeName: users.requester.name,
+          assigneeEmail: users.requester.email,
+          allowSharedFulfillment: true,
+          requireSharedFulfillmentConfirmation: true,
+          documentIds: [],
+        },
+        {
+          id: "submit-target",
+          kind: "submit_request",
+          label: "Target requirement",
+          x: 150,
+          y: 200,
+          assigneeName: users.target.name,
+          assigneeEmail: users.target.email,
+          documentIds: ["supporting-schedule"],
+        },
+      ],
+    },
+  };
+  const { error: updateError } = await service
+    .from("approval_requests")
+    .update({ pinned_template_snapshot: sharedSnapshot })
+    .eq("request_no", requestNo);
+  assert.ifError(updateError);
+}
+
+function attachment(user, fileName) {
+  return {
+    key: `${runId}-${user.id}-${fileName}`,
+    fileName,
+    documentType: "Collaboration upload",
+    format: "ad_hoc",
+    storagePath: `${user.id}/phase5/${fileName}`,
+  };
+}
+
 async function submit(body, cookie) {
   return api("/api/approval-requests", {
     method: "POST",
@@ -333,6 +809,14 @@ async function submit(body, cookie) {
 
 async function action(requestNo, body, cookie) {
   return api(`/api/approval-requests/${requestNo}/actions`, {
+    method: "POST",
+    cookie,
+    body,
+  });
+}
+
+async function collaboration(requestNo, body, cookie) {
+  return api(`/api/approval-requests/${requestNo}/collaboration`, {
     method: "POST",
     cookie,
     body,
@@ -366,7 +850,7 @@ async function signIn(email) {
   return setCookies.map((value) => value.split(";", 1)[0]).join("; ");
 }
 
-async function createIdentity(label, active) {
+async function createIdentity(label, active, isAdmin = false) {
   const email = `phase2-${label}-${runId}@example.com`;
   const { data, error } = await service.auth.admin.createUser({
     email,
@@ -380,7 +864,7 @@ async function createIdentity(label, active) {
     email,
     full_name: `Phase 2 ${label}`,
     role: label === "actor" || label === "target" ? "approver" : "originator",
-    is_admin: false,
+    is_admin: isAdmin,
     is_active: active,
   };
   const { error: profileError } = await service.from("profiles").upsert(profile);
@@ -456,6 +940,24 @@ async function createTemplate() {
     .single();
   assert.ifError(error);
   return data.id;
+}
+
+async function assignCrossScope(profileId) {
+  const { data: department, error: departmentError } = await service
+    .from("departments")
+    .insert({
+      name: `Cross Scope Department ${runId}`,
+      code: `CROSS-${runId}`.toUpperCase(),
+      is_active: true,
+    })
+    .select("id")
+    .single();
+  assert.ifError(departmentError);
+  const { error: profileError } = await service
+    .from("profiles")
+    .update({ department_id: department.id })
+    .eq("id", profileId);
+  assert.ifError(profileError);
 }
 
 function requiredEnv(name) {

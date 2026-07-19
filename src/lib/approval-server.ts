@@ -75,20 +75,60 @@ export async function createApprovalServerContext(
       );
     }
 
+    const service = createApprovalServiceClient();
+    const now = new Date().toISOString();
+    const { data: assignments, error: assignmentError } = await service
+      .from("approval_scoped_role_assignments")
+      .select(
+        "role,business_unit_id,department_id,workflow_template_id,starts_at,expires_at",
+      )
+      .eq("profile_id", profile.id)
+      .eq("is_active", true)
+      .lte("starts_at", now)
+      .or(`expires_at.is.null,expires_at.gt.${now}`);
+    if (assignmentError) {
+      safeApprovalLog("role_assignment_lookup_failed", correlationId, {
+        errorCode: assignmentError.code || "unknown",
+      });
+      return failure(
+        cookieSource,
+        correlationId,
+        503,
+        "dependency_unavailable",
+        "Your approval permissions could not be verified.",
+      );
+    }
+    const effectiveRoles = Array.from(
+      new Set([
+        profile.role,
+        ...(profile.is_admin ? ["superuser"] : []),
+        ...(assignments || []).map((assignment) => assignment.role),
+      ]),
+    );
+
     return {
       ok: true,
       context: {
         correlationId,
         cookieSource,
         session,
-        service: createApprovalServiceClient(),
+        service,
         actor: {
           id: profile.id,
           email: profile.email,
           fullName: profile.full_name,
           role: profile.role,
-          isAdmin: profile.is_admin,
+          isAdmin: profile.is_admin || effectiveRoles.includes("superuser"),
           isActive: profile.is_active,
+          effectiveRoles,
+          scopeAssignments: (assignments || []).map((assignment) => ({
+            role: assignment.role,
+            businessUnitId: assignment.business_unit_id,
+            departmentId: assignment.department_id,
+            workflowTemplateId: assignment.workflow_template_id,
+            startsAt: assignment.starts_at,
+            expiresAt: assignment.expires_at,
+          })),
         },
       },
     };
@@ -119,6 +159,8 @@ export function createDevelopmentApprovalProfile(): ApprovalRuntimeProfile | nul
         role: "superuser",
         isAdmin: true,
         isActive: true,
+        effectiveRoles: ["superuser"],
+        scopeAssignments: [],
       }
     : null;
 }

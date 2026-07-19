@@ -1,74 +1,19 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { saveCollaborationMirrorState } from "@/lib/collaboration-mirror-store";
-import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { NextResponse } from "next/server";
 import { createSupabaseJsonResponse } from "@/lib/supabase/route-response";
-import { getSupabaseRouteUser } from "@/lib/supabase/route-user";
-import type { ApprovalTask } from "@/lib/types";
-import type { TaskNotification } from "@/lib/workflow-system";
-import { recordWorkflowOperationEvent } from "@/lib/workflow-operation-monitor";
 
-export async function POST(request: NextRequest) {
-  const startedAt = Date.now();
-  const response = NextResponse.next();
-  const supabase = createSupabaseRouteClient(request, response);
-  const user = await getSupabaseRouteUser(supabase);
-
-  if (!user) {
-    return createSupabaseJsonResponse(response,
-      { mode: "local", reason: "Not signed in" },
-      { status: 401 },
-    );
-  }
-
-  const body = (await request.json().catch(() => ({}))) as {
-    task?: ApprovalTask;
-    notifications?: TaskNotification[];
-  };
-  if (!body.task?.id || !Array.isArray(body.notifications)) {
-    return createSupabaseJsonResponse(response,
-      { mode: "local", reason: "A task and notifications array are required." },
-      { status: 400 },
-    );
-  }
-
-  try {
-    await saveCollaborationMirrorState(supabase, body.task, body.notifications);
-    await recordWorkflowOperationEvent(supabase, {
-      ownerUserId: user.id,
-      ownerEmail: user.email,
-      operationType: "collaboration",
-      outcome: "succeeded",
-      requestNo: body.task.id,
-      durationMs: Date.now() - startedAt,
-      message: "Collaboration state saved.",
-      details: {
-        collaborationRequests: body.task.collaborationRequests?.length || 0,
-        sharedFulfillments: body.task.sharedFulfillments?.length || 0,
-        correctionRequests: body.task.correctionRequests?.length || 0,
-        notifications: body.notifications.length,
+export async function POST() {
+  return createSupabaseJsonResponse(
+    NextResponse.next(),
+    {
+      error: {
+        code: "legacy_endpoint_retired",
+        message:
+          "Collaboration changes must use the versioned approval request command API.",
       },
-    });
-    return createSupabaseJsonResponse(response, { mode: "supabase" });
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Collaboration persistence failed.";
-    await recordWorkflowOperationEvent(supabase, {
-      ownerUserId: user.id,
-      ownerEmail: user.email,
-      operationType: "collaboration",
-      outcome: "failed",
-      requestNo: body.task.id,
-      durationMs: Date.now() - startedAt,
-      message,
-    });
-    return createSupabaseJsonResponse(response,
-      {
-        mode: "local",
-        reason: message,
-      },
-      { status: 503 },
-    );
-  }
+    },
+    {
+      status: 410,
+      headers: { "Cache-Control": "private, no-store, max-age=0" },
+    },
+  );
 }

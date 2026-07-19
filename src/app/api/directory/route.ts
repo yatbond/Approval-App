@@ -11,7 +11,7 @@ import {
 export async function GET(request: NextRequest) {
   const resolved = await createApprovalServerContext(request);
   if (!resolved.ok) return approvalError(resolved);
-  const { service, cookieSource, correlationId } = resolved.context;
+  const { service, actor, cookieSource, correlationId } = resolved.context;
   const parsed = directoryQuerySchema.safeParse(
     Object.fromEntries(request.nextUrl.searchParams.entries()),
   );
@@ -23,13 +23,22 @@ export async function GET(request: NextRequest) {
       400,
     );
   }
+  if (!actor.isAdmin && !parsed.data.query) {
+    return approvalJson(
+      cookieSource,
+      correlationId,
+      { error: { code: "forbidden", message: "Enter a directory search." } },
+      403,
+    );
+  }
   try {
-    const users = await searchApprovalDirectory(
+    const directory = await searchApprovalDirectory(
       service,
       parsed.data.query,
       parsed.data.limit,
+      parsed.data.cursor,
     );
-    return approvalJson(cookieSource, correlationId, { users });
+    return approvalJson(cookieSource, correlationId, directory);
   } catch (error) {
     safeApprovalLog("directory_failed", correlationId, {
       errorName: error instanceof Error ? error.name : "unknown",

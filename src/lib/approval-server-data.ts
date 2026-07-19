@@ -7,6 +7,8 @@ import {
   type ApprovalRequestListQuery,
   type ApprovalRequestSubmission,
 } from "./approval-api-contracts.ts";
+import type { ApprovalCollaborationCommand } from "./approval-collaboration-contracts.ts";
+import { buildCollaborationNotifications } from "./collaboration-notification-state.ts";
 import {
   buildCanonicalApprovalTask,
   computeApprovalTransition,
@@ -15,7 +17,16 @@ import {
   type ApprovalRuntimeProfile,
 } from "./approval-runtime.ts";
 import { createApprovalTaskFromTemplate } from "./request-builder.ts";
-import type { WorkflowTemplate } from "./types.ts";
+import {
+  getTaskCorrectionUploadState,
+  getTaskSharedFulfillmentDecisionState,
+  getTaskSharedFulfillmentSubmitState,
+} from "./shared-fulfillment-state.ts";
+import {
+  getTaskContributorRequestState,
+  getTaskContributorUploadState,
+} from "./task-collaboration-state.ts";
+import type { ApprovalAttachment, ApprovalTask, WorkflowTemplate } from "./types.ts";
 import { applyWorkflowParticipantEmails } from "./workflow-participant-assignment-state.ts";
 
 const requestColumns = [
@@ -122,7 +133,7 @@ export async function submitApprovalRequest({
     .toUpperCase()}`;
   const { data: templateRow, error: templateError } = await service
     .from("workflow_template_versions")
-    .select("id,version_number,name,template_snapshot,is_active")
+    .select("id,version_number,name,template_snapshot,is_active,department_id")
     .eq("id", submission.templateVersionId)
     .eq("is_active", true)
     .maybeSingle();
@@ -167,6 +178,15 @@ export async function submitApprovalRequest({
   ]);
   const profiles = await profilesForEmails(service, participantEmails);
   if (profiles.length !== participantEmails.length) {
+    return { kind: "invalid_target" };
+  }
+  if (
+    profiles.some(
+      (profile) =>
+        profile.departmentId &&
+        normalizeEmail(profile.departmentName) !== normalizeEmail(template.department),
+    )
+  ) {
     return { kind: "invalid_target" };
   }
   const profileIdByEmail = new Map(
@@ -327,23 +347,61 @@ export async function searchApprovalDirectory(
   service: SupabaseClient,
   query: string,
   limit: number,
+  cursor?: string,
 ) {
   const pattern = `%${query}%`;
-  const { data, error } = await service
+  const cursorEmail = decodeDirectoryCursor(cursor);
+  let builder = service
     .from("profiles")
     .select("id,email,full_name,role,department_id")
     .eq("is_active", true)
     .or(`full_name.ilike.${pattern},email.ilike.${pattern}`)
-    .order("full_name")
-    .limit(limit);
+    .order("email")
+    .limit(limit + 1);
+  if (cursorEmail) builder = builder.gt("email", cursorEmail);
+  const { data, error } = await builder;
   if (error) throw new ApprovalDataError("directory", error.code);
-  return (data || []).map((profile) => ({
-    id: profile.id,
-    email: profile.email,
-    fullName: profile.full_name,
-    role: profile.role,
-    departmentId: profile.department_id,
-  }));
+  const rows = data || [];
+  const selected = rows.slice(0, limit);
+  const profileIds = selected.map((profile) => profile.id);
+  const now = new Date().toISOString();
+  const { data: assignments, error: assignmentError } = profileIds.length
+    ? await service
+        .from("approval_scoped_role_assignments")
+        .select("profile_id,role")
+        .in("profile_id", profileIds)
+        .eq("is_active", true)
+        .lte("starts_at", now)
+        .or(`expires_at.is.null,expires_at.gt.${now}`)
+    : { data: [], error: null };
+  if (assignmentError) {
+    throw new ApprovalDataError("directory_roles", assignmentError.code);
+  }
+  const rolesByProfile = new Map<string, Set<string>>();
+  (assignments || []).forEach((assignment) => {
+    const roles = rolesByProfile.get(assignment.profile_id) || new Set<string>();
+    roles.add(assignment.role);
+    rolesByProfile.set(assignment.profile_id, roles);
+  });
+  return {
+    users: selected.map((profile) => ({
+      id: profile.id,
+      email: profile.email,
+      fullName: profile.full_name,
+      role: profile.role,
+      effectiveRoles: Array.from(
+        new Set([
+          profile.role,
+          ...Array.from(rolesByProfile.get(profile.id) || []),
+        ]),
+      ),
+      departmentId: profile.department_id,
+    })),
+    nextCursor:
+      rows.length > limit && selected.length
+        ? Buffer.from(selected.at(-1)!.email, "utf8").toString("base64url")
+        : null,
+  };
 }
 
 export async function executeApprovalCommand({
@@ -411,6 +469,7 @@ export async function executeApprovalCommand({
   if ("targetProfileId" in command) {
     target = await loadActiveProfile(service, command.targetProfileId);
     if (!target) return { kind: "invalid_target" };
+    if (!isProfileInTaskScope(target, task)) return { kind: "invalid_target" };
   }
 
   const transition = computeApprovalTransition({ row, actor, command, target });
@@ -493,6 +552,353 @@ export async function executeApprovalCommand({
     };
   }
   return { kind: "dependency_error", operation: "command_result", errorCode: "unknown" };
+}
+
+export async function executeApprovalCollaborationCommand({
+  session,
+  service,
+  actor,
+  requestNo,
+  command,
+  correlationId,
+}: {
+  session: SupabaseClient;
+  service: SupabaseClient;
+  actor: ApprovalRuntimeProfile;
+  requestNo: string;
+  command: ApprovalCollaborationCommand;
+  correlationId?: string;
+}): Promise<ApprovalCommandResult> {
+  let row: ApprovalRequestRecord | null;
+  try {
+    row = await loadRequestRecord(session, requestNo);
+  } catch (error) {
+    return dependencyResult(error);
+  }
+  if (!row) return { kind: "not_found" };
+
+  const payloadHash = canonicalPayloadHash({ requestNo, command });
+  const expectedReceiptAction =
+    command.action === "decide_shared_fulfillment"
+      ? command.decision === "confirm"
+        ? "confirm_fulfillment"
+        : "request_correction"
+      : command.action;
+  const { data: receipt, error: receiptError } = await service
+    .from("approval_command_receipts")
+    .select("action,payload_hash")
+    .eq("approval_request_id", row.id)
+    .eq("actor_id", actor.id)
+    .eq("idempotency_key", command.idempotencyKey)
+    .maybeSingle();
+  if (receiptError) {
+    return {
+      kind: "dependency_error",
+      operation: "receipt_lookup",
+      errorCode: receiptError.code || "unknown",
+    };
+  }
+  if (receipt) {
+    const fresh = await safeReload(session, requestNo, actor);
+    if (!fresh) return { kind: "not_found" };
+    if (receipt.action !== expectedReceiptAction || receipt.payload_hash !== payloadHash) {
+      return { kind: "conflict", code: "idempotency_conflict", request: fresh };
+    }
+    return { kind: "success", replayed: true, request: fresh };
+  }
+
+  const currentDto = await safeDto(session, row, actor);
+  if (row.state_version !== command.expectedVersion) {
+    return { kind: "conflict", code: "stale_version", request: currentDto };
+  }
+  const task = buildCanonicalApprovalTask(row);
+  if (task.status === "approved" || task.status === "cancelled") {
+    return { kind: "conflict", code: "already_decided", request: currentDto };
+  }
+  const approvalActor = { name: actor.fullName, email: actor.email };
+  const attachmentFor = (
+    value: Extract<
+      ApprovalCollaborationCommand,
+      { action: "submit_contribution" }
+    >["attachment"],
+  ): ApprovalAttachment => ({
+    id: value.key,
+    fileName: value.fileName,
+    ...(value.documentId ? { documentId: value.documentId } : {}),
+    documentType: value.documentType,
+    format: value.format,
+    ...(value.workflowNodeId ? { workflowNodeId: value.workflowNodeId } : {}),
+    storagePath: value.storagePath,
+    uploadedBy: actor.email,
+    uploadedAt: new Date().toISOString(),
+  });
+
+  let nextTask: ApprovalTask;
+  let databaseAction:
+    | "request_contributor"
+    | "submit_contribution"
+    | "submit_shared_fulfillment"
+    | "confirm_fulfillment"
+    | "request_correction"
+    | "submit_correction";
+  let notificationEvents: Parameters<typeof buildCollaborationNotifications>[0]["event"][] = [];
+  let attachment: ApprovalAttachment | undefined;
+
+  if (command.action === "request_contributor") {
+    if (!actor.isAdmin && normalizeEmail(task.currentOwner) !== normalizeEmail(actor.email)) {
+      return { kind: "forbidden" };
+    }
+    const target = await loadActiveProfile(service, command.targetProfileId);
+    if (!target) return { kind: "invalid_target" };
+    if (!isProfileInTaskScope(target, task)) return { kind: "invalid_target" };
+    const result = getTaskContributorRequestState({
+      task,
+      actor: approvalActor,
+      contributorEmail: target.email,
+      contributorName: command.contributorName || target.fullName,
+      requestNote: command.requestNote,
+      dueAt: command.dueAt || "",
+      blocksApproval: command.blocksApproval,
+    });
+    if (!result.didApply) return { kind: "invalid_transition", request: currentDto };
+    nextTask = result.task;
+    databaseAction = "request_contributor";
+  } else if (command.action === "submit_contribution") {
+    attachment = attachmentFor(command.attachment);
+    const result = getTaskContributorUploadState({
+      task,
+      collaborationRequestId: command.collaborationRequestId,
+      actor: approvalActor,
+      attachment,
+      extractedFields: command.extractedFields,
+    });
+    if (!result.didApply) return { kind: "forbidden" };
+    nextTask = result.task;
+    databaseAction = "submit_contribution";
+    notificationEvents = [
+      { type: "contributor_submitted", collaborationRequestId: command.collaborationRequestId },
+    ];
+  } else if (command.action === "submit_shared_fulfillment") {
+    const assigned = await loadActiveProfile(service, command.assignedSubmitterProfileId);
+    if (!assigned) return { kind: "invalid_target" };
+    if (!isProfileInTaskScope(assigned, task)) return { kind: "invalid_target" };
+    const template = task.workflowTemplateSnapshot;
+    const requirementNode = template?.graph?.nodes.find(
+      (node) =>
+        node.id === command.requirementNodeId && node.kind === "submit_request",
+    );
+    const document = template?.documents.find(
+      (item) =>
+        item.id === command.documentId &&
+        requirementNode?.documentIds?.includes(item.id),
+    );
+    const sourceNode = template?.graph?.nodes.find(
+      (node) =>
+        node.kind === "submit_request" &&
+        node.allowSharedFulfillment === true &&
+        normalizeEmail(node.assigneeEmail) === normalizeEmail(actor.email),
+    );
+    if (!requirementNode || !document) return { kind: "invalid_transition", request: currentDto };
+    if (normalizeEmail(requirementNode.assigneeEmail) !== normalizeEmail(assigned.email)) {
+      return { kind: "invalid_target" };
+    }
+    if (!actor.isAdmin && !sourceNode) return { kind: "forbidden" };
+    if (
+      command.attachment.documentId !== document.id ||
+      command.attachment.workflowNodeId !== requirementNode.id
+    ) {
+      return { kind: "invalid_transition", request: currentDto };
+    }
+    attachment = attachmentFor(command.attachment);
+    const result = getTaskSharedFulfillmentSubmitState({
+      task,
+      actor: approvalActor,
+      attachment,
+      requirementNodeId: command.requirementNodeId,
+      documentId: command.documentId,
+      documentType: document.documentType,
+      assignedSubmitterEmail: assigned.email,
+      assignedSubmitterName: assigned.fullName,
+      required: document.required,
+      requiresConfirmation:
+        sourceNode?.requireSharedFulfillmentConfirmation !== false,
+      extractedFields: command.extractedFields,
+    });
+    nextTask = result.task;
+    databaseAction = "submit_shared_fulfillment";
+    const fulfillmentId = nextTask.sharedFulfillments?.at(-1)?.id;
+    notificationEvents = fulfillmentId
+      ? [{ type: "shared_pending_confirmation", fulfillmentId }]
+      : [];
+  } else if (command.action === "decide_shared_fulfillment") {
+    const result = getTaskSharedFulfillmentDecisionState({
+      task,
+      fulfillmentId: command.fulfillmentId,
+      actor: approvalActor,
+      currentOwnerEmail: task.currentOwner,
+      decision: command.decision,
+      note: command.note,
+    });
+    if (!result.didApply) return { kind: "forbidden" };
+    nextTask = result.task;
+    databaseAction = command.decision === "confirm" ? "confirm_fulfillment" : "request_correction";
+    notificationEvents = [
+      {
+        type: command.decision === "confirm" ? "shared_confirmed" : "shared_rejected",
+        fulfillmentId: command.fulfillmentId,
+      },
+    ];
+    const correctionId = nextTask.sharedFulfillments?.find(
+      (item) => item.id === command.fulfillmentId,
+    )?.correctionRequestId;
+    if (correctionId) {
+      notificationEvents.push({ type: "correction_created", correctionRequestId: correctionId });
+    }
+  } else {
+    attachment = attachmentFor(command.attachment);
+    const result = getTaskCorrectionUploadState({
+      task,
+      correctionRequestId: command.correctionRequestId,
+      actor: approvalActor,
+      attachment,
+      extractedFields: command.extractedFields,
+    });
+    if (!result.didApply) return { kind: "forbidden" };
+    nextTask = result.task;
+    databaseAction = "submit_correction";
+    notificationEvents = [
+      { type: "correction_resolved", correctionRequestId: command.correctionRequestId },
+    ];
+    const fulfillmentId = nextTask.correctionRequests?.find(
+      (item) => item.id === command.correctionRequestId,
+    )?.resolvedByFulfillmentId;
+    if (fulfillmentId) {
+      notificationEvents.push({ type: "shared_pending_confirmation", fulfillmentId });
+    }
+  }
+
+  const taskNotifications = notificationEvents.flatMap((event) =>
+    buildCollaborationNotifications({ task: nextTask, event }),
+  );
+  if (command.action === "request_contributor") {
+    const request = nextTask.collaborationRequests?.at(-1);
+    if (request) {
+      taskNotifications.push({
+        id: `${request.id}-assigned`,
+        title: "Contributor input requested",
+        body: request.requestNote,
+        time: nextTask.due,
+        unread: true,
+        requestId: requestNo,
+        recipientEmail: request.contributorEmail,
+        kind: "collaboration_update",
+      });
+    }
+  }
+  const recipientEmails = uniqueNormalizedEmails(
+    taskNotifications.map((notification) => notification.recipientEmail),
+  );
+  const recipients = await profilesForEmails(service, recipientEmails);
+  if (recipients.length !== recipientEmails.length) return { kind: "invalid_target" };
+  const recipientByEmail = new Map(
+    recipients.map((recipient) => [normalizeEmail(recipient.email), recipient]),
+  );
+  const notifications = taskNotifications
+    .filter(
+      (notification, index, values) =>
+        values.findIndex(
+          (candidate) =>
+            normalizeEmail(candidate.recipientEmail) ===
+              normalizeEmail(notification.recipientEmail) &&
+            candidate.title === notification.title,
+        ) === index,
+    )
+    .map((notification) => ({
+      recipientProfileId: recipientByEmail.get(normalizeEmail(notification.recipientEmail))?.id,
+      kind: notification.kind,
+      title: notification.title,
+      body: notification.body,
+      href: `/?tab=tracking&request=${encodeURIComponent(requestNo)}`,
+      sendEmail: true,
+      templateKey: "approval-collaboration",
+    }));
+  if (notifications.some((notification) => !notification.recipientProfileId)) {
+    return { kind: "invalid_target" };
+  }
+  const event = nextTask.auditTrail.slice(task.auditTrail.length).at(-1);
+  if (!event) return { kind: "invalid_transition", request: currentDto };
+  const snapshot: ApprovalTask & { schemaVersion: number } = {
+    ...nextTask,
+    auditTrail: task.auditTrail,
+    schemaVersion: 1,
+  };
+  const { data: outcome, error: commandError } = await service.rpc(
+    "commit_approval_request_command",
+    {
+      p_request_no: requestNo,
+      p_actor_id: actor.id,
+      p_idempotency_key: command.idempotencyKey,
+      p_action: databaseAction,
+      p_payload_hash: payloadHash,
+      p_expected_state_version: command.expectedVersion,
+      p_next_state: {
+        extractedFields: nextTask.extractedFields,
+        lastAction: nextTask.lastAction,
+        participants: nextTask.participants,
+        taskSnapshot: snapshot,
+        collaborationState: {
+          collaborationRequests: nextTask.collaborationRequests || [],
+          sharedFulfillments: nextTask.sharedFulfillments || [],
+          correctionRequests: nextTask.correctionRequests || [],
+          ...(attachment
+            ? {
+                attachment: {
+                  key: attachment.id,
+                  fileName: attachment.fileName,
+                  documentId: attachment.documentId || "",
+                  documentType: attachment.documentType,
+                  format: attachment.format,
+                  workflowNodeId: attachment.workflowNodeId || "",
+                  storagePath: attachment.storagePath,
+                },
+              }
+            : {}),
+        },
+      },
+      p_event: {
+        action: event.action,
+        type: databaseAction,
+        summary: event.detail,
+        details: { collaborationAction: command.action, correlationId },
+      },
+      p_notifications: notifications,
+    },
+  );
+  if (commandError) {
+    return {
+      kind: "dependency_error",
+      operation: "collaboration_commit",
+      errorCode: commandError.code || "unknown",
+    };
+  }
+  const result = outcome as { outcome?: string } | null;
+  const fresh = await safeReload(session, requestNo, actor);
+  if (!fresh) return { kind: "not_found" };
+  if (result?.outcome === "stale") {
+    return { kind: "conflict", code: "stale_version", request: fresh };
+  }
+  if (result?.outcome === "idempotency_conflict") {
+    return { kind: "conflict", code: "idempotency_conflict", request: fresh };
+  }
+  if (result?.outcome === "rate_limited") {
+    return { kind: "rate_limited", retryAfterSeconds: 60 };
+  }
+  if (result?.outcome === "forbidden") return { kind: "forbidden" };
+  if (result?.outcome === "invalid_target") return { kind: "invalid_target" };
+  if (result?.outcome === "applied" || result?.outcome === "replayed") {
+    return { kind: "success", replayed: result.outcome === "replayed", request: fresh };
+  }
+  return { kind: "dependency_error", operation: "collaboration_result", errorCode: "unknown" };
 }
 
 async function loadRequestRecord(client: SupabaseClient, requestNo: string) {
@@ -605,11 +1011,14 @@ function requestSummary(row: ApprovalRequestRecord, actor: ApprovalRuntimeProfil
 async function loadActiveProfile(service: SupabaseClient, id: string) {
   const { data, error } = await service
     .from("profiles")
-    .select("id,email,full_name,role,is_admin,is_active")
+    .select("id,email,full_name,role,is_admin,is_active,department_id,departments(name)")
     .eq("id", id)
     .eq("is_active", true)
     .maybeSingle();
   if (error || !data) return undefined;
+  const department = Array.isArray(data.departments)
+    ? data.departments[0]
+    : data.departments;
   return {
     id: data.id,
     email: data.email,
@@ -617,7 +1026,27 @@ async function loadActiveProfile(service: SupabaseClient, id: string) {
     role: data.role,
     isAdmin: data.is_admin,
     isActive: data.is_active,
+    departmentId: data.department_id,
+    departmentName: department?.name || null,
+    businessUnitId: null,
+    businessName: null,
   } satisfies ApprovalRuntimeProfile;
+}
+
+function isProfileInTaskScope(
+  profile: ApprovalRuntimeProfile,
+  task: ApprovalTask,
+) {
+  if (!profile.departmentId) return true;
+  if (normalizeEmail(profile.departmentName) !== normalizeEmail(task.department)) {
+    return false;
+  }
+  const taskBusiness = task.workflowTemplateSnapshot?.business;
+  return (
+    !taskBusiness ||
+    !profile.businessName ||
+    normalizeEmail(profile.businessName) === normalizeEmail(taskBusiness)
+  );
 }
 
 async function profileIdForEmail(service: SupabaseClient, email: string) {
@@ -636,14 +1065,21 @@ async function profilesForEmails(service: SupabaseClient, emails: string[]) {
     emails.map(async (email) => {
       const { data, error } = await service
         .from("profiles")
-        .select("id,email")
+        .select("id,email,department_id,departments(name)")
         .ilike("email", email)
         .eq("is_active", true)
         .maybeSingle();
       return error ? null : data;
     }),
   );
-  return results.filter((value): value is { id: string; email: string } => Boolean(value));
+  return results
+    .filter((value): value is NonNullable<typeof value> => value !== null)
+    .map((value) => ({
+      id: value.id,
+      email: value.email,
+      departmentId: value.department_id,
+      departmentName: value.departments?.[0]?.name || null,
+    }));
 }
 
 async function safeDto(
@@ -696,6 +1132,10 @@ function uniqueNormalizedEmails(values: string[]) {
   return [...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))];
 }
 
+function normalizeEmail(value?: string | null) {
+  return value?.trim().toLowerCase() || "";
+}
+
 function encodeCursor(row?: ApprovalRequestRecord) {
   if (!row) return null;
   return Buffer.from(
@@ -714,6 +1154,16 @@ function decodeCursor(cursor?: string) {
     return typeof parsed.updatedAt === "string" && typeof parsed.id === "string"
       ? { updatedAt: parsed.updatedAt, id: parsed.id }
       : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeDirectoryCursor(cursor?: string) {
+  if (!cursor) return null;
+  try {
+    const email = Buffer.from(cursor, "base64url").toString("utf8");
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
   } catch {
     return null;
   }

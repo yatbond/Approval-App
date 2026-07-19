@@ -6,6 +6,51 @@ declare
 begin
   if not exists (
     select 1
+    from pg_class c
+    where c.oid = 'public.approval_scoped_role_assignments'::regclass
+      and c.relrowsecurity
+  ) then
+    raise exception 'approval_scoped_role_assignments must have RLS enabled';
+  end if;
+
+  if not has_table_privilege(
+    'authenticated',
+    'public.approval_scoped_role_assignments',
+    'SELECT'
+  ) then
+    raise exception 'authenticated must have scoped role SELECT for RLS filtering';
+  end if;
+
+  if has_table_privilege('authenticated', 'public.approval_scoped_role_assignments', 'INSERT')
+     or has_table_privilege('authenticated', 'public.approval_scoped_role_assignments', 'UPDATE')
+     or has_table_privilege('authenticated', 'public.approval_scoped_role_assignments', 'DELETE') then
+    raise exception 'authenticated can directly mutate scoped roles';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_trigger t
+    where t.tgrelid = 'public.profiles'::regclass
+      and t.tgname = 'profiles_sync_scoped_role_assignment'
+      and not t.tgisinternal
+  ) then
+    raise exception 'profile scoped-role synchronization trigger is missing';
+  end if;
+
+  if not has_function_privilege(
+    'authenticated',
+    'public.validate_active_directory_emails(text[])',
+    'EXECUTE'
+  ) or has_function_privilege(
+    'anon',
+    'public.validate_active_directory_emails(text[])',
+    'EXECUTE'
+  ) then
+    raise exception 'directory validation function grants are incorrect';
+  end if;
+
+  if not exists (
+    select 1
     from information_schema.columns
     where table_schema = 'public'
       and table_name = 'approval_requests'

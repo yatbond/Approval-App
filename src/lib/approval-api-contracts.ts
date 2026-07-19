@@ -68,6 +68,14 @@ export const approvalActionCommandSchema = z.discriminatedUnion("action", [
       action: z.literal("delegate"),
       targetProfileId,
       comment: optionalComment,
+      expiresAt: z.string().datetime({ offset: true }).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...commandBase,
+      action: z.literal("revoke_delegation"),
+      comment: optionalComment,
     })
     .strict(),
   z
@@ -105,7 +113,7 @@ export const approvalRequestSubmissionSchema = z
             fileName: z.string().trim().min(1).max(500),
             documentId: z.string().trim().max(200).optional(),
             documentType: z.string().trim().min(1).max(200),
-            format: z.enum(["pdf", "image", "spreadsheet", "ad_hoc"]),
+            format: z.enum(["text", "pdf", "image", "excel_csv", "ad_hoc"]),
             workflowNodeId: z.string().trim().max(200).optional(),
             storagePath: z.string().trim().min(3).max(1_000),
           })
@@ -134,16 +142,30 @@ export const directoryQuerySchema = z
     query: z
       .string()
       .trim()
-      .min(1)
       .max(80)
-      .regex(/^[\p{L}\p{N}@._' -]+$/u),
-    limit: z.coerce.number().int().min(1).max(20).default(10),
+      .regex(/^[\p{L}\p{N}@._' -]*$/u)
+      .default(""),
+    cursor: z
+      .string()
+      .trim()
+      .max(500)
+      .refine((value) => {
+        try {
+          const email = Buffer.from(value, "base64url").toString("utf8");
+          return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        } catch {
+          return false;
+        }
+      }, "Invalid directory cursor")
+      .optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
   })
   .strict();
 
 export type ApprovalActionCommand = z.infer<typeof approvalActionCommandSchema>;
 export type ApprovalRequestSubmission = z.infer<typeof approvalRequestSubmissionSchema>;
 export type ApprovalRequestListQuery = z.infer<typeof approvalRequestListQuerySchema>;
+export type ApprovalDirectoryQuery = z.infer<typeof directoryQuerySchema>;
 
 export type ApprovalApiErrorCode =
   | "invalid_request"

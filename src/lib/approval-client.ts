@@ -5,7 +5,7 @@ import type {
   AuditEvent,
 } from "./types.ts";
 
-type CanonicalRequestDto = {
+export type CanonicalRequestDto = {
   requestNo: string;
   version: number;
   task: ApprovalTask;
@@ -270,7 +270,7 @@ export function canonicalDtoToTask(dto: CanonicalRequestDto): ApprovalTask {
   };
 }
 
-async function resolveDirectoryProfileId(email: string) {
+export async function resolveDirectoryProfileId(email: string) {
   const normalized = email.trim().toLowerCase();
   if (!normalized) {
     throw new ApprovalApiError("Choose an active user.", 422, "invalid_target");
@@ -293,6 +293,22 @@ async function resolveDirectoryProfileId(email: string) {
     );
   }
   return exact.id;
+}
+
+export async function validateActiveDirectoryEmails(emails: string[]) {
+  const unique = Array.from(
+    new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean)),
+  );
+  if (unique.length > 100) {
+    throw new ApprovalApiError(
+      "A workflow cannot contain more than 100 fixed directory assignments.",
+      422,
+      "invalid_target",
+    );
+  }
+  for (let offset = 0; offset < unique.length; offset += 5) {
+    await Promise.all(unique.slice(offset, offset + 5).map(resolveDirectoryProfileId));
+  }
 }
 
 function apiError(response: Response, payload: ApprovalApiErrorBody) {

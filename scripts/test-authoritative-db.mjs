@@ -257,6 +257,39 @@ async function testRlsAndDirectMutationDenial(request) {
     });
   assert.ok(directEventError, "authenticated event INSERT must be denied");
 
+  const { error: directCollaborationError } = await clients.actor
+    .from("workflow_collaboration_requests")
+    .insert({
+      id: `forged-collaboration-${runId}`,
+      approval_request_no: request.request_no,
+      contributor_email: identities.target.email,
+      contributor_name: identities.target.name,
+      requested_by_email: identities.actor.email,
+      status: "requested",
+      payload: {},
+    });
+  assert.ok(
+    directCollaborationError,
+    "authenticated collaboration INSERT must be denied",
+  );
+
+  const { data: ownRoles, error: ownRolesError } = await clients.actor
+    .from("approval_scoped_role_assignments")
+    .select("profile_id,role")
+    .eq("profile_id", identities.actor.id);
+  assert.ifError(ownRolesError);
+  assert.ok(ownRoles.some((assignment) => assignment.role === "requester"));
+
+  const { error: directRoleError } = await clients.actor
+    .from("approval_scoped_role_assignments")
+    .insert({
+      profile_id: identities.actor.id,
+      role: "superuser",
+      source: "admin",
+      created_by: identities.actor.id,
+    });
+  assert.ok(directRoleError, "authenticated role escalation must be denied");
+
   const { error: directRpcError } = await clients.actor.rpc(
     "commit_approval_request_command",
     commandArgs(request.request_no, 0, "forbidden-rpc", "approve"),
@@ -320,6 +353,26 @@ async function testAtomicConfiguration() {
     businessDepartments: 1,
     workflowTemplateVersions: 1,
   });
+
+  const invalidAssignmentConfiguration = structuredClone(configuration);
+  invalidAssignmentConfiguration.workflowTemplateVersions[0].isActiveVersion = true;
+  invalidAssignmentConfiguration.workflowTemplateVersions[0].templateSnapshot = {
+    ...invalidAssignmentConfiguration.workflowTemplateVersions[0].templateSnapshot,
+    steps: [
+      {
+        approverEmail: `missing-${runId}@example.com`,
+        escalationEmail: "",
+      },
+    ],
+  };
+  const { error: invalidAssignmentError } = await clients.admin.rpc(
+    "save_workspace_configuration",
+    { p_configuration: invalidAssignmentConfiguration },
+  );
+  assert.ok(
+    invalidAssignmentError,
+    "atomic configuration must reject unresolved published assignments",
+  );
 
   const { error: nonAdminError } = await clients.actor.rpc(
     "save_workspace_configuration",

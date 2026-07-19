@@ -19,6 +19,7 @@ export type ApprovalAction =
   | "accept_reassignment"
   | "decline_reassignment"
   | "delegate"
+  | "revoke_delegation"
   | "amend_resubmit"
   | "cancel";
 
@@ -570,6 +571,7 @@ export type ApprovalTask = {
   currentNodeId?: string;
   pendingNodeIds?: string[];
   pendingOwners?: string[];
+  delegationExpiresAt?: string;
   completedNodeIds?: string[];
   notifiedNodeIds?: string[];
   nodeDecisions?: Record<string, "approved" | "rejected">;

@@ -22,6 +22,14 @@ import type {
 import type { EmailOutboxEntry } from "@/lib/email-outbox-state";
 import type { UserDirectoryEntry } from "@/lib/user-directory";
 import type { TaskNotification } from "@/lib/workflow-system";
+import type {
+  AuthoritativeDirectoryUser,
+  useAuthoritativeAdminDirectory,
+} from "./use-authoritative-admin-directory";
+
+type AuthoritativeDirectoryController = ReturnType<
+  typeof useAuthoritativeAdminDirectory
+>;
 
 const userRoleOptions: UserDirectoryEntry["role"][] = [
   "superuser",
@@ -41,6 +49,7 @@ export function AdminView({
   onDeactivateDepartmentRecord,
   legacyDepartments,
   userDirectory,
+  authoritativeDirectory,
   taskNotifications,
   roleAssignments,
   setRoleAssignments,
@@ -60,6 +69,7 @@ export function AdminView({
   ) => Promise<boolean>;
   legacyDepartments: string[];
   userDirectory: UserDirectoryEntry[];
+  authoritativeDirectory?: AuthoritativeDirectoryController;
   taskNotifications: TaskNotification[];
   roleAssignments: UserRoleAssignment[];
   setRoleAssignments: (
@@ -90,6 +100,16 @@ export function AdminView({
   const [newDepartmentName, setNewDepartmentName] = useState("");
   const [testEmail, setTestEmail] = useState(activeUserEmail);
   const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+  const displayedDirectory: AuthoritativeDirectoryUser[] = authoritativeDirectory
+    ? authoritativeDirectory.users
+    : userDirectory.map((user) => ({
+        id: user.email,
+        email: user.email,
+        fullName: user.name,
+        role: user.role,
+        effectiveRoles: [user.role],
+        departmentId: null,
+      }));
 
   function selectBusiness(business: BusinessUnit) {
     setSelectedBusinessId(business.id);
@@ -311,22 +331,69 @@ export function AdminView({
         <OperationalHealthPanel />
         <div className="rounded-md border border-[#e6e6e6] bg-white p-4">
           <div className="flex items-center gap-2">
-            <h2 className="font-semibold">Users</h2>
-            <InfoTip label="Lightweight roles inferred from requests and workflow templates." />
+            <h2 className="font-semibold">Directory and effective roles</h2>
+            <InfoTip label="Active profiles loaded from the authoritative directory in bounded pages." />
           </div>
+          {authoritativeDirectory ? (
+            <div className="mt-3 space-y-2">
+              <label className="block text-xs text-neutral-500" htmlFor="admin-directory-search">
+                Search by name or email
+              </label>
+              <input
+                id="admin-directory-search"
+                type="search"
+                value={authoritativeDirectory.query}
+                onChange={(event) => authoritativeDirectory.setQuery(event.target.value)}
+                placeholder="Search active users"
+                className="min-h-11 w-full rounded-md border border-[#e6e6e6] bg-white px-3 text-sm outline-none focus:border-emerald-400/60"
+              />
+              {authoritativeDirectory.error ? (
+                <div className="rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-100">
+                  <p>{authoritativeDirectory.error}</p>
+                  <button
+                    type="button"
+                    onClick={() => void authoritativeDirectory.retry()}
+                    className="mt-2 min-h-11 rounded-md border border-rose-300/40 px-3"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mt-3 max-h-[42vh] space-y-2 overflow-y-auto pr-1 xl:max-h-96">
-            {userDirectory.map((user) => (
+            {displayedDirectory.map((user) => (
               <div
-                key={user.email}
+                key={user.id}
                 className="rounded-md border border-[#e6e6e6] bg-white p-2 text-sm"
               >
-                <p className="break-words text-neutral-200">{user.name}</p>
+                <p className="break-words text-neutral-200">{user.fullName}</p>
                 <p className="mt-1 break-words text-xs text-neutral-500">
-                  {user.email} - {user.role}
+                  {user.email} - {user.effectiveRoles.join(", ")}
                 </p>
               </div>
             ))}
+            {!displayedDirectory.length && !authoritativeDirectory?.isLoading ? (
+              <p className="rounded-md border border-[#e6e6e6] p-3 text-xs text-neutral-500">
+                No active users match this search.
+              </p>
+            ) : null}
+            {authoritativeDirectory?.isLoading ? (
+              <p aria-live="polite" className="p-2 text-xs text-neutral-500">
+                Loading directory...
+              </p>
+            ) : null}
           </div>
+          {authoritativeDirectory?.nextCursor ? (
+            <button
+              type="button"
+              disabled={authoritativeDirectory.isLoading}
+              onClick={() => void authoritativeDirectory.loadNextPage()}
+              className="mt-3 min-h-11 w-full rounded-md border border-sky-400/40 bg-sky-400/10 px-3 text-sm text-sky-100 disabled:opacity-50"
+            >
+              Load next 50 users
+            </button>
+          ) : null}
         </div>
         <div className="rounded-md border border-[#e6e6e6] bg-white p-4">
           <div className="flex items-center gap-2">

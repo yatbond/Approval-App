@@ -90,5 +90,6 @@ test("canonical hashes are stable across object key ordering", () => {
 test("directory searches are bounded and reject query-operator punctuation", () => {
   assert.equal(directoryQuerySchema.safeParse({ query: "Finance User", limit: "20" }).success, true);
   assert.equal(directoryQuerySchema.safeParse({ query: "%,is_admin.eq.true" }).success, false);
-  assert.equal(directoryQuerySchema.safeParse({ query: "x", limit: "21" }).success, false);
+  assert.equal(directoryQuerySchema.safeParse({ query: "x", limit: "50" }).success, true);
+  assert.equal(directoryQuerySchema.safeParse({ query: "x", limit: "51" }).success, false);
 });

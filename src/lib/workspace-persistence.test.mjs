@@ -2,8 +2,31 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   parseWorkspaceState,
+  sanitizeWorkspaceStateSnapshot,
   serializeWorkspaceState,
 } from "./workspace-persistence.ts";
+
+test("sanitizes incomplete normalized template rows without crashing the workspace", () => {
+  const sanitized = sanitizeWorkspaceStateSnapshot({
+    selectedTemplateId: "incomplete",
+    approvalTasks: [],
+    businessDirectory: [],
+    workflowTemplates: [
+      {
+        id: "incomplete",
+        name: "Incomplete migration fixture",
+      },
+    ],
+    userRoleAssignments: [],
+    adminAuditEvents: [],
+    formLibrary: [],
+  });
+  assert.deepEqual(sanitized.workflowTemplates[0].documents, []);
+  assert.deepEqual(sanitized.workflowTemplates[0].documentTypes, []);
+  assert.deepEqual(sanitized.workflowTemplates[0].languages, []);
+  assert.deepEqual(sanitized.workflowTemplates[0].fields, []);
+  assert.deepEqual(sanitized.workflowTemplates[0].steps, []);
+});
 
 test("serializes and parses workspace state", () => {
   const state = {

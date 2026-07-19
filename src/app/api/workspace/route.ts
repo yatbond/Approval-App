@@ -211,6 +211,55 @@ export async function POST(request: NextRequest) {
     return createSupabaseJsonResponse(response, { ...payload, monitoring }, { status });
   };
 
+  const publishedAssignmentEmails = Array.from(
+    new Set(
+      incomingSnapshot.workflowTemplates
+        .filter((template) => template.isDraft === false)
+        .flatMap((template) => [
+          ...template.steps.flatMap((step) => [
+            step.approverEmail,
+            step.escalationEmail || "",
+          ]),
+          ...(template.graph?.nodes.flatMap((node) => [
+            node.assigneeEmail || "",
+            node.escalationEmail || "",
+          ]) || []),
+        ])
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+  if (publishedAssignmentEmails.length > 100) {
+    return finishSave(
+      {
+        mode: "local",
+        reason: "Published workflows cannot contain more than 100 directory assignments.",
+      },
+      422,
+    );
+  }
+  if (publishedAssignmentEmails.length) {
+    const { data: invalidEmails, error: directoryError } = await supabase.rpc(
+      "validate_active_directory_emails",
+      { p_emails: publishedAssignmentEmails },
+    );
+    if (directoryError) {
+      return finishSave(
+        { mode: "local", reason: "Unable to verify published workflow assignments." },
+        503,
+      );
+    }
+    if (Array.isArray(invalidEmails) && invalidEmails.length) {
+      return finishSave(
+        {
+          mode: "local",
+          reason: `Published workflow assignment is inactive or missing: ${invalidEmails[0]}`,
+        },
+        422,
+      );
+    }
+  }
+
   const incomingSnapshotHash = createWorkspaceSnapshotHash(incomingSnapshot);
   const { data: snapshotMetadata, error: snapshotMetadataError } = await supabase
     .from("workspace_snapshots")
