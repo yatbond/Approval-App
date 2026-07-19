@@ -34,6 +34,7 @@ const reassignmentFixture = await createRequestFixture("reassignment");
 
 await testRlsAndDirectMutationDenial(fixture);
 await testAtomicConfiguration();
+await testAtomicSubmission(fixture);
 await testCommandSemantics(fixture);
 await testConcurrentWinner(raceFixture);
 await testNormalizedAssignmentTransitions(reassignmentFixture);
@@ -164,7 +165,7 @@ async function createRequestFixture(label) {
       task_snapshot: { schemaVersion: 1, id: requestNo },
       pinned_template_snapshot: { schemaVersion: 1, id: templateKey },
     })
-    .select("id,request_no,state_version")
+    .select("id,request_no,state_version,workflow_template_version_id")
     .single();
   assert.ifError(requestError);
 
@@ -261,6 +262,21 @@ async function testRlsAndDirectMutationDenial(request) {
     commandArgs(request.request_no, 0, "forbidden-rpc", "approve"),
   );
   assert.ok(directRpcError, "authenticated command RPC execution must be denied");
+
+  const { error: directSubmissionRpcError } = await clients.requester.rpc(
+    "submit_approval_request",
+    {
+      p_actor_id: identities.requester.id,
+      p_idempotency_key: "forbidden-submission",
+      p_payload_hash: hash({ forbidden: true }),
+      p_request: {},
+      p_notifications: [],
+    },
+  );
+  assert.ok(
+    directSubmissionRpcError,
+    "authenticated submission RPC execution must be denied",
+  );
 }
 
 async function testAtomicConfiguration() {
@@ -337,6 +353,121 @@ async function testAtomicConfiguration() {
     .eq("name", rollbackBusiness);
   assert.ifError(rolledBackReadError);
   assert.equal(rolledBackRows.length, 0);
+}
+
+async function testAtomicSubmission(templateFixture) {
+  const requestNo = `PHASE1-SUBMIT-${runId}`;
+  const submission = {
+    requestNo,
+    templateVersionId: templateFixture.workflow_template_version_id,
+    title: `Atomic submission ${runId}`,
+    status: "pending",
+    dueLabel: "Tomorrow",
+    dueAt: new Date(Date.now() + 86_400_000).toISOString(),
+    valueLabel: "HKD 2,000",
+    currentStep: "Approval",
+    currentNodeId: "approval-1",
+    currentOwnerId: identities.actor.id,
+    pendingNodeIds: ["approval-1"],
+    pendingOwnerProfileIds: [identities.actor.id],
+    pendingOwnerEmails: [identities.actor.email],
+    completedNodeIds: ["start"],
+    notifiedNodeIds: [],
+    nodeDecisions: {},
+    activeBranchId: "",
+    extractedFields: { Amount: "2000" },
+    participants: [identities.requester.email, identities.actor.email],
+    participantProfileIds: [identities.requester.id, identities.actor.id],
+    lastAction: "Submitted by authoritative API",
+    taskSnapshot: { id: requestNo, status: "pending" },
+  };
+  const notifications = [
+    {
+      recipientProfileId: identities.actor.id,
+      kind: "assigned",
+      title: "New approval request",
+      body: "An approval request was assigned.",
+      href: `/?tab=queue&request=${requestNo}`,
+      sendEmail: true,
+      templateKey: "approval-assigned",
+    },
+  ];
+  const idempotencyKey = `submission-${runId}`;
+  const payloadHash = hash({ submission, notifications });
+  const args = {
+    p_actor_id: identities.requester.id,
+    p_idempotency_key: idempotencyKey,
+    p_payload_hash: payloadHash,
+    p_request: submission,
+    p_notifications: notifications,
+  };
+
+  const { data: applied, error: appliedError } = await service.rpc(
+    "submit_approval_request",
+    args,
+  );
+  assert.ifError(appliedError);
+  assert.equal(applied.outcome, "applied");
+
+  const { data: replayed, error: replayError } = await service.rpc(
+    "submit_approval_request",
+    args,
+  );
+  assert.ifError(replayError);
+  assert.equal(replayed.outcome, "replayed");
+  assert.equal(replayed.requestId, applied.requestId);
+
+  const { data: conflict, error: conflictError } = await service.rpc(
+    "submit_approval_request",
+    { ...args, p_payload_hash: hash({ changed: true }) },
+  );
+  assert.ifError(conflictError);
+  assert.equal(conflict.outcome, "idempotency_conflict");
+
+  for (const [table, expected] of [
+    ["approval_requests", 1],
+    ["approval_submission_receipts", 1],
+    ["approval_request_events", 1],
+    ["approval_notifications", 1],
+    ["approval_email_outbox", 1],
+  ]) {
+    const query = service.from(table).select("id", { count: "exact", head: true });
+    const { count, error } =
+      table === "approval_requests"
+        ? await query.eq("request_no", requestNo)
+        : table === "approval_submission_receipts"
+          ? await query.eq("approval_request_id", applied.requestId)
+          : await query.eq("approval_request_id", applied.requestId);
+    assert.ifError(error);
+    assert.equal(count, expected, table);
+  }
+
+  const rollbackRequestNo = `PHASE1-SUBMIT-ROLLBACK-${runId}`;
+  const rollbackSubmission = {
+    ...submission,
+    requestNo: rollbackRequestNo,
+    title: "Must roll back",
+    taskSnapshot: { id: rollbackRequestNo, status: "pending" },
+  };
+  const { error: rollbackError } = await service.rpc("submit_approval_request", {
+    p_actor_id: identities.requester.id,
+    p_idempotency_key: `submission-rollback-${runId}`,
+    p_payload_hash: hash({ rollbackSubmission }),
+    p_request: rollbackSubmission,
+    p_notifications: [
+      {
+        ...notifications[0],
+        recipientProfileId: randomUUID(),
+      },
+    ],
+  });
+  assert.ok(rollbackError, "invalid notification must roll back submission");
+  const { count: rollbackCount, error: rollbackReadError } = await service
+    .from("approval_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("request_no", rollbackRequestNo);
+  assert.ifError(rollbackReadError);
+  assert.equal(rollbackCount, 0);
 }
 
 async function testCommandSemantics(request) {
