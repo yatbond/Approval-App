@@ -27,10 +27,14 @@ import {
   type WorkspaceTab,
 } from "@/lib/workspace-tabs-state";
 import {
-  getUserWorkspaceNotifications,
   getWorkspaceShellState,
 } from "@/lib/workspace-shell-state";
 import { buildTaskNotifications } from "@/lib/workflow-system";
+import type { TaskNotification } from "@/lib/workflow-system";
+import {
+  loadApprovalNotifications,
+  markApprovalNotificationsRead,
+} from "@/lib/approval-notifications-client";
 import { getLocalUploadDraftCount } from "@/lib/upload-draft-badge-state";
 import type { UserDirectoryEntry } from "@/lib/user-directory";
 
@@ -214,22 +218,29 @@ export function ApprovalWorkspaceCoreProvider({
     () => buildTaskNotifications(workspace.tasks),
     [workspace.tasks],
   );
-  const userTaskNotifications = useMemo(
-    () => getUserWorkspaceNotifications(taskNotifications, activeUser.email),
-    [activeUser.email, taskNotifications],
-  );
+  const [authoritativeNotifications, setAuthoritativeNotifications] = useState<TaskNotification[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void loadApprovalNotifications()
+      .then((notifications) => {
+        if (!cancelled) setAuthoritativeNotifications(notifications);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [activeUser.email, workspace.tasks]);
+  const displayedNotifications = authoritativeNotifications;
   const shellState = useMemo(
     () =>
       getWorkspaceShellState({
         baseNotifications: [],
         draftItemCount,
-        taskNotifications: userTaskNotifications,
+        taskNotifications: displayedNotifications,
         workspaceAutosaveStatus: workspace.workspaceAutosaveMonitor.status,
         workspaceSyncMode: workspace.workspaceSyncMode,
       }),
     [
       draftItemCount,
-      userTaskNotifications,
+      displayedNotifications,
       workspace.workspaceAutosaveMonitor.status,
       workspace.workspaceSyncMode,
     ],
@@ -263,7 +274,15 @@ export function ApprovalWorkspaceCoreProvider({
         syncLabel={shellState.syncLabel}
         autosaveMonitor={workspace.workspaceAutosaveMonitor}
         draftItemCount={shellState.draftItemCount}
-        notifications={userTaskNotifications}
+        notifications={displayedNotifications}
+        onMarkNotificationRead={(id) => {
+          setAuthoritativeNotifications((items) => items.map((item) => item.id === id ? { ...item, unread: false } : item));
+          void markApprovalNotificationsRead([id]);
+        }}
+        onMarkAllNotificationsRead={() => {
+          setAuthoritativeNotifications((items) => items.map((item) => ({ ...item, unread: false })));
+          void markApprovalNotificationsRead();
+        }}
         onRequestSignOut={() => void confirmSignOut()}
         onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
       >

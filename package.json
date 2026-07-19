@@ -21,6 +21,8 @@
     "test:db:lock-timeout": "node scripts/test-authoritative-lock-timeout.mjs",
     "test:e2e:two-browser": "node scripts/test-authoritative-two-browser.mjs",
     "test:e2e:collaboration": "node scripts/test-authoritative-collaboration-browser.mjs",
+    "test:db:durable-operations": "node scripts/test-durable-operations.mjs",
+    "test:api:durable-operations": "node scripts/test-durable-operations-api.mjs",
     "test:db:migration-seed": "node scripts/test-authoritative-migration-backfill.mjs seed",
     "test:db:migration-verify": "node scripts/test-authoritative-migration-backfill.mjs verify",
     "verify": "npm run typecheck && npm run lint && npm test && npm run build",

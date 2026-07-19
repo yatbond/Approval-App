@@ -30,6 +30,7 @@ export default function WorkspaceAdminTab() {
       emailDeliveryMessage={email.emailDeliveryMessage}
       emailOutboxEntries={email.emailOutboxEntries}
       onSendTestEmail={email.sendTestEmail}
+      onRetryOutboxEntry={email.retryOutboxEntry}
     />
   );
 }

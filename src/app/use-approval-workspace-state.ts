@@ -8,7 +8,6 @@ import {
   loadCanonicalApprovalTasks,
 } from "@/lib/approval-client";
 import { seededBusinessDirectory } from "@/lib/business-directory";
-import { applyEscalationChecks } from "@/lib/approval-escalation";
 import {
   createDefaultWorkspaceSnapshot,
   createWorkspaceSnapshotPatch,
@@ -339,17 +338,6 @@ export function useApprovalWorkspaceState({
       cancelled = true;
     };
   }, [canonicalTasksReady, selectedTaskId]);
-
-  useEffect(() => {
-    const applyChecks = () => {
-      if (!canonicalTasksReadyRef.current) {
-        setTasks((items) => applyEscalationChecks(items, templates));
-      }
-    };
-    applyChecks();
-    const intervalId = window.setInterval(applyChecks, 60_000);
-    return () => window.clearInterval(intervalId);
-  }, [templates]);
 
   const userDirectory = useMemo(
     () => buildUserDirectory(tasks, templates, activeUser),

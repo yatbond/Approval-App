@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { TaskNotification } from "@/lib/workflow-system";
 import {
   formatWorkspaceAutosaveBytes,
@@ -56,6 +56,8 @@ export function WorkspaceShell({
   syncLabel,
   notifications,
   onRequestSignOut,
+  onMarkNotificationRead,
+  onMarkAllNotificationsRead,
   onToggleSidebar,
 }: {
   activeTab: WorkspaceTab;
@@ -67,37 +69,15 @@ export function WorkspaceShell({
   syncLabel: string;
   notifications: TaskNotification[];
   onRequestSignOut: () => void;
+  onMarkNotificationRead: (notificationId: string) => void;
+  onMarkAllNotificationsRead: () => void;
   onToggleSidebar: () => void;
 }) {
   const notificationMenuRef = useRef<HTMLDivElement>(null);
   const syncMenuRef = useRef<HTMLDivElement>(null);
-  const notificationStorageKey = useMemo(
-    () => `approval-notifications-read:${sessionUser.trim().toLowerCase()}`,
-    [sessionUser],
-  );
   const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
   const [syncMenuOpen, setSyncMenuOpen] = useState(false);
-  const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
-  const readNotificationIdSet = useMemo(
-    () => new Set(readNotificationIds),
-    [readNotificationIds],
-  );
-  const unreadCount = notifications.filter(
-    (notification) => notification.unread && !readNotificationIdSet.has(notification.id),
-  ).length;
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      try {
-        const savedIds = JSON.parse(window.localStorage.getItem(notificationStorageKey) || "[]");
-        setReadNotificationIds(Array.isArray(savedIds) ? savedIds.filter((id) => typeof id === "string") : []);
-      } catch {
-        setReadNotificationIds([]);
-      }
-    }, 0);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [notificationStorageKey]);
+  const unreadCount = notifications.filter((notification) => notification.unread).length;
 
   useEffect(() => {
     if (!notificationMenuOpen) {
@@ -129,22 +109,13 @@ export function WorkspaceShell({
     return () => document.removeEventListener("pointerdown", closeSyncMenu);
   }, [syncMenuOpen]);
 
-  function saveReadNotificationIds(nextIds: string[]) {
-    const uniqueIds = Array.from(new Set(nextIds));
-    setReadNotificationIds(uniqueIds);
-    window.localStorage.setItem(notificationStorageKey, JSON.stringify(uniqueIds));
-  }
-
   function markNotificationRead(notificationId: string) {
-    saveReadNotificationIds([...readNotificationIds, notificationId]);
+    onMarkNotificationRead(notificationId);
     setNotificationMenuOpen(false);
   }
 
   function markAllNotificationsRead() {
-    saveReadNotificationIds([
-      ...readNotificationIds,
-      ...notifications.filter((notification) => notification.unread).map((notification) => notification.id),
-    ]);
+    onMarkAllNotificationsRead();
   }
 
   return (
@@ -303,7 +274,7 @@ export function WorkspaceShell({
                     {notifications.length ? (
                       <div className="max-h-[24rem] overflow-y-auto">
                         {notifications.map((notification) => {
-                          const unread = notification.unread && !readNotificationIdSet.has(notification.id);
+                          const unread = notification.unread;
                           const destinationTab = notification.kind === "action_required" || notification.kind === "escalation"
                             ? "queue"
                             : "tracking";

@@ -28,6 +28,31 @@ export type EmailDeliveryResult = {
   failures: Array<{ recipientEmail: string; message: string }>;
 };
 
+export type DurableEmailOutboxRow = {
+  id: string;
+  recipient_email: string;
+  template_key: string;
+  payload: {
+    requestNo?: string;
+    title?: string;
+    body?: string;
+    href?: string;
+  };
+  lease_token: string;
+};
+
+export class EmailProviderError extends Error {
+  retryable: boolean;
+  provider_status: number;
+
+  constructor(message: string, providerStatus: number, retryable: boolean) {
+    super(message);
+    this.name = "EmailProviderError";
+    this.retryable = retryable;
+    this.provider_status = providerStatus;
+  }
+}
+
 export function getEmailDeliveryConfig(
   env: EmailEnv = process.env,
 ): EmailDeliveryConfig {
@@ -218,8 +243,63 @@ async function sendResendEmail({
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(`Resend failed with ${response.status}: ${detail}`);
+    throw new EmailProviderError(
+      `Resend failed with ${response.status}: ${detail}`,
+      response.status,
+      isRetryableProviderStatus(response.status),
+    );
   }
+}
+
+export async function sendDurableOutboxEmail({
+  row,
+  env = process.env,
+  fetchImpl = fetch,
+}: {
+  row: DurableEmailOutboxRow;
+  env?: EmailEnv;
+  fetchImpl?: FetchLike;
+}) {
+  const config = getEmailDeliveryConfig(env);
+  if (!config.live) throw new Error("Live email delivery is not configured.");
+  const requestNo = row.payload.requestNo?.trim() || "Approval request";
+  const href = row.payload.href?.trim() || "/";
+  const url = href.startsWith("http")
+    ? href
+    : `${config.appUrl.replace(/\/$/, "")}${href.startsWith("/") ? "" : "/"}${href}`;
+  const to = config.redirectTo || row.recipient_email;
+  const response = await fetchImpl("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": `approval-outbox-${row.id}`,
+    },
+    body: JSON.stringify({
+      from: config.from,
+      to,
+      subject: `[Approval App] ${row.payload.title || requestNo}`,
+      text: `${row.payload.body || "Approval request updated."}\n\nOpen request: ${url}`,
+      html: `<p>${escapeHtml(row.payload.body || "Approval request updated.")}</p><p><a href="${escapeHtml(url)}">Open request</a></p>`,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new EmailProviderError(
+      `Resend failed with ${response.status}: ${detail}`,
+      response.status,
+      isRetryableProviderStatus(response.status),
+    );
+  }
+  const result = (await response.json().catch(() => ({}))) as { id?: string };
+  if (!result.id) {
+    throw new EmailProviderError("Resend response did not include a message id.", 502, true);
+  }
+  return result.id;
+}
+
+export function isRetryableProviderStatus(status: number) {
+  return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
 }
 
 function escapeHtml(value: string) {

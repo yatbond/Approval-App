@@ -27,7 +27,7 @@ test("canonical requests refresh on load, focus, visibility restore, and reconne
   assert.match(state, /addEventListener\("visibilitychange", handleVisibility\)/);
   assert.match(state, /requestCacheVersion = 2/);
   assert.match(state, /configurationSnapshot = \{ \.\.\.snapshot, approvalTasks: \[\] \}/);
-  assert.match(state, /if \(!canonicalTasksReadyRef\.current\)/);
+  assert.doesNotMatch(state, /applyEscalationChecks|setInterval\(applyChecks/);
 });
 
 test("canonical action retries reuse a key and conflicts install the server task", () => {

@@ -58,6 +58,7 @@ export function AdminView({
   emailDeliveryMessage,
   emailOutboxEntries,
   onSendTestEmail,
+  onRetryOutboxEntry,
 }: {
   businessDirectory: BusinessUnit[];
   adminRecordError?: string;
@@ -80,6 +81,7 @@ export function AdminView({
   emailDeliveryMessage: string;
   emailOutboxEntries: EmailOutboxEntry[];
   onSendTestEmail: (to: string) => Promise<void>;
+  onRetryOutboxEntry: (id: string) => Promise<void>;
 }) {
   const initialSelection = getAdminBusinessSelectionState({
     businessDirectory,
@@ -577,6 +579,15 @@ export function AdminView({
                   <p className="mt-1 text-neutral-600">
                     {new Date(entry.createdAt).toLocaleString()}
                   </p>
+                  {(entry.status === "failed" || entry.status === "retry") && (
+                    <button
+                      type="button"
+                      onClick={() => void onRetryOutboxEntry(entry.id)}
+                      className="mt-2 min-h-9 rounded border border-sky-400/30 px-3 text-sky-100"
+                    >
+                      Retry delivery
+                    </button>
+                  )}
                 </div>
               ))}
               {!emailOutboxEntries.length && (
