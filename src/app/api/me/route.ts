@@ -8,7 +8,7 @@ import {
 } from "@/lib/approval-server";
 
 export async function GET(request: NextRequest) {
-  const developmentProfile = createDevelopmentApprovalProfile();
+  const developmentProfile = createDevelopmentApprovalProfile(request);
   if (developmentProfile) {
     return approvalJson(NextResponse.next(), randomUUID(), {
       profile: developmentProfile,

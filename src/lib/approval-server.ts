@@ -5,7 +5,11 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import type { ApprovalApiErrorCode } from "./approval-api-contracts.ts";
 import type { ApprovalRuntimeProfile } from "./approval-runtime.ts";
-import { getDevelopmentAuthBypassUser } from "./supabase/development-auth-bypass.ts";
+import {
+  getDevelopmentAuthBypassUser,
+  getLocalPerformanceAuthBypassUser,
+  localPerformanceAuthHeader,
+} from "./supabase/development-auth-bypass.ts";
 import { createSupabaseRouteClient } from "./supabase/route.ts";
 import { createSupabaseJsonResponse } from "./supabase/route-response.ts";
 import { getSupabaseRouteUser } from "./supabase/route-user.ts";
@@ -146,11 +150,21 @@ export async function createApprovalServerContext(
   }
 }
 
-export function createDevelopmentApprovalProfile(): ApprovalRuntimeProfile | null {
-  const user = getDevelopmentAuthBypassUser({
-    nodeEnv: process.env.NODE_ENV,
-    email: process.env.E2E_AUTH_BYPASS_EMAIL,
-  });
+export function createDevelopmentApprovalProfile(
+  request?: NextRequest,
+): ApprovalRuntimeProfile | null {
+  const user =
+    getLocalPerformanceAuthBypassUser({
+      enabled: process.env.LOCAL_PERFORMANCE_AUTH_ENABLED,
+      email: process.env.LOCAL_PERFORMANCE_AUTH_EMAIL,
+      expectedToken: process.env.LOCAL_PERFORMANCE_AUTH_TOKEN,
+      requestToken: request?.headers.get(localPerformanceAuthHeader),
+      requestHost: request?.headers.get("host"),
+    }) ||
+    getDevelopmentAuthBypassUser({
+      nodeEnv: process.env.NODE_ENV,
+      email: process.env.E2E_AUTH_BYPASS_EMAIL,
+    });
   return user
     ? {
         id: user.id,
