@@ -543,7 +543,13 @@ async function testCommandSemantics(request) {
       pendingOwnerEmails: [],
       completedNodeIds: ["approval-1"],
       lastAction: "Approved by server",
-      taskSnapshot: { id: request.request_no, status: "approved" },
+      taskSnapshot: {
+        id: request.request_no,
+        status: "approved",
+        currentStep: "Approved",
+        due: "Closed",
+        value: "HKD 1,000",
+      },
     },
     p_event: {
       type: "approved",
@@ -566,6 +572,25 @@ async function testCommandSemantics(request) {
   const applied = await rpcCommand(args);
   assert.equal(applied.outcome, "applied");
   assert.equal(applied.currentVersion, 1);
+
+  const { data: appliedProjection, error: appliedProjectionError } = await service
+    .from("approval_requests")
+    .select("current_step,due_label,value_label,task_snapshot")
+    .eq("id", request.id)
+    .single();
+  assert.ifError(appliedProjectionError);
+  assert.deepEqual(
+    {
+      currentStep: appliedProjection.current_step,
+      due: appliedProjection.due_label,
+      value: appliedProjection.value_label,
+    },
+    {
+      currentStep: appliedProjection.task_snapshot.currentStep,
+      due: appliedProjection.task_snapshot.due,
+      value: appliedProjection.task_snapshot.value,
+    },
+  );
 
   const replayed = await rpcCommand(args);
   assert.equal(replayed.outcome, "replayed");
