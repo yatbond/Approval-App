@@ -66,6 +66,8 @@ The 300-user load rehearsal exposed and then verified a scale correction in work
 
 The post-load cutover audit also exercised a dataset larger than the 1,000-row maintenance limit. Reconciliation repaired 399 rows in its first bounded pass, then quarantined 103 deliberately minimal direct-database test fixtures whose pinned workflow route could not be reconstructed safely, and the next pass reported `scanned: 0`. The follow-up audit resolved all 346 stale comparison records and returned the Admin mismatch gate to zero. These quarantined synthetic fixtures exist only in the disposable rehearsal database.
 
+The hosted data-less Supabase preview exposed eight production-schema foreign keys that lacked covering indexes even though the normalized local rehearsal schema was clean. Migration `20260720090000_add_hosted_fk_covering_indexes.sql` adds the missing indexes without changing data. The hosted preview then passed the Phase 7/8 SQL assertions and Supabase schema lint with all 41 mapped migration versions applied.
+
 ## Release gates
 
 ```powershell

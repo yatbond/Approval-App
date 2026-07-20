@@ -63,3 +63,22 @@ test("bounded reconciliation converges and quarantines unrecoverable template sn
   assert.match(migration, /'The pinned template snapshot is incomplete and no matching template version is available\.'/);
   assert.match(migration, /order by exists \([\s\S]*approval_read_comparison_mismatches[\s\S]*resolved_at is null[\s\S]*\) desc/);
 });
+
+test("the hosted-schema follow-up migration covers every drifted foreign key", async () => {
+  const migration = await readFile(
+    new URL("../../supabase/migrations/20260720090000_add_hosted_fk_covering_indexes.sql", import.meta.url),
+    "utf8",
+  );
+  for (const index of [
+    "approval_request_attachments_uploaded_by_idx",
+    "approval_request_events_actor_id_idx",
+    "approval_requests_requester_id_idx",
+    "approval_requests_workflow_template_version_idx",
+    "workflow_template_versions_business_unit_idx",
+    "workflow_template_versions_created_by_idx",
+    "workflow_template_versions_department_idx",
+    "workspace_snapshots_owner_user_idx",
+  ]) {
+    assert.match(migration, new RegExp(`create index if not exists ${index}`));
+  }
+});
