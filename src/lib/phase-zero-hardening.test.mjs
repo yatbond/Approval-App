@@ -16,6 +16,15 @@ test("package and CI run recursive tests and explicit typechecking", () => {
   assert.match(workflow, /npm run typecheck/);
 });
 
+test("CI browser acceptance uses UI assertions instead of global network idleness", () => {
+  const regression = read("../../scripts/e2e-regression.mjs");
+
+  assert.doesNotMatch(regression, /waitUntil:\s*"networkidle"/);
+  assert.match(regression, /waitUntil:\s*"domcontentloaded"/);
+  assert.match(regression, /expectText\(page, "Workflow library"\)/);
+  assert.match(regression, /expectText\(page, "System health"\)/);
+});
+
 test("Admin surfaces contain no mock alerts, inert delegation, or silent role limits", () => {
   const admin = read("../app/admin-view.tsx");
   const mockData = read("./mock-data.ts");
