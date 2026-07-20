@@ -22,8 +22,10 @@ export function getConditionContext(
   const outgoingEdges = graph.edges.filter((edge) => edge.sourceId === conditionNode.id);
   const upstreamNodes = incomingEdges
     .map((edge) => graph.nodes.find((node) => node.id === edge.sourceId))
-    .filter((node): node is WorkflowGraphNode => Boolean(node))
-    .filter((node) => node.kind === "approval" || node.kind === "review");
+    .filter((node): node is WorkflowGraphNode => Boolean(node));
+  const upstreamApprovalNodes = upstreamNodes.filter(
+    (node) => node.kind === "approval" || node.kind === "review",
+  );
   const downstreamNodes = outgoingEdges
     .map((edge) => ({
       edge,
@@ -34,7 +36,14 @@ export function getConditionContext(
         Boolean(item.node),
     );
   const upstreamDocumentIds = new Set<string>();
-  upstreamNodes.forEach((node) =>
+  upstreamNodes
+    .filter(
+      (node) =>
+        node.kind === "submit_request" ||
+        node.kind === "approval" ||
+        node.kind === "review",
+    )
+    .forEach((node) =>
     (node.documentIds || []).forEach((documentId) => upstreamDocumentIds.add(documentId)),
   );
   const numericFields = template.documents
@@ -54,6 +63,7 @@ export function getConditionContext(
     incomingEdges,
     outgoingEdges,
     upstreamNodes,
+    upstreamApprovalNodes,
     downstreamNodes,
     numericFields,
   };

@@ -666,7 +666,8 @@ export function WorkflowView({
     const nextState = getWorkflowAddConditionCaseState({
       graph: workflowGraph,
       selectedNodeId,
-      upstreamNodeIds: context?.upstreamNodes.map((node) => node.id) || [],
+      upstreamNodeIds:
+        context?.upstreamApprovalNodes.map((node) => node.id) || [],
     });
     if (nextState.didUpdate) {
       saveWorkflowGraph(nextState.graph, nextState.label);

@@ -33,6 +33,14 @@ const graph = {
       y: 140,
       documentIds: ["ignored-doc"],
     },
+    {
+      id: "submit-1",
+      kind: "submit_request",
+      label: "Submit request",
+      x: 320,
+      y: 280,
+      documentIds: ["invoice-doc"],
+    },
     { id: "condition-1", kind: "condition", label: "Condition", x: 480, y: 0 },
     { id: "manager-1", kind: "approval", label: "Manager", x: 640, y: 0 },
     { id: "return-1", kind: "return_reject", label: "Return", x: 640, y: 140 },
@@ -58,6 +66,13 @@ const graph = {
       targetId: "condition-1",
       branchType: "for_information",
       label: "FYI done",
+    },
+    {
+      id: "edge-submit-condition",
+      sourceId: "submit-1",
+      targetId: "condition-1",
+      branchType: "main",
+      label: "Submitted",
     },
     {
       id: "edge-condition-manager",
@@ -174,10 +189,19 @@ test("finds condition upstream approvals and downstream outcome boxes", () => {
 
   assert.deepEqual(
     context.incomingEdges.map((edge) => edge.id),
-    ["edge-review-condition", "edge-approval-condition", "edge-fyi-condition"],
+    [
+      "edge-review-condition",
+      "edge-approval-condition",
+      "edge-fyi-condition",
+      "edge-submit-condition",
+    ],
   );
   assert.deepEqual(
     context.upstreamNodes.map((node) => node.id),
+    ["review-1", "approval-1", "fyi-1", "submit-1"],
+  );
+  assert.deepEqual(
+    context.upstreamApprovalNodes.map((node) => node.id),
     ["review-1", "approval-1"],
   );
   assert.deepEqual(
