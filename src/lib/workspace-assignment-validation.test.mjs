@@ -12,6 +12,7 @@ function template(overrides = {}) {
     id: "payment",
     version: 2,
     isDraft: false,
+    isActiveVersion: true,
     name: "Payment approval",
     business: "Construction",
     department: "Finance",
@@ -81,12 +82,26 @@ test("does not grandfather assignments from an inactive stored version", () => {
   );
 });
 
-test("ignores drafts because publishing performs its own strict validation", () => {
+test("ignores drafts and historical versions because publishing validates active versions", () => {
   assert.deepEqual(
     collectAssignmentEmailsRequiringValidation(
       [template({ isDraft: true })],
       [],
     ),
+    [],
+  );
+  assert.deepEqual(
+    collectAssignmentEmailsRequiringValidation(
+      [template({ isActiveVersion: false, isArchived: true })],
+      [],
+    ),
+    [],
+  );
+  assert.deepEqual(
+    collectPublishedAssignmentEmails([
+      template({ isActiveVersion: false }),
+      template({ isArchived: true }),
+    ]),
     [],
   );
 });
