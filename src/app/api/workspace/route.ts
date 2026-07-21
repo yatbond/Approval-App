@@ -16,6 +16,11 @@ import { parseWorkspaceState, serializeWorkspaceState } from "@/lib/workspace-pe
 import type { WorkspaceStateSnapshot } from "@/lib/workspace-persistence";
 import { createWorkspaceSnapshotHash } from "@/lib/workspace-snapshot-hash";
 import { buildWorkspaceSampleAssetPlan } from "@/lib/workspace-sample-assets";
+import {
+  collectAssignmentEmailsRequiringValidation,
+  collectPublishedAssignmentEmails,
+  type StoredPublishedTemplate,
+} from "@/lib/workspace-assignment-validation";
 import { recordWorkflowOperationEvent } from "@/lib/workflow-operation-monitor";
 
 const workspaceAssetBucket = "approval-documents";
@@ -215,23 +220,8 @@ export async function POST(request: NextRequest) {
     return createSupabaseJsonResponse(response, { ...payload, monitoring }, { status });
   };
 
-  const publishedAssignmentEmails = Array.from(
-    new Set(
-      incomingSnapshot.workflowTemplates
-        .filter((template) => template.isDraft === false)
-        .flatMap((template) => [
-          ...template.steps.flatMap((step) => [
-            step.approverEmail,
-            step.escalationEmail || "",
-          ]),
-          ...(template.graph?.nodes.flatMap((node) => [
-            node.assigneeEmail || "",
-            node.escalationEmail || "",
-          ]) || []),
-        ])
-        .map((email) => email.trim().toLowerCase())
-        .filter(Boolean),
-    ),
+  const publishedAssignmentEmails = collectPublishedAssignmentEmails(
+    incomingSnapshot.workflowTemplates,
   );
   if (publishedAssignmentEmails.length > 100) {
     return finishSave(
@@ -243,24 +233,46 @@ export async function POST(request: NextRequest) {
     );
   }
   if (publishedAssignmentEmails.length) {
-    const { data: invalidEmails, error: directoryError } = await supabase.rpc(
-      "validate_active_directory_emails",
-      { p_emails: publishedAssignmentEmails },
-    );
-    if (directoryError) {
+    const { data: storedTemplates, error: storedTemplatesError } = await supabase
+      .from("workflow_template_versions")
+      .select(
+        "template_key, version_number, is_active_version, template_snapshot",
+      )
+      .eq("is_active_version", true);
+    if (storedTemplatesError) {
       return finishSave(
-        { mode: "local", reason: "Unable to verify published workflow assignments." },
+        { mode: "local", reason: "Unable to verify existing workflow assignments." },
         503,
       );
     }
-    if (Array.isArray(invalidEmails) && invalidEmails.length) {
-      return finishSave(
-        {
-          mode: "local",
-          reason: `Published workflow assignment is inactive or missing: ${invalidEmails[0]}`,
-        },
-        422,
+    const assignmentEmailsToValidate =
+      collectAssignmentEmailsRequiringValidation(
+        incomingSnapshot.workflowTemplates,
+        (storedTemplates || []) as StoredPublishedTemplate[],
       );
+    if (assignmentEmailsToValidate.length) {
+      const { data: invalidEmails, error: directoryError } = await supabase.rpc(
+        "validate_active_directory_emails",
+        { p_emails: assignmentEmailsToValidate },
+      );
+      if (directoryError) {
+        return finishSave(
+          {
+            mode: "local",
+            reason: "Unable to verify published workflow assignments.",
+          },
+          503,
+        );
+      }
+      if (Array.isArray(invalidEmails) && invalidEmails.length) {
+        return finishSave(
+          {
+            mode: "local",
+            reason: `Published workflow assignment is inactive or missing: ${invalidEmails[0]}`,
+          },
+          422,
+        );
+      }
     }
   }
 
