@@ -29,7 +29,7 @@ export function collectPublishedAssignmentEmails(templates: WorkflowTemplate[]) 
   return Array.from(
     new Set(
       templates
-        .filter((template) => template.isDraft === false)
+        .filter(isActivePublishedTemplate)
         .flatMap(collectTemplateAssignmentEmails),
     ),
   );
@@ -60,7 +60,7 @@ export function collectAssignmentEmailsRequiringValidation(
 
   const emailsToValidate = new Set<string>();
   for (const template of templates) {
-    if (template.isDraft !== false) {
+    if (!isActivePublishedTemplate(template)) {
       continue;
     }
     const key = templateVersionKey(template.id, template.version || 1);
@@ -75,6 +75,14 @@ export function collectAssignmentEmailsRequiringValidation(
   }
 
   return Array.from(emailsToValidate);
+}
+
+function isActivePublishedTemplate(template: WorkflowTemplate) {
+  return (
+    template.isDraft === false &&
+    template.isActiveVersion === true &&
+    template.isArchived !== true
+  );
 }
 
 function collectEmails(value: unknown, keys: string[]) {
