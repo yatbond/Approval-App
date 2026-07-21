@@ -121,3 +121,20 @@ test("database grandfathering is scoped to the same active template version", ()
   assert.match(migration, /except[\s\S]*unnest\(v_existing_assignment_emails\)/);
   assert.match(migration, /inactive or missing template assignment: %s/);
 });
+
+test("database directory-link compatibility is limited to exact existing versions", () => {
+  const migration = readFileSync(
+    new URL(
+      "../../supabase/migrations/20260721084210_preserve_existing_template_directory_links.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(migration, /existing\.template_key = trim\(v_template ->> 'templateKey'\)/);
+  assert.match(migration, /existing\.version_number = .*'versionNumber'/);
+  assert.match(migration, /if not v_existing_template_found then/);
+  assert.match(migration, /v_business_id := v_existing_business_id/);
+  assert.match(migration, /v_department_id := v_existing_department_id/);
+  assert.match(migration, /raise exception using errcode = '22023'/);
+});
