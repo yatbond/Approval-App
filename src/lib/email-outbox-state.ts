@@ -9,7 +9,7 @@ export type EmailOutboxEntry = {
   title: string;
   kind: TaskNotification["kind"];
   mode: EmailDeliveryResult["mode"];
-  status: "sent" | "failed" | "skipped";
+  status: "pending" | "processing" | "retry" | "sent" | "failed" | "skipped";
   message: string;
 };
 

@@ -13,6 +13,7 @@ export function useWorkspaceActionController() {
     activeUser: core.activeUser,
     buildWorkspaceSnapshot: core.workspace.buildWorkspaceSnapshot,
     persistWorkspaceSnapshot: core.workspace.persistWorkspaceSnapshot,
+    refreshCanonicalTasks: core.workspace.refreshCanonicalTasks,
     requestConfirmation: core.requestConfirmation,
     selectedTask: core.taskState.selectedTask,
     sendWorkflowEmailNotifications: email.sendWorkflowEmailNotifications,

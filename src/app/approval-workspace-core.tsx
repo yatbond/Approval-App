@@ -13,6 +13,7 @@ import {
   type SetStateAction,
 } from "react";
 import { ConfirmationModal } from "@/app/confirmation-modal";
+import { loadCanonicalApprovalMe } from "@/lib/approval-client";
 import { useApprovalWorkspaceState } from "@/app/use-approval-workspace-state";
 import { WorkspaceShell } from "@/app/workspace-shell";
 import { getApprovalWorkspaceTaskState } from "@/lib/approval-workspace-task-state";
@@ -26,13 +27,19 @@ import {
   type WorkspaceTab,
 } from "@/lib/workspace-tabs-state";
 import {
-  getUserWorkspaceNotifications,
   getWorkspaceShellState,
 } from "@/lib/workspace-shell-state";
 import { buildTaskNotifications } from "@/lib/workflow-system";
+import type { TaskNotification } from "@/lib/workflow-system";
+import {
+  loadApprovalNotifications,
+  markApprovalNotificationsRead,
+} from "@/lib/approval-notifications-client";
 import { getLocalUploadDraftCount } from "@/lib/upload-draft-badge-state";
+import type { UserDirectoryEntry } from "@/lib/user-directory";
 
 export type ApprovalWorkspaceProps = {
+  allowLegacyReadFallback: boolean;
   initialTab: WorkspaceTab;
   sessionUser: string;
   departments: string[];
@@ -46,11 +53,7 @@ type WorkspaceTaskState = ReturnType<typeof getApprovalWorkspaceTaskState>;
 
 type ApprovalWorkspaceCoreValue = {
   activeTab: WorkspaceTab;
-  activeUser: {
-    name: string;
-    email: string;
-    role: "superuser";
-  };
+  activeUser: UserDirectoryEntry;
   departments: string[];
   requestConfirmation: (request: ConfirmationRequest) => Promise<boolean>;
   setDraftItemCount: Dispatch<SetStateAction<number>>;
@@ -95,6 +98,7 @@ function readLocalDraftCount(activeUserEmail: string) {
 }
 
 export function ApprovalWorkspaceCoreProvider({
+  allowLegacyReadFallback,
   children,
   departments,
   initialTab,
@@ -110,16 +114,46 @@ export function ApprovalWorkspaceCoreProvider({
     activeTab,
     isNewRequest: shouldStartNewUploadRequest,
   });
-  const activeUser = useMemo(
+  const fallbackActiveUser = useMemo<UserDirectoryEntry>(
     () => ({
       name: sessionUser.includes("@") ? sessionUser.split("@")[0] : sessionUser,
       email: sessionUser.includes("@") ? sessionUser : "derrick@example.com",
-      role: "superuser" as const,
+      role: "participant",
     }),
     [sessionUser],
   );
+  const [activeUser, setActiveUser] = useState(fallbackActiveUser);
+  useEffect(() => {
+    let cancelled = false;
+    void loadCanonicalApprovalMe()
+      .then((profile) => {
+        if (cancelled) return;
+        const supportedRole = [
+          "superuser",
+          "originator",
+          "approver",
+          "reviewer",
+          "fyi",
+          "current actor",
+          "previous actor",
+          "participant",
+        ].includes(profile.role)
+          ? (profile.role as UserDirectoryEntry["role"])
+          : "participant";
+        setActiveUser({
+          name: profile.fullName,
+          email: profile.email,
+          role: profile.isAdmin ? "superuser" : supportedRole,
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const workspace = useApprovalWorkspaceState({
     activeUser,
+    allowLegacyReadFallback,
     requestId,
     workflowTemplates,
   });
@@ -187,22 +221,29 @@ export function ApprovalWorkspaceCoreProvider({
     () => buildTaskNotifications(workspace.tasks),
     [workspace.tasks],
   );
-  const userTaskNotifications = useMemo(
-    () => getUserWorkspaceNotifications(taskNotifications, activeUser.email),
-    [activeUser.email, taskNotifications],
-  );
+  const [authoritativeNotifications, setAuthoritativeNotifications] = useState<TaskNotification[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void loadApprovalNotifications()
+      .then((notifications) => {
+        if (!cancelled) setAuthoritativeNotifications(notifications);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [activeUser.email, workspace.tasks]);
+  const displayedNotifications = authoritativeNotifications;
   const shellState = useMemo(
     () =>
       getWorkspaceShellState({
         baseNotifications: [],
         draftItemCount,
-        taskNotifications: userTaskNotifications,
+        taskNotifications: displayedNotifications,
         workspaceAutosaveStatus: workspace.workspaceAutosaveMonitor.status,
         workspaceSyncMode: workspace.workspaceSyncMode,
       }),
     [
       draftItemCount,
-      userTaskNotifications,
+      displayedNotifications,
       workspace.workspaceAutosaveMonitor.status,
       workspace.workspaceSyncMode,
     ],
@@ -236,7 +277,15 @@ export function ApprovalWorkspaceCoreProvider({
         syncLabel={shellState.syncLabel}
         autosaveMonitor={workspace.workspaceAutosaveMonitor}
         draftItemCount={shellState.draftItemCount}
-        notifications={userTaskNotifications}
+        notifications={displayedNotifications}
+        onMarkNotificationRead={(id) => {
+          setAuthoritativeNotifications((items) => items.map((item) => item.id === id ? { ...item, unread: false } : item));
+          void markApprovalNotificationsRead([id]);
+        }}
+        onMarkAllNotificationsRead={() => {
+          setAuthoritativeNotifications((items) => items.map((item) => ({ ...item, unread: false })));
+          void markApprovalNotificationsRead();
+        }}
         onRequestSignOut={() => void confirmSignOut()}
         onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
       >

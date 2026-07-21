@@ -1136,6 +1136,11 @@ test("adds and updates named condition cases with multiple outcome boxes", () =>
     ?.conditionCases?.[0];
 
   assert.equal(conditionCase?.name, "Condition 1");
+  assert.equal(conditionCase?.isApprovalCount, true);
+  assert.deepEqual(conditionCase?.approvalRule?.upstreamNodeIds, [
+    "review-1",
+    "review-2",
+  ]);
   assert.equal(conditionCase?.approvalRule?.minimumApproved, 1);
 
   const updated = updateWorkflowConditionCase(
@@ -1601,6 +1606,54 @@ test("detects missing approval count coverage for condition cases", () => {
 
   const coverage = analyzeConditionCoverage(graph, "condition-1");
   assert.deepEqual(coverage?.missingApprovalCounts, [0, 1]);
+});
+
+test("does not misreport total approval counts for a named subset rule", () => {
+  const graph = {
+    nodes: [
+      { id: "review-1", kind: "review", label: "Review 1", x: 0, y: 0 },
+      { id: "review-2", kind: "review", label: "Review 2", x: 0, y: 120 },
+      {
+        id: "condition-1",
+        kind: "condition",
+        label: "Named approval",
+        x: 240,
+        y: 60,
+        conditionCases: [
+          {
+            id: "case-1",
+            name: "Review 1 approved",
+            approvalRule: {
+              upstreamNodeIds: ["review-1"],
+              minimumApproved: 1,
+              mode: "at_least",
+            },
+            join: "and",
+            targetNodeIds: ["end"],
+          },
+        ],
+      },
+      { id: "end", kind: "end", label: "End", x: 480, y: 60 },
+    ],
+    edges: [
+      {
+        id: "edge-review-1-condition",
+        sourceId: "review-1",
+        targetId: "condition-1",
+        label: "Done",
+        branchType: "main",
+      },
+      {
+        id: "edge-review-2-condition",
+        sourceId: "review-2",
+        targetId: "condition-1",
+        label: "Done",
+        branchType: "main",
+      },
+    ],
+  };
+
+  assert.equal(analyzeConditionCoverage(graph, "condition-1"), undefined);
 });
 
 test("fallback condition suppresses missing approval coverage warning", () => {

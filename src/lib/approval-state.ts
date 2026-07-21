@@ -20,6 +20,7 @@ const assignedTaskActions = new Set<ApprovalAction>([
   "reject_with_comment",
   "reassign",
   "delegate",
+  "revoke_delegation",
   "accept_reassignment",
   "decline_reassignment",
   "amend_resubmit",
@@ -337,6 +338,32 @@ export function applyTaskAction(
         ...eventBase,
         action: "delegated",
         detail: joinDetail(`Delegated to ${delegateEmail}.`, comment),
+      },
+    );
+  }
+
+  if (input.action === "revoke_delegation") {
+    const delegates = (task.pendingOwners || []).filter(
+      (email) => !emailsMatch(email, task.currentOwner),
+    );
+    if (!delegates.length || !emailsMatch(input.actor.email, task.currentOwner)) {
+      return task;
+    }
+    return appendEvent(
+      {
+        ...task,
+        status: "pending",
+        pendingOwners: (task.pendingOwners || []).filter((email) =>
+          emailsMatch(email, task.currentOwner),
+        ),
+        delegationExpiresAt: undefined,
+        lastAction: `Delegation revoked by ${input.actor.name}`,
+      },
+      {
+        ...eventBase,
+        action: "delegated",
+        targetEmail: delegates[0],
+        detail: joinDetail(`Delegation to ${delegates.join(", ")} revoked.`, comment),
       },
     );
   }

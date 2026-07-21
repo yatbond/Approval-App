@@ -5,7 +5,11 @@ import {
   verifiedUserEmailHeader,
   verifiedUserIdHeader,
 } from "@/lib/supabase/verified-user-headers";
-import { getDevelopmentAuthBypassUser } from "@/lib/supabase/development-auth-bypass";
+import {
+  getDevelopmentAuthBypassUser,
+  getLocalPerformanceAuthBypassUser,
+  localPerformanceAuthHeader,
+} from "@/lib/supabase/development-auth-bypass";
 
 async function createSupabaseServerClient() {
   const cookieStore = await cookies();
@@ -35,6 +39,18 @@ async function createSupabaseServerClient() {
 }
 
 export async function getCurrentUser() {
+  const requestHeaders = await headers();
+  const performanceUser = getLocalPerformanceAuthBypassUser({
+    enabled: process.env.LOCAL_PERFORMANCE_AUTH_ENABLED,
+    email: process.env.LOCAL_PERFORMANCE_AUTH_EMAIL,
+    expectedToken: process.env.LOCAL_PERFORMANCE_AUTH_TOKEN,
+    requestToken: requestHeaders.get(localPerformanceAuthHeader),
+    requestHost: requestHeaders.get("host"),
+  });
+  if (performanceUser) {
+    return performanceUser;
+  }
+
   const developmentUser = getDevelopmentAuthBypassUser({
     nodeEnv: process.env.NODE_ENV,
     email: process.env.E2E_AUTH_BYPASS_EMAIL,
@@ -43,7 +59,6 @@ export async function getCurrentUser() {
     return developmentUser;
   }
 
-  const requestHeaders = await headers();
   const verifiedUserId = requestHeaders.get(verifiedUserIdHeader);
   const verifiedUserEmail = requestHeaders.get(verifiedUserEmailHeader);
   if (verifiedUserId && verifiedUserEmail) {

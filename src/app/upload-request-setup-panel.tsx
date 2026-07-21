@@ -142,6 +142,7 @@ export function UploadRequestSetupPanel({
             if (file) {
               parseFile(file, document);
             }
+            event.currentTarget.value = "";
           }}
         />
       </label>
@@ -424,6 +425,7 @@ export function UploadRequestSetupPanel({
               if (file) {
                 parseFile(file);
               }
+              event.currentTarget.value = "";
             }}
           />
         </label>

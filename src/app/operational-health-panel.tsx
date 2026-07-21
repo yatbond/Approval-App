@@ -8,6 +8,10 @@ import {
   type WorkflowOperationEventRow,
   type WorkflowOperationType,
 } from "@/lib/workflow-operation-monitor";
+import type {
+  ApprovalOperationalAlert,
+  ApprovalOperationalMetrics,
+} from "@/lib/operational-alerts";
 
 type OperationCounts = {
   succeeded: number;
@@ -26,6 +30,9 @@ type HealthPayload = {
     byType: Record<WorkflowOperationType, OperationCounts>;
     recentFailures: WorkflowOperationEventRow[];
   };
+  platform: ApprovalOperationalMetrics | null;
+  platformError: string | null;
+  alerts: ApprovalOperationalAlert[];
 };
 
 async function fetchOperationHealth() {
@@ -191,8 +198,45 @@ export function OperationalHealthPanel() {
               </div>
             </div>
           ) : null}
+
+          {payload.platform ? (
+            <div className="mt-4" aria-label="Platform metrics">
+              <h3 className="text-sm font-semibold">Platform metrics</h3>
+              <dl className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                <Metric label="DB connections" value={`${payload.platform.databaseConnections}/${payload.platform.databaseConnectionLimit}`} />
+                <Metric label="Lock waits" value={payload.platform.lockWaits} />
+                <Metric label="Outbox pending" value={payload.platform.outboxPending} />
+                <Metric label="Outbox failed" value={payload.platform.outboxFailed} />
+              </dl>
+              {payload.alerts.length ? (
+                <ul className="mt-3 space-y-2" aria-label="Operational alerts">
+                  {payload.alerts.map((alert) => (
+                    <li key={alert.code} className="rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-700">
+                      {alert.message}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-xs text-emerald-700">No platform alerts are active.</p>
+              )}
+            </div>
+          ) : null}
+          {payload.platformError ? (
+            <p className="mt-4 rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-700">
+              {payload.platformError}
+            </p>
+          ) : null}
         </>
       ) : null}
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-md border border-[#e6e6e6] p-3">
+      <dt className="text-neutral-500">{label}</dt>
+      <dd className="mt-1 text-base font-semibold">{value}</dd>
     </div>
   );
 }

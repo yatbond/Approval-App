@@ -361,9 +361,13 @@ export function addWorkflowConditionCase(
   const nextCase: WorkflowConditionCase = {
     id: `case-${Date.now()}-${(node.conditionCases || []).length + 1}`,
     name: `Condition ${explicitCaseCount + 1}`,
+    isApprovalCount: upstreamNodeIds.length > 1 || undefined,
     approvalRule: upstreamNodeIds.length
       ? {
-          upstreamNodeIds: upstreamNodeIds.slice(0, 1),
+          upstreamNodeIds:
+            upstreamNodeIds.length > 1
+              ? upstreamNodeIds
+              : upstreamNodeIds.slice(0, 1),
           minimumApproved: 1,
           mode: "at_least",
         }
@@ -442,8 +446,28 @@ export function analyzeConditionCoverage(
     return undefined;
   }
 
+  const explicitCases = (conditionNode.conditionCases || []).filter(
+    (conditionCase) => !conditionCase.isFallback,
+  );
+  const upstreamNodeIdSet = new Set(upstreamNodeIds);
+  const hasOnlyComparableApprovalRules =
+    explicitCases.length > 0 &&
+    explicitCases.every((conditionCase) => {
+      const rule = conditionCase.approvalRule;
+      return (
+        rule &&
+        !conditionCase.numericRule &&
+        rule.upstreamNodeIds.length === upstreamNodeIds.length &&
+        rule.upstreamNodeIds.every((nodeId) => upstreamNodeIdSet.has(nodeId))
+      );
+    });
+
+  if (!hasOnlyComparableApprovalRules) {
+    return undefined;
+  }
+
   const coveredCounts = new Set<number>();
-  (conditionNode.conditionCases || []).forEach((conditionCase) => {
+  explicitCases.forEach((conditionCase) => {
     const rule = conditionCase.approvalRule;
     if (!rule || !rule.upstreamNodeIds.length) {
       return;

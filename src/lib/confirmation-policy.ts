@@ -54,6 +54,15 @@ export function getApprovalActionConfirmation({
     };
   }
 
+  if (action === "revoke_delegation") {
+    return {
+      title: "Revoke delegation?",
+      message: `This will immediately remove the delegate's authority on ${requestName}.`,
+      confirmLabel: "Revoke delegation",
+      tone: "warning",
+    };
+  }
+
   if (action === "cancel") {
     return {
       title: "Cancel?",

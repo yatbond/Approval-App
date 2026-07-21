@@ -464,12 +464,20 @@ function CollaborationStatusPanel({
   task,
   template,
   activeUserEmail,
+  onSubmitSharedFulfillmentUpload,
   onDecideSharedFulfillment,
   onSubmitCorrectionUpload,
 }: {
   task: ApprovalTask;
   template?: WorkflowTemplate;
   activeUserEmail: string;
+  onSubmitSharedFulfillmentUpload: (input: {
+    taskId: string;
+    requirementNodeId: string;
+    documentId: string;
+    assignedSubmitterEmail: string;
+    file: File;
+  }) => void;
   onDecideSharedFulfillment: (input: {
     taskId: string;
     fulfillmentId: string;
@@ -525,6 +533,39 @@ function CollaborationStatusPanel({
         title="Required"
         rows={state.requiredSubmissions}
       />
+      <div className="mt-2 space-y-2">
+        {state.requiredSubmissions
+          .filter(
+            (item) => item.canAct && item.requirementNodeId && item.documentId,
+          )
+          .map((item) => (
+            <label
+              key={`shared-upload-${item.id}`}
+              className="flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/10 px-3 py-2 text-xs text-sky-100 transition hover:bg-sky-400/20"
+            >
+              <Upload size={14} />
+              Fulfill {item.label} for {item.assignedEmail}
+              <input
+                type="file"
+                className="sr-only"
+                accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.csv,.txt,.md"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file && item.requirementNodeId && item.documentId) {
+                    onSubmitSharedFulfillmentUpload({
+                      taskId: task.id,
+                      requirementNodeId: item.requirementNodeId,
+                      documentId: item.documentId,
+                      assignedSubmitterEmail: item.assignedEmail,
+                      file,
+                    });
+                  }
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+          ))}
+      </div>
       <div className="mt-3 space-y-2">
         {state.pendingConfirmations.map((item) => (
           <div

@@ -99,6 +99,13 @@ export function getTaskContributorUploadState({
       errorMessage: "Contributor request was not found.",
     };
   }
+  if (request.contributorEmail.trim().toLowerCase() !== actor.email.trim().toLowerCase()) {
+    return {
+      didApply: false,
+      task,
+      errorMessage: "You cannot submit this contributor request.",
+    };
+  }
 
   const submittedAt = formatTimestamp(now);
   const contributorLabel = request.contributorName || request.contributorEmail;

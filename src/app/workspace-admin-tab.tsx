@@ -3,12 +3,14 @@
 import { AdminView } from "@/app/admin-view";
 import { useWorkspaceAdminController } from "@/app/use-workspace-admin-controller";
 import { useWorkspaceEmailDelivery } from "@/app/use-workspace-email-delivery";
+import { useAuthoritativeAdminDirectory } from "@/app/use-authoritative-admin-directory";
 
 export default function WorkspaceAdminTab() {
   const { core, records } = useWorkspaceAdminController();
   const email = useWorkspaceEmailDelivery({
     requestConfirmation: core.requestConfirmation,
   });
+  const directory = useAuthoritativeAdminDirectory();
 
   return (
     <AdminView
@@ -19,6 +21,7 @@ export default function WorkspaceAdminTab() {
       onDeactivateDepartmentRecord={records.confirmDeactivateDepartmentRecord}
       legacyDepartments={core.departments}
       userDirectory={core.workspace.userDirectory}
+      authoritativeDirectory={directory}
       taskNotifications={core.taskNotifications}
       roleAssignments={core.workspace.effectiveRoleAssignments}
       setRoleAssignments={records.updateRoleAssignmentRecords}
@@ -27,6 +30,7 @@ export default function WorkspaceAdminTab() {
       emailDeliveryMessage={email.emailDeliveryMessage}
       emailOutboxEntries={email.emailOutboxEntries}
       onSendTestEmail={email.sendTestEmail}
+      onRetryOutboxEntry={email.retryOutboxEntry}
     />
   );
 }

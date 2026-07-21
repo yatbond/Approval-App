@@ -57,6 +57,7 @@ const uploadRequestCurrentAutosaveIdStoragePrefix =
   "approval-upload-current-autosave-id-v1";
 const uploadRequestActiveDraftIdStoragePrefix =
   "approval-upload-active-draft-id-v1";
+const localUploadAutosaveDelayMs = 500;
 const remoteUploadAutosaveDelayMs = 12_000;
 
 export function useWorkspaceUploadDrafts({
@@ -408,32 +409,26 @@ export function useWorkspaceUploadDrafts({
       return;
     }
 
-    const nextDraft = buildUploadRequestDraft({
-      ...currentUploadRequestDraft,
-      savedAt: new Date().toISOString(),
-    });
-    const nextStatus = createEmptyUploadRequestDraftStatus(nextDraft);
-
-    if (!nextStatus.hasDraft) {
+    if (!uploadDraftStatus.hasDraft) {
       localStorage.removeItem(uploadRequestDraftStorageKey);
       return;
     }
 
-    localStorage.setItem(
-      uploadRequestDraftStorageKey,
-      serializeUploadRequestDraft(nextDraft),
-    );
+    const timeoutId = window.setTimeout(() => {
+      const nextDraft = buildUploadRequestDraft({
+        ...currentUploadRequestDraft,
+        savedAt: new Date().toISOString(),
+      });
+      localStorage.setItem(
+        uploadRequestDraftStorageKey,
+        serializeUploadRequestDraft(nextDraft),
+      );
+    }, localUploadAutosaveDelayMs);
+
+    return () => window.clearTimeout(timeoutId);
   }, [
-    editedFields,
-    fileName,
-    parseResult,
-    parsedDocumentId,
     currentUploadRequestDraft,
-    uploadActiveHighlightGroupId,
-    uploadDraftRestoreToken,
-    uploadHighlightBoxCounter,
-    uploadHighlightGroups,
-    uploadedAttachments,
+    uploadDraftStatus.hasDraft,
     uploadRequestDraftStorageKey,
   ]);
 

@@ -1,7 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { createSupabaseJsonResponse } from "@/lib/supabase/route-response";
+import { readBoundedFormData } from "@/lib/bounded-request";
 
 const attachmentBucket = "approval-documents";
+const maximumAttachmentBytes = 25 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
   const response = NextResponse.next();
@@ -11,22 +14,37 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user?.email) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { error: "Sign in before uploading documents." },
       { status: 401 },
     );
   }
 
-  const formData = await request.formData();
+  const body = await readBoundedFormData(request, maximumAttachmentBytes + 1024 * 1024);
+  if (!body.ok) {
+    return createSupabaseJsonResponse(response,
+      { error: body.reason === "too_large" ? "Upload exceeds the request limit." : "Invalid upload form." },
+      { status: body.reason === "too_large" ? 413 : 400 },
+    );
+  }
+  const formData = body.value;
   const file = formData.get("file");
   if (!(file instanceof File)) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { error: "No document file was provided." },
       { status: 400 },
     );
   }
+  if (file.size > maximumAttachmentBytes) {
+    return createSupabaseJsonResponse(response,
+      { error: "Document exceeds the 25 MB upload limit." },
+      { status: 413 },
+    );
+  }
 
-  const documentId = String(formData.get("documentId") || "ad-hoc");
+  const documentId = String(formData.get("documentId") || "ad-hoc")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .slice(0, 120) || "ad-hoc";
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 120);
   const storagePath = `${user.id}/${documentId}/${Date.now()}-${safeName}`;
 
@@ -38,10 +56,10 @@ export async function POST(request: NextRequest) {
     });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 503 });
+    return createSupabaseJsonResponse(response, { error: error.message }, { status: 503 });
   }
 
-  return NextResponse.json({
+  return createSupabaseJsonResponse(response, {
     bucket: attachmentBucket,
     storagePath,
   });

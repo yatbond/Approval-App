@@ -35,7 +35,7 @@ export function InfoTip({ label }: { label: string }) {
         onMouseLeave={() => setIsOpen(false)}
         onFocus={openTooltip}
         onBlur={() => setIsOpen(false)}
-        className="inline-flex size-5 items-center justify-center rounded-full border border-[#d2d2d2] bg-white text-[#8a8a8a] transition hover:border-[#f7941d] hover:text-[#9b5200] focus:outline-none focus:ring-2 focus:ring-[#f7941d]/40"
+        className="inline-flex size-6 items-center justify-center rounded-full border border-[#d2d2d2] bg-white text-[#8a8a8a] transition hover:border-[#f7941d] hover:text-[#9b5200] focus:outline-none focus:ring-2 focus:ring-[#f7941d]/40"
       >
         <CircleHelp size={13} aria-hidden="true" />
       </button>

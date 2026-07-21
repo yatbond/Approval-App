@@ -6,13 +6,14 @@ import {
   type WorkspaceAdminDeactivation,
 } from "@/lib/normalized-workspace-store";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { getDevelopmentAuthBypassUser } from "@/lib/supabase/development-auth-bypass";
+import { createSupabaseJsonResponse } from "@/lib/supabase/route-response";
 import {
   getSupabaseRouteUser,
   type SupabaseRouteUser,
 } from "@/lib/supabase/route-user";
 import { parseWorkspaceState, serializeWorkspaceState } from "@/lib/workspace-persistence";
 import type { WorkspaceStateSnapshot } from "@/lib/workspace-persistence";
-import { mergeExternalFormWorkspaceState } from "@/lib/external-form-workspace-merge";
 import { createWorkspaceSnapshotHash } from "@/lib/workspace-snapshot-hash";
 import { buildWorkspaceSampleAssetPlan } from "@/lib/workspace-sample-assets";
 import { recordWorkflowOperationEvent } from "@/lib/workflow-operation-monitor";
@@ -43,12 +44,21 @@ type WorkspaceSavePayload =
   | { mode: "local"; reason: string; unchanged?: false };
 
 export async function GET(request: NextRequest) {
+  if (
+    getDevelopmentAuthBypassUser({
+      nodeEnv: process.env.NODE_ENV,
+      email: process.env.E2E_AUTH_BYPASS_EMAIL,
+    })
+  ) {
+    return NextResponse.json({ mode: "local", snapshot: null });
+  }
+
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json({ mode: "local", snapshot: null });
+    return createSupabaseJsonResponse(response, { mode: "local", snapshot: null });
   }
 
   const { data, error } = await supabase
@@ -58,20 +68,24 @@ export async function GET(request: NextRequest) {
     .maybeSingle();
 
   if (error) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", snapshot: null, reason: error.message },
       { status: 503 },
     );
   }
 
-  const fallbackSnapshot = data?.snapshot
+  const parsedFallbackSnapshot = data?.snapshot
     ? parseWorkspaceState(JSON.stringify(data.snapshot))
+    : null;
+  const fallbackSnapshot = parsedFallbackSnapshot
+    ? { ...parsedFallbackSnapshot, approvalTasks: [] }
     : null;
 
   try {
     const normalizedSnapshot = await loadNormalizedWorkspaceState(
       supabase,
       fallbackSnapshot?.selectedTemplateId || "",
+      { includeApprovalRuntime: false },
     );
 
     if (normalizedSnapshot) {
@@ -80,15 +94,16 @@ export async function GET(request: NextRequest) {
         source: "normalized",
         snapshot: {
           ...normalizedSnapshot,
+          approvalTasks: [],
           userRoleAssignments: fallbackSnapshot?.userRoleAssignments || [],
           formLibrary: fallbackSnapshot?.formLibrary || [],
         },
       };
-      return NextResponse.json(payload);
+      return createSupabaseJsonResponse(response, payload);
     }
   } catch (normalizedError) {
     if (!fallbackSnapshot) {
-      return NextResponse.json(
+      return createSupabaseJsonResponse(response,
         {
           mode: "local",
           snapshot: null,
@@ -107,7 +122,7 @@ export async function GET(request: NextRequest) {
     source: "snapshot",
     snapshot: fallbackSnapshot,
   };
-  return NextResponse.json(payload);
+  return createSupabaseJsonResponse(response, payload);
 }
 
 export async function POST(request: NextRequest) {
@@ -117,7 +132,7 @@ export async function POST(request: NextRequest) {
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json({ mode: "local", reason: "Not signed in" });
+    return createSupabaseJsonResponse(response, { mode: "local", reason: "Not signed in" });
   }
 
   const bodyText = await request.text();
@@ -126,7 +141,7 @@ export async function POST(request: NextRequest) {
   try {
     body = JSON.parse(bodyText) as { snapshot?: unknown };
   } catch {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", reason: "Invalid workspace request" },
       { status: 400 },
     );
@@ -136,13 +151,17 @@ export async function POST(request: NextRequest) {
     ? parseWorkspaceState(serializedSnapshot)
     : null;
   if (!parsedIncomingSnapshot) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", reason: "Invalid workspace snapshot" },
       { status: 400 },
     );
   }
 
-  const assetPlan = buildWorkspaceSampleAssetPlan(parsedIncomingSnapshot, user.id);
+  const configurationSnapshot = {
+    ...parsedIncomingSnapshot,
+    approvalTasks: [],
+  };
+  const assetPlan = buildWorkspaceSampleAssetPlan(configurationSnapshot, user.id);
   const incomingSnapshot = assetPlan.snapshot;
   let persistedBytes = Buffer.byteLength(serializeWorkspaceState(incomingSnapshot));
   let assetsUploaded = 0;
@@ -156,6 +175,9 @@ export async function POST(request: NextRequest) {
       removedBase64Bytes: assetPlan.removedBase64Bytes,
     };
     const logEntry = {
+      timestamp: new Date().toISOString(),
+      level: status >= 400 ? "error" : "info",
+      service: "approval-workflow",
       event: "workspace_autosave",
       outcome: status >= 400 ? "failed" : payload.unchanged ? "skipped" : "saved",
       status,
@@ -190,8 +212,57 @@ export async function POST(request: NextRequest) {
         },
       });
     }
-    return NextResponse.json({ ...payload, monitoring }, { status });
+    return createSupabaseJsonResponse(response, { ...payload, monitoring }, { status });
   };
+
+  const publishedAssignmentEmails = Array.from(
+    new Set(
+      incomingSnapshot.workflowTemplates
+        .filter((template) => template.isDraft === false)
+        .flatMap((template) => [
+          ...template.steps.flatMap((step) => [
+            step.approverEmail,
+            step.escalationEmail || "",
+          ]),
+          ...(template.graph?.nodes.flatMap((node) => [
+            node.assigneeEmail || "",
+            node.escalationEmail || "",
+          ]) || []),
+        ])
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+  if (publishedAssignmentEmails.length > 100) {
+    return finishSave(
+      {
+        mode: "local",
+        reason: "Published workflows cannot contain more than 100 directory assignments.",
+      },
+      422,
+    );
+  }
+  if (publishedAssignmentEmails.length) {
+    const { data: invalidEmails, error: directoryError } = await supabase.rpc(
+      "validate_active_directory_emails",
+      { p_emails: publishedAssignmentEmails },
+    );
+    if (directoryError) {
+      return finishSave(
+        { mode: "local", reason: "Unable to verify published workflow assignments." },
+        503,
+      );
+    }
+    if (Array.isArray(invalidEmails) && invalidEmails.length) {
+      return finishSave(
+        {
+          mode: "local",
+          reason: `Published workflow assignment is inactive or missing: ${invalidEmails[0]}`,
+        },
+        422,
+      );
+    }
+  }
 
   const incomingSnapshotHash = createWorkspaceSnapshotHash(incomingSnapshot);
   const { data: snapshotMetadata, error: snapshotMetadataError } = await supabase
@@ -239,16 +310,7 @@ export async function POST(request: NextRequest) {
     assetsUploaded = assetPlan.assets.length;
   }
 
-  let persistedSnapshot: WorkspaceStateSnapshot | null = null;
-  try {
-    persistedSnapshot = await loadNormalizedWorkspaceState(
-      supabase,
-      incomingSnapshot.selectedTemplateId,
-    );
-  } catch {
-    // The normal save path below still reports database failures.
-  }
-  const snapshot = mergeExternalFormWorkspaceState(incomingSnapshot, persistedSnapshot);
+  const snapshot = { ...incomingSnapshot, approvalTasks: [] };
   const snapshotHash = createWorkspaceSnapshotHash(snapshot);
   persistedBytes = Buffer.byteLength(serializeWorkspaceState(snapshot));
 
@@ -311,7 +373,7 @@ export async function PATCH(request: NextRequest) {
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", reason: "Not signed in" },
       { status: 401 },
     );
@@ -322,7 +384,7 @@ export async function PATCH(request: NextRequest) {
     record?: unknown;
   };
   if (body.action !== "deactivate_admin_record") {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", reason: "Unsupported workspace action" },
       { status: 400 },
     );
@@ -330,7 +392,7 @@ export async function PATCH(request: NextRequest) {
 
   const record = parseAdminDeactivation(body.record);
   if (!record) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { mode: "local", reason: "Invalid admin deactivation record" },
       { status: 400 },
     );
@@ -338,9 +400,9 @@ export async function PATCH(request: NextRequest) {
 
   try {
     await deactivateWorkspaceAdminRecord(supabase, record);
-    return NextResponse.json({ mode: "supabase" });
+    return createSupabaseJsonResponse(response, { mode: "supabase" });
   } catch (error) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       {
         mode: "local",
         reason:

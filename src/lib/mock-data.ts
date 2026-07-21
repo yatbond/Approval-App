@@ -1,4 +1,4 @@
-import type { ApprovalTask, NotificationItem, WorkflowTemplate } from "@/lib/types";
+import type { ApprovalTask, WorkflowTemplate } from "@/lib/types";
 
 export const departments = [
   "Finance",
@@ -253,29 +253,5 @@ export const approvalTasks: ApprovalTask[] = [
         targetEmail: "derrick@example.com",
       },
     ],
-  },
-];
-
-export const notifications: NotificationItem[] = [
-  {
-    id: "N-1",
-    title: "Approval due soon",
-    body: "APR-1048 is due today at 17:00.",
-    time: "12 min ago",
-    unread: true,
-  },
-  {
-    id: "N-2",
-    title: "Task escalated",
-    body: "APR-1039 was escalated to Finance manager.",
-    time: "2h ago",
-    unread: true,
-  },
-  {
-    id: "N-3",
-    title: "Delegation active",
-    body: "Your approval authority is delegated to Alex Ho this Friday.",
-    time: "Yesterday",
-    unread: false,
   },
 ];

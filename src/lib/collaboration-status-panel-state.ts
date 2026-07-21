@@ -15,6 +15,8 @@ export type CollaborationStatusItem = {
   status: string;
   detail: string;
   canAct: boolean;
+  requirementNodeId?: string;
+  documentId?: string;
   dueAt?: string;
 };
 
@@ -104,6 +106,7 @@ function buildRequiredSubmissionItems({
           node,
           document,
           activeEmail,
+          template,
         }),
       ];
     }),
@@ -115,11 +118,13 @@ function mapRequiredSubmissionItem({
   node,
   document,
   activeEmail,
+  template,
 }: {
   task: ApprovalTask;
   node: WorkflowGraphNode;
   document: WorkflowDocumentRequirement;
   activeEmail: string;
+  template: WorkflowTemplate;
 }): CollaborationStatusItem {
   const assignedEmail = normalizeEmail(node.assigneeEmail);
   const confirmedSharedFulfillment = (task.sharedFulfillments || []).find(
@@ -159,6 +164,13 @@ function mapRequiredSubmissionItem({
           ? "missing"
           : "optional";
 
+  const canSubmitShared = submitNodes(template).some(
+    (sourceNode) =>
+      sourceNode.id !== node.id &&
+      sourceNode.allowSharedFulfillment === true &&
+      normalizeEmail(sourceNode.assigneeEmail) === activeEmail,
+  );
+
   return {
     id: `${node.id}:${document.id}`,
     label: document.documentType,
@@ -170,7 +182,12 @@ function mapRequiredSubmissionItem({
       assignedEmail,
     status,
     detail: node.label,
-    canAct: assignedEmail === activeEmail,
+    canAct:
+      canSubmitShared &&
+      assignedEmail !== activeEmail &&
+      (status === "missing" || status === "optional"),
+    requirementNodeId: node.id,
+    documentId: document.id,
   };
 }
 

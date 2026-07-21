@@ -219,7 +219,8 @@ export function ConditionBoxDetails({
                   </button>
                 </div>
 
-                {!conditionCase.isFallback && context.upstreamNodes.length > 0 && (
+                {!conditionCase.isFallback &&
+                  context.upstreamApprovalNodes.length > 0 && (
                   <label className="block">
                     <span className="mb-1 block text-xs font-semibold text-neutral-400">
                       Approval rule
@@ -244,7 +245,7 @@ export function ConditionBoxDetails({
                         }
 
                         if (selectedValue === "count") {
-                          const upstreamNodeIds = context.upstreamNodes.map(
+                          const upstreamNodeIds = context.upstreamApprovalNodes.map(
                             (node) => node.id,
                           );
                           onUpdateCase(conditionCase.id, {
@@ -264,7 +265,9 @@ export function ConditionBoxDetails({
                         const upstreamNodeIds =
                           conditionCase.approvalRule?.upstreamNodeIds.length
                             ? conditionCase.approvalRule.upstreamNodeIds
-                            : context.upstreamNodes.slice(0, 1).map((node) => node.id);
+                            : context.upstreamApprovalNodes
+                                .slice(0, 1)
+                                .map((node) => node.id);
                         onUpdateCase(conditionCase.id, {
                           isApprovalCount: false,
                           approvalRule: {
@@ -276,16 +279,16 @@ export function ConditionBoxDetails({
                       }}
                       className="h-9 w-full rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none focus:border-emerald-400/60"
                     >
-                      <option value="none">No approval</option>
-                      <option value="specific">Named</option>
-                      <option value="count">Count</option>
+                      <option value="none">No approval rule</option>
+                      <option value="specific">All selected approvals</option>
+                      <option value="count">Any one / approval count</option>
                     </select>
                   </label>
                 )}
 
                 {!conditionCase.isFallback &&
                   conditionCase.approvalRule &&
-                  context.upstreamNodes.length > 0 && (
+                  context.upstreamApprovalNodes.length > 0 && (
                   <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
                     {conditionCase.isApprovalCount ? (
                       <div className="space-y-3">
@@ -294,7 +297,7 @@ export function ConditionBoxDetails({
                             Count from
                           </p>
                           <div className="space-y-1">
-                            {context.upstreamNodes.map((node) => {
+                            {context.upstreamApprovalNodes.map((node) => {
                               const selectedNodeIds =
                                 conditionCase.approvalRule?.upstreamNodeIds || [];
                               const checked = selectedNodeIds.includes(node.id);
@@ -348,7 +351,9 @@ export function ConditionBoxDetails({
                                 approvalRule: {
                                   upstreamNodeIds:
                                     conditionCase.approvalRule?.upstreamNodeIds ||
-                                    context.upstreamNodes.map((node) => node.id),
+                                    context.upstreamApprovalNodes.map(
+                                      (node) => node.id,
+                                    ),
                                   minimumApproved:
                                     conditionCase.approvalRule?.minimumApproved || 1,
                                   mode: event.target.value as "at_least" | "exactly",
@@ -366,13 +371,15 @@ export function ConditionBoxDetails({
                             min={1}
                             max={
                               conditionCase.approvalRule?.upstreamNodeIds.length ||
-                              context.upstreamNodes.length
+                              context.upstreamApprovalNodes.length
                             }
                             value={conditionCase.approvalRule?.minimumApproved || 1}
                             onChange={(event) => {
                               const selectedNodeIds =
                                 conditionCase.approvalRule?.upstreamNodeIds ||
-                                context.upstreamNodes.map((node) => node.id);
+                                context.upstreamApprovalNodes.map(
+                                  (node) => node.id,
+                                );
                               const maxCount = Math.max(selectedNodeIds.length, 1);
                               const nextMinimum = Math.min(
                                 Math.max(Number(event.target.value) || 1, 1),
@@ -399,7 +406,7 @@ export function ConditionBoxDetails({
                           Required approvals
                         </p>
                         <div className="space-y-1">
-                          {context.upstreamNodes.map((node) => {
+                          {context.upstreamApprovalNodes.map((node) => {
                             const selectedNodeIds =
                               conditionCase.approvalRule?.upstreamNodeIds || [];
                             const checked = selectedNodeIds.includes(node.id);
@@ -435,7 +442,7 @@ export function ConditionBoxDetails({
                           })}
                         </div>
                         <p className="mt-2 text-xs text-neutral-500">
-                          Select required.
+                          Every checked approval must approve.
                         </p>
                       </>
                     )}
@@ -443,78 +450,137 @@ export function ConditionBoxDetails({
                 )}
 
                 {!conditionCase.isFallback && (
-                <div>
-                  <p className="mb-1 text-xs font-semibold text-neutral-400">
-                    Number
-                  </p>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  <select
-                    value={conditionCase.numericRule?.field || ""}
-                    title="Optional extracted numeric field to evaluate, such as invoice amount or quantity."
-                    onChange={(event) =>
-                      onUpdateCase(conditionCase.id, {
-                        numericRule: event.target.value
-                          ? {
-                              field: event.target.value,
-                              operator: conditionCase.numericRule?.operator || ">=",
-                              value: conditionCase.numericRule?.value || "",
+                  <div className="rounded-md border border-[#e6e6e6] bg-white p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-neutral-400">
+                          Number rule <span className="font-normal">(optional)</span>
+                        </p>
+                        {!conditionCase.numericRule && (
+                          <p className="mt-1 text-xs text-neutral-500">
+                            {conditionCase.approvalRule
+                              ? "Off — this condition uses approval results only."
+                              : "Add a number rule if this condition should compare an amount or quantity."}
+                          </p>
+                        )}
+                      </div>
+                      {conditionCase.numericRule ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onUpdateCase(conditionCase.id, {
+                              numericRule: undefined,
+                            })
+                          }
+                          className="min-h-8 shrink-0 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 text-xs text-rose-100 transition hover:bg-rose-500/20"
+                        >
+                          Remove
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={!context.numericFields.length}
+                          onClick={() =>
+                            onUpdateCase(conditionCase.id, {
+                              numericRule: {
+                                field: context.numericFields[0]?.name || "",
+                                operator: ">=",
+                                value: "",
+                              },
+                            })
+                          }
+                          className="flex min-h-8 shrink-0 items-center gap-1 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-2 text-xs text-emerald-100 transition hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Plus size={12} />
+                          Add number
+                        </button>
+                      )}
+                    </div>
+
+                    {conditionCase.numericRule && (
+                      <div className="mt-3 space-y-3">
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-medium text-neutral-500">
+                            Numeric field
+                          </span>
+                          <select
+                            value={conditionCase.numericRule.field}
+                            title="Extracted numeric field to evaluate, such as invoice amount or quantity."
+                            onChange={(event) =>
+                              onUpdateCase(conditionCase.id, {
+                                numericRule: {
+                                  field: event.target.value,
+                                  operator: conditionCase.numericRule?.operator || ">=",
+                                  value: conditionCase.numericRule?.value || "",
+                                },
+                              })
                             }
-                          : undefined,
-                      })
-                    }
-                    className="h-9 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none focus:border-emerald-400/60"
-                  >
-                    <option value="">Numeric field</option>
-                    {context.numericFields.map((field) => (
-                      <option key={field.name} value={field.name}>
-                        {field.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={conditionCase.numericRule?.operator || ">="}
-                    title="Comparison to apply against the extracted numeric value."
-                    onChange={(event) =>
-                      onUpdateCase(conditionCase.id, {
-                        numericRule: {
-                          field:
-                            conditionCase.numericRule?.field ||
-                            context.numericFields[0]?.name ||
-                            "",
-                          operator: event.target.value as WorkflowRuleOperator,
-                          value: conditionCase.numericRule?.value || "",
-                        },
-                      })
-                    }
-                    className="h-9 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none focus:border-emerald-400/60"
-                  >
-                    {ruleOperatorOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.value}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    value={conditionCase.numericRule?.value || ""}
-                    title="Numeric threshold used by this condition."
-                    onChange={(event) =>
-                      onUpdateCase(conditionCase.id, {
-                        numericRule: {
-                          field:
-                            conditionCase.numericRule?.field ||
-                            context.numericFields[0]?.name ||
-                            "",
-                          operator: conditionCase.numericRule?.operator || ">=",
-                          value: event.target.value,
-                        },
-                      })
-                    }
-                    inputMode="decimal"
-                    placeholder="Value"
-                    className="h-9 rounded-md border border-[#e6e6e6] bg-white px-2 text-xs outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
-                  />
-                </div>
-                </div>
+                            className="h-9 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none focus:border-emerald-400/60"
+                          >
+                            {conditionCase.numericRule.field &&
+                              !context.numericFields.some(
+                                (field) => field.name === conditionCase.numericRule?.field,
+                              ) && (
+                                <option value={conditionCase.numericRule.field}>
+                                  {conditionCase.numericRule.field}
+                                </option>
+                              )}
+                            {context.numericFields.map((field) => (
+                              <option key={field.name} value={field.name}>
+                                {field.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-medium text-neutral-500">
+                            Comparison
+                          </span>
+                          <select
+                            value={conditionCase.numericRule.operator}
+                            title="Comparison to apply against the extracted numeric value."
+                            onChange={(event) =>
+                              onUpdateCase(conditionCase.id, {
+                                numericRule: {
+                                  field: conditionCase.numericRule?.field || "",
+                                  operator: event.target.value as WorkflowRuleOperator,
+                                  value: conditionCase.numericRule?.value || "",
+                                },
+                              })
+                            }
+                            className="h-9 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none focus:border-emerald-400/60"
+                          >
+                            {ruleOperatorOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.value} — {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-medium text-neutral-500">
+                            Value
+                          </span>
+                          <input
+                            value={conditionCase.numericRule.value}
+                            title="Numeric threshold used by this condition."
+                            onChange={(event) =>
+                              onUpdateCase(conditionCase.id, {
+                                numericRule: {
+                                  field: conditionCase.numericRule?.field || "",
+                                  operator: conditionCase.numericRule?.operator || ">=",
+                                  value: event.target.value,
+                                },
+                              })
+                            }
+                            inputMode="decimal"
+                            placeholder="Enter a number"
+                            className="h-9 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-2 text-xs outline-none placeholder:text-neutral-600 focus:border-emerald-400/60"
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {!conditionCase.isFallback && conditionCase.approvalRule && conditionCase.numericRule && (
@@ -614,4 +680,3 @@ export function ConditionBoxDetails({
     </div>
   );
 }
-

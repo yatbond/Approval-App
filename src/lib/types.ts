@@ -19,6 +19,7 @@ export type ApprovalAction =
   | "accept_reassignment"
   | "decline_reassignment"
   | "delegate"
+  | "revoke_delegation"
   | "amend_resubmit"
   | "cancel";
 
@@ -498,6 +499,7 @@ export type WorkflowGraph = {
 
 export type WorkflowTemplate = {
   id: string;
+  databaseVersionId?: string;
   name: string;
   business: string;
   department: string;
@@ -550,6 +552,8 @@ export type UserRoleAssignment = {
 
 export type ApprovalTask = {
   id: string;
+  stateVersion?: number;
+  availableActions?: ApprovalAction[];
   title: string;
   workflow: string;
   workflowTemplateId?: string;
@@ -567,6 +571,7 @@ export type ApprovalTask = {
   currentNodeId?: string;
   pendingNodeIds?: string[];
   pendingOwners?: string[];
+  delegationExpiresAt?: string;
   completedNodeIds?: string[];
   notifiedNodeIds?: string[];
   nodeDecisions?: Record<string, "approved" | "rejected">;

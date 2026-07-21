@@ -114,6 +114,10 @@ import {
 } from "@/lib/workflow-editor-tabs-state";
 import { getWorkflowTemplateLifecycleState } from "@/lib/workflow-template-lifecycle-state";
 import {
+  ApprovalApiError,
+  validateActiveDirectoryEmails,
+} from "@/lib/approval-client";
+import {
   getWorkflowRedoActionState,
   getWorkflowUndoActionState,
 } from "@/lib/workflow-history-action-state";
@@ -316,6 +320,7 @@ export function WorkflowView({
   );
   const [copySourceTemplateId, setCopySourceTemplateId] = useState("");
   const [workflowActionMessage, setWorkflowActionMessage] = useState("");
+  const [isPublishing, setIsPublishing] = useState(false);
   const baseTemplate =
     baseWorkflowTemplates.find((template) => template.id === baseTemplateId) ||
     null;
@@ -353,7 +358,7 @@ export function WorkflowView({
     );
   }
 
-  function publishSelectedTemplate() {
+  async function publishSelectedTemplate() {
     const nextState = getWorkflowPublishTemplateActionState({
       template: workflow,
     });
@@ -362,8 +367,30 @@ export function WorkflowView({
       return;
     }
 
-    onCreateTemplate(nextState.template);
-    setWorkflowActionMessage(`Published ${nextState.template.name}.`);
+    const assignmentEmails = [
+      ...nextState.template.steps.flatMap((step) => [
+        step.approverEmail,
+        step.escalationEmail || "",
+      ]),
+      ...(nextState.template.graph?.nodes.flatMap((node) => [
+        node.assigneeEmail || "",
+        node.escalationEmail || "",
+      ]) || []),
+    ];
+    setIsPublishing(true);
+    try {
+      await validateActiveDirectoryEmails(assignmentEmails);
+      onCreateTemplate(nextState.template);
+      setWorkflowActionMessage(`Published ${nextState.template.name}.`);
+    } catch (error) {
+      setWorkflowActionMessage(
+        error instanceof ApprovalApiError
+          ? `Cannot publish: ${error.message}`
+          : "Cannot publish because directory assignments could not be verified.",
+      );
+    } finally {
+      setIsPublishing(false);
+    }
   }
 
   function duplicateTemplateAsDraft(template: WorkflowTemplate) {
@@ -639,7 +666,8 @@ export function WorkflowView({
     const nextState = getWorkflowAddConditionCaseState({
       graph: workflowGraph,
       selectedNodeId,
-      upstreamNodeIds: context?.upstreamNodes.map((node) => node.id) || [],
+      upstreamNodeIds:
+        context?.upstreamApprovalNodes.map((node) => node.id) || [],
     });
     if (nextState.didUpdate) {
       saveWorkflowGraph(nextState.graph, nextState.label);
@@ -1652,12 +1680,12 @@ export function WorkflowView({
             >
               <button
                 type="button"
-                onClick={publishSelectedTemplate}
-                disabled={!workflowLifecycle.canPublish}
+                onClick={() => void publishSelectedTemplate()}
+                disabled={!workflowLifecycle.canPublish || isPublishing}
                 title={workflowLifecycle.publishTitle}
                 className="flex min-h-10 w-full items-center justify-center rounded-md border border-sky-400/40 bg-sky-400/12 px-4 py-2 text-sm font-medium text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
               >
-                {workflowLifecycle.publishLabel}
+                {isPublishing ? "Verifying assignments..." : workflowLifecycle.publishLabel}
               </button>
             </div>
             </div>

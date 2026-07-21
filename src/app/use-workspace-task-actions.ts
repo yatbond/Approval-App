@@ -6,6 +6,14 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import {
+  ApprovalApiError,
+  executeCanonicalApprovalAction,
+} from "@/lib/approval-client";
+import {
+  executeCanonicalCollaborationAction,
+  type ClientCollaborationIntent,
+} from "@/lib/approval-collaboration-client";
 import { buildCollaborationNotifications } from "@/lib/collaboration-notification-state";
 import {
   getApprovalActionConfirmation,
@@ -14,6 +22,7 @@ import {
 import {
   getTaskCorrectionUploadState,
   getTaskSharedFulfillmentDecisionState,
+  getTaskSharedFulfillmentSubmitState,
 } from "@/lib/shared-fulfillment-state";
 import {
   getTaskContributorRequestState,
@@ -50,6 +59,7 @@ export function useWorkspaceTaskActions({
   activeUser,
   buildWorkspaceSnapshot,
   persistWorkspaceSnapshot,
+  refreshCanonicalTasks,
   requestConfirmation,
   selectedTask,
   sendWorkflowEmailNotifications,
@@ -63,6 +73,7 @@ export function useWorkspaceTaskActions({
     patch?: Partial<WorkspaceStateSnapshot>,
   ) => WorkspaceStateSnapshot;
   persistWorkspaceSnapshot: (snapshot: WorkspaceStateSnapshot) => Promise<unknown>;
+  refreshCanonicalTasks: () => Promise<ApprovalTask[] | null>;
   requestConfirmation: (request: ConfirmationRequest) => Promise<boolean>;
   selectedTask: ApprovalTask | null;
   sendWorkflowEmailNotifications: (
@@ -85,6 +96,44 @@ export function useWorkspaceTaskActions({
   const [actionError, setActionError] = useState("");
   const [actionSubmissionTaskId, setActionSubmissionTaskId] = useState("");
   const actionSubmissionTaskIdRef = useRef("");
+  const retryCommandRef = useRef<{ signature: string; idempotencyKey: string } | null>(
+    null,
+  );
+  const collaborationRetryKeysRef = useRef<Map<string, string>>(new Map());
+
+  async function runCanonicalCollaboration(
+    task: ApprovalTask,
+    intent: ClientCollaborationIntent,
+    signature: string,
+  ) {
+    const idempotencyKey =
+      collaborationRetryKeysRef.current.get(signature) || crypto.randomUUID();
+    collaborationRetryKeysRef.current.set(signature, idempotencyKey);
+    try {
+      const result = await executeCanonicalCollaborationAction({
+        task,
+        intent,
+        idempotencyKey,
+      });
+      collaborationRetryKeysRef.current.delete(signature);
+      setTasks((current) =>
+        current.map((item) => (item.id === result.task.id ? result.task : item)),
+      );
+      return result.task;
+    } catch (error) {
+      if (error instanceof ApprovalApiError && error.canonicalTask) {
+        setTasks((current) =>
+          current.map((item) =>
+            item.id === error.canonicalTask?.id ? error.canonicalTask : item,
+          ),
+        );
+      }
+      if (error instanceof ApprovalApiError && error.status < 500) {
+        collaborationRetryKeysRef.current.delete(signature);
+      }
+      throw error;
+    }
+  }
 
   async function recordAction(
     action: ApprovalAction,
@@ -94,19 +143,21 @@ export function useWorkspaceTaskActions({
       return;
     }
     const startedAt = Date.now();
+    const isCanonicalTask = Number.isInteger(selectedTask.stateVersion);
+    const nextState = isCanonicalTask
+      ? null
+      : getWorkspaceRecordTaskActionState({
+          tasks,
+          selectedTask,
+          templates,
+          activeUser,
+          action,
+          comment,
+          targetEmail,
+          returnTargetNodeIds,
+        });
 
-    const nextState = getWorkspaceRecordTaskActionState({
-      tasks,
-      selectedTask,
-      templates,
-      activeUser,
-      action,
-      comment,
-      targetEmail,
-      returnTargetNodeIds,
-    });
-
-    if (!nextState.didApply) {
+    if (nextState && !nextState.didApply) {
       if (nextState.actionError) {
         setActionError(nextState.actionError);
       }
@@ -115,16 +166,63 @@ export function useWorkspaceTaskActions({
 
     actionSubmissionTaskIdRef.current = selectedTask.id;
     setActionSubmissionTaskId(selectedTask.id);
-    setTasks(nextState.tasks);
+    const commandSignature = JSON.stringify({
+      taskId: selectedTask.id,
+      version: selectedTask.stateVersion,
+      action,
+      comment: comment.trim(),
+      targetEmail: targetEmail.trim().toLowerCase(),
+      returnTargetNodeIds,
+    });
+    const idempotencyKey =
+      retryCommandRef.current?.signature === commandSignature
+        ? retryCommandRef.current.idempotencyKey
+        : crypto.randomUUID();
+    retryCommandRef.current = { signature: commandSignature, idempotencyKey };
     try {
-      await persistWorkspaceSnapshot(
-        buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
-      );
-      const changedTask = nextState.tasks.find(
-        (task) => task.id === selectedTask.id,
-      );
+      let changedTask: ApprovalTask | undefined;
+      if (isCanonicalTask) {
+        if (
+          selectedTask.availableActions &&
+          !selectedTask.availableActions.includes(action)
+        ) {
+          await refreshCanonicalTasks();
+          throw new ApprovalApiError(
+            "This action is no longer available. The request has been refreshed.",
+            409,
+            "stale_version",
+          );
+        }
+        const result = await executeCanonicalApprovalAction({
+          task: selectedTask,
+          action,
+          idempotencyKey,
+          comment,
+          targetEmail,
+          returnTargetNodeIds,
+        });
+        changedTask = result.task;
+        setTasks((current) =>
+          current.map((task) =>
+            task.id === result.task.id ? result.task : task,
+          ),
+        );
+      } else {
+        if (!nextState) {
+          throw new Error("The local approval transition could not be prepared.");
+        }
+        setTasks(nextState.tasks);
+        await persistWorkspaceSnapshot(
+          buildWorkspaceSnapshot({ approvalTasks: nextState.tasks }),
+        );
+        changedTask = nextState.tasks.find(
+          (task) => task.id === selectedTask.id,
+        );
+      }
       if (changedTask) {
-        void sendWorkflowEmailNotifications(changedTask);
+        if (!isCanonicalTask) {
+          void sendWorkflowEmailNotifications(changedTask);
+        }
       }
       void recordWorkspaceOperation({
         operationType: "routing",
@@ -139,13 +237,25 @@ export function useWorkspaceTaskActions({
           returnTargetNodeIds,
         },
       });
-      if (nextState.shouldClearInputs) {
+      if (isCanonicalTask || nextState?.shouldClearInputs) {
         setComment("");
         setTargetEmail("");
       }
-      setActionError(nextState.actionError);
+      setActionError(nextState?.actionError || "");
+      retryCommandRef.current = null;
     } catch (error) {
-      setTasks(tasks);
+      if (error instanceof ApprovalApiError && error.canonicalTask) {
+        setTasks((current) =>
+          current.map((task) =>
+            task.id === error.canonicalTask?.id ? error.canonicalTask : task,
+          ),
+        );
+      } else if (!isCanonicalTask) {
+        setTasks(tasks);
+      }
+      if (error instanceof ApprovalApiError && error.status < 500) {
+        retryCommandRef.current = null;
+      }
       void recordWorkspaceOperation({
         operationType: "routing",
         outcome: "failed",
@@ -158,9 +268,11 @@ export function useWorkspaceTaskActions({
         details: { action, returnTargetNodeIds },
       });
       setActionError(
-        error instanceof Error
-          ? error.message
-          : "Unable to save this task decision.",
+        error instanceof ApprovalApiError && error.status === 409
+          ? `${error.message} The latest server version is now shown.`
+          : error instanceof Error
+            ? error.message
+            : "Unable to save this task decision.",
       );
     } finally {
       actionSubmissionTaskIdRef.current = "";
@@ -186,6 +298,34 @@ export function useWorkspaceTaskActions({
 
   async function requestTaskContributor() {
     if (!selectedTask) {
+      return;
+    }
+
+    if (Number.isInteger(selectedTask.stateVersion)) {
+      const intent = {
+        action: "request_contributor" as const,
+        targetEmail: contributorEmail,
+        contributorName,
+        requestNote: contributorRequestNote,
+        ...(contributorDueAt ? { dueAt: contributorDueAt } : {}),
+        blocksApproval: contributorBlocksApproval,
+      };
+      const signature = JSON.stringify({ taskId: selectedTask.id, intent });
+      try {
+        await runCanonicalCollaboration(selectedTask, intent, signature);
+        setContributorName("");
+        setContributorEmail("");
+        setContributorRequestNote("");
+        setContributorDueAt("");
+        setContributorBlocksApproval(true);
+        setContributorRequestError("");
+      } catch (error) {
+        setContributorRequestError(
+          error instanceof Error
+            ? error.message
+            : "Unable to persist contributor request.",
+        );
+      }
       return;
     }
 
@@ -288,6 +428,21 @@ export function useWorkspaceTaskActions({
         setActionError("Task was not found.");
         return;
       }
+      if (Number.isInteger(task.stateVersion)) {
+        const intent = {
+          action: "submit_contribution" as const,
+          collaborationRequestId,
+          attachment,
+          extractedFields: payload.fields || {},
+        };
+        await runCanonicalCollaboration(
+          task,
+          intent,
+          JSON.stringify({ taskId, intent }),
+        );
+        setActionError("");
+        return;
+      }
       const result = getTaskContributorUploadState({
         task,
         collaborationRequestId,
@@ -329,6 +484,112 @@ export function useWorkspaceTaskActions({
     }
   }
 
+  async function submitSharedFulfillmentUpload({
+    taskId,
+    requirementNodeId,
+    documentId,
+    assignedSubmitterEmail,
+    file,
+  }: {
+    taskId: string;
+    requirementNodeId: string;
+    documentId: string;
+    assignedSubmitterEmail: string;
+    file: File;
+  }) {
+    try {
+      const task = tasks.find((item) => item.id === taskId);
+      const template = task?.workflowTemplateSnapshot;
+      const requirementNode = template?.graph?.nodes.find(
+        (node) => node.id === requirementNodeId,
+      );
+      const documentRequirement = template?.documents.find(
+        (document) =>
+          document.id === documentId &&
+          requirementNode?.documentIds?.includes(document.id),
+      );
+      if (!task || !requirementNode || !documentRequirement) {
+        setActionError("The shared requirement is no longer available. Refresh the request.");
+        return;
+      }
+      const [pdfPages, workspaceFiles] = await Promise.all([
+        import("@/lib/pdf-page-images"),
+        import("@/lib/workspace-file-api"),
+      ]);
+      const {
+        getPdfOcrRenderOptions,
+        renderPdfFileToPageImages,
+        shouldRenderPdfForVision,
+      } = pdfPages;
+      const { parseWorkspaceFile, uploadWorkspaceAttachmentFile } = workspaceFiles;
+      const storage = await uploadWorkspaceAttachmentFile({
+        file,
+        documentRequirement,
+      });
+      const pageImages = shouldRenderPdfForVision(file)
+        ? await renderPdfFileToPageImages(file, getPdfOcrRenderOptions())
+        : [];
+      const payload = await parseWorkspaceFile({
+        file,
+        documentRequirement,
+        pageImages,
+      });
+      const attachment: ApprovalAttachment = {
+        id: `shared-${Date.now()}-${file.name}`,
+        fileName: file.name,
+        documentId,
+        documentType: documentRequirement.documentType,
+        format: documentRequirement.format,
+        workflowNodeId: requirementNodeId,
+        storagePath: storage.storagePath,
+        publicUrl: storage.publicUrl,
+        uploadedBy: activeUser.email,
+        uploadedAt: new Date().toISOString(),
+      };
+      if (!Number.isInteger(task.stateVersion)) {
+        const result = getTaskSharedFulfillmentSubmitState({
+          task,
+          actor: activeUser,
+          attachment,
+          requirementNodeId,
+          documentId,
+          documentType: documentRequirement.documentType,
+          assignedSubmitterEmail,
+          assignedSubmitterName: requirementNode.assigneeName || assignedSubmitterEmail,
+          required: documentRequirement.required,
+          requiresConfirmation: true,
+          extractedFields: payload.fields || {},
+        });
+        if (!result.didApply) {
+          setActionError(result.errorMessage);
+          return;
+        }
+        const nextTasks = tasks.map((item) =>
+          item.id === taskId ? result.task : item,
+        );
+        setTasks(nextTasks);
+        setActionError("");
+        return;
+      }
+      const intent = {
+        action: "submit_shared_fulfillment" as const,
+        requirementNodeId,
+        documentId,
+        assignedSubmitterEmail,
+        attachment,
+        extractedFields: payload.fields || {},
+      };
+      await runCanonicalCollaboration(task, intent, JSON.stringify({ taskId, intent }));
+      setActionError("");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit the shared fulfillment.",
+      );
+    }
+  }
+
   async function decideSharedFulfillment({
     taskId,
     fulfillmentId,
@@ -343,6 +604,29 @@ export function useWorkspaceTaskActions({
     const task = tasks.find((item) => item.id === taskId);
     if (!task) {
       setActionError("Task was not found.");
+      return;
+    }
+    if (Number.isInteger(task.stateVersion)) {
+      const intent = {
+        action: "decide_shared_fulfillment" as const,
+        fulfillmentId,
+        decision,
+        ...(note ? { note } : {}),
+      };
+      try {
+        await runCanonicalCollaboration(
+          task,
+          intent,
+          JSON.stringify({ taskId, intent }),
+        );
+        setActionError("");
+      } catch (error) {
+        setActionError(
+          error instanceof Error
+            ? error.message
+            : "Unable to persist shared fulfillment decision.",
+        );
+      }
       return;
     }
     const result = getTaskSharedFulfillmentDecisionState({
@@ -454,6 +738,21 @@ export function useWorkspaceTaskActions({
       const task = tasks.find((item) => item.id === taskId);
       if (!task) {
         setActionError("Task was not found.");
+        return;
+      }
+      if (Number.isInteger(task.stateVersion)) {
+        const intent = {
+          action: "submit_correction" as const,
+          correctionRequestId,
+          attachment,
+          extractedFields: payload.fields || {},
+        };
+        await runCanonicalCollaboration(
+          task,
+          intent,
+          JSON.stringify({ taskId, intent }),
+        );
+        setActionError("");
         return;
       }
       const result = getTaskCorrectionUploadState({
@@ -674,6 +973,7 @@ export function useWorkspaceTaskActions({
     setContributorRequestNote,
     setTargetEmail,
     submitContributorRequestUpload,
+    submitSharedFulfillmentUpload,
     submitCorrectionUpload,
     targetEmail,
   };

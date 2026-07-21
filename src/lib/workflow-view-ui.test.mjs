@@ -81,6 +81,20 @@ test("workflow builder does not expose end as a user-created box", () => {
   );
 });
 
+test("condition rules separate approval counts from optional number rules", () => {
+  const source = readFileSync("src/app/condition-box-details.tsx", "utf8");
+
+  assert.equal(source.includes("Any one / approval count"), true);
+  assert.equal(source.includes("Every checked approval must approve."), true);
+  assert.equal(source.includes("Number rule"), true);
+  assert.equal(source.includes("(optional)"), true);
+  assert.equal(
+    source.includes("Off — this condition uses approval results only."),
+    true,
+  );
+  assert.equal(source.includes("sm:grid-cols-3"), false);
+});
+
 test("handoff document visibility is limited to all selected or none", () => {
   const source = readFileSync("src/app/workflow-handoff-editor.tsx", "utf8");
 

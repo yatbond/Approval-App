@@ -5,6 +5,8 @@ import {
   type SavedUploadRequestDraft,
 } from "@/lib/upload-request-draft-state";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { getDevelopmentAuthBypassUser } from "@/lib/supabase/development-auth-bypass";
+import { createSupabaseJsonResponse } from "@/lib/supabase/route-response";
 import {
   getSupabaseRouteUser,
   type SupabaseRouteUser,
@@ -21,12 +23,21 @@ type UploadDraftRow = {
 };
 
 export async function GET(request: NextRequest) {
+  if (
+    getDevelopmentAuthBypassUser({
+      nodeEnv: process.env.NODE_ENV,
+      email: process.env.E2E_AUTH_BYPASS_EMAIL,
+    })
+  ) {
+    return NextResponse.json({ drafts: [] });
+  }
+
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { error: "Sign in before loading drafts." },
       { status: 401 },
     );
@@ -39,10 +50,10 @@ export async function GET(request: NextRequest) {
     .returns<UploadDraftRow[]>();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 503 });
+    return createSupabaseJsonResponse(response, { error: error.message }, { status: 503 });
   }
 
-  return NextResponse.json({
+  return createSupabaseJsonResponse(response, {
     drafts: (data || []).map((row) => rowToSavedDraft(row, user)).filter(Boolean),
   });
 }
@@ -53,7 +64,7 @@ export async function POST(request: NextRequest) {
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { error: "Sign in before saving drafts." },
       { status: 401 },
     );
@@ -62,7 +73,7 @@ export async function POST(request: NextRequest) {
   const body = (await request.json()) as { draft?: unknown };
   const parsedDraft = parseUploadRequestDraftList(JSON.stringify([body.draft]))[0];
   if (!parsedDraft) {
-    return NextResponse.json({ error: "Invalid upload draft." }, { status: 400 });
+    return createSupabaseJsonResponse(response, { error: "Invalid upload draft." }, { status: 400 });
   }
 
   const savedDraft = buildSavedUploadRequestDraft({
@@ -93,10 +104,10 @@ export async function POST(request: NextRequest) {
     .single<UploadDraftRow>();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 503 });
+    return createSupabaseJsonResponse(response, { error: error.message }, { status: 503 });
   }
 
-  return NextResponse.json({
+  return createSupabaseJsonResponse(response, {
     draft: rowToSavedDraft(data, user),
   });
 }
@@ -107,7 +118,7 @@ export async function DELETE(request: NextRequest) {
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json(
+    return createSupabaseJsonResponse(response,
       { error: "Sign in before deleting drafts." },
       { status: 401 },
     );
@@ -115,7 +126,7 @@ export async function DELETE(request: NextRequest) {
 
   const id = request.nextUrl.searchParams.get("id");
   if (!id) {
-    return NextResponse.json({ error: "Missing upload draft id." }, { status: 400 });
+    return createSupabaseJsonResponse(response, { error: "Missing upload draft id." }, { status: 400 });
   }
 
   const { error } = await supabase
@@ -124,10 +135,10 @@ export async function DELETE(request: NextRequest) {
     .eq("id", id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 503 });
+    return createSupabaseJsonResponse(response, { error: error.message }, { status: 503 });
   }
 
-  return NextResponse.json({ ok: true });
+  return createSupabaseJsonResponse(response, { ok: true });
 }
 
 function rowToSavedDraft(

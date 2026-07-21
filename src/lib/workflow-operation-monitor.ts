@@ -66,6 +66,10 @@ export async function recordWorkflowOperationEvent(
       console.warn(
         "[approval-app:operation-monitor]",
         JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: "warn",
+          service: "approval-workflow",
+          event: "operation_monitor_write_failed",
           operationType: event.operationType,
           outcome: event.outcome,
           monitorError: error.message || "Unable to record operation event.",
@@ -78,6 +82,10 @@ export async function recordWorkflowOperationEvent(
     console.warn(
       "[approval-app:operation-monitor]",
       JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: "warn",
+        service: "approval-workflow",
+        event: "operation_monitor_write_failed",
         operationType: event.operationType,
         outcome: event.outcome,
         monitorError:

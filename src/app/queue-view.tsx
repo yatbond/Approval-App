@@ -93,6 +93,11 @@ const actionConfig: Record<
     icon: UserPlus,
     tone: "border-violet-500/40 bg-violet-500/10 text-violet-100 hover:bg-violet-500/20",
   },
+  revoke_delegation: {
+    label: "Revoke delegation",
+    icon: ArrowRightLeft,
+    tone: "border-amber-500/40 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20",
+  },
   amend_resubmit: {
     label: "Resubmit",
     icon: Send,
@@ -214,12 +219,17 @@ export function QueueView({
     isOriginatorAction: originatorAction,
     isExpanded: contributorRequestExpanded,
   });
-  const availableActions = getQueueActionList({
+  const configuredActions = getQueueActionList({
     isOriginatorAction: originatorAction,
     hasPendingReassignmentRequest: Boolean(pendingReassignmentRequest),
     showReassignActions,
     actionMode: queueActionMode,
   });
+  const availableActions = selectedTask.availableActions
+    ? configuredActions.filter((action) =>
+        selectedTask.availableActions?.includes(action),
+      )
+    : configuredActions;
   const rejectReturnTargetOptions = getRejectReturnTargetOptions({
     task: selectedTask,
     template: selectedTemplate,
@@ -397,6 +407,7 @@ export function QueueView({
                           if (file) {
                             onAttachTaskDocument(file, document);
                           }
+                          event.currentTarget.value = "";
                         }}
                       />
                     </label>

@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import { UploadView } from "@/app/upload-view";
 import { useApprovalWorkspaceCore } from "@/app/approval-workspace-core";
-import { useWorkspaceEmailDelivery } from "@/app/use-workspace-email-delivery";
 import { useWorkspaceRequestPipeline } from "@/app/use-workspace-request-pipeline";
 import { useWorkspaceUploadDrafts } from "@/app/use-workspace-upload-drafts";
 import type { ApprovalAttachment } from "@/lib/types";
@@ -32,9 +31,6 @@ async function buildDocumentPreviewPages(file: File) {
 
 export default function WorkspaceUploadTab() {
   const core = useApprovalWorkspaceCore();
-  const email = useWorkspaceEmailDelivery({
-    requestConfirmation: core.requestConfirmation,
-  });
   const drafts = useWorkspaceUploadDrafts({
     activeUserEmail: core.activeUser.email,
     requestConfirmation: core.requestConfirmation,
@@ -57,7 +53,6 @@ export default function WorkspaceUploadTab() {
     selectedTemplate: drafts.selectedTemplate,
     selectedUploadDraftId: drafts.selectedUploadDraftId,
     selectedUploadRequestDraftRowId: drafts.selectedUploadRequestDraftRowId,
-    sendWorkflowEmailNotifications: email.sendWorkflowEmailNotifications,
     setDocumentPreviewPages: drafts.setDocumentPreviewPages,
     setEditedFields: drafts.setEditedFields,
     setFileName: drafts.setFileName,

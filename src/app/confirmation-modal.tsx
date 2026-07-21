@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { ConfirmationRequest } from "@/lib/confirmation-policy";
 
 export function ConfirmationModal({
@@ -12,21 +12,85 @@ export function ConfirmationModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const actionHandledRef = useRef(false);
+
   useEffect(() => {
     if (!request) {
       return;
     }
 
+    actionHandledRef.current = false;
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const focusFrame = window.requestAnimationFrame(() => {
+      cancelButtonRef.current?.focus();
+    });
+
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        onCancel();
+        if (!actionHandledRef.current) {
+          actionHandledRef.current = true;
+          onCancel();
+        }
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const focusableElements = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) || [],
+      );
+      if (!focusableElements.length) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusableElements[0];
+      const last = focusableElements.at(-1);
+      if (!dialogRef.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first)?.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     }
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus();
+    };
   }, [onCancel, request]);
+
+  function handleCancel() {
+    if (actionHandledRef.current) {
+      return;
+    }
+    actionHandledRef.current = true;
+    onCancel();
+  }
+
+  function handleConfirm() {
+    if (actionHandledRef.current) {
+      return;
+    }
+    actionHandledRef.current = true;
+    onConfirm();
+  }
 
   if (!request) {
     return null;
@@ -40,6 +104,7 @@ export function ConfirmationModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#231f20]/55 p-4">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirmation-title"
@@ -54,15 +119,16 @@ export function ConfirmationModal({
         </p>
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button
+            ref={cancelButtonRef}
             type="button"
-            onClick={onCancel}
+            onClick={handleCancel}
             className="min-h-10 rounded-md border border-[#d2d2d2] bg-white px-4 text-sm text-[#231f20] transition hover:bg-[#f2f2f2]"
           >
             Cancel
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={handleConfirm}
             className={`min-h-10 rounded-md border px-4 text-sm font-medium transition ${confirmTone}`}
           >
             {request.confirmLabel}

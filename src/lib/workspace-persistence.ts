@@ -60,8 +60,12 @@ export function sanitizeWorkspaceStateSnapshot(
 ): WorkspaceStateSnapshot {
   return {
     ...snapshot,
-    approvalTasks: snapshot.approvalTasks.map(repairApprovalTaskState),
-    workflowTemplates: sanitizeWorkflowTemplates(snapshot.workflowTemplates),
+    approvalTasks: Array.isArray(snapshot.approvalTasks)
+      ? snapshot.approvalTasks.map(repairApprovalTaskState)
+      : [],
+    workflowTemplates: sanitizeWorkflowTemplates(
+      Array.isArray(snapshot.workflowTemplates) ? snapshot.workflowTemplates : [],
+    ),
     formLibrary: Array.isArray(snapshot.formLibrary) ? snapshot.formLibrary : [],
   };
 }
@@ -71,11 +75,29 @@ function sanitizeWorkflowTemplates(
 ): WorkflowTemplate[] {
   return templates.map((template) => ({
     ...template,
-    documents: template.documents.map((document) => ({
+    business: typeof template.business === "string" ? template.business : "",
+    department:
+      typeof template.department === "string" ? template.department : "",
+    documentTypes: Array.isArray(template.documentTypes)
+      ? template.documentTypes
+      : [],
+    documents: (Array.isArray(template.documents) ? template.documents : []).map((document) => ({
       ...document,
       ...(document.sample
         ? { sample: sanitizeWorkflowDocumentSample(document.sample) }
         : {}),
     })),
+    languages: Array.isArray(template.languages) ? template.languages : [],
+    fields: Array.isArray(template.fields) ? template.fields : [],
+    steps: Array.isArray(template.steps) ? template.steps : [],
+    ...(template.graph
+      ? {
+          graph: {
+            ...template.graph,
+            nodes: Array.isArray(template.graph.nodes) ? template.graph.nodes : [],
+            edges: Array.isArray(template.graph.edges) ? template.graph.edges : [],
+          },
+        }
+      : {}),
   }));
 }

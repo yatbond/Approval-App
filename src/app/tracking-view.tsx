@@ -21,6 +21,7 @@ export function TrackingView({
   activeUserEmail,
   userDirectory,
   onSubmitContributorUpload,
+  onSubmitSharedFulfillmentUpload,
   onDecideSharedFulfillment,
   onSubmitCorrectionUpload,
 }: {
@@ -34,6 +35,13 @@ export function TrackingView({
     taskId: string;
     collaborationRequestId: string;
     requestNote: string;
+    file: File;
+  }) => void;
+  onSubmitSharedFulfillmentUpload: (input: {
+    taskId: string;
+    requirementNodeId: string;
+    documentId: string;
+    assignedSubmitterEmail: string;
     file: File;
   }) => void;
   onDecideSharedFulfillment: (input: {
@@ -174,6 +182,7 @@ export function TrackingView({
                 task={selectedTask}
                 template={selectedTemplate}
                 activeUserEmail={activeUserEmail}
+                onSubmitSharedFulfillmentUpload={onSubmitSharedFulfillmentUpload}
                 onDecideSharedFulfillment={onDecideSharedFulfillment}
                 onSubmitCorrectionUpload={onSubmitCorrectionUpload}
               />

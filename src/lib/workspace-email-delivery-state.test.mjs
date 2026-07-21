@@ -55,7 +55,8 @@ test("workspace delegates delivery endpoints to the focused controller", () => {
   assert.equal(actionControllerSource.includes("useWorkspaceEmailDelivery"), true);
   assert.equal(actionControllerSource.includes("/api/email/task-notifications"), false);
   assert.equal(actionControllerSource.includes("/api/email/test"), false);
-  assert.equal(controllerSource.includes("/api/email/task-notifications"), true);
+  assert.equal(controllerSource.includes("/api/email/task-notifications"), false);
+  assert.equal(controllerSource.includes("/api/email/outbox"), true);
   assert.equal(controllerSource.includes("/api/email/test"), true);
 });
 

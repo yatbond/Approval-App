@@ -93,7 +93,7 @@ async function verifyPrimaryNavigation(page) {
 }
 
 async function verifyWorkflowLibrary(page) {
-  await page.goto(`${appUrl}/?tab=workflow`, { waitUntil: "networkidle" });
+  await page.goto(`${appUrl}/?tab=workflow`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Library", exact: true }).click();
   await expectText(page, "Workflow library");
   await expectText(page, "Available");
@@ -101,7 +101,7 @@ async function verifyWorkflowLibrary(page) {
 }
 
 async function verifyFormsWorkspace(page) {
-  await page.goto(`${appUrl}/?tab=forms`, { waitUntil: "networkidle" });
+  await page.goto(`${appUrl}/?tab=forms`, { waitUntil: "domcontentloaded" });
   await expectText(page, "Build reusable forms");
   for (const label of ["Builder", "Layout", "Library"]) {
     const button = page.getByRole("button", { name: label, exact: true });
@@ -116,7 +116,7 @@ async function verifyFormsWorkspace(page) {
 }
 
 async function verifyQueueDecisionControls(page) {
-  await page.goto(`${appUrl}/?tab=queue`, { waitUntil: "networkidle" });
+  await page.goto(`${appUrl}/?tab=queue`, { waitUntil: "domcontentloaded" });
   await expectInboxNavigation(page);
 
   const rejectButton = page.getByRole("button", { name: "Reject", exact: true });
@@ -131,7 +131,7 @@ async function verifyQueueDecisionControls(page) {
 }
 
 async function verifyOperationalHealth(page) {
-  await page.goto(`${appUrl}/?tab=admin`, { waitUntil: "networkidle" });
+  await page.goto(`${appUrl}/?tab=admin`, { waitUntil: "domcontentloaded" });
   await expectText(page, "System health");
   await expectText(page, "Last 24 hours");
   for (const label of [
@@ -149,7 +149,7 @@ async function verifyOperationalHealth(page) {
 async function verifyTrackedRequest(page, request) {
   await page.goto(
     `${appUrl}/?tab=tracking&request=${encodeURIComponent(request.id)}`,
-    { waitUntil: "networkidle" },
+    { waitUntil: "domcontentloaded" },
   );
   await expectText(page, request.id, 20_000);
   await expectText(page, "Approved");

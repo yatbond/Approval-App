@@ -40,7 +40,15 @@ const authenticatedRoutes = (
   .filter(Boolean);
 const authEmail = process.env.PERF_EMAIL || process.env.E2E_EMAIL || "";
 const authPassword = process.env.PERF_PASSWORD || process.env.E2E_PASSWORD || "";
+const authBypass = process.env.PERF_AUTH_BYPASS === "true";
+const authBypassToken = process.env.PERF_AUTH_TOKEN || "";
 const blockWorkspaceSync = process.env.PERF_BLOCK_WORKSPACE_SYNC === "true";
+
+if (authBypass && authBypassToken.length < 32) {
+  throw new Error(
+    "PERF_AUTH_TOKEN must contain at least 32 characters when PERF_AUTH_BYPASS=true.",
+  );
+}
 
 function percentile(values, percentileValue) {
   const sorted = [...values].sort((left, right) => left - right);
@@ -66,6 +74,10 @@ function sleep(durationMs) {
 }
 
 async function createAuthenticatedStorageState(browser) {
+  if (authBypass) {
+    return { cookies: [], origins: [] };
+  }
+
   const context = await browser.newContext({
     viewport: { width: 1366, height: 768 },
     deviceScaleFactor: 1,
@@ -100,6 +112,13 @@ async function measureRoute(browser, route, storageState) {
     isMobile: false,
     serviceWorkers: "block",
     ...(storageState ? { storageState } : {}),
+    ...(storageState && authBypass
+      ? {
+          extraHTTPHeaders: {
+            "x-approval-local-performance-auth": authBypassToken,
+          },
+        }
+      : {}),
   });
   const url = new URL(route, baseUrl).toString();
   const createPage = async () => {
@@ -212,14 +231,14 @@ try {
     results.push(await measureRoute(browser, route));
   }
 
-  if (authEmail && authPassword) {
+  if (authBypass || (authEmail && authPassword)) {
     const storageState = await createAuthenticatedStorageState(browser);
     for (const route of authenticatedRoutes) {
       results.push(await measureRoute(browser, route, storageState));
     }
   } else {
     console.log(
-      "Authenticated workspace routes skipped. Set PERF_EMAIL and PERF_PASSWORD to measure them.",
+      "Authenticated workspace routes skipped. Set PERF_AUTH_BYPASS=true for a development server or provide PERF_EMAIL and PERF_PASSWORD.",
     );
     console.log("");
   }

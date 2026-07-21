@@ -1,6 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { getDevelopmentAuthBypassUser } from "@/lib/supabase/development-auth-bypass";
 import { getSupabaseRouteUser } from "@/lib/supabase/route-user";
+import { createSupabaseJsonResponse } from "@/lib/supabase/route-response";
+import { approvalError, approvalJson, createApprovalServerContext } from "@/lib/approval-server";
+import {
+  evaluateApprovalOperationalAlerts,
+  type ApprovalOperationalMetrics,
+} from "@/lib/operational-alerts";
+import { readBoundedJson } from "@/lib/bounded-request";
 import {
   recordWorkflowOperationEvent,
   summarizeWorkflowOperationEvents,
@@ -13,16 +21,27 @@ import {
 const outcomes: WorkflowOperationOutcome[] = ["succeeded", "failed", "skipped"];
 
 export async function GET(request: NextRequest) {
-  const response = NextResponse.next();
-  const supabase = createSupabaseRouteClient(request, response);
-  const user = await getSupabaseRouteUser(supabase);
-
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  const developmentUser = getDevelopmentAuthBypassUser({
+    nodeEnv: process.env.NODE_ENV,
+    email: process.env.E2E_AUTH_BYPASS_EMAIL,
+  });
+  if (developmentUser) {
+    return NextResponse.json({
+      windowHours: 24,
+      generatedAt: new Date().toISOString(),
+      summary: summarizeWorkflowOperationEvents([]),
+      platform: null,
+      platformError: null,
+      alerts: [],
+    });
   }
 
+  const resolved = await createApprovalServerContext(request);
+  if (!resolved.ok) return approvalError(resolved);
+  const { session, service, actor, cookieSource, correlationId } = resolved.context;
+
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await supabase
+  const { data, error } = await session
     .from("workflow_operation_events")
     .select(
       "id,owner_user_id,owner_email,operation_type,outcome,request_no,duration_ms,message,details,created_at",
@@ -32,30 +51,68 @@ export async function GET(request: NextRequest) {
     .limit(500);
 
   if (error) {
-    return NextResponse.json(
+    return approvalJson(cookieSource, correlationId,
       { error: "Operation health is unavailable.", reason: error.message },
-      { status: 503 },
+      503,
     );
   }
 
   const events = (data || []) as WorkflowOperationEventRow[];
-  return NextResponse.json({
+  let platform: ApprovalOperationalMetrics | null = null;
+  let platformError: string | null = null;
+  if (actor.isAdmin) {
+    const { data: platformData, error: metricsError } = await service.rpc(
+      "get_approval_operational_metrics",
+    );
+    if (!metricsError && platformData && typeof platformData === "object") {
+      const raw = platformData as Record<string, unknown>;
+      platform = {
+        databaseConnections: Number(raw.databaseConnections || 0),
+        databaseConnectionLimit: Number(raw.databaseConnectionLimit || 0),
+        lockWaits: Number(raw.lockWaits || 0),
+        outboxPending: Number(raw.outboxPending || 0),
+        outboxFailed: Number(raw.outboxFailed || 0),
+        oldestPendingSeconds: Number(raw.oldestPendingSeconds || 0),
+        schedulerLastCompletedAt: typeof raw.schedulerLastCompletedAt === "string" ? raw.schedulerLastCompletedAt : null,
+        schedulerLastFailedAt: typeof raw.schedulerLastFailedAt === "string" ? raw.schedulerLastFailedAt : null,
+      };
+    } else {
+      platformError = "Platform metrics are temporarily unavailable.";
+    }
+  }
+
+  return approvalJson(cookieSource, correlationId, {
     windowHours: 24,
     generatedAt: new Date().toISOString(),
     summary: summarizeWorkflowOperationEvents(events),
+    platform,
+    platformError,
+    alerts: platform ? evaluateApprovalOperationalAlerts(platform) : [],
   });
 }
 
 export async function POST(request: NextRequest) {
+  const developmentUser = getDevelopmentAuthBypassUser({
+    nodeEnv: process.env.NODE_ENV,
+    email: process.env.E2E_AUTH_BYPASS_EMAIL,
+  });
+  if (developmentUser) {
+    return NextResponse.json({ recorded: true });
+  }
+
   const response = NextResponse.next();
   const supabase = createSupabaseRouteClient(request, response);
   const user = await getSupabaseRouteUser(supabase);
 
   if (!user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+    return createSupabaseJsonResponse(response, { error: "Not signed in" }, { status: 401 });
   }
 
-  const body = (await request.json().catch(() => ({}))) as {
+  const bounded = await readBoundedJson(request, 16_000);
+  if (!bounded.ok || !bounded.value || typeof bounded.value !== "object") {
+    return createSupabaseJsonResponse(response, { error: "Invalid operation event." }, { status: 400 });
+  }
+  const body = bounded.value as {
     operationType?: WorkflowOperationType;
     outcome?: WorkflowOperationOutcome;
     requestNo?: string;
@@ -67,7 +124,7 @@ export async function POST(request: NextRequest) {
     !workflowOperationTypes.includes(body.operationType as WorkflowOperationType) ||
     !outcomes.includes(body.outcome as WorkflowOperationOutcome)
   ) {
-    return NextResponse.json({ error: "Invalid operation event." }, { status: 400 });
+    return createSupabaseJsonResponse(response, { error: "Invalid operation event." }, { status: 400 });
   }
 
   const recorded = await recordWorkflowOperationEvent(supabase, {
@@ -84,5 +141,5 @@ export async function POST(request: NextRequest) {
         : {},
   });
 
-  return NextResponse.json({ recorded }, { status: recorded ? 200 : 503 });
+  return createSupabaseJsonResponse(response, { recorded }, { status: recorded ? 200 : 503 });
 }

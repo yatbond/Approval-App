@@ -9,6 +9,7 @@ import { saveNormalizedWorkspaceState } from "@/lib/normalized-workspace-store";
 import { parseWorkspaceState, serializeWorkspaceState } from "@/lib/workspace-persistence";
 import { createWorkspaceSnapshotHash } from "@/lib/workspace-snapshot-hash";
 import { recordWorkflowOperationEvent } from "@/lib/workflow-operation-monitor";
+import { readBoundedJson } from "@/lib/bounded-request";
 
 export async function GET() {
   const configured = Boolean(
@@ -36,13 +37,14 @@ export async function POST(request: Request) {
     return Response.json({ accepted: false, reason: "Unauthorized." }, { status: 401 });
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ accepted: false, reason: "Invalid JSON." }, { status: 400 });
+  const body = await readBoundedJson(request, 512_000);
+  if (!body.ok) {
+    return Response.json(
+      { accepted: false, reason: body.reason === "too_large" ? "Payload exceeds the 512 KB limit." : "Invalid JSON." },
+      { status: body.reason === "too_large" ? 413 : 400 },
+    );
   }
-  const parsed = parseExternalFormIntake(body);
+  const parsed = parseExternalFormIntake(body.value);
   if (!parsed.success) {
     return Response.json(
       {

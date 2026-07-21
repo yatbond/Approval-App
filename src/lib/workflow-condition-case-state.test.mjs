@@ -40,6 +40,24 @@ test("adds a condition case to a selected condition box with upstream defaults",
   assert.deepEqual(conditionCases?.[0].approvalRule?.upstreamNodeIds, ["review-1"]);
 });
 
+test("defaults a fan-in condition to any one upstream approval", () => {
+  const result = getWorkflowAddConditionCaseState({
+    graph,
+    selectedNodeId: "condition-1",
+    upstreamNodeIds: ["approval-1", "approval-2"],
+  });
+
+  const conditionCase = result.graph.nodes.find((node) => node.id === "condition-1")
+    ?.conditionCases?.[0];
+  assert.equal(conditionCase?.isApprovalCount, true);
+  assert.deepEqual(conditionCase?.approvalRule, {
+    upstreamNodeIds: ["approval-1", "approval-2"],
+    minimumApproved: 1,
+    mode: "at_least",
+  });
+  assert.equal(conditionCase?.numericRule, undefined);
+});
+
 test("adds one fallback case and leaves existing fallback unchanged", () => {
   const added = getWorkflowAddFallbackConditionCaseState({
     graph,
