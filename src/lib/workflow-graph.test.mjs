@@ -1975,6 +1975,74 @@ test("routes FYI branches after submit boxes and stops when conditions do not ma
   );
 });
 
+test("emits rule-gated FYI branches only when their condition matches", () => {
+  const graph = createWorkflowGraphFromTemplate({
+    ...template,
+    steps: [],
+    graph: {
+      nodes: [
+        { id: "start", kind: "start", label: "Start", x: 0, y: 0 },
+        {
+          id: "submit-1",
+          kind: "submit_request",
+          label: "Submit request",
+          x: 180,
+          y: 0,
+        },
+        {
+          id: "fyi-1",
+          kind: "for_information",
+          label: "Notify board",
+          x: 360,
+          y: -120,
+          assigneeEmail: "board@example.com",
+        },
+        { id: "end", kind: "end", label: "Complete", x: 560, y: 0 },
+      ],
+      edges: [
+        {
+          id: "edge-start-submit",
+          sourceId: "start",
+          targetId: "submit-1",
+          label: "Submit",
+          branchType: "main",
+        },
+        {
+          id: "edge-submit-fyi",
+          sourceId: "submit-1",
+          targetId: "fyi-1",
+          label: "Notify",
+          branchType: "for_information",
+          blocking: false,
+          rule: {
+            field: "amount",
+            operator: ">",
+            value: "2000000",
+            join: "and",
+          },
+        },
+        {
+          id: "edge-submit-end",
+          sourceId: "submit-1",
+          targetId: "end",
+          label: "Complete",
+          branchType: "main",
+        },
+      ],
+    },
+  });
+
+  const below = findInitialWorkflowRoute(graph, {
+    extractedFields: { amount: "2000000" },
+  });
+  const above = findInitialWorkflowRoute(graph, {
+    extractedFields: { amount: "2000001" },
+  });
+
+  assert.deepEqual(below.notifiedNodes, []);
+  assert.deepEqual(above.notifiedNodes.map((node) => node.id), ["fyi-1"]);
+});
+
 test("routes condition cases with contains, fallback, and terminal outcomes", () => {
   const graph = createWorkflowGraphFromTemplate({
     ...template,

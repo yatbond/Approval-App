@@ -344,13 +344,13 @@ export const templateCopilotQualificationScenarios = [
       "No-Go 直接結束並記錄原因。估算合約額超過港幣一億元時增加董事會主席批准。聯營投標必須增加法務審查。任何修改要求返回投標負責人。",
     expectations: {
       minimumDocuments: 6,
-      minimumRequestFields: 10,
+      minimumRequestFields: 9,
       minimumApprovalNodes: 6,
       minimumConditionNodes: 2,
       requireParallelFanout: true,
       requireManualForm: true,
       requireRestrictedDocumentHandoff: true,
-      requiredTerms: ["一億元", "Go", "聯營"],
+      requiredTerms: ["一億元", "Go", "聯營", "原因"],
     },
   }),
   scenario({

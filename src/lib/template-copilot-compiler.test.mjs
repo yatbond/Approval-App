@@ -174,12 +174,21 @@ test("compiler routes a conditional FYI only through its matched condition case"
       (edge) =>
         edge.sourceId === condition?.id &&
         edge.targetId === fyi.id &&
-        edge.branchType === "condition" &&
+        edge.branchType === "for_information" &&
         edge.blocking === false,
     ),
   );
   const validation = validateTemplateAuthoringDefinition(artifacts);
   assert.equal(validation.valid, true, JSON.stringify(validation.issues));
+  assert.equal(
+    validation.issues.some(
+      (issue) =>
+        issue.nodeId === condition?.id &&
+        issue.message.includes("can both match"),
+    ),
+    false,
+    JSON.stringify(validation.issues),
+  );
 });
 
 test("compiler enforces conditional attachments through a routed submit stage", () => {

@@ -962,7 +962,17 @@ function traceInitialWorkflowRoute(
   options: InitialRouteOptions = {},
 ): InitialWorkflowRoute {
   const notifiedNodes = graph.edges
-    .filter((edge) => edge.sourceId === "start" && edge.branchType === "for_information")
+    .filter(
+      (edge) =>
+        edge.sourceId === "start" &&
+        edge.branchType === "for_information" &&
+        (!edge.rule ||
+          (options.extractedFields &&
+            doesWorkflowNumericRuleMatch(
+              edge.rule,
+              options.extractedFields,
+            ))),
+    )
     .map((edge) => graph.nodes.find((node) => node.id === edge.targetId))
     .filter((node): node is WorkflowGraphNode => Boolean(node));
   const startEdges = graph.edges.filter(
@@ -1060,7 +1070,17 @@ function traceInitialWorkflowBranch(
     }
 
     graph.edges
-      .filter((edge) => edge.sourceId === node.id && edge.branchType === "for_information")
+      .filter(
+        (edge) =>
+          edge.sourceId === node.id &&
+          edge.branchType === "for_information" &&
+          (!edge.rule ||
+            (options.extractedFields &&
+              doesWorkflowNumericRuleMatch(
+                edge.rule,
+                options.extractedFields,
+              ))),
+      )
       .forEach((edge) => {
         const notified = graph.nodes.find((item) => item.id === edge.targetId);
         if (notified && !notifiedNodes.some((item) => item.id === notified.id)) {

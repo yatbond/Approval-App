@@ -486,8 +486,8 @@ export function compileTemplateCopilotPlan(
           addEdge(graphEdges, ids, {
             sourceId: conditionId,
             targetId,
-            label: labels.matched,
-            branchType: "condition",
+            label: labels.notify,
+            branchType: "for_information",
             blocking: false,
             rule: conditionRule,
           });
