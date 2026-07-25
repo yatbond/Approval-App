@@ -7,12 +7,30 @@ import { createClient } from "@supabase/supabase-js";
 
 const previewShareUrl = requiredEnvironment("E2E_PREVIEW_SHARE_URL");
 const supabaseUrl = requiredEnvironment("E2E_SUPABASE_URL");
-const serviceRoleKey = requiredEnvironment("E2E_SUPABASE_SERVICE_KEY");
+const serviceRoleKey = process.env.E2E_SUPABASE_SERVICE_KEY?.trim() || "";
+const publishableKey = process.env.E2E_SUPABASE_PUBLISHABLE_KEY?.trim() || "";
+const suppliedEmail = process.env.E2E_USER_EMAIL?.trim() || "";
+const suppliedPassword = process.env.E2E_USER_PASSWORD?.trim() || "";
+const expectedModel =
+  process.env.E2E_EXPECTED_COPILOT_MODEL?.trim() || "qwen/qwen3.5-35b-a3b";
 const previewOrigin = new URL(previewShareUrl).origin;
 const runId = `${Date.now()}-${randomBytes(4).toString("hex")}`;
-const email = `codex-template-copilot-${runId}@example.com`;
-const password = `Preview-${randomBytes(18).toString("base64url")}!9a`;
-const service = createClient(supabaseUrl, serviceRoleKey, {
+const useSuppliedUser = Boolean(suppliedEmail && suppliedPassword);
+const email = suppliedEmail || `codex-template-copilot-${runId}@mailinator.com`;
+const password =
+  suppliedPassword || `Preview-${randomBytes(18).toString("base64url")}!9a`;
+const databaseKey = serviceRoleKey || publishableKey;
+if (!databaseKey) {
+  throw new Error(
+    "E2E_SUPABASE_SERVICE_KEY or E2E_SUPABASE_PUBLISHABLE_KEY is required.",
+  );
+}
+if (!serviceRoleKey && !useSuppliedUser) {
+  throw new Error(
+    "E2E_USER_EMAIL and E2E_USER_PASSWORD are required without a service-role key.",
+  );
+}
+const database = createClient(supabaseUrl, databaseKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
@@ -20,18 +38,27 @@ let createdUserId = "";
 let browser;
 
 try {
-  const { data: created, error: createError } =
-    await service.auth.admin.createUser({
+  if (useSuppliedUser) {
+    const { data: signedIn, error: signInError } =
+      await database.auth.signInWithPassword({ email, password });
+    if (signInError || !signedIn.user) {
+      throw new Error(`Could not sign in the supplied test user: ${signInError?.message}`);
+    }
+    createdUserId = signedIn.user.id;
+  } else {
+    const { data: created, error: createError } =
+      await database.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
       user_metadata: { full_name: "Codex Preview Tester" },
     });
-  if (createError || !created.user) {
-    throw new Error(`Could not create the isolated test user: ${createError?.message}`);
+    if (createError || !created.user) {
+      throw new Error(`Could not create the isolated test user: ${createError?.message}`);
+    }
+    createdUserId = created.user.id;
+    await ensureProfile(createdUserId, email);
   }
-  createdUserId = created.user.id;
-  await ensureProfile(createdUserId, email);
 
   browser = await launchBrowser();
   const context = await browser.newContext({
@@ -91,6 +118,14 @@ try {
     state: "visible",
     timeout: 30_000,
   });
+  await page.getByLabel("Business").locator("option").first().waitFor({
+    state: "attached",
+    timeout: 30_000,
+  });
+  await page.getByLabel("Department").locator("option").first().waitFor({
+    state: "attached",
+    timeout: 30_000,
+  });
   assert(
     (await page.getByLabel("Business").locator("option").count()) > 0,
     "No active business is available to the Copilot.",
@@ -141,7 +176,7 @@ try {
     "The visible requirements checklist did not record the first answer.",
   );
 
-  const { data: storedSession, error: sessionError } = await service
+  const { data: storedSession, error: sessionError } = await database
     .from("template_copilot_sessions")
     .select("id,owner_id,revision,status,model")
     .eq("id", startBody.sessionId)
@@ -150,11 +185,11 @@ try {
   assert(storedSession.owner_id === createdUserId, "Stored session owner is incorrect.");
   assert(Number(storedSession.revision) === 2, "Stored session revision is incorrect.");
   assert(
-    storedSession.model === "qwen/qwen3.5-flash-02-23",
+    storedSession.model === expectedModel,
     `Unexpected Copilot model: ${storedSession.model}`,
   );
 
-  const { count: messageCount, error: messageError } = await service
+  const { count: messageCount, error: messageError } = await database
     .from("template_copilot_messages")
     .select("id", { count: "exact", head: true })
     .eq("session_id", startBody.sessionId);
@@ -181,8 +216,8 @@ try {
   console.log(`screenshot=${screenshotPath}`);
 } finally {
   if (browser) await browser.close();
-  if (createdUserId) {
-    const { error } = await service.auth.admin.deleteUser(createdUserId);
+  if (createdUserId && !useSuppliedUser) {
+    const { error } = await database.auth.admin.deleteUser(createdUserId);
     if (error) {
       console.warn(`test_user_cleanup=FAILED (${error.message})`);
     } else {
@@ -200,7 +235,7 @@ function requiredEnvironment(name) {
 async function ensureProfile(userId, userEmail) {
   let profileExists = false;
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const { data, error } = await service
+    const { data, error } = await database
       .from("profiles")
       .select("id,is_active")
       .eq("id", userId)
@@ -222,8 +257,8 @@ async function ensureProfile(userId, userEmail) {
     is_active: true,
   };
   const { error } = profileExists
-    ? await service.from("profiles").update(profile).eq("id", userId)
-    : await service.from("profiles").insert(profile);
+    ? await database.from("profiles").update(profile).eq("id", userId)
+    : await database.from("profiles").insert(profile);
   if (error) throw error;
 }
 

@@ -61,6 +61,11 @@ export const copilotTurnExtractionSchema = z
   })
   .strict();
 
+export const copilotCorrectionExtractionSchema =
+  copilotTurnExtractionSchema.extend({
+    targetSection: z.enum(templateCopilotSectionIds.slice(0, -1)),
+  });
+
 export const templateCopilotStartSchema = z
   .object({
     businessUnitId: z.string().uuid(),
@@ -216,7 +221,19 @@ export function formatTemplateCopilotSummary(ledger: TemplateCopilotLedger) {
 }
 
 export function isExplicitConfirmation(message: string) {
-  return /^(confirm|confirmed|yes[,!. ]*create|create (the )?draft|proceed)$/i.test(
-    message.trim(),
+  const normalized = message
+    .trim()
+    .replace(/[，。！？、；：,.!?:;\s]+/g, "")
+    .toLowerCase();
+  return (
+    /^(confirm|confirmed|yescreate|createthedraft|createdraft|proceed)$/.test(
+      normalized,
+    ) ||
+    /^(確認|确认)(請|请)?(建立|創建|创建|產生|生成)?(可編輯|可编辑)?(草稿)?$/.test(
+      normalized,
+    ) ||
+    /^(請建立|请建立|請創建|请创建|請生成|请生成)(可編輯|可编辑)?草稿$/.test(
+      normalized,
+    )
   );
 }

@@ -8,6 +8,7 @@ import {
   templateRequirementsDossierV1Schema,
 } from "./template-authoring-contracts.ts";
 import {
+  copilotCorrectionExtractionSchema,
   copilotTurnExtractionSchema,
   formatTemplateCopilotSummary,
   templateCopilotQuestions,
@@ -24,7 +25,22 @@ const artifactSchema = z
   .strict();
 
 export class TemplateCopilotConfigurationError extends Error {}
-export class TemplateCopilotModelError extends Error {}
+export class TemplateCopilotModelError extends Error {
+  readonly reasonCode: string;
+  readonly issuePaths: string[];
+
+  constructor(
+    message: string,
+    {
+      reasonCode = "model_failure",
+      issuePaths = [],
+    }: { reasonCode?: string; issuePaths?: string[] } = {},
+  ) {
+    super(message);
+    this.reasonCode = reasonCode;
+    this.issuePaths = issuePaths.slice(0, 20);
+  }
+}
 
 type TemplateCopilotAiConfiguration = {
   client: OpenAI;
@@ -202,7 +218,9 @@ async function requestStructuredOutput<T>({
         },
       });
       if (response.output_parsed) return response.output_parsed;
-      throw new TemplateCopilotModelError(failureMessage);
+      throw new TemplateCopilotModelError(failureMessage, {
+        reasonCode: "missing_structured_output",
+      });
     }
 
     const jsonSchema = z.toJSONSchema(schema, { target: "draft-07" });
@@ -251,23 +269,35 @@ async function requestStructuredOutput<T>({
     const response =
       await configured.client.chat.completions.create(request);
     const content = response.choices[0]?.message.content;
-    if (!content) throw new TemplateCopilotModelError(failureMessage);
+    if (!content) {
+      throw new TemplateCopilotModelError(failureMessage, {
+        reasonCode: "missing_content",
+      });
+    }
 
     let decoded: unknown;
     try {
       decoded = JSON.parse(content);
     } catch {
-      throw new TemplateCopilotModelError(failureMessage);
+      throw new TemplateCopilotModelError(failureMessage, {
+        reasonCode: "invalid_json",
+      });
     }
     const parsed = schema.safeParse(decoded);
     if (!parsed.success) {
-      throw new TemplateCopilotModelError(failureMessage);
+      throw new TemplateCopilotModelError(failureMessage, {
+        reasonCode: "schema_validation",
+        issuePaths: parsed.error.issues.map((issue) =>
+          issue.path.length ? issue.path.join(".") : "$",
+        ),
+      });
     }
     return parsed.data;
   } catch (error) {
     if (error instanceof TemplateCopilotModelError) throw error;
     throw new TemplateCopilotModelError(
       "The Copilot model is temporarily unavailable.",
+      { reasonCode: "provider_error" },
     );
   }
 }
@@ -284,7 +314,10 @@ export async function extractTemplateCopilotTurn({
   const configured = aiConfiguration();
   const result = await requestStructuredOutput({
     configured,
-    schema: copilotTurnExtractionSchema,
+    schema:
+      currentSection === "confirmation"
+        ? copilotCorrectionExtractionSchema
+        : copilotTurnExtractionSchema,
     schemaName: "template_copilot_turn",
     developerText: [
       "You extract one employee answer for a corporate approval-template interview.",

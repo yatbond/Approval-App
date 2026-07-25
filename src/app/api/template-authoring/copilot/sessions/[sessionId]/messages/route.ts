@@ -147,6 +147,12 @@ export async function POST(
     const modelFailure = error instanceof TemplateCopilotModelError;
     safeApprovalLog("template_copilot_turn_failed", correlationId, {
       errorName: error instanceof Error ? error.name : "unknown",
+      ...(modelFailure
+        ? {
+            modelReason: error.reasonCode,
+            modelIssuePaths: error.issuePaths.join("|"),
+          }
+        : {}),
     });
     return approvalJson(
       cookieSource,

@@ -8,7 +8,10 @@ import {
 } from "@/lib/approval-server";
 import { readBoundedJson } from "@/lib/bounded-request";
 import { z } from "zod";
-import { generateTemplateAuthoringArtifacts } from "@/lib/template-copilot-ai";
+import {
+  generateTemplateAuthoringArtifacts,
+  TemplateCopilotModelError,
+} from "@/lib/template-copilot-ai";
 import {
   linkTemplateCopilotDraft,
   loadTemplateCopilotSession,
@@ -183,6 +186,12 @@ export async function POST(
   } catch (error) {
     safeApprovalLog("template_copilot_draft_create_failed", correlationId, {
       errorName: error instanceof Error ? error.name : "unknown",
+      ...(error instanceof TemplateCopilotModelError
+        ? {
+            modelReason: error.reasonCode,
+            modelIssuePaths: error.issuePaths.join("|"),
+          }
+        : {}),
     });
     return approvalJson(
       cookieSource,
