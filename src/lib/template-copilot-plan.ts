@@ -206,54 +206,6 @@ export type TemplateCopilotPlanV1 = z.infer<
   typeof templateCopilotPlanV1Schema
 >;
 
-export const templateCopilotPlanRepairSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    title: templateCopilotPlanV1Schema.shape.title.nullable(),
-    purpose: templateCopilotPlanV1Schema.shape.purpose.nullable(),
-    dataClassification:
-      templateCopilotPlanV1Schema.shape.dataClassification.nullable(),
-    allowedInitiators:
-      templateCopilotPlanV1Schema.shape.allowedInitiators.nullable(),
-    initiatorRoles:
-      templateCopilotPlanV1Schema.shape.initiatorRoles.nullable(),
-    initiatorEmails:
-      templateCopilotPlanV1Schema.shape.initiatorEmails.nullable(),
-    requestFields:
-      templateCopilotPlanV1Schema.shape.requestFields.nullable(),
-    attachments: templateCopilotPlanV1Schema.shape.attachments.nullable(),
-    phases: templateCopilotPlanV1Schema.shape.phases.nullable(),
-    collaboration:
-      templateCopilotPlanV1Schema.shape.collaboration.nullable(),
-    notifications:
-      templateCopilotPlanV1Schema.shape.notifications.nullable(),
-    governance: templateCopilotPlanV1Schema.shape.governance.nullable(),
-    assumptions: templateCopilotPlanV1Schema.shape.assumptions.nullable(),
-    openQuestions:
-      templateCopilotPlanV1Schema.shape.openQuestions.nullable(),
-  })
-  .strict();
-
-export type TemplateCopilotPlanRepair = z.infer<
-  typeof templateCopilotPlanRepairSchema
->;
-
-export function applyTemplateCopilotPlanRepair(
-  sourcePlan: TemplateCopilotPlanV1,
-  repairInput: TemplateCopilotPlanRepair,
-): TemplateCopilotPlanV1 {
-  const plan = templateCopilotPlanV1Schema.parse(sourcePlan);
-  const repair = templateCopilotPlanRepairSchema.parse(repairInput);
-  return templateCopilotPlanV1Schema.parse({
-    ...plan,
-    ...Object.fromEntries(
-      Object.entries(repair).filter(
-        ([key, value]) => key !== "schemaVersion" && value !== null,
-      ),
-    ),
-  });
-}
-
 export function detectTemplateCopilotLocale(
   text: string,
   fallback: TemplateCopilotLocale = "en",

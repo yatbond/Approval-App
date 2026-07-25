@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import {
   approvalError,
@@ -16,10 +15,12 @@ import {
   linkTemplateCopilotDraft,
   loadTemplateCopilotSession,
 } from "@/lib/template-copilot-server-data";
+import { createStableTemplateCopilotArtifactIdentity } from "@/lib/template-copilot-identity";
 import {
   createTemplateAuthoringFamily,
   findInactiveFixedTemplateEmails,
   loadTemplateAuthoringDraft,
+  loadTemplateAuthoringCreateFamilyReceipt,
 } from "@/lib/template-authoring-server-data";
 import { validateTemplateAuthoringDefinition } from "@/lib/template-authoring-validation";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
@@ -87,6 +88,61 @@ export async function POST(
         });
       }
     }
+    const artifactIdentity = createStableTemplateCopilotArtifactIdentity({
+      sessionId,
+      idempotencyKey: parsed.data.idempotencyKey,
+      generatedAt: current.updated_at,
+    });
+    const receipt = await loadTemplateAuthoringCreateFamilyReceipt({
+      service,
+      actorId: actor.id,
+      idempotencyKey: parsed.data.idempotencyKey,
+    });
+    if (receipt?.family_id && receipt.draft_id) {
+      const existingDraft = await loadTemplateAuthoringDraft(
+        service,
+        receipt.draft_id,
+      );
+      if (
+        !existingDraft ||
+        existingDraft.definition?.sourceDossierId !== artifactIdentity.dossierId
+      ) {
+        return approvalJson(
+          cookieSource,
+          correlationId,
+          {
+            error: {
+              code: "idempotency_conflict",
+              message: "That retry key was already used for a different command.",
+            },
+          },
+          409,
+        );
+      }
+      const linked = await linkTemplateCopilotDraft({
+        service,
+        actor,
+        sessionId,
+        expectedRevision: current.revision,
+        familyId: receipt.family_id,
+        draftId: receipt.draft_id,
+      });
+      if (!["applied", "replayed"].includes(String(linked.outcome))) {
+        return templateAuthoringRpcResponse({
+          cookieSource,
+          correlationId,
+          result: linked,
+        });
+      }
+      return approvalJson(cookieSource, correlationId, {
+        ...linked,
+        outcome: "replayed",
+        familyId: receipt.family_id,
+        draftId: receipt.draft_id,
+        dossier: existingDraft.dossier,
+        definition: existingDraft.definition,
+      });
+    }
     if (current.status !== "ready") {
       return approvalJson(
         cookieSource,
@@ -111,6 +167,9 @@ export async function POST(
         content: message.content,
       })),
       actorEmail: actor.email,
+      generatedAt: artifactIdentity.generatedAt,
+      dossierId: artifactIdentity.dossierId,
+      templateId: artifactIdentity.templateId,
     });
     const validation = validateTemplateAuthoringDefinition(artifacts);
     const inactiveEmails = await findInactiveFixedTemplateEmails({
@@ -135,7 +194,7 @@ export async function POST(
       );
     }
 
-    const familyKey = `copilot-${slug(artifacts.definition.template.name)}-${randomUUID().slice(0, 8)}`;
+    const familyKey = `copilot-${slug(artifacts.definition.template.name)}-${artifactIdentity.suffix}`;
     const familyResult = await createTemplateAuthoringFamily({
       service,
       actor,

@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { compileTemplateCopilotPlan } from "./template-copilot-compiler.ts";
-import {
-  applyTemplateCopilotPlanRepair,
-  templateCopilotPlanV1Schema,
-} from "./template-copilot-plan.ts";
+import { templateCopilotPlanV1Schema } from "./template-copilot-plan.ts";
 import {
   simulateTemplateAuthoringDefinition,
   validateTemplateAuthoringDefinition,
@@ -280,36 +277,6 @@ test("plan contract rejects executable graph authority from the model", () => {
     },
   });
   assert.equal(result.success, false);
-});
-
-test("compact coverage repair replaces only audited plan properties", () => {
-  const plan = qualificationPlan("en");
-  const repairedFields = [
-    ...plan.requestFields,
-    field("Cost centre", "text"),
-  ];
-  const repaired = applyTemplateCopilotPlanRepair(plan, {
-    schemaVersion: 1,
-    title: null,
-    purpose: null,
-    dataClassification: null,
-    allowedInitiators: null,
-    initiatorRoles: null,
-    initiatorEmails: null,
-    requestFields: repairedFields,
-    attachments: null,
-    phases: null,
-    collaboration: null,
-    notifications: null,
-    governance: null,
-    assumptions: null,
-    openQuestions: null,
-  });
-
-  assert.deepEqual(repaired.requestFields, repairedFields);
-  assert.deepEqual(repaired.attachments, plan.attachments);
-  assert.deepEqual(repaired.phases, plan.phases);
-  assert.notEqual(repaired, plan);
 });
 
 function qualificationPlan(locale) {

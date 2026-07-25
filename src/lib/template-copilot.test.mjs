@@ -14,6 +14,7 @@ import {
   sanitizeRequirementDocument,
   wrapUntrustedRequirementText,
 } from "./template-copilot-safety.ts";
+import { createStableTemplateCopilotArtifactIdentity } from "./template-copilot-identity.ts";
 
 const scope = {
   businessUnitId: "11111111-1111-4111-8111-111111111111",
@@ -133,6 +134,25 @@ test("active-content PDFs and executable disguises are rejected", async () => {
   const disguised = await sanitizeRequirementDocument(executable);
   assert.equal(disguised.ok, false);
   if (!disguised.ok) assert.equal(disguised.status, 415);
+});
+
+test("draft retry identity is stable per session and idempotency key", () => {
+  const input = {
+    sessionId: "11111111-1111-4111-8111-111111111111",
+    idempotencyKey: "copilot-draft:test-key",
+    generatedAt: "2026-07-26T08:00:00.000Z",
+  };
+  const first = createStableTemplateCopilotArtifactIdentity(input);
+  const second = createStableTemplateCopilotArtifactIdentity(input);
+  const otherSession = createStableTemplateCopilotArtifactIdentity({
+    ...input,
+    sessionId: "22222222-2222-4222-8222-222222222222",
+  });
+
+  assert.deepEqual(first, second);
+  assert.notEqual(first.dossierId, otherSession.dossierId);
+  assert.match(first.dossierId, /^dossier-[0-9a-f]{32}$/);
+  assert.match(first.templateId, /^template-[0-9a-f]{32}$/);
 });
 
 test("Copilot routes authenticate and do not expose provider keys to the client", async () => {

@@ -21,6 +21,26 @@ type RpcOutcome = {
   [key: string]: unknown;
 };
 
+export async function loadTemplateAuthoringCreateFamilyReceipt({
+  service,
+  actorId,
+  idempotencyKey,
+}: {
+  service: SupabaseClient;
+  actorId: string;
+  idempotencyKey: string;
+}) {
+  const { data, error } = await service
+    .from("template_authoring_command_receipts")
+    .select("family_id,draft_id,result")
+    .eq("actor_id", actorId)
+    .eq("operation", "create_family")
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
 export async function listTemplateAuthoringFamilies({
   session,
   status,

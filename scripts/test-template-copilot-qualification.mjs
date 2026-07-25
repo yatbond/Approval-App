@@ -407,7 +407,7 @@ async function runScenario(context, item) {
     );
     result.draft = {
       ...summarizeCall(createDraft),
-      created: createDraft.status === 201 &&
+      created: [200, 201].includes(createDraft.status) &&
         ["applied", "replayed"].includes(String(createDraft.body?.outcome)),
       outcome: createDraft.body?.outcome || "",
       errorCode: createDraft.body?.error?.code || "",
