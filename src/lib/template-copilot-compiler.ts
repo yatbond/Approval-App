@@ -422,8 +422,100 @@ export function compileTemplateCopilotPlan(
     const blockingNodes = phase.stageNodes.filter(
       (stage) => stage.node.kind !== "for_information",
     );
+    if (blockingNodes.length === 0) {
+      if (phase.plan.condition && fyiNodes.length > 0) {
+        const conditionValue = normalizeConditionValue(
+          phase.plan.condition.value,
+        );
+        const conditionFieldName = ensureConditionField({
+          condition: phase.plan.condition,
+          requestFields,
+          requestFieldByLabel,
+          allWorkflowFields,
+          allFieldByLabel,
+          ids,
+          labels,
+        });
+        const conditionId = ids("condition", phase.plan.label);
+        const matchedTargetIds = unique([
+          ...fyiNodes,
+          ...nextTargetIds,
+        ]);
+        const numericRule = {
+          field: conditionFieldName,
+          operator: phase.plan.condition.operator,
+          value: conditionValue,
+        };
+        const conditionRule = {
+          ...numericRule,
+          join: phase.plan.condition.join,
+        };
+        graphNodes.push({
+          id: conditionId,
+          kind: "condition",
+          label: phase.plan.condition.label,
+          x: 440 + phaseIndex * 340,
+          y: 160,
+          blocking: true,
+          conditionCases: [
+            {
+              id: ids("case", `${phase.plan.label}-matched`),
+              name: labels.matched,
+              numericRule,
+              join: phase.plan.condition.join,
+              targetNodeIds: matchedTargetIds,
+            },
+            {
+              id: ids("case", `${phase.plan.label}-fallback`),
+              name: labels.fallback,
+              isFallback: true,
+              join: "and",
+              targetNodeIds: nextTargetIds,
+            },
+          ],
+        });
+        dossierStageByNodeId.set(conditionId, {
+          id: conditionId,
+          kind: "condition",
+          label: phase.plan.condition.label,
+          description: `${phase.plan.condition.fieldLabel} ${phase.plan.condition.operator} ${conditionValue}`,
+          attachmentRequirementIds: [],
+          blocking: true,
+        });
+        for (const targetId of fyiNodes) {
+          addEdge(graphEdges, ids, {
+            sourceId: conditionId,
+            targetId,
+            label: labels.matched,
+            branchType: "condition",
+            blocking: false,
+            rule: conditionRule,
+          });
+        }
+        for (const targetId of nextTargetIds) {
+          addEdge(graphEdges, ids, {
+            sourceId: conditionId,
+            targetId,
+            label: labels.matched,
+            branchType: "condition",
+            rule: conditionRule,
+          });
+        }
+        connectTargets(
+          graphEdges,
+          ids,
+          conditionId,
+          nextTargetIds,
+          labels.fallback,
+          "condition",
+        );
+        nextTargetIds = [conditionId];
+      } else {
+        pendingFyiNodeIds = [...fyiNodes, ...pendingFyiNodeIds];
+      }
+      continue;
+    }
     pendingFyiNodeIds = [...fyiNodes, ...pendingFyiNodeIds];
-    if (blockingNodes.length === 0) continue;
 
     let entryTargetIds: string[];
     let exitSourceIds: string[];

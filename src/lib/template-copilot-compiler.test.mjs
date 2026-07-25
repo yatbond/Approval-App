@@ -140,6 +140,51 @@ test("compiler normalizes grouped numeric condition values", () => {
   );
 });
 
+test("compiler routes a conditional FYI only through its matched condition case", () => {
+  const plan = qualificationPlan("en");
+  const noticePhase = plan.phases.find((phase) =>
+    phase.stages.some((stage) => stage.kind === "for_information"),
+  );
+  assert.ok(noticePhase);
+  noticePhase.condition = {
+    label: "Board notification threshold",
+    fieldLabel: "Total amount",
+    operator: ">",
+    value: "2,000,000",
+    join: "and",
+  };
+
+  const artifacts = compileTemplateCopilotPlan({ ...scope, plan });
+  const fyi = artifacts.definition.template.graph.nodes.find(
+    (node) => node.kind === "for_information",
+  );
+  const condition = artifacts.definition.template.graph.nodes.find(
+    (node) => node.label === "Board notification threshold",
+  );
+  const matchedCase = condition?.conditionCases?.find(
+    (conditionCase) => !conditionCase.isFallback,
+  );
+  const fallbackCase = condition?.conditionCases?.find(
+    (conditionCase) => conditionCase.isFallback,
+  );
+
+  assert.ok(fyi);
+  assert.equal(matchedCase?.numericRule?.value, "2000000");
+  assert.equal(matchedCase?.targetNodeIds.includes(fyi.id), true);
+  assert.equal(fallbackCase?.targetNodeIds.includes(fyi.id), false);
+  assert.ok(
+    artifacts.definition.template.graph.edges.some(
+      (edge) =>
+        edge.sourceId === condition?.id &&
+        edge.targetId === fyi.id &&
+        edge.branchType === "condition" &&
+        edge.blocking === false,
+    ),
+  );
+  const validation = validateTemplateAuthoringDefinition(artifacts);
+  assert.equal(validation.valid, true, JSON.stringify(validation.issues));
+});
+
 test("compiler enforces conditional attachments through a routed submit stage", () => {
   const plan = qualificationPlan("en");
   plan.attachments[1].required = false;
