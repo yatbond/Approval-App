@@ -54,6 +54,7 @@ const localized = {
     rejected: "Rejected",
     continue: "Continue",
     notify: "Notify",
+    completionNotice: "Completion notification",
     requestSummary: "Request summary",
     requestSummaryInstructions: "Describe the request and desired outcome.",
     formDetails: "Details",
@@ -72,6 +73,7 @@ const localized = {
     rejected: "已拒絕",
     continue: "繼續",
     notify: "通知",
+    completionNotice: "完成通知",
     requestSummary: "申請摘要",
     requestSummaryInstructions: "請說明申請內容及預期結果。",
     formDetails: "詳細資料",
@@ -90,6 +92,7 @@ const localized = {
     rejected: "已拒绝",
     continue: "继续",
     notify: "通知",
+    completionNotice: "完成通知",
     requestSummary: "申请摘要",
     requestSummaryInstructions: "请说明申请内容及预期结果。",
     formDetails: "详细资料",
@@ -363,8 +366,48 @@ export function compileTemplateCopilotPlan(
     return { plan: phase, stageNodes };
   });
 
+  const hasExplicitFyiStage = compiledPhases.some((phase) =>
+    phase.stageNodes.some((stage) => stage.node.kind === "for_information"),
+  );
+  const synthesizedCompletionNoticeNodeIds: string[] = [];
+  if (
+    plan.notifications.events.includes("completed") &&
+    !hasExplicitFyiStage
+  ) {
+    const noticeId = ids("stage", labels.completionNotice);
+    graphNodes.push({
+      id: noticeId,
+      kind: "for_information",
+      label: labels.completionNotice,
+      x: 1_360,
+      y: 360,
+      assigneeName: labels.requester,
+      documentIds: documents.map((document) => document.id),
+      blocking: false,
+      acknowledgementRequired: false,
+      handoffView: {
+        fieldVisibility: { mode: "all" },
+        documentVisibility: { mode: "all" },
+        layout: "standard",
+      },
+    });
+    dossierStageByNodeId.set(noticeId, {
+      id: noticeId,
+      kind: "for_information",
+      label: labels.completionNotice,
+      description: labels.completionNotice,
+      attachmentRequirementIds: attachmentRequirements.map(
+        (requirement) => requirement.id,
+      ),
+      blocking: false,
+      assignee: { mode: "requester" },
+      acknowledgementRequired: false,
+    });
+    synthesizedCompletionNoticeNodeIds.push(noticeId);
+  }
+
   let nextTargetIds = ["end"];
-  let pendingFyiNodeIds: string[] = [];
+  let pendingFyiNodeIds = synthesizedCompletionNoticeNodeIds;
   for (let phaseIndex = compiledPhases.length - 1; phaseIndex >= 0; phaseIndex -= 1) {
     const phase = compiledPhases[phaseIndex];
     const fyiNodes = phase.stageNodes

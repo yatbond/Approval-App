@@ -88,6 +88,31 @@ test("compiler repairs structural omissions without inventing identities", () =>
   assert.equal(validateTemplateAuthoringDefinition(artifacts).valid, true);
 });
 
+test("compiler preserves completion notifications as nonblocking FYI handoffs", () => {
+  const plan = qualificationPlan("en");
+  plan.phases = plan.phases.filter((phase) =>
+    phase.stages.every((stage) => stage.kind !== "for_information"),
+  );
+
+  const artifacts = compileTemplateCopilotPlan({ ...scope, plan });
+  const completionNotice = artifacts.definition.template.graph.nodes.find(
+    (node) =>
+      node.kind === "for_information" &&
+      node.label === "Completion notification",
+  );
+
+  assert.equal(completionNotice?.assigneeName, "Requester");
+  assert.ok(
+    artifacts.definition.template.graph.edges.some(
+      (edge) =>
+        edge.targetId === completionNotice?.id &&
+        edge.branchType === "for_information" &&
+        edge.blocking === false,
+    ),
+  );
+  assert.equal(validateTemplateAuthoringDefinition(artifacts).valid, true);
+});
+
 test("plan contract rejects executable graph authority from the model", () => {
   const plan = qualificationPlan("zh-Hans");
   const result = templateCopilotPlanV1Schema.safeParse({
