@@ -179,6 +179,45 @@ function Normalize-DeploymentHost {
   return $candidate.ToLowerInvariant()
 }
 
+function Get-ConfiguredProductionAliases {
+  param([Parameter(Mandatory = $true)][object]$VercelProject)
+
+  $productionTarget = Get-ObjectProperty (Get-ObjectProperty $VercelProject "targets") "production"
+  return @(
+    @(
+      @(Get-ObjectProperty $productionTarget "alias") +
+      @(Get-ObjectProperty $productionTarget "automaticAliases")
+    ) |
+      Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string]$_) } |
+      ForEach-Object { Normalize-DeploymentHost ([string]$_) } |
+      Sort-Object -Unique
+  )
+}
+
+function Get-DeploymentAliases {
+  param([Parameter(Mandatory = $true)][object]$Deployment)
+
+  return @(
+    @(Get-ObjectProperty $Deployment "alias") |
+      Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string]$_) } |
+      ForEach-Object { Normalize-DeploymentHost ([string]$_) } |
+      Sort-Object -Unique
+  )
+}
+
+function Get-AssignedProductionAliases {
+  param(
+    [Parameter(Mandatory = $true)][object]$Deployment,
+    [Parameter(Mandatory = $true)][object]$VercelProject
+  )
+
+  $configuredProductionAliases = @(Get-ConfiguredProductionAliases $VercelProject)
+  return @(
+    @(Get-DeploymentAliases $Deployment) |
+      Where-Object { $configuredProductionAliases -contains $_ }
+  )
+}
+
 function Get-ReleaseDefinition {
   param([Parameter(Mandatory = $true)][string]$RepoRoot)
 
@@ -334,9 +373,9 @@ function Assert-StagedProductionDeployment {
   Assert-ExactValue (Get-ObjectProperty $Deployment "projectId") (Get-ObjectProperty $VercelProject "id") "Deployment project id"
   Assert-ExactValue (Get-ObjectProperty $Deployment "ownerId") (Get-ObjectProperty $VercelProject "accountId") "Deployment owner id"
 
-  $aliasAssigned = Get-ObjectProperty $Deployment "aliasAssigned"
-  if ($aliasAssigned -isnot [bool] -or $aliasAssigned -ne $false) {
-    throw "Deployment is not staged: aliasAssigned was '$aliasAssigned'; expected 'False'."
+  $assignedProductionAliases = @(Get-AssignedProductionAliases $Deployment $VercelProject)
+  if ($assignedProductionAliases.Count -gt 0) {
+    throw "Deployment is not staged: it already serves Production alias(es) '$($assignedProductionAliases -join ', ')'."
   }
 
   $deploymentId = [string](Get-ObjectProperty $Deployment "id")
@@ -391,8 +430,7 @@ function Get-StagedProductionDeployment {
       (Get-ObjectProperty $candidate "target") -ceq "production" -and
       (Get-ObjectProperty $candidate "readyState") -ceq "READY" -and
       (Get-ObjectProperty $candidate "readySubstate") -ceq "STAGED" -and
-      (Get-ObjectProperty $candidate "aliasAssigned") -is [bool] -and
-      (Get-ObjectProperty $candidate "aliasAssigned") -eq $false
+      @(Get-AssignedProductionAliases $candidate $VercelProject).Count -eq 0
     ) {
       $stagedDeployments += $candidate
     }
@@ -501,11 +539,7 @@ if ($autoAssignCustomDomains -isnot [bool] -or $autoAssignCustomDomains -ne $fal
 }
 
 $normalizedProductionAlias = Normalize-DeploymentHost $ProductionAlias
-$productionTarget = Get-ObjectProperty (Get-ObjectProperty $vercelProject "targets") "production"
-$configuredProductionAliases = @(
-  @(Get-ObjectProperty $productionTarget "alias") +
-  @(Get-ObjectProperty $productionTarget "automaticAliases")
-) | Where-Object { $null -ne $_ } | ForEach-Object { ([string]$_).ToLowerInvariant() }
+$configuredProductionAliases = @(Get-ConfiguredProductionAliases $vercelProject)
 if ($configuredProductionAliases -notcontains $normalizedProductionAlias) {
   throw "Production alias '$normalizedProductionAlias' is not configured on Vercel project '$Project'."
 }

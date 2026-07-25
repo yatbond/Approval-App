@@ -19,6 +19,8 @@ test("Production release promotes only a verified immutable staged deployment", 
     '"githubCommitRef"',
     '"autoExposeSystemEnvs"',
     '"autoAssignCustomDomains"',
+    "Get-ConfiguredProductionAliases",
+    "Get-AssignedProductionAliases",
     "Get-VersionIdentity $deploymentUrl",
     "Assert-VersionIdentity $immutableIdentity",
     '"promote", $deploymentId',
@@ -29,6 +31,7 @@ test("Production release promotes only a verified immutable staged deployment", 
   }
 
   assert.doesNotMatch(script, /"deploy"\s*,|"--prod"|promote"\s*,\s*\$normalizedProductionAlias/);
+  assert.doesNotMatch(script, /aliasAssigned/);
   assert.doesNotMatch(script, /--silent|--show-error/);
   assert.ok(
     script.indexOf("Assert-VersionIdentity $immutableIdentity") <
