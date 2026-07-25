@@ -20,6 +20,7 @@ test("Production release promotes only a verified immutable staged deployment", 
     '"autoExposeSystemEnvs"',
     '"autoAssignCustomDomains"',
     "Get-ConfiguredProductionAliases",
+    "Get-VercelProjectDomains",
     "Get-AssignedProductionAliases",
     "Set-AutoAssignCustomDomains",
     "$startMatches = [regex]::Matches($joinedText",
@@ -36,6 +37,12 @@ test("Production release promotes only a verified immutable staged deployment", 
 
   assert.doesNotMatch(script, /"deploy"\s*,|"--prod"|promote"\s*,\s*\$normalizedProductionAlias/);
   assert.doesNotMatch(script, /aliasAssigned/);
+  assert.doesNotMatch(
+    script,
+    /Get-ObjectProperty \$VercelProject "targets"/,
+  );
+  assert.match(script, /"gitBranch"/);
+  assert.match(script, /"customEnvironmentId"/);
   assert.doesNotMatch(script, /--silent|--show-error/);
   assert.ok(
     script.indexOf("Assert-VersionIdentity $immutableIdentity") <

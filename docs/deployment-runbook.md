@@ -147,6 +147,12 @@ immediately after every promotion attempt, including when a later verification
 step fails. It verifies that setting before creating the annotated tag so the
 next `main` build remains staged.
 
+The project summary can mix automatic Git branch aliases into its Production
+target alias arrays. The release gate therefore obtains real configured
+Production domains from the project Domains API and accepts only domains with
+no `gitBranch` and no custom-environment assignment. A `git-main` convenience
+alias cannot make a staged candidate look live.
+
 Confirm CI passes on the exact `main` SHA. Do not create a Production deployment with `vercel deploy`, `vercel --prod`, a redeploy button, or a Preview promotion. Those paths either create another artifact or lose the native Git identity required by this release contract.
 
 ## 4. Verify and Promote the Exact Candidate
