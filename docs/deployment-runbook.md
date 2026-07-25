@@ -136,6 +136,11 @@ artifact. That convenience alias is not a Production domain and does not make
 the candidate live. The release script allows branch aliases, but rejects any
 candidate already serving one of the project's configured Production aliases.
 
+The live identity check also tolerates Vercel CLI/native-curl progress records
+being merged onto the same captured line as the JSON response. The release must
+still parse and verify the exact `/api/version` payload before it creates and
+pushes the annotated Production tag.
+
 Confirm CI passes on the exact `main` SHA. Do not create a Production deployment with `vercel deploy`, `vercel --prod`, a redeploy button, or a Preview promotion. Those paths either create another artifact or lose the native Git identity required by this release contract.
 
 ## 4. Verify and Promote the Exact Candidate

@@ -127,6 +127,31 @@ function Convert-JsonOutput {
     }
   }
 
+  # Native curl progress can be redirected into the same PowerShell record as
+  # the response body. Search within the combined output rather than requiring
+  # JSON to begin on a clean line.
+  $joinedText = $textLines -join "`n"
+  $startMatches = [regex]::Matches($joinedText, '[\{\[]')
+  foreach ($startMatch in $startMatches) {
+    $candidate = $joinedText.Substring($startMatch.Index)
+    $searchBefore = $candidate.Length
+    while ($searchBefore -gt 0) {
+      $objectEnd = $candidate.LastIndexOf('}', $searchBefore - 1)
+      $arrayEnd = $candidate.LastIndexOf(']', $searchBefore - 1)
+      $jsonEnd = [Math]::Max($objectEnd, $arrayEnd)
+      if ($jsonEnd -lt 0) {
+        break
+      }
+
+      try {
+        return $candidate.Substring(0, $jsonEnd + 1) |
+          ConvertFrom-Json -ErrorAction Stop
+      } catch {
+        $searchBefore = $jsonEnd
+      }
+    }
+  }
+
   throw "Unable to parse JSON from command output."
 }
 
