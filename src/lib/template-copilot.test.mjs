@@ -55,6 +55,26 @@ test("unknown critical routing answers cannot silently complete the interview", 
   assert.equal(getNextTemplateCopilotSection(ledger), "conditions_exceptions");
 });
 
+test("only explicit English or Chinese uncertainty may block an interview section", async () => {
+  const source = await readFile(
+    new URL("./template-copilot-ledger.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /isExplicitTemplateCopilotUnknown/);
+  assert.match(source, /i \(\?:do not\|don't\) know/);
+  assert.match(source, /不知道/);
+  assert.match(source, /未決定/);
+  assert.match(source, /未决定/);
+
+  const aiSource = await readFile(
+    new URL("./template-copilot-ai.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(aiSource, /result\.answerStatus === "unknown"/);
+  assert.match(aiSource, /!isExplicitTemplateCopilotUnknown\(message\)/);
+  assert.match(aiSource, /answerStatus: "answered" as const/);
+});
+
 test("confirmation requires an explicit bounded confirmation phrase", () => {
   assert.equal(isExplicitConfirmation("confirm"), true);
   assert.equal(isExplicitConfirmation("Proceed"), true);

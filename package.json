@@ -26,6 +26,7 @@
     "test:e2e:two-browser": "node scripts/test-authoritative-two-browser.mjs",
     "test:e2e:collaboration": "node scripts/test-authoritative-collaboration-browser.mjs",
     "test:e2e:template-copilot-preview": "node scripts/test-template-copilot-preview.mjs",
+    "test:e2e:template-copilot-cross-user": "node scripts/test-template-copilot-cross-user.mjs",
     "test:e2e:template-copilot-qualification": "node scripts/test-template-copilot-qualification.mjs",
     "test:openrouter:copilot-model": "node scripts/test-openrouter-copilot-model.mjs",
     "test:db:durable-operations": "node scripts/test-durable-operations.mjs",

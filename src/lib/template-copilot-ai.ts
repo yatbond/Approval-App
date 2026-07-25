@@ -11,6 +11,7 @@ import {
   copilotCorrectionExtractionSchema,
   copilotTurnExtractionSchema,
   formatTemplateCopilotSummary,
+  isExplicitTemplateCopilotUnknown,
   templateCopilotQuestions,
   type TemplateCopilotLedger,
   type TemplateCopilotSectionId,
@@ -336,7 +337,14 @@ export async function extractTemplateCopilotTurn({
     ].join("\n\n"),
     failureMessage: "The Copilot could not safely interpret that answer.",
   });
-  return { result, model: configured.model };
+  return {
+    result:
+      result.answerStatus === "unknown" &&
+      !isExplicitTemplateCopilotUnknown(message)
+        ? { ...result, answerStatus: "answered" as const }
+        : result,
+    model: configured.model,
+  };
 }
 
 export async function generateTemplateAuthoringArtifacts({

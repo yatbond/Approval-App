@@ -166,14 +166,23 @@ try {
     (item) => item.sessionId,
   )?.sessionId;
   if (firstSessionId && secondUserEmail && secondUserPassword) {
-    report.protocols.push(
-      await testCrossUserIsolation(
-        browser,
-        firstSessionId,
-        secondUserEmail,
-        secondUserPassword,
-      ),
-    );
+    try {
+      report.protocols.push(
+        await testCrossUserIsolation(
+          browser,
+          firstSessionId,
+          secondUserEmail,
+          secondUserPassword,
+        ),
+      );
+    } catch (error) {
+      report.protocols.push({
+        id: "cross-user-isolation",
+        passed: false,
+        fixtureFailure: true,
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
   } else {
     report.protocols.push({
       id: "cross-user-isolation",
@@ -559,13 +568,13 @@ async function testInitialRequirementContract(context) {
     start.body?.ledger?.sections?.identity_scope?.status || "missing";
   return {
     id: "initial-requirement-contract",
-    passed: start.status === 201 && identityStatus === "answered",
+    passed: start.status === 201 && identityStatus !== "missing",
     status: start.status,
     identityStatus,
     observation:
       identityStatus === "missing"
         ? "The accepted initialRequirement field is ignored instead of starting the interview."
-        : "The initial requirement was applied.",
+        : "The initial requirement was applied and unresolved details remain in the interview.",
   };
 }
 

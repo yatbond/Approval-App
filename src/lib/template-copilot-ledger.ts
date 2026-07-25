@@ -237,3 +237,15 @@ export function isExplicitConfirmation(message: string) {
     )
   );
 }
+
+export function isExplicitTemplateCopilotUnknown(message: string) {
+  const normalized = message.trim().toLowerCase();
+  return (
+    /\b(i (?:do not|don't) know|i(?:'m| am) not sure|unknown|tbd|to be decided|need(?:s)? (?:the )?(?:process )?owner to decide)\b/.test(
+      normalized,
+    ) ||
+    /(不知道|不清楚|不確定|不确定|未決定|未决定|待決定|待决定|由(?:流程|程序|業務|业务)?(?:負責人|负责人|擁有人|所有者)決定)/.test(
+      normalized,
+    )
+  );
+}
