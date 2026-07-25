@@ -36,11 +36,28 @@ malware-scanning gateway before broadening accepted formats.
 
 Required server variables:
 
+- OpenRouter: `TEMPLATE_COPILOT_PROVIDER=openrouter` and
+  `OPENROUTER_API_KEY`; or
 - direct Z.AI standard API: `ZAI_API_KEY` (defaults to `glm-5.2`); or
 - Vercel AI Gateway: `AI_GATEWAY_API_KEY` or automatically provisioned
   `VERCEL_OIDC_TOKEN`; or
 - direct provider fallback: `OPENAI_API_KEY`
 - optional `TEMPLATE_COPILOT_MODEL`
+
+OpenRouter is enabled only when explicitly selected. It uses
+`https://openrouter.ai/api/v1`, defaults to `qwen/qwen3.5-flash-02-23`, sends a
+strict JSON Schema, requires a provider endpoint that supports the supplied
+parameters, and then validates the returned object locally. Set
+`TEMPLATE_COPILOT_OPENROUTER_ZDR=true` to restrict calls to Zero Data Retention
+endpoints. A production deployment fails closed when ZDR is off unless an
+approved exception is explicitly recorded with
+`TEMPLATE_COPILOT_ALLOW_NON_ZDR_PRODUCTION=true`.
+
+As of the Preview evaluation on 2026-07-26, OpenRouter advertised structured
+output for `qwen/qwen3.5-flash-02-23`, but did not list a ZDR endpoint for that
+exact model. It may therefore be used with synthetic Preview data, but not with
+corporate workflow requirements until the provider retention policy is approved
+or a ZDR-capable model is selected.
 
 When `ZAI_API_KEY` is present, the Copilot uses Z.AI's standard international
 OpenAI-compatible Chat Completions endpoint at

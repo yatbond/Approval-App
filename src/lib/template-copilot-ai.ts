@@ -30,11 +30,75 @@ type TemplateCopilotAiConfiguration = {
   client: OpenAI;
   model: string;
   protocol: "responses" | "chat_completions";
+  structuredOutput?: "json_object" | "json_schema";
+  openRouterProvider?: {
+    require_parameters: true;
+    zdr?: true;
+  };
 };
 
 function aiConfiguration() {
+  const requestedProvider = process.env.TEMPLATE_COPILOT_PROVIDER?.trim();
+  if (
+    requestedProvider &&
+    !["openrouter", "zai", "gateway", "openai"].includes(requestedProvider)
+  ) {
+    throw new TemplateCopilotConfigurationError(
+      "TEMPLATE_COPILOT_PROVIDER must be openrouter, zai, gateway, or openai.",
+    );
+  }
+
+  if (requestedProvider === "openrouter") {
+    const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+    if (!apiKey) {
+      throw new TemplateCopilotConfigurationError(
+        "The Template Copilot is configured for OpenRouter, but OPENROUTER_API_KEY is missing.",
+      );
+    }
+    const requireZdr =
+      process.env.TEMPLATE_COPILOT_OPENROUTER_ZDR?.trim().toLowerCase() ===
+      "true";
+    if (
+      process.env.VERCEL_ENV === "production" &&
+      !requireZdr &&
+      process.env.TEMPLATE_COPILOT_ALLOW_NON_ZDR_PRODUCTION !== "true"
+    ) {
+      throw new TemplateCopilotConfigurationError(
+        "Production OpenRouter use requires a ZDR-capable route or an explicit approved non-ZDR production exception.",
+      );
+    }
+    return {
+      client: new OpenAI({
+        apiKey,
+        baseURL: "https://openrouter.ai/api/v1",
+        defaultHeaders: {
+          "HTTP-Referer":
+            process.env.OPENROUTER_SITE_URL ||
+            "https://approval-app-three.vercel.app",
+          "X-OpenRouter-Title":
+            process.env.OPENROUTER_APP_TITLE ||
+            "Approval App Template Copilot",
+        },
+      }),
+      model:
+        process.env.TEMPLATE_COPILOT_MODEL?.trim() ||
+        "qwen/qwen3.5-flash-02-23",
+      protocol: "chat_completions",
+      structuredOutput: "json_schema",
+      openRouterProvider: {
+        require_parameters: true,
+        ...(requireZdr ? { zdr: true as const } : {}),
+      },
+    } satisfies TemplateCopilotAiConfiguration;
+  }
+
   const zaiApiKey = process.env.ZAI_API_KEY?.trim();
-  if (zaiApiKey) {
+  if (requestedProvider === "zai" || (!requestedProvider && zaiApiKey)) {
+    if (!zaiApiKey) {
+      throw new TemplateCopilotConfigurationError(
+        "The Template Copilot is configured for Z.AI, but ZAI_API_KEY is missing.",
+      );
+    }
     const configuredModel =
       process.env.TEMPLATE_COPILOT_MODEL?.trim() || "glm-5.2";
     return {
@@ -44,18 +108,21 @@ function aiConfiguration() {
       }),
       model: configuredModel.replace(/^zai\//, ""),
       protocol: "chat_completions",
+      structuredOutput: "json_object",
     } satisfies TemplateCopilotAiConfiguration;
   }
 
   const gatewayCredential =
     process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN;
   const useGateway =
-    Boolean(process.env.AI_GATEWAY_API_KEY) ||
-    (!process.env.OPENAI_API_KEY && Boolean(process.env.VERCEL_OIDC_TOKEN));
+    requestedProvider === "gateway" ||
+    (!requestedProvider &&
+      (Boolean(process.env.AI_GATEWAY_API_KEY) ||
+        (!process.env.OPENAI_API_KEY && Boolean(process.env.VERCEL_OIDC_TOKEN))));
   const apiKey = useGateway ? gatewayCredential : process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new TemplateCopilotConfigurationError(
-      "The template Copilot is not configured. Add a standard Z.AI API key, enable Vercel AI Gateway, or add OPENAI_API_KEY on the server.",
+      "The Template Copilot is not configured. Select OpenRouter, add a standard Z.AI API key, enable Vercel AI Gateway, or add OPENAI_API_KEY on the server.",
     );
   }
   const configuredModel =
@@ -116,7 +183,18 @@ async function requestStructuredOutput<T>({
     }
 
     const jsonSchema = z.toJSONSchema(schema, { target: "draft-07" });
-    const response = await configured.client.chat.completions.create({
+    const responseFormat =
+      configured.structuredOutput === "json_schema"
+        ? {
+            type: "json_schema" as const,
+            json_schema: {
+              name: schemaName,
+              strict: true,
+              schema: jsonSchema,
+            },
+          }
+        : { type: "json_object" as const };
+    const request = {
       model: configured.model,
       messages: [
         {
@@ -130,8 +208,18 @@ async function requestStructuredOutput<T>({
         },
         { role: "user", content: userText },
       ],
-      response_format: { type: "json_object" },
-    });
+      response_format: responseFormat,
+      ...(configured.openRouterProvider
+        ? { provider: configured.openRouterProvider }
+        : {}),
+    } satisfies OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming & {
+      provider?: {
+        require_parameters: true;
+        zdr?: true;
+      };
+    };
+    const response =
+      await configured.client.chat.completions.create(request);
     const content = response.choices[0]?.message.content;
     if (!content) throw new TemplateCopilotModelError(failureMessage);
 

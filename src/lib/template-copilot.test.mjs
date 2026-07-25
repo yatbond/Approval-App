@@ -125,8 +125,25 @@ test("direct Z.AI support uses the standard international API and validates JSON
   assert.match(source, /https:\/\/api\.z\.ai\/api\/paas\/v4/);
   assert.doesNotMatch(source, /api\.z\.ai\/api\/coding\/paas/);
   assert.match(source, /model: configuredModel\.replace\(\/\^zai\\\//);
-  assert.match(source, /response_format: \{ type: "json_object" \}/);
+  assert.match(source, /structuredOutput: "json_object"/);
+  assert.match(source, /\{ type: "json_object" as const \}/);
   assert.match(source, /schema\.safeParse\(decoded\)/);
+});
+
+test("OpenRouter Copilot support requires explicit selection, strict schemas, and production privacy approval", async () => {
+  const source = await readFile(
+    new URL("./template-copilot-ai.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /TEMPLATE_COPILOT_PROVIDER/);
+  assert.match(source, /requestedProvider === "openrouter"/);
+  assert.match(source, /https:\/\/openrouter\.ai\/api\/v1/);
+  assert.match(source, /qwen\/qwen3\.5-flash-02-23/);
+  assert.match(source, /type: "json_schema"/);
+  assert.match(source, /strict: true/);
+  assert.match(source, /require_parameters: true/);
+  assert.match(source, /TEMPLATE_COPILOT_OPENROUTER_ZDR/);
+  assert.match(source, /TEMPLATE_COPILOT_ALLOW_NON_ZDR_PRODUCTION/);
 });
 
 test("Copilot persistence is owner scoped and RPC-only", async () => {
