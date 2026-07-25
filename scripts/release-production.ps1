@@ -279,6 +279,30 @@ function Get-VercelProject {
   return Convert-JsonOutput $output
 }
 
+function Set-AutoAssignCustomDomains {
+  param(
+    [Parameter(Mandatory = $true)][string]$ProjectName,
+    [Parameter(Mandatory = $true)][bool]$Enabled
+  )
+
+  $escapedProject = [Uri]::EscapeDataString($ProjectName)
+  $enabledValue = $Enabled.ToString().ToLowerInvariant()
+  $arguments = @(
+    "api", "/v9/projects/$escapedProject",
+    "--method", "PATCH",
+    "--field", "autoAssignCustomDomains=$enabledValue",
+    "--scope", $Team,
+    "--raw"
+  ) + $vercelAuthArguments
+  $output = @(Invoke-CaptureChecked "vercel" $arguments -Quiet)
+  $updatedProject = Convert-JsonOutput $output
+  $actualValue = Get-ObjectProperty $updatedProject "autoAssignCustomDomains"
+  if ($actualValue -isnot [bool] -or $actualValue -ne $Enabled) {
+    throw "Vercel autoAssignCustomDomains was not updated to '$Enabled'."
+  }
+  return $updatedProject
+}
+
 function Get-VercelDeployment {
   param([Parameter(Mandatory = $true)][string]$Deployment)
 
@@ -615,7 +639,14 @@ $promoteArguments = @(
   "--timeout", "10m",
   "--scope", $Team
 ) + $vercelAuthArguments
-Invoke-Checked "vercel" $promoteArguments
+try {
+  Invoke-Checked "vercel" $promoteArguments
+} finally {
+  # Vercel promotion can restore automatic Production domain assignment. Reset
+  # the project immediately so the next main build is staged again, even when a
+  # later live-identity check fails.
+  $vercelProject = Set-AutoAssignCustomDomains $Project $false
+}
 
 $liveDeployment = Wait-ForProductionAlias $normalizedProductionAlias $deploymentId
 Assert-ExactValue (Normalize-DeploymentHost ([string](Get-ObjectProperty $liveDeployment "url"))) $deploymentHost "Production alias canonical deployment"

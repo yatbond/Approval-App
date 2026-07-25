@@ -141,6 +141,12 @@ being merged onto the same captured line as the JSON response. The release must
 still parse and verify the exact `/api/version` payload before it creates and
 pushes the annotated Production tag.
 
+Vercel promotion can restore automatic Production-domain assignment. The
+release script therefore resets `autoAssignCustomDomains` to `false`
+immediately after every promotion attempt, including when a later verification
+step fails. It verifies that setting before creating the annotated tag so the
+next `main` build remains staged.
+
 Confirm CI passes on the exact `main` SHA. Do not create a Production deployment with `vercel deploy`, `vercel --prod`, a redeploy button, or a Preview promotion. Those paths either create another artifact or lose the native Git identity required by this release contract.
 
 ## 4. Verify and Promote the Exact Candidate
