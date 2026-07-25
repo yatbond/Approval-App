@@ -131,6 +131,11 @@ Open and merge the release pull request into protected `main`. The merge commit 
 
 Vercel Git integration then creates a Production-environment deployment from `main`. Because Auto-assign Custom Production Domains is disabled, that deployment remains staged and the live domains do not move.
 
+Vercel can still attach the automatic `git-main` branch alias to this staged
+artifact. That convenience alias is not a Production domain and does not make
+the candidate live. The release script allows branch aliases, but rejects any
+candidate already serving one of the project's configured Production aliases.
+
 Confirm CI passes on the exact `main` SHA. Do not create a Production deployment with `vercel deploy`, `vercel --prod`, a redeploy button, or a Preview promotion. Those paths either create another artifact or lose the native Git identity required by this release contract.
 
 ## 4. Verify and Promote the Exact Candidate
