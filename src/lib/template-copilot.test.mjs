@@ -116,6 +116,21 @@ test("Copilot routes authenticate and do not expose provider keys to the client"
   assert.match(client, /role="alert"/);
 });
 
+test("the embedded Copilot waits for an authoritative UUID business scope", async () => {
+  const client = await readFile(
+    new URL("../app/template-copilot.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    client,
+    /templateCopilotStartSchema\.shape\.businessUnitId\.safeParse/,
+  );
+  assert.match(client, /Loading the authenticated business directory/);
+  assert.match(client, /authenticated business directory is still loading/);
+  assert.match(client, /\|\| availableBusinesses\[0\]/);
+  assert.doesNotMatch(client, /useEffect/);
+});
+
 test("direct Z.AI support uses the standard international API and validates JSON locally", async () => {
   const source = await readFile(
     new URL("./template-copilot-ai.ts", import.meta.url),

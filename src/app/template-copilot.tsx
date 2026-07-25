@@ -10,6 +10,7 @@ import type {
 } from "@/lib/template-authoring-contracts";
 import {
   templateCopilotSectionIds,
+  templateCopilotStartSchema,
   type TemplateCopilotLedger,
 } from "@/lib/template-copilot-ledger";
 
@@ -35,24 +36,32 @@ export function TemplateCopilot({
 }) {
   const availableBusinesses = useMemo(
     () =>
-      businessDirectory.filter((business) => business.departments.length > 0),
+      businessDirectory.filter(
+        (business) =>
+          business.departments.length > 0 &&
+          templateCopilotStartSchema.shape.businessUnitId.safeParse(business.id)
+            .success,
+      ),
     [businessDirectory],
   );
-  const [businessUnitId, setBusinessUnitId] = useState(
-    availableBusinesses[0]?.id || "",
-  );
-  const selectedBusiness = availableBusinesses.find(
-    (business) => business.id === businessUnitId,
-  );
-  const [departmentName, setDepartmentName] = useState(
-    selectedBusiness?.departments[0] || "",
-  );
+  const [selectedBusinessUnitId, setBusinessUnitId] = useState("");
+  const selectedBusiness =
+    availableBusinesses.find(
+      (business) => business.id === selectedBusinessUnitId,
+    ) || availableBusinesses[0];
+  const businessUnitId = selectedBusiness?.id || "";
+  const [selectedDepartmentName, setDepartmentName] = useState("");
+  const departmentName =
+    selectedBusiness?.departments.includes(selectedDepartmentName)
+      ? selectedDepartmentName
+      : selectedBusiness?.departments[0] || "";
   const [state, setState] = useState<CopilotState | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+
   const completed = useMemo(
     () =>
       state
@@ -65,16 +74,23 @@ export function TemplateCopilot({
 
   async function start() {
     if (!businessUnitId || !departmentName) return;
+    const command = templateCopilotStartSchema.safeParse({
+      businessUnitId,
+      departmentName,
+      clientMessageId: messageId("start"),
+    });
+    if (!command.success) {
+      setError(
+        "The authenticated business directory is still loading. Please try again.",
+      );
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       const response = await api("/api/template-authoring/copilot/sessions", {
         method: "POST",
-        body: JSON.stringify({
-          businessUnitId,
-          departmentName,
-          clientMessageId: messageId("start"),
-        }),
+        body: JSON.stringify(command.data),
       });
       const next = {
         sessionId: String(response.sessionId),
@@ -252,6 +268,11 @@ export function TemplateCopilot({
               A guided interview that creates an editable proposal. It cannot
               publish or activate a workflow.
             </p>
+            {!availableBusinesses.length && (
+              <p role="status" className="mt-3 text-sm text-amber-700">
+                Loading the authenticated business directory…
+              </p>
+            )}
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label className="text-sm text-neutral-700">
                 Business
