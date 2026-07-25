@@ -30,6 +30,7 @@ import {
   workspaceNavigationTabIds,
   type WorkspaceTab,
 } from "@/lib/workspace-tabs-state";
+import { BuildVersionIndicator } from "./build-version-indicator";
 
 const tabDetails: Record<WorkspaceTab, { label: string; icon: React.ElementType }> = {
   queue: { label: "Inbox", icon: ClipboardList },
@@ -154,7 +155,7 @@ export function WorkspaceShell({
           sidebarCollapsed ? "lg:grid-cols-[72px_1fr]" : "lg:grid-cols-[244px_1fr]"
         }`}
       >
-        <aside className="max-w-full overflow-hidden border-b border-[#e6e6e6] bg-white lg:sticky lg:top-0 lg:h-screen lg:overflow-visible lg:border-b-0 lg:border-r">
+        <aside className="max-w-full overflow-hidden border-b border-[#e6e6e6] bg-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-visible lg:border-b-0 lg:border-r">
           <div data-brand-lockup className="border-b border-[#e6e6e6]">
             <div className="flex min-h-20 items-center px-4 lg:hidden">
               <Image
@@ -263,6 +264,7 @@ export function WorkspaceShell({
               );
             })}
           </nav>
+          <BuildVersionIndicator collapsed={sidebarCollapsed} />
         </aside>
 
         <section className="min-w-0">

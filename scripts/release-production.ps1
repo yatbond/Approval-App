@@ -2,9 +2,9 @@
 param(
   [string]$Project = "approval-app",
   [string]$Team = "team_LPbk7bp4UBMSijEI2bBgaTJm",
-  [string]$Branch = "codex/approval-tracking",
-  [string]$Alias = "approval-app-git-codex-approval-tracking-derrick-pangs-projects.vercel.app",
-  [int]$DeployTimeoutSeconds = 300
+  [string]$ProductionAlias = "approval-app-three.vercel.app",
+  [int]$DeployTimeoutSeconds = 300,
+  [int]$AliasTimeoutSeconds = 180
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,6 +17,7 @@ $gitSafetyArguments = @(
 )
 
 $requiredVercelCliVersion = "53.3.2"
+$productionBranch = "main"
 $vercelAuthArguments = @()
 if (-not [string]::IsNullOrWhiteSpace($env:VERCEL_TOKEN)) {
   $vercelAuthArguments = @("--token", $env:VERCEL_TOKEN)
@@ -193,7 +194,7 @@ function Get-ReleaseDefinition {
   }
 
   Assert-ExactValue (Get-ObjectProperty $release "schemaVersion") 1 "release.json schemaVersion"
-  Assert-ExactValue (Get-ObjectProperty $release "productionBranch") "main" "release.json productionBranch"
+  Assert-ExactValue (Get-ObjectProperty $release "productionBranch") $productionBranch "release.json productionBranch"
   $releaseName = [string](Get-ObjectProperty $release "name")
   if ([string]::IsNullOrWhiteSpace($releaseName) -or $releaseName -cne $releaseName.Trim()) {
     throw "release.json name must be a non-empty, trimmed string."
@@ -245,9 +246,7 @@ function Assert-VersionIdentity {
     [Parameter(Mandatory = $true)][object]$Identity,
     [Parameter(Mandatory = $true)][string]$ReleaseName,
     [Parameter(Mandatory = $true)][string]$Revision,
-    [Parameter(Mandatory = $true)][string]$DeploymentId,
-    [Parameter(Mandatory = $true)][string]$Environment,
-    [Parameter(Mandatory = $true)][bool]$CanonicalProduction
+    [Parameter(Mandatory = $true)][string]$DeploymentId
   )
 
   Assert-ExactValue (Get-ObjectProperty $Identity "schemaVersion") 1 "Version API schemaVersion"
@@ -277,31 +276,67 @@ function Assert-VersionIdentity {
 
   $deployment = Get-ObjectProperty $Identity "deployment"
   Assert-ExactValue (Get-ObjectProperty $deployment "platform") "vercel" "Version API deployment platform"
-  Assert-ExactValue (Get-ObjectProperty $deployment "environment") $Environment "Version API environment"
+  Assert-ExactValue (Get-ObjectProperty $deployment "environment") "production" "Version API environment"
   Assert-ExactValue (Get-ObjectProperty $deployment "id") $DeploymentId "Version API deployment id"
 
   $canonicalValue = Get-ObjectProperty $Identity "canonicalProduction"
-  if ($canonicalValue -isnot [bool] -or $canonicalValue -ne $CanonicalProduction) {
-    throw "Version API canonicalProduction was '$canonicalValue'; expected '$CanonicalProduction'."
+  if ($canonicalValue -isnot [bool] -or $canonicalValue -ne $true) {
+    throw "Version API canonicalProduction was '$canonicalValue'; expected 'True'."
   }
 }
 
-function Assert-PreviewDeployment {
+function Test-LocalTagExists {
+  param([Parameter(Mandatory = $true)][string]$TagName)
+
+  & git @gitSafetyArguments show-ref --verify --quiet "refs/tags/$TagName"
+  $exitCode = $LASTEXITCODE
+  if ($exitCode -eq 0) {
+    return $true
+  }
+  if ($exitCode -eq 1) {
+    return $false
+  }
+  throw "Unable to check local Git tag '$TagName' (exit code $exitCode)."
+}
+
+function Test-RemoteTagExists {
+  param([Parameter(Mandatory = $true)][string]$TagName)
+
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $null = & git @gitSafetyArguments ls-remote --exit-code --tags origin "refs/tags/$TagName" 2>&1
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+
+  if ($exitCode -eq 0) {
+    return $true
+  }
+  if ($exitCode -eq 2) {
+    return $false
+  }
+  throw "Unable to check remote Git tag '$TagName' (exit code $exitCode)."
+}
+
+function Assert-StagedProductionDeployment {
   param(
     [Parameter(Mandatory = $true)][object]$Deployment,
     [Parameter(Mandatory = $true)][object]$VercelProject,
-    [Parameter(Mandatory = $true)][string]$CommitSha,
-    [Parameter(Mandatory = $true)][string]$ExpectedBranch
+    [Parameter(Mandatory = $true)][string]$CommitSha
   )
 
   Assert-ExactValue (Get-ObjectProperty $Deployment "readyState") "READY" "Deployment readyState"
+  Assert-ExactValue (Get-ObjectProperty $Deployment "readySubstate") "STAGED" "Deployment readySubstate"
   Assert-ExactValue (Get-ObjectProperty $Deployment "source") "git" "Deployment source"
+  Assert-ExactValue (Get-ObjectProperty $Deployment "target") "production" "Deployment target"
   Assert-ExactValue (Get-ObjectProperty $Deployment "projectId") (Get-ObjectProperty $VercelProject "id") "Deployment project id"
   Assert-ExactValue (Get-ObjectProperty $Deployment "ownerId") (Get-ObjectProperty $VercelProject "accountId") "Deployment owner id"
 
-  $target = Get-ObjectProperty $Deployment "target"
-  if ($null -ne $target -and [string]$target -cne "preview") {
-    throw "Deployment target was '$target'; expected Preview."
+  $aliasAssigned = Get-ObjectProperty $Deployment "aliasAssigned"
+  if ($aliasAssigned -isnot [bool] -or $aliasAssigned -ne $false) {
+    throw "Deployment is not staged: aliasAssigned was '$aliasAssigned'; expected 'False'."
   }
 
   $deploymentId = [string](Get-ObjectProperty $Deployment "id")
@@ -311,23 +346,22 @@ function Assert-PreviewDeployment {
 
   $meta = Get-ObjectProperty $Deployment "meta"
   Assert-ExactValue (Get-ObjectProperty $meta "githubCommitSha") $CommitSha "Deployment Git SHA"
-  Assert-ExactValue (Get-ObjectProperty $meta "githubCommitRef") $ExpectedBranch "Deployment Git ref"
+  Assert-ExactValue (Get-ObjectProperty $meta "githubCommitRef") $productionBranch "Deployment Git ref"
 }
 
-function Get-ReadyGitPreviewForCommit {
+function Get-StagedProductionDeployment {
   param(
     [Parameter(Mandatory = $true)][object]$VercelProject,
-    [Parameter(Mandatory = $true)][string]$CommitSha,
-    [Parameter(Mandatory = $true)][string]$ExpectedBranch
+    [Parameter(Mandatory = $true)][string]$CommitSha
   )
 
   $arguments = @(
     "list", $Project,
     "--scope", $Team,
-    "--environment", "preview",
+    "--environment", "production",
     "--status", "READY",
     "--meta", "githubCommitSha=$CommitSha",
-    "--meta", "githubCommitRef=$ExpectedBranch",
+    "--meta", "githubCommitRef=$productionBranch",
     "--format", "json"
   ) + $vercelAuthArguments
   $listOutput = @(Invoke-CaptureChecked "vercel" $arguments -Quiet)
@@ -337,23 +371,62 @@ function Get-ReadyGitPreviewForCommit {
       Where-Object {
         $meta = Get-ObjectProperty $_ "meta"
         (Get-ObjectProperty $_ "state") -ceq "READY" -and
+        (Get-ObjectProperty $_ "target") -ceq "production" -and
         (Get-ObjectProperty $meta "githubCommitSha") -ceq $CommitSha -and
-        (Get-ObjectProperty $meta "githubCommitRef") -ceq $ExpectedBranch
+        (Get-ObjectProperty $meta "githubCommitRef") -ceq $productionBranch
       } |
       Sort-Object -Property createdAt -Descending
   )
 
-  if ($matches.Count -eq 0) {
-    return $null
+  $stagedDeployments = @()
+  foreach ($match in $matches) {
+    $listedHost = Normalize-DeploymentHost ([string](Get-ObjectProperty $match "url"))
+    $candidate = Get-VercelDeployment $listedHost
+    $candidateHost = Normalize-DeploymentHost ([string](Get-ObjectProperty $candidate "url"))
+    if ($candidateHost -cne $listedHost) {
+      throw "Listed Production deployment '$listedHost' resolved to different canonical deployment '$candidateHost'."
+    }
+    if (
+      (Get-ObjectProperty $candidate "source") -ceq "git" -and
+      (Get-ObjectProperty $candidate "target") -ceq "production" -and
+      (Get-ObjectProperty $candidate "readyState") -ceq "READY" -and
+      (Get-ObjectProperty $candidate "readySubstate") -ceq "STAGED" -and
+      (Get-ObjectProperty $candidate "aliasAssigned") -is [bool] -and
+      (Get-ObjectProperty $candidate "aliasAssigned") -eq $false
+    ) {
+      $stagedDeployments += $candidate
+    }
   }
 
-  $listedHost = Normalize-DeploymentHost ([string](Get-ObjectProperty $matches[0] "url"))
-  $deployment = Get-VercelDeployment $listedHost
-  Assert-PreviewDeployment $deployment $VercelProject $CommitSha $ExpectedBranch
-  Assert-ExactValue (
-    Normalize-DeploymentHost ([string](Get-ObjectProperty $deployment "url"))
-  ) $listedHost "Listed Preview deployment URL"
-  return $deployment
+  if ($stagedDeployments.Count -eq 0) {
+    return $null
+  }
+  if ($stagedDeployments.Count -gt 1) {
+    $candidateIds = $stagedDeployments |
+      ForEach-Object { [string](Get-ObjectProperty $_ "id") }
+    throw "Multiple staged Production deployments match ${CommitSha}: $($candidateIds -join ', ')."
+  }
+
+  Assert-StagedProductionDeployment $stagedDeployments[0] $VercelProject $CommitSha
+  return $stagedDeployments[0]
+}
+
+function Wait-ForProductionAlias {
+  param(
+    [Parameter(Mandatory = $true)][string]$Alias,
+    [Parameter(Mandatory = $true)][string]$ExpectedDeploymentId
+  )
+
+  $deadline = (Get-Date).AddSeconds($AliasTimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    $resolvedDeployment = Get-VercelDeployment $Alias
+    if ((Get-ObjectProperty $resolvedDeployment "id") -ceq $ExpectedDeploymentId) {
+      return $resolvedDeployment
+    }
+    Start-Sleep -Seconds 5
+  }
+
+  throw "Production alias '$Alias' did not resolve to '$ExpectedDeploymentId' within $AliasTimeoutSeconds seconds."
 }
 
 $resolvedRepoRootOutput = @(& git @gitSafetyArguments rev-parse --show-toplevel)
@@ -369,15 +442,9 @@ if (
 }
 Set-Location $repoRoot
 
-$releaseDefinition = Get-ReleaseDefinition $repoRoot
-$releaseName = [string](Get-ObjectProperty $releaseDefinition "name")
-
 $currentBranch = (& git @gitSafetyArguments rev-parse --abbrev-ref HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or $currentBranch -eq "HEAD") {
-  throw "Refusing to deploy from detached HEAD."
-}
-if ($currentBranch -cne $Branch) {
-  throw "Current branch is '$currentBranch'. Expected '$Branch'."
+if ($LASTEXITCODE -ne 0 -or $currentBranch -cne $productionBranch) {
+  throw "Production releases must run from the '$productionBranch' branch; current branch is '$currentBranch'."
 }
 
 $dirty = @(& git @gitSafetyArguments status --porcelain)
@@ -385,78 +452,151 @@ if ($LASTEXITCODE -ne 0) {
   throw "Unable to inspect the Git working tree."
 }
 if ($dirty.Count -gt 0) {
-  throw "Refusing to deploy with uncommitted changes."
+  throw "Refusing to release with uncommitted changes."
 }
 
 Assert-VercelCliVersion
-Invoke-Checked "npm" @("run", "verify")
+Invoke-Checked "git" ($gitSafetyArguments + @(
+  "fetch", "origin", $productionBranch
+))
 
 $commit = (& git @gitSafetyArguments rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') {
-  throw "Unable to resolve a full lowercase Git revision."
+$originCommit = (& git @gitSafetyArguments rev-parse "refs/remotes/origin/$productionBranch").Trim()
+if (
+  $LASTEXITCODE -ne 0 -or
+  $commit -notmatch '^[0-9a-f]{40}$' -or
+  $originCommit -notmatch '^[0-9a-f]{40}$'
+) {
+  throw "Unable to resolve full lowercase Git revisions for local and origin/$productionBranch."
 }
+Assert-ExactValue $commit $originCommit "Local HEAD versus origin/$productionBranch"
+
+$releaseDefinition = Get-ReleaseDefinition $repoRoot
+$releaseName = [string](Get-ObjectProperty $releaseDefinition "name")
 Invoke-Checked "git" ($gitSafetyArguments + @(
-  "push", "origin", "HEAD:refs/heads/$Branch"
+  "check-ref-format", "refs/tags/$releaseName"
 ))
+if (Test-LocalTagExists $releaseName) {
+  throw "Release tag '$releaseName' already exists locally."
+}
+if (Test-RemoteTagExists $releaseName) {
+  throw "Release tag '$releaseName' already exists on origin."
+}
+
+Invoke-Checked "npm" @("run", "verify")
 
 $vercelProject = Get-VercelProject $Project
 Assert-ExactValue (Get-ObjectProperty $vercelProject "name") $Project "Vercel project name"
 Assert-ExactValue (Get-ObjectProperty $vercelProject "accountId") $Team "Vercel project owner"
+$projectLink = Get-ObjectProperty $vercelProject "link"
+Assert-ExactValue (Get-ObjectProperty $projectLink "productionBranch") $productionBranch "Vercel production branch"
+
 $autoExposeSystemEnvs = Get-ObjectProperty $vercelProject "autoExposeSystemEnvs"
 if ($autoExposeSystemEnvs -isnot [bool] -or $autoExposeSystemEnvs -ne $true) {
-  throw "Vercel must automatically expose System Environment Variables before preview validation."
+  throw "Vercel autoExposeSystemEnvs must be True."
+}
+$autoAssignCustomDomains = Get-ObjectProperty $vercelProject "autoAssignCustomDomains"
+if ($autoAssignCustomDomains -isnot [bool] -or $autoAssignCustomDomains -ne $false) {
+  throw "Vercel autoAssignCustomDomains must be False so Production builds remain staged."
 }
 
-$normalizedAlias = Normalize-DeploymentHost $Alias
+$normalizedProductionAlias = Normalize-DeploymentHost $ProductionAlias
 $productionTarget = Get-ObjectProperty (Get-ObjectProperty $vercelProject "targets") "production"
-$productionAliases = @(
+$configuredProductionAliases = @(
   @(Get-ObjectProperty $productionTarget "alias") +
   @(Get-ObjectProperty $productionTarget "automaticAliases")
 ) | Where-Object { $null -ne $_ } | ForEach-Object { ([string]$_).ToLowerInvariant() }
-if ($productionAliases -contains $normalizedAlias) {
-  throw "Refusing to use Production domain '$normalizedAlias' as a preview alias."
+if ($configuredProductionAliases -notcontains $normalizedProductionAlias) {
+  throw "Production alias '$normalizedProductionAlias' is not configured on Vercel project '$Project'."
+}
+
+$previousProduction = Get-VercelDeployment $normalizedProductionAlias
+$previousDeploymentId = [string](Get-ObjectProperty $previousProduction "id")
+if ($previousDeploymentId -notmatch '^dpl_[A-Za-z0-9]+$') {
+  throw "Unable to resolve the current Production deployment from '$normalizedProductionAlias'."
 }
 
 $deadline = (Get-Date).AddSeconds($DeployTimeoutSeconds)
 $deployment = $null
 while ((Get-Date) -lt $deadline) {
-  $deployment = Get-ReadyGitPreviewForCommit $vercelProject $commit $Branch
+  $deployment = Get-StagedProductionDeployment $vercelProject $commit
   if ($null -ne $deployment) {
     break
   }
 
-  Write-Host "Waiting for a READY Vercel Git Preview deployment for $commit..."
+  Write-Host "Waiting for a READY staged Vercel Git Production deployment for $commit..."
   Start-Sleep -Seconds 10
 }
 
 if ($null -eq $deployment) {
-  throw "Timed out waiting for a READY Vercel Git Preview deployment for $commit on '$Branch'."
+  throw "Timed out waiting for a READY staged Vercel Git Production deployment for $commit."
 }
 
 $deploymentId = [string](Get-ObjectProperty $deployment "id")
+if ($deploymentId -ceq $previousDeploymentId) {
+  throw "Deployment '$deploymentId' is already serving '$normalizedProductionAlias'; it is not a staged release candidate."
+}
 $deploymentHost = Normalize-DeploymentHost ([string](Get-ObjectProperty $deployment "url"))
 $deploymentUrl = "https://$deploymentHost"
 
 $immutableIdentity = Get-VersionIdentity $deploymentUrl
-Assert-VersionIdentity $immutableIdentity $releaseName $commit $deploymentId "preview" $false
-
-$aliasArguments = @(
-  "alias", "set", $deploymentUrl, $normalizedAlias,
-  "--scope", $Team
-) + $vercelAuthArguments
-Invoke-Checked "vercel" $aliasArguments
-
-$aliasDeployment = Get-VercelDeployment $normalizedAlias
-Assert-ExactValue (Get-ObjectProperty $aliasDeployment "id") $deploymentId "Preview alias deployment id"
-Assert-ExactValue (Normalize-DeploymentHost ([string](Get-ObjectProperty $aliasDeployment "url"))) $deploymentHost "Preview alias canonical deployment"
-
-$aliasIdentity = Get-VersionIdentity $normalizedAlias
-Assert-VersionIdentity $aliasIdentity $releaseName $commit $deploymentId "preview" $false
+Assert-VersionIdentity $immutableIdentity $releaseName $commit $deploymentId
 
 Write-Host ""
-Write-Host "Preview deployment verified and aliased."
+Write-Host "Release candidate verified."
 Write-Host "Release: $releaseName"
 Write-Host "Commit: $commit"
 Write-Host "Deployment ID: $deploymentId"
 Write-Host "Immutable deployment: $deploymentUrl"
-Write-Host "Preview alias: https://$normalizedAlias"
+Write-Host "Previous Production deployment: $previousDeploymentId"
+
+$promoteArguments = @(
+  "promote", $deploymentId,
+  "--yes",
+  "--timeout", "10m",
+  "--scope", $Team
+) + $vercelAuthArguments
+Invoke-Checked "vercel" $promoteArguments
+
+$liveDeployment = Wait-ForProductionAlias $normalizedProductionAlias $deploymentId
+Assert-ExactValue (Normalize-DeploymentHost ([string](Get-ObjectProperty $liveDeployment "url"))) $deploymentHost "Production alias canonical deployment"
+Assert-ExactValue (Get-ObjectProperty $liveDeployment "projectId") (Get-ObjectProperty $vercelProject "id") "Live deployment project id"
+Assert-ExactValue (Get-ObjectProperty $liveDeployment "ownerId") (Get-ObjectProperty $vercelProject "accountId") "Live deployment owner id"
+
+$liveIdentity = Get-VersionIdentity $normalizedProductionAlias
+Assert-VersionIdentity $liveIdentity $releaseName $commit $deploymentId
+
+$tagManifest = [ordered]@{
+  schemaVersion = 1
+  release = $releaseName
+  revision = $commit
+  deploymentId = $deploymentId
+  deploymentUrl = $deploymentUrl
+  productionAlias = "https://$normalizedProductionAlias"
+  project = $Project
+  owner = $Team
+  promotedAt = [DateTimeOffset]::UtcNow.ToString("o")
+}
+$tagMessage = $tagManifest | ConvertTo-Json -Compress
+Invoke-Checked "git" ($gitSafetyArguments + @(
+  "tag", "--annotate", $releaseName, $commit, "--message", $tagMessage
+))
+try {
+  Invoke-Checked "git" ($gitSafetyArguments + @(
+    "push", "origin",
+    "refs/tags/${releaseName}:refs/tags/${releaseName}"
+  ))
+} catch {
+  Invoke-Checked "git" ($gitSafetyArguments + @(
+    "tag", "--delete", $releaseName
+  ))
+  throw
+}
+
+Write-Host ""
+Write-Host "Production release verified and tagged."
+Write-Host "Release: $releaseName"
+Write-Host "Commit: $commit"
+Write-Host "Deployment ID: $deploymentId"
+Write-Host "Production: https://$normalizedProductionAlias"
+Write-Host "Tag: $releaseName"

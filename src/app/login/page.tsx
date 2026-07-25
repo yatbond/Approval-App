@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/supabase/server";
 import { LogIn, UserPlus } from "lucide-react";
 import Image from "next/image";
 import { ThemeToggle } from "@/app/theme-toggle";
+import { BuildVersionIndicator } from "@/app/build-version-indicator";
 
 export default async function LoginPage({
   searchParams,
@@ -119,6 +120,9 @@ export default async function LoginPage({
               Create admin
             </a>
           )}
+        </div>
+        <div className="-mx-6 -mb-6 mt-5">
+          <BuildVersionIndicator />
         </div>
       </form>
     </main>
