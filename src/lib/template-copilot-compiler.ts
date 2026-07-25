@@ -105,7 +105,10 @@ const localized = {
 export function compileTemplateCopilotPlan(
   input: CompileTemplateCopilotPlanInput,
 ): CompiledArtifacts {
-  const plan = templateCopilotPlanV1Schema.parse(input.plan);
+  const plan = expandExplicitPairedDateFields(
+    templateCopilotPlanV1Schema.parse(input.plan),
+    input.sourceRequirements || [],
+  );
   const ids = createIdFactory();
   const labels = localized[plan.locale];
   const requestFields = normalizeFields(plan.requestFields, ids, labels);
@@ -973,6 +976,93 @@ export function compileTemplateCopilotPlan(
     },
   });
   return { dossier, definition };
+}
+
+function expandExplicitPairedDateFields(
+  plan: TemplateCopilotPlanV1,
+  sourceRequirements: string[],
+) {
+  const source = sourceRequirements.join("\n").normalize("NFKC");
+  const explicitlyRequiresPair =
+    /\bstart\s+(?:and|&)\s+end\s+dates?\b/i.test(source) ||
+    /開始(?:及|和|與)結束日期/u.test(source) ||
+    /开始(?:及|和|与)结束日期/u.test(source);
+  if (!explicitlyRequiresPair) return plan;
+
+  const startPattern =
+    plan.locale === "en" ? /\bstart\b/i : /開始|开始/u;
+  const endPattern =
+    plan.locale === "en" ? /\bend\b/i : /結束|结束/u;
+  const hasStart = plan.requestFields.some(
+    (field) =>
+      startPattern.test(field.label) && !endPattern.test(field.label),
+  );
+  const hasEnd = plan.requestFields.some(
+    (field) =>
+      endPattern.test(field.label) && !startPattern.test(field.label),
+  );
+  if (hasStart && hasEnd) return plan;
+
+  const withoutCombined = plan.requestFields.filter(
+    (field) =>
+      !(startPattern.test(field.label) && endPattern.test(field.label)),
+  );
+  const localizedDateFields = {
+    start: {
+      en: {
+        label: "Start date",
+        instructions: "Enter the start date.",
+      },
+      "zh-Hant": {
+        label: "開始日期",
+        instructions: "請輸入開始日期。",
+      },
+      "zh-Hans": {
+        label: "开始日期",
+        instructions: "请输入开始日期。",
+      },
+    },
+    end: {
+      en: {
+        label: "End date",
+        instructions: "Enter the end date.",
+      },
+      "zh-Hant": {
+        label: "結束日期",
+        instructions: "請輸入結束日期。",
+      },
+      "zh-Hans": {
+        label: "结束日期",
+        instructions: "请输入结束日期。",
+      },
+    },
+  };
+  const startText = localizedDateFields.start[plan.locale];
+  const endText = localizedDateFields.end[plan.locale];
+  const dateField = ({
+    label,
+    instructions,
+  }: {
+    label: string;
+    instructions: string;
+  }) => ({
+    label,
+    type: "date" as const,
+    required: true,
+    instructions,
+    placeholder: "",
+    options: [],
+    source: "manual" as const,
+  });
+
+  return templateCopilotPlanV1Schema.parse({
+    ...plan,
+    requestFields: [
+      ...withoutCombined,
+      ...(hasStart ? [] : [dateField(startText)]),
+      ...(hasEnd ? [] : [dateField(endText)]),
+    ],
+  });
 }
 
 function normalizeFields(

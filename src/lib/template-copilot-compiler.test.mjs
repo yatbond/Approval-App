@@ -279,6 +279,29 @@ test("compiler preserves exact employee requirement wording for traceability", (
   );
 });
 
+test("compiler expands explicitly paired start and end dates into separate fields", () => {
+  const plan = qualificationPlan("zh-Hant");
+  plan.requestFields = [
+    field("政策名稱及條款", "text"),
+    field("開始及結束日期", "date"),
+  ];
+
+  const artifacts = compileTemplateCopilotPlan({
+    ...scope,
+    plan,
+    sourceRequirements: [
+      "部門主管可發起。必填政策名稱及條款、開始及結束日期。",
+    ],
+  });
+  const labels = artifacts.dossier.initiation.requestFields.map(
+    (requestField) => requestField.label,
+  );
+
+  assert.equal(labels.includes("開始及結束日期"), false);
+  assert.equal(labels.includes("開始日期"), true);
+  assert.equal(labels.includes("結束日期"), true);
+});
+
 test("plan contract rejects executable graph authority from the model", () => {
   const plan = qualificationPlan("zh-Hans");
   const result = templateCopilotPlanV1Schema.safeParse({
