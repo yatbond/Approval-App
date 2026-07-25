@@ -31,6 +31,10 @@ type TemplateCopilotAiConfiguration = {
   model: string;
   protocol: "responses" | "chat_completions";
   structuredOutput?: "json_object" | "json_schema";
+  openRouterReasoning?: {
+    effort: "none" | "minimal" | "low" | "medium" | "high";
+    exclude: true;
+  };
   openRouterProvider?: {
     require_parameters: true;
     zdr?: true;
@@ -58,6 +62,16 @@ function aiConfiguration() {
     const requireZdr =
       process.env.TEMPLATE_COPILOT_OPENROUTER_ZDR?.trim().toLowerCase() ===
       "true";
+    const reasoningEffort =
+      process.env.TEMPLATE_COPILOT_OPENROUTER_REASONING_EFFORT?.trim() ||
+      "none";
+    if (
+      !["none", "minimal", "low", "medium", "high"].includes(reasoningEffort)
+    ) {
+      throw new TemplateCopilotConfigurationError(
+        "TEMPLATE_COPILOT_OPENROUTER_REASONING_EFFORT must be none, minimal, low, medium, or high.",
+      );
+    }
     if (
       process.env.VERCEL_ENV === "production" &&
       !requireZdr &&
@@ -88,6 +102,15 @@ function aiConfiguration() {
       openRouterProvider: {
         require_parameters: true,
         ...(requireZdr ? { zdr: true as const } : {}),
+      },
+      openRouterReasoning: {
+        effort: reasoningEffort as
+          | "none"
+          | "minimal"
+          | "low"
+          | "medium"
+          | "high",
+        exclude: true,
       },
     } satisfies TemplateCopilotAiConfiguration;
   }
@@ -212,10 +235,17 @@ async function requestStructuredOutput<T>({
       ...(configured.openRouterProvider
         ? { provider: configured.openRouterProvider }
         : {}),
+      ...(configured.openRouterReasoning
+        ? { reasoning: configured.openRouterReasoning }
+        : {}),
     } satisfies OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming & {
       provider?: {
         require_parameters: true;
         zdr?: true;
+      };
+      reasoning?: {
+        effort: "none" | "minimal" | "low" | "medium" | "high";
+        exclude: true;
       };
     };
     const response =

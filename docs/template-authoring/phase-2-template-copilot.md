@@ -53,6 +53,12 @@ endpoints. A production deployment fails closed when ZDR is off unless an
 approved exception is explicitly recorded with
 `TEMPLATE_COPILOT_ALLOW_NON_ZDR_PRODUCTION=true`.
 
+Set `TEMPLATE_COPILOT_OPENROUTER_REASONING_EFFORT=none` for normal requirements
+interviews and strict-schema draft generation unless qualification testing
+shows that a higher effort is necessary. Supported values are `none`,
+`minimal`, `low`, `medium`, and `high`; reasoning traces are excluded from the
+response.
+
 As of the Preview evaluation on 2026-07-26, OpenRouter advertised structured
 output for `qwen/qwen3.5-flash-02-23`, but did not list a ZDR endpoint for that
 exact model. It may therefore be used with synthetic Preview data, but not with

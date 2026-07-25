@@ -158,6 +158,9 @@ test("OpenRouter Copilot support requires explicit selection, strict schemas, an
   assert.match(source, /strict: true/);
   assert.match(source, /require_parameters: true/);
   assert.match(source, /TEMPLATE_COPILOT_OPENROUTER_ZDR/);
+  assert.match(source, /TEMPLATE_COPILOT_OPENROUTER_REASONING_EFFORT/);
+  assert.match(source, /openRouterReasoning/);
+  assert.match(source, /exclude: true/);
   assert.match(source, /TEMPLATE_COPILOT_ALLOW_NON_ZDR_PRODUCTION/);
 });
 
