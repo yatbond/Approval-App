@@ -54,7 +54,11 @@ test("Production release promotes only a verified immutable staged deployment", 
   );
   assert.ok(
     script.indexOf("Assert-VersionIdentity $liveIdentity") <
-      script.indexOf('"tag", "--annotate"'),
+      script.indexOf("$storedTagManifest = New-AnnotatedReleaseTag"),
+  );
+  assert.ok(
+    script.indexOf("$storedTagManifest = New-AnnotatedReleaseTag") <
+      script.indexOf('"push", "origin"'),
   );
   assert.ok(
     script.indexOf("Set-AutoAssignCustomDomains $Project $false") >
