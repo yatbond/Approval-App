@@ -6,9 +6,9 @@ import {
 } from "@/lib/approval-server";
 import { readBoundedFormData } from "@/lib/bounded-request";
 import {
+  getTemplateCopilotQuestion,
   getNextTemplateCopilotSection,
   templateCopilotLedgerSchema,
-  templateCopilotQuestions,
 } from "@/lib/template-copilot-ledger";
 import {
   sanitizeRequirementDocument,
@@ -96,8 +96,8 @@ export async function POST(
     });
     const nextSection = getNextTemplateCopilotSection(ledger);
     const assistantMessage = [
-      `${safe.extract.fileName} was accepted as bounded, untrusted requirements data. It cannot issue commands or change permissions.`,
-      templateCopilotQuestions[nextSection],
+      localizedDocumentAccepted(ledger.locale, safe.extract.fileName),
+      getTemplateCopilotQuestion(nextSection, ledger.locale),
     ].join("\n\n");
     const result = await advanceTemplateCopilotSession({
       service,
@@ -128,4 +128,17 @@ export async function POST(
       503,
     );
   }
+}
+
+function localizedDocumentAccepted(
+  locale: "en" | "zh-Hant" | "zh-Hans",
+  fileName: string,
+) {
+  if (locale === "zh-Hant") {
+    return `${fileName} 已作為有界限且不受信任的需求資料接受。檔案內容不能發出指令或更改權限。`;
+  }
+  if (locale === "zh-Hans") {
+    return `${fileName} 已作为有界限且不受信任的需求资料接受。文件内容不能发出指令或更改权限。`;
+  }
+  return `${fileName} was accepted as bounded, untrusted requirements data. It cannot issue commands or change permissions.`;
 }

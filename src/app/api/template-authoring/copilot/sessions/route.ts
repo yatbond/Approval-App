@@ -10,10 +10,14 @@ import { readBoundedJson } from "@/lib/bounded-request";
 import {
   applyTemplateCopilotAnswer,
   createTemplateCopilotLedger,
+  getTemplateCopilotQuestion,
   getNextTemplateCopilotSection,
-  templateCopilotQuestions,
   templateCopilotStartSchema,
 } from "@/lib/template-copilot-ledger";
+import {
+  detectTemplateCopilotLocale,
+  type TemplateCopilotLocale,
+} from "@/lib/template-copilot-plan";
 import {
   extractTemplateCopilotTurn,
   TemplateCopilotModelError,
@@ -54,12 +58,15 @@ export async function POST(request: NextRequest) {
         422,
       );
     }
-    const ledger = createTemplateCopilotLedger(scope);
-    const assistantMessage = [
-      `I’ll help you design an approval template for ${scope.businessName} / ${scope.departmentName}.`,
-      "I will keep a visible requirements checklist, flag unknowns, and create only an editable draft for human review.",
-      templateCopilotQuestions.identity_scope,
-    ].join("\n\n");
+    const locale =
+      parsed.data.locale ||
+      detectTemplateCopilotLocale(parsed.data.initialRequirement || "");
+    const ledger = createTemplateCopilotLedger({ ...scope, locale });
+    const assistantMessage = initialAssistantMessage({
+      locale,
+      businessName: scope.businessName,
+      departmentName: scope.departmentName,
+    });
     const created = await createTemplateCopilotSession({
       service,
       actor,
@@ -89,7 +96,7 @@ export async function POST(request: NextRequest) {
       const nextSection = getNextTemplateCopilotSection(nextLedger);
       responseAssistantMessage = [
         extracted.result.acknowledgement,
-        templateCopilotQuestions[nextSection],
+        getTemplateCopilotQuestion(nextSection, nextLedger.locale),
       ].join("\n\n");
       result = await advanceTemplateCopilotSession({
         service,
@@ -137,6 +144,34 @@ export async function POST(request: NextRequest) {
       503,
     );
   }
+}
+
+function initialAssistantMessage({
+  locale,
+  businessName,
+  departmentName,
+}: {
+  locale: TemplateCopilotLocale;
+  businessName: string;
+  departmentName: string;
+}) {
+  const introduction =
+    locale === "zh-Hant"
+      ? `我會協助你為 ${businessName} / ${departmentName} 設計審批流程範本。`
+      : locale === "zh-Hans"
+        ? `我会协助你为 ${businessName} / ${departmentName} 设计审批流程模板。`
+        : `I’ll help you design an approval template for ${businessName} / ${departmentName}.`;
+  const boundary =
+    locale === "zh-Hant"
+      ? "我會顯示需求清單、標示未知事項，並只建立供人員審核的可編輯草稿。"
+      : locale === "zh-Hans"
+        ? "我会显示需求清单、标记未知事项，并只创建供人员审核的可编辑草稿。"
+        : "I will keep a visible requirements checklist, flag unknowns, and create only an editable draft for human review.";
+  return [
+    introduction,
+    boundary,
+    getTemplateCopilotQuestion("identity_scope", locale),
+  ].join("\n\n");
 }
 
 function initialRequirementMessageId(clientMessageId: string) {

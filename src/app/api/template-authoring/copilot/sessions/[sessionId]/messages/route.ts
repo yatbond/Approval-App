@@ -9,12 +9,14 @@ import { readBoundedJson } from "@/lib/bounded-request";
 import {
   applyTemplateCopilotAnswer,
   formatTemplateCopilotSummary,
+  getTemplateCopilotQuestion,
   getNextTemplateCopilotSection,
   isExplicitConfirmation,
   isTemplateCopilotReady,
-  templateCopilotQuestions,
+  setTemplateCopilotLocale,
   templateCopilotTurnSchema,
 } from "@/lib/template-copilot-ledger";
+import { detectTemplateCopilotLocale } from "@/lib/template-copilot-plan";
 import {
   TemplateCopilotConfigurationError,
   TemplateCopilotModelError,
@@ -64,8 +66,15 @@ export async function POST(
       );
     }
 
-    const currentSection = getNextTemplateCopilotSection(current.ledger);
-    let nextLedger = current.ledger;
+    const localizedLedger = setTemplateCopilotLocale(
+      current.ledger,
+      detectTemplateCopilotLocale(
+        parsed.data.message,
+        current.ledger.locale,
+      ),
+    );
+    const currentSection = getNextTemplateCopilotSection(localizedLedger);
+    let nextLedger = localizedLedger;
     let assistantMessage = "";
     let model = current.model || "";
     let structuredDetail: Record<string, unknown> = {};
@@ -73,23 +82,22 @@ export async function POST(
 
     if (
       currentSection === "confirmation" &&
-      isTemplateCopilotReady(current.ledger) &&
+      isTemplateCopilotReady(localizedLedger) &&
       isExplicitConfirmation(parsed.data.message)
     ) {
       nextLedger = applyTemplateCopilotAnswer({
-        ledger: current.ledger,
+        ledger: localizedLedger,
         sectionId: "confirmation",
         messageId: parsed.data.clientMessageId,
         status: "answered",
-        summary: "Employee explicitly confirmed the requirements summary.",
+        summary: explicitConfirmationSummary(localizedLedger.locale),
       });
-      assistantMessage =
-        "Requirements confirmed. I can now generate an editable draft. The draft will still require coded validation and human publication review.";
+      assistantMessage = confirmedMessage(localizedLedger.locale);
       nextStatus = "ready";
       structuredDetail = { targetSection: "confirmation", confirmed: true };
     } else {
       const extracted = await extractTemplateCopilotTurn({
-        ledger: current.ledger,
+        ledger: localizedLedger,
         currentSection,
         message: parsed.data.message,
       });
@@ -98,7 +106,7 @@ export async function POST(
           ? extracted.result.targetSection
           : currentSection;
       nextLedger = applyTemplateCopilotAnswer({
-        ledger: current.ledger,
+        ledger: localizedLedger,
         sectionId: targetSection,
         messageId: parsed.data.clientMessageId,
         status: extracted.result.answerStatus,
@@ -109,9 +117,9 @@ export async function POST(
       assistantMessage = [
         extracted.result.acknowledgement,
         nextSection === "confirmation"
-          ? `Here is the requirements summary:\n${formatTemplateCopilotSummary(nextLedger)}`
+          ? `${requirementsSummaryHeading(nextLedger.locale)}\n${formatTemplateCopilotSummary(nextLedger)}`
           : "",
-        templateCopilotQuestions[nextSection],
+        getTemplateCopilotQuestion(nextSection, nextLedger.locale),
       ]
         .filter(Boolean)
         .join("\n\n");
@@ -169,4 +177,30 @@ export async function POST(
       configuration ? 503 : 502,
     );
   }
+}
+
+function confirmedMessage(locale: "en" | "zh-Hant" | "zh-Hans") {
+  if (locale === "zh-Hant") {
+    return "需求已確認。現在可以建立可編輯草稿；草稿仍須通過程式驗證及人工發布審核。";
+  }
+  if (locale === "zh-Hans") {
+    return "需求已确认。现在可以创建可编辑草稿；草稿仍须通过程序验证和人工发布审核。";
+  }
+  return "Requirements confirmed. I can now generate an editable draft. The draft will still require coded validation and human publication review.";
+}
+
+function explicitConfirmationSummary(locale: "en" | "zh-Hant" | "zh-Hans") {
+  return locale === "zh-Hant"
+    ? "員工已明確確認需求摘要。"
+    : locale === "zh-Hans"
+      ? "员工已明确确认需求摘要。"
+      : "Employee explicitly confirmed the requirements summary.";
+}
+
+function requirementsSummaryHeading(locale: "en" | "zh-Hant" | "zh-Hans") {
+  return locale === "zh-Hant"
+    ? "以下是需求摘要："
+    : locale === "zh-Hans"
+      ? "以下是需求摘要："
+      : "Here is the requirements summary:";
 }

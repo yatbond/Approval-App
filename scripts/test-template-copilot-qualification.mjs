@@ -241,6 +241,7 @@ async function runScenario(context, item) {
         data: {
           businessUnitId,
           departmentName: item.departmentName,
+          locale: item.language,
           clientMessageId: idempotencyId(`qual-start-${item.id}`),
         },
         label: `${item.id}-start`,

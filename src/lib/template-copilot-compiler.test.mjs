@@ -1,0 +1,289 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { compileTemplateCopilotPlan } from "./template-copilot-compiler.ts";
+import { templateCopilotPlanV1Schema } from "./template-copilot-plan.ts";
+import {
+  simulateTemplateAuthoringDefinition,
+  validateTemplateAuthoringDefinition,
+} from "./template-authoring-validation.ts";
+
+const scope = {
+  businessUnitId: "11111111-1111-4111-8111-111111111111",
+  businessName: "Example Business",
+  departmentId: "22222222-2222-4222-8222-222222222222",
+  departmentName: "Procurement Operations",
+  actorEmail: "template.manager@example.com",
+  generatedAt: "2026-07-26T08:00:00.000Z",
+  dossierId: "dossier-qualification",
+  templateId: "template-qualification",
+};
+
+test("deterministically compiles a multilingual conditional parallel workflow", () => {
+  const plan = qualificationPlan("zh-Hant");
+  const first = compileTemplateCopilotPlan({ ...scope, plan });
+  const second = compileTemplateCopilotPlan({ ...scope, plan });
+
+  assert.deepEqual(first, second);
+  assert.equal(first.dossier.title, "高額採購審批");
+  assert.deepEqual(first.definition.template.languages, [
+    "Traditional Chinese",
+    "English",
+  ]);
+  assert.ok(
+    first.definition.template.graph.nodes.some(
+      (node) => node.kind === "condition",
+    ),
+  );
+  assert.ok(
+    first.definition.template.graph.edges.some(
+      (edge) => edge.branchType === "rejected",
+    ),
+  );
+  assert.ok(
+    first.definition.template.graph.edges.some(
+      (edge) => edge.branchType === "for_information" && edge.blocking === false,
+    ),
+  );
+  assert.ok(
+    first.definition.template.graph.nodes.some(
+      (node) =>
+        node.handoffView?.fieldVisibility?.mode === "selected" &&
+        node.handoffView?.documentVisibility?.mode === "selected",
+    ),
+  );
+
+  const validation = validateTemplateAuthoringDefinition(first);
+  assert.equal(validation.valid, true, JSON.stringify(validation.issues));
+  const simulation = simulateTemplateAuthoringDefinition(first);
+  assert.equal(simulation.validation.valid, true);
+  assert.ok(simulation.route.currentNodeIds.length >= 1);
+});
+
+test("compiler repairs structural omissions without inventing identities", () => {
+  const plan = qualificationPlan("en");
+  plan.requestFields = [];
+  plan.attachments[0].fields = [];
+  plan.attachments[0].minimumFiles = 0;
+  plan.phases[0].stages[0].participant = {
+    mode: "fixed_email",
+    email: "",
+    directoryPosition: "",
+    requestFieldLabel: "",
+  };
+
+  const artifacts = compileTemplateCopilotPlan({ ...scope, plan });
+  assert.equal(
+    artifacts.dossier.initiation.requestFields[0].label,
+    "Request summary",
+  );
+  assert.equal(artifacts.dossier.attachmentRequirements[0].minimumFiles, 1);
+  assert.equal(
+    artifacts.dossier.attachmentRequirements[0].fields[0].label,
+    "Details",
+  );
+  const firstApproval = artifacts.dossier.stages.find(
+    (stage) => stage.kind === "approval",
+  );
+  assert.equal(firstApproval?.assignee.mode, "unassigned_at_template");
+  assert.equal(validateTemplateAuthoringDefinition(artifacts).valid, true);
+});
+
+test("plan contract rejects executable graph authority from the model", () => {
+  const plan = qualificationPlan("zh-Hans");
+  const result = templateCopilotPlanV1Schema.safeParse({
+    ...plan,
+    graph: {
+      nodes: [{ id: "model-controlled" }],
+      edges: [],
+    },
+  });
+  assert.equal(result.success, false);
+});
+
+function qualificationPlan(locale) {
+  const traditional = locale === "zh-Hant";
+  const simplified = locale === "zh-Hans";
+  const text = (en, zhHant, zhHans) =>
+    traditional ? zhHant : simplified ? zhHans : en;
+  return templateCopilotPlanV1Schema.parse({
+    schemaVersion: 1,
+    locale,
+    title: text("High-value purchase approval", "高額採購審批", "高额采购审批"),
+    purpose: text(
+      "Approve purchases and preserve a correction path.",
+      "審批採購並保留補正路徑。",
+      "审批采购并保留补正路径。",
+    ),
+    dataClassification: "confidential",
+    allowedInitiators: "any_employee",
+    initiatorRoles: [],
+    initiatorEmails: [],
+    requestFields: [
+      field(text("Purpose", "用途", "用途"), "long_text"),
+      field(text("Total amount", "總金額", "总金额"), "currency"),
+      {
+        ...field(text("Goods or services", "貨品或服務", "货品或服务"), "select"),
+        options: text(
+          ["Goods", "Services"],
+          ["貨品", "服務"],
+          ["货品", "服务"],
+        ),
+      },
+    ],
+    attachments: [
+      {
+        label: text("Justification form", "理據表", "理由表"),
+        description: text(
+          "Business justification.",
+          "業務理據。",
+          "业务理由。",
+        ),
+        required: true,
+        inputMode: "manual_form",
+        acceptedFormats: ["text"],
+        minimumFiles: 1,
+        maximumFiles: 1,
+        maximumFileSizeMb: 10,
+        fields: [field(text("Reason", "原因", "原因"), "long_text")],
+        allowSharedFulfillment: true,
+        requireSharedFulfillmentConfirmation: true,
+        requiredWhen: null,
+      },
+      {
+        label: text("Supplier quotation", "供應商報價", "供应商报价"),
+        description: text(
+          "Quotation evidence.",
+          "報價證明。",
+          "报价证明。",
+        ),
+        required: true,
+        inputMode: "upload",
+        acceptedFormats: ["pdf"],
+        minimumFiles: 1,
+        maximumFiles: 3,
+        maximumFileSizeMb: 20,
+        fields: [],
+        allowSharedFulfillment: true,
+        requireSharedFulfillmentConfirmation: true,
+        requiredWhen: null,
+      },
+    ],
+    phases: [
+      {
+        label: text("Manager review", "經理審批", "经理审批"),
+        execution: "sequential",
+        condition: null,
+        stages: [
+          stage(text("Department manager", "部門經理", "部门经理"), "approval"),
+        ],
+      },
+      {
+        label: text(
+          "High-value parallel approval",
+          "高額並行審批",
+          "高额并行审批",
+        ),
+        execution: "parallel",
+        condition: {
+          label: text("High value", "高額", "高额"),
+          fieldLabel: text("Total amount", "總金額", "总金额"),
+          operator: ">=",
+          value: "50000",
+          join: "and",
+        },
+        stages: [
+          {
+            ...stage(text("Finance approval", "財務審批", "财务审批"), "approval"),
+            attachmentLabels: [
+              text("Supplier quotation", "供應商報價", "供应商报价"),
+            ],
+            fieldVisibility: "selected",
+            visibleFieldLabels: [
+              text("Purpose", "用途", "用途"),
+              text("Total amount", "總金額", "总金额"),
+            ],
+            documentVisibility: "selected",
+            visibleDocumentLabels: [
+              text("Supplier quotation", "供應商報價", "供应商报价"),
+            ],
+          },
+          stage(
+            text("General manager approval", "總經理審批", "总经理审批"),
+            "approval",
+          ),
+        ],
+      },
+      {
+        label: text("Completion notice", "完成通知", "完成通知"),
+        execution: "sequential",
+        condition: null,
+        stages: [
+          stage(text("Requester FYI", "通知申請人", "通知申请人"), "for_information"),
+        ],
+      },
+    ],
+    collaboration: {
+      templateDefinedSubmitters: true,
+      adHocContributors: true,
+      contributorDueDates: true,
+      statusVisibility: "participants",
+      confirmationPolicy: "assigned_submitter_only",
+      rejectionCreatesCorrectionLoop: true,
+    },
+    notifications: {
+      strategy: "important_changes_only",
+      recipients: "directly_involved",
+      events: [
+        "assigned",
+        "due_soon",
+        "overdue",
+        "rejected",
+        "correction_requested",
+        "completed",
+      ],
+    },
+    governance: {
+      publishMode: "template_manager_review",
+      processOwnerEmail: "",
+      reviewerEmails: [],
+      policyReferences: [],
+      retentionDays: 2555,
+      changeReasonRequired: true,
+    },
+    assumptions: [],
+    openQuestions: [],
+  });
+}
+
+function field(label, type) {
+  return {
+    label,
+    type,
+    required: true,
+    instructions: "",
+    placeholder: "",
+    options: [],
+    source: "manual",
+  };
+}
+
+function stage(label, kind) {
+  return {
+    label,
+    kind,
+    participant: {
+      mode: kind === "for_information" ? "requester" : "directory_position",
+      email: "",
+      directoryPosition: kind === "for_information" ? "" : label,
+      requestFieldLabel: "",
+    },
+    dueInHours: 24,
+    escalationParticipant: null,
+    acknowledgementRequired: false,
+    attachmentLabels: [],
+    fieldVisibility: "all",
+    visibleFieldLabels: [],
+    documentVisibility: "all",
+    visibleDocumentLabels: [],
+  };
+}

@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  templateCopilotLocaleSchema,
+  type TemplateCopilotLocale,
+} from "./template-copilot-plan.ts";
 
 export const templateCopilotSectionIds = [
   "identity_scope",
@@ -27,6 +31,7 @@ const sectionStateSchema = z
 export const templateCopilotLedgerSchema = z
   .object({
     schemaVersion: z.literal(1),
+    locale: templateCopilotLocaleSchema.default("en"),
     businessUnitId: z.string().uuid(),
     businessName: z.string().trim().min(1).max(200),
     departmentId: z.string().uuid(),
@@ -70,6 +75,7 @@ export const templateCopilotStartSchema = z
   .object({
     businessUnitId: z.string().uuid(),
     departmentName: z.string().trim().min(1).max(200),
+    locale: templateCopilotLocaleSchema.optional(),
     initialRequirement: z.string().trim().min(1).max(16_000).optional(),
     clientMessageId: z
       .string()
@@ -98,14 +104,17 @@ export function createTemplateCopilotLedger({
   businessName,
   departmentId,
   departmentName,
+  locale = "en",
 }: {
   businessUnitId: string;
   businessName: string;
   departmentId: string;
   departmentName: string;
+  locale?: TemplateCopilotLocale;
 }): TemplateCopilotLedger {
   return templateCopilotLedgerSchema.parse({
     schemaVersion: 1,
+    locale,
     businessUnitId,
     businessName,
     departmentId,
@@ -145,6 +154,124 @@ export const templateCopilotQuestions: Record<
   confirmation:
     "Please review the requirements summary. Reply “confirm” to create an editable draft, or tell me exactly what to correct.",
 };
+
+const localizedQuestions: Record<
+  TemplateCopilotLocale,
+  Record<TemplateCopilotSectionId, string>
+> = {
+  en: templateCopilotQuestions,
+  "zh-Hant": {
+    identity_scope:
+      "這個流程範本應稱為甚麼、需要達成甚麼業務結果，以及哪些事項屬於或不屬於範圍？",
+    initiators_fields:
+      "誰可以發起申請？申請人必須填寫哪些資料？請包括欄位類型、必填欄位及所有選項。",
+    attachments:
+      "哪些文件或表格是必須或可選的？請逐項說明格式、數量、檔案大小限制及提交時間。",
+    stages_participants:
+      "請依次說明所有提交、審批、審查及知會階段。每位參與者應如何指定：固定電郵、目錄職位、申請欄位，還是稍後指派？",
+    conditions_exceptions:
+      "流程需要處理哪些條件、門檻、並行分支、拒絕路徑、補正循環、後備路徑或例外情況？",
+    collaboration_corrections:
+      "是否容許多人共同完成提交、邀請臨時協作者？共同提交或補正應由誰確認？",
+    timing_escalation:
+      "各階段的期限及升級規則是甚麼？如需使用工作日曆計時，請明確說明。",
+    visibility_notifications:
+      "誰可以查看狀態及歷史？哪些事件需要通知？通知只發給直接相關人士，還是所有參與者？",
+    governance:
+      "誰擁有及審核此範本？適用哪些政策、保留期及合規控制？是否真的需要受規管簽署？",
+    confirmation:
+      "請檢查需求摘要。回覆「確認，請建立草稿」以建立可編輯草稿，或明確指出需要更正的內容。",
+  },
+  "zh-Hans": {
+    identity_scope:
+      "这个流程模板应叫什么、需要实现什么业务结果，以及哪些事项属于或不属于范围？",
+    initiators_fields:
+      "谁可以发起申请？申请人必须填写哪些信息？请包括字段类型、必填字段和全部选项。",
+    attachments:
+      "哪些文件或表单是必需或可选的？请逐项说明格式、数量、文件大小限制和提交时间。",
+    stages_participants:
+      "请按顺序说明所有提交、审批、审核和知会阶段。每位参与者应如何指定：固定邮箱、目录职位、申请字段，还是稍后分配？",
+    conditions_exceptions:
+      "流程需要处理哪些条件、门槛、并行分支、拒绝路径、补正循环、后备路径或例外情况？",
+    collaboration_corrections:
+      "是否允许多人共同完成提交、邀请临时协作者？共同提交或补正应由谁确认？",
+    timing_escalation:
+      "各阶段的期限和升级规则是什么？如需使用工作日历计时，请明确说明。",
+    visibility_notifications:
+      "谁可以查看状态和历史？哪些事件需要通知？通知只发给直接相关人员，还是所有参与者？",
+    governance:
+      "谁负责和审核此模板？适用哪些政策、保留期和合规控制？是否确实需要受监管签名？",
+    confirmation:
+      "请检查需求摘要。回复“确认，请创建草稿”以创建可编辑草稿，或明确指出需要更正的内容。",
+  },
+};
+
+const localizedSectionLabels: Record<
+  TemplateCopilotLocale,
+  Record<Exclude<TemplateCopilotSectionId, "confirmation">, string>
+> = {
+  en: {
+    identity_scope: "Identity and scope",
+    initiators_fields: "Initiators and fields",
+    attachments: "Attachments and forms",
+    stages_participants: "Stages and participants",
+    conditions_exceptions: "Conditions and exceptions",
+    collaboration_corrections: "Collaboration and corrections",
+    timing_escalation: "Timing and escalation",
+    visibility_notifications: "Visibility and notifications",
+    governance: "Governance",
+  },
+  "zh-Hant": {
+    identity_scope: "名稱及範圍",
+    initiators_fields: "發起人及欄位",
+    attachments: "附件及表格",
+    stages_participants: "階段及參與者",
+    conditions_exceptions: "條件及例外",
+    collaboration_corrections: "協作及補正",
+    timing_escalation: "時限及升級",
+    visibility_notifications: "可見性及通知",
+    governance: "管治",
+  },
+  "zh-Hans": {
+    identity_scope: "名称及范围",
+    initiators_fields: "发起人及字段",
+    attachments: "附件及表单",
+    stages_participants: "阶段及参与者",
+    conditions_exceptions: "条件及例外",
+    collaboration_corrections: "协作及补正",
+    timing_escalation: "时限及升级",
+    visibility_notifications: "可见性及通知",
+    governance: "治理",
+  },
+};
+
+export function getTemplateCopilotQuestion(
+  sectionId: TemplateCopilotSectionId,
+  locale: TemplateCopilotLocale,
+) {
+  return localizedQuestions[locale][sectionId];
+}
+
+export function getTemplateCopilotSectionLabel(
+  sectionId: TemplateCopilotSectionId,
+  locale: TemplateCopilotLocale,
+) {
+  if (sectionId === "confirmation") {
+    return locale === "zh-Hant"
+      ? "確認"
+      : locale === "zh-Hans"
+        ? "确认"
+        : "Confirmation";
+  }
+  return localizedSectionLabels[locale][sectionId];
+}
+
+export function setTemplateCopilotLocale(
+  ledger: TemplateCopilotLedger,
+  locale: TemplateCopilotLocale,
+) {
+  return templateCopilotLedgerSchema.parse({ ...ledger, locale });
+}
 
 const blockingSections = new Set<TemplateCopilotSectionId>([
   "identity_scope",
@@ -213,7 +340,7 @@ export function formatTemplateCopilotSummary(ledger: TemplateCopilotLedger) {
   return templateCopilotSectionIds
     .filter((id) => id !== "confirmation")
     .map((id) => {
-      const label = id.replaceAll("_", " ");
+      const label = getTemplateCopilotSectionLabel(id, ledger.locale);
       const state = ledger.sections[id];
       return `- ${label}: ${state.summary || `(${state.status})`}`;
     })
