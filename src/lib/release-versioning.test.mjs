@@ -21,6 +21,7 @@ test("Production release promotes only a verified immutable staged deployment", 
     '"autoAssignCustomDomains"',
     "Get-ConfiguredProductionAliases",
     "Get-AssignedProductionAliases",
+    "Set-AutoAssignCustomDomains",
     "$startMatches = [regex]::Matches($joinedText",
     "$candidate.LastIndexOf('}'",
     "$candidate.LastIndexOf(']'",
@@ -43,6 +44,14 @@ test("Production release promotes only a verified immutable staged deployment", 
   assert.ok(
     script.indexOf("Assert-VersionIdentity $liveIdentity") <
       script.indexOf('"tag", "--annotate"'),
+  );
+  assert.ok(
+    script.indexOf("Set-AutoAssignCustomDomains $Project $false") >
+      script.indexOf('"promote", $deploymentId'),
+  );
+  assert.ok(
+    script.indexOf("Set-AutoAssignCustomDomains $Project $false") <
+      script.indexOf("Assert-VersionIdentity $liveIdentity"),
   );
 });
 
