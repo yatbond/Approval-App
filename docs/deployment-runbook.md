@@ -189,7 +189,9 @@ After Vercel promotion completes, the same script:
 3. Calls the live alias `/api/version`.
 4. Requires the same release name, full revision, Vercel artifact/deployment IDs, Production environment, and `canonicalProduction: true`.
 5. Creates the `release.json` name as an annotated tag at the exact release commit.
-6. Stores a compact JSON deployment manifest in the annotated tag message.
+6. Sends a compact JSON deployment manifest to `git tag --file -` over standard
+   input, reads the stored annotation back, and requires exact text plus valid
+   JSON before any push. This avoids Windows native-argument quote removal.
 7. Pushes the tag without force. A concurrent tag collision fails; the newly created local tag is removed if its push fails.
 
 Inspect the resulting tag:

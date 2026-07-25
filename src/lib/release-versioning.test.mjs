@@ -22,6 +22,7 @@ test("Production release promotes only a verified immutable staged deployment", 
     "Get-ConfiguredProductionAliases",
     "Get-VercelProjectDomains",
     "Get-AssignedProductionAliases",
+    "New-AnnotatedReleaseTag",
     "Set-AutoAssignCustomDomains",
     "$startMatches = [regex]::Matches($joinedText",
     "$candidate.LastIndexOf('}'",
@@ -37,6 +38,9 @@ test("Production release promotes only a verified immutable staged deployment", 
 
   assert.doesNotMatch(script, /"deploy"\s*,|"--prod"|promote"\s*,\s*\$normalizedProductionAlias/);
   assert.doesNotMatch(script, /aliasAssigned/);
+  assert.doesNotMatch(script, /"tag", "--annotate".*"--message"/);
+  assert.match(script, /"tag", "--annotate", \$TagName, \$CommitSha, "--file", "-"/);
+  assert.match(script, /Assert-ExactValue \$storedMessage \$Message "Annotated tag manifest"/);
   assert.doesNotMatch(
     script,
     /Get-ObjectProperty \$VercelProject "targets"/,

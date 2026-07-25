@@ -424,6 +424,42 @@ function Test-RemoteTagExists {
   throw "Unable to check remote Git tag '$TagName' (exit code $exitCode)."
 }
 
+function New-AnnotatedReleaseTag {
+  param(
+    [Parameter(Mandatory = $true)][string]$TagName,
+    [Parameter(Mandatory = $true)][string]$CommitSha,
+    [Parameter(Mandatory = $true)][string]$Message
+  )
+
+  $arguments = $gitSafetyArguments + @(
+    "tag", "--annotate", $TagName, $CommitSha, "--file", "-"
+  )
+  Write-Host "> git $(Format-CommandArguments $arguments)"
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  $exitCode = $null
+  try {
+    $Message | & git @arguments
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+  if ($exitCode -ne 0) {
+    throw "git exited with code $exitCode."
+  }
+
+  $storedMessageOutput = @(
+    Invoke-CaptureChecked "git" ($gitSafetyArguments + @(
+      "for-each-ref",
+      "refs/tags/$TagName",
+      "--format=%(contents)"
+    )) -Quiet
+  )
+  $storedMessage = ($storedMessageOutput -join "`n").Trim()
+  Assert-ExactValue $storedMessage $Message "Annotated tag manifest"
+  return Convert-JsonOutput @($storedMessage)
+}
+
 function Assert-StagedProductionDeployment {
   param(
     [Parameter(Mandatory = $true)][object]$Deployment,
@@ -700,9 +736,12 @@ $tagManifest = [ordered]@{
   promotedAt = [DateTimeOffset]::UtcNow.ToString("o")
 }
 $tagMessage = $tagManifest | ConvertTo-Json -Compress
-Invoke-Checked "git" ($gitSafetyArguments + @(
-  "tag", "--annotate", $releaseName, $commit, "--message", $tagMessage
-))
+$storedTagManifest = New-AnnotatedReleaseTag $releaseName $commit $tagMessage
+Assert-ExactValue (Get-ObjectProperty $storedTagManifest "schemaVersion") 1 "Tag manifest schemaVersion"
+Assert-ExactValue (Get-ObjectProperty $storedTagManifest "release") $releaseName "Tag manifest release"
+Assert-ExactValue (Get-ObjectProperty $storedTagManifest "revision") $commit "Tag manifest revision"
+Assert-ExactValue (Get-ObjectProperty $storedTagManifest "deploymentId") $deploymentId "Tag manifest deployment id"
+Assert-ExactValue (Get-ObjectProperty $storedTagManifest "productionAlias") "https://$normalizedProductionAlias" "Tag manifest Production alias"
 try {
   Invoke-Checked "git" ($gitSafetyArguments + @(
     "push", "origin",
