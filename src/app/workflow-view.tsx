@@ -37,6 +37,7 @@ import { UserDirectoryDatalist } from "@/app/task-views";
 import { ConditionBoxDetails } from "@/app/condition-box-details";
 import { WorkflowTemplateLibrary } from "@/app/workflow-template-library";
 import { WorkflowTemplateBuilder } from "@/app/workflow-template-builder";
+import { TemplateCopilot } from "@/app/template-copilot";
 import {
   WorkflowBoxDocumentsEditor,
   type WorkflowBoxDocumentDraft,
@@ -1201,6 +1202,28 @@ export function WorkflowView({
             </p>
           )}
         </div>
+        {workflowEditorTab === "copilot" && (
+          <div className="p-4">
+            <TemplateCopilot
+              businessDirectory={businessDirectory}
+              onDraftCreated={(template) => {
+                onCreateTemplate(template);
+                setTemplateName(template.name);
+                const business = businessDirectory.find(
+                  (item) => item.name === template.business,
+                );
+                if (business) setBusinessId(business.id);
+                setDepartmentName(template.department);
+                setIsCreatingTemplate(false);
+                setSelectedTemplateId(template.id);
+                setWorkflowEditorTab("canvas");
+                setWorkflowActionMessage(
+                  "Copilot draft created. Review the generated workflow before requesting publication.",
+                );
+              }}
+            />
+          </div>
+        )}
         {workflowEditorTab === "builder" && (
           <WorkflowTemplateBuilder
             templateName={templateName}

@@ -38,6 +38,7 @@ import {
   getUpdatedTemplateVersionCommentRecordState,
   getUpdatedTemplateRecordState,
 } from "@/lib/workspace-template-record-state";
+import { queueTemplateAuthoringDraftSync } from "@/lib/template-authoring-client";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -168,6 +169,24 @@ export function useWorkspaceAdminRecords({
       : adminAuditEvents;
     setTemplates(nextState.templates);
     setAdminAuditEvents(nextAuditEvents);
+    queueTemplateAuthoringDraftSync({
+      template,
+      actorEmail: activeUser.email,
+      changeReason: "Updated in the visual template builder.",
+      callbacks: {
+        onRevision: (revision) => {
+          setTemplates((current) =>
+            current.map((item) =>
+              item.id === template.id
+                ? { ...item, authoringRevision: revision }
+                : item,
+            ),
+          );
+          setAdminRecordError("");
+        },
+        onError: setAdminRecordError,
+      },
+    });
     void persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({
         workflowTemplates: nextState.templates,
