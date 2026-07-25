@@ -13,8 +13,8 @@ The model is an interpreter and draft generator, not an authority.
 - The same review and publication commands used by humans remain mandatory.
 
 Sessions and messages are owner-scoped under RLS. Writes use service-only RPCs,
-revision checks, advisory locks, and client-message replay keys. The OpenAI API
-key stays server-side.
+revision checks, advisory locks, and client-message replay keys. Every model
+provider key stays server-side.
 
 ## Requirements files
 
@@ -36,15 +36,29 @@ malware-scanning gateway before broadening accepted formats.
 
 Required server variables:
 
+- direct Z.AI standard API: `ZAI_API_KEY` (defaults to `glm-5.2`); or
 - Vercel AI Gateway: `AI_GATEWAY_API_KEY` or automatically provisioned
   `VERCEL_OIDC_TOKEN`; or
 - direct provider fallback: `OPENAI_API_KEY`
 - optional `TEMPLATE_COPILOT_MODEL`
 
-AI Gateway is preferred when its key is configured, uses the OpenAI-compatible
-Responses endpoint, and defaults to `openai/gpt-5.4`. Direct OpenAI follows the
-app's existing model configuration. Model failures do not advance the ledger or
-create a draft.
+When `ZAI_API_KEY` is present, the Copilot uses Z.AI's standard international
+OpenAI-compatible Chat Completions endpoint at
+`https://api.z.ai/api/paas/v4` and defaults to `glm-5.2`. It requests JSON mode,
+includes the relevant JSON Schema in the system instruction, parses the JSON,
+and validates it locally with the same strict Zod contract used by the
+authoritative API.
+
+The GLM Coding Plan endpoint is intentionally not supported by the embedded
+Copilot. Z.AI limits Coding Plan subscription benefits to officially supported
+tools and prohibits shared subscriber access. Use a standard Z.AI API or
+enterprise key for the multi-user application. Personal Coding Plan keys may be
+used separately in supported tools such as OpenClaw or Hermes.
+
+Without a direct Z.AI key, AI Gateway is preferred when its credential is
+configured, uses the OpenAI-compatible Responses endpoint, and defaults to
+`openai/gpt-5.4`. Direct OpenAI follows the app's existing model configuration.
+Model failures do not advance the ledger or create a draft.
 
 ## Evaluation gate
 

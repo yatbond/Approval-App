@@ -95,7 +95,7 @@ test("active-content PDFs and executable disguises are rejected", async () => {
   if (!disguised.ok) assert.equal(disguised.status, 415);
 });
 
-test("Copilot routes authenticate and do not expose an OpenAI key to the client", async () => {
+test("Copilot routes authenticate and do not expose provider keys to the client", async () => {
   const routes = [
     "../app/api/template-authoring/copilot/sessions/route.ts",
     "../app/api/template-authoring/copilot/sessions/[sessionId]/route.ts",
@@ -111,9 +111,22 @@ test("Copilot routes authenticate and do not expose an OpenAI key to the client"
     new URL("../app/template-copilot.tsx", import.meta.url),
     "utf8",
   );
-  assert.doesNotMatch(client, /OPENAI_API_KEY|new OpenAI/);
+  assert.doesNotMatch(client, /OPENAI_API_KEY|ZAI_API_KEY|new OpenAI/);
   assert.match(client, /aria-live="polite"/);
   assert.match(client, /role="alert"/);
+});
+
+test("direct Z.AI support uses the standard international API and validates JSON locally", async () => {
+  const source = await readFile(
+    new URL("./template-copilot-ai.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /process\.env\.ZAI_API_KEY/);
+  assert.match(source, /https:\/\/api\.z\.ai\/api\/paas\/v4/);
+  assert.doesNotMatch(source, /api\.z\.ai\/api\/coding\/paas/);
+  assert.match(source, /model: configuredModel\.replace\(\/\^zai\\\//);
+  assert.match(source, /response_format: \{ type: "json_object" \}/);
+  assert.match(source, /schema\.safeParse\(decoded\)/);
 });
 
 test("Copilot persistence is owner scoped and RPC-only", async () => {
