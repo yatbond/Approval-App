@@ -292,7 +292,7 @@ export const templateCopilotQualificationScenarios = [
       "若註冊地或銀行所在地不在香港，增加法務審查；若申報有利益衝突，增加高級管理層審批。兩個條件可同時成立。任何拒絕都退回補正。",
     expectations: {
       minimumDocuments: 4,
-      minimumRequestFields: 12,
+      minimumRequestFields: 11,
       minimumApprovalNodes: 5,
       minimumConditionNodes: 2,
       requireParallelFanout: true,

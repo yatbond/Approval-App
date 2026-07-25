@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { compileTemplateCopilotPlan } from "./template-copilot-compiler.ts";
-import { templateCopilotPlanV1Schema } from "./template-copilot-plan.ts";
+import {
+  reconcileTemplateCopilotPlanCoverage,
+  templateCopilotPlanV1Schema,
+} from "./template-copilot-plan.ts";
 import {
   simulateTemplateAuthoringDefinition,
   validateTemplateAuthoringDefinition,
@@ -286,6 +289,50 @@ test("plan contract rejects executable graph authority from the model", () => {
     },
   });
   assert.equal(result.success, false);
+});
+
+test("coverage reconciliation deterministically selects more complete plan sections", () => {
+  const complete = qualificationPlan("en");
+  const sparse = structuredClone(complete);
+  sparse.requestFields = sparse.requestFields.slice(0, 1);
+  sparse.attachments = sparse.attachments.slice(0, 1);
+  sparse.phases = sparse.phases.slice(0, 1);
+  const reconciled = reconcileTemplateCopilotPlanCoverage(sparse, complete);
+
+  assert.deepEqual(reconciled.requestFields, complete.requestFields);
+  assert.deepEqual(reconciled.attachments, complete.attachments);
+  assert.deepEqual(reconciled.phases, complete.phases);
+  assert.equal(
+    reconcileTemplateCopilotPlanCoverage(complete, sparse).title,
+    complete.title,
+  );
+});
+
+test("coverage reconciliation prefers equally sized phases with restricted handoffs", () => {
+  const unrestricted = qualificationPlan("en");
+  unrestricted.phases = unrestricted.phases.map((phase) => ({
+    ...phase,
+    stages: phase.stages.map((stage) => ({
+      ...stage,
+      fieldVisibility: "all",
+      visibleFieldLabels: [],
+      documentVisibility: "all",
+      visibleDocumentLabels: [],
+    })),
+  }));
+  const restricted = qualificationPlan("en");
+  const reconciled = reconcileTemplateCopilotPlanCoverage(
+    unrestricted,
+    restricted,
+  );
+
+  assert.ok(
+    reconciled.phases.flatMap((phase) => phase.stages).some(
+      (stage) =>
+        stage.fieldVisibility === "selected" ||
+        stage.documentVisibility === "selected",
+    ),
+  );
 });
 
 function qualificationPlan(locale) {

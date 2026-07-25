@@ -14,6 +14,7 @@ import {
   type TemplateCopilotSectionId,
 } from "./template-copilot-ledger.ts";
 import {
+  reconcileTemplateCopilotPlanCoverage,
   templateCopilotLocaleNames,
   templateCopilotPlanV1Schema,
 } from "./template-copilot-plan.ts";
@@ -375,12 +376,8 @@ export async function generateTemplateAuthoringArtifacts({
   ]
     .filter(Boolean)
     .join("\n\n");
-  const plan = await requestStructuredOutput({
-    configured,
-    schema: templateCopilotPlanV1Schema,
-    schemaName: "template_copilot_plan",
-    developerText: [
-      "Convert a completed corporate approval-workflow interview into a conservative requirements plan.",
+  const planRules = [
+    "Convert a completed corporate approval-workflow interview into a conservative requirements plan.",
       "Do not create graph nodes, graph edges, IDs, dossier routes, or cross-references. Application code will compile those deterministically.",
       "Never invent people or email addresses. Use unassigned_at_template when no fixed identity was explicitly supplied.",
       "Create one requestFields entry for every separately named request field. Do not merge or omit fields. Preserve every stated option and use text rather than inventing missing choices.",
@@ -402,11 +399,36 @@ export async function generateTemplateAuthoringArtifacts({
       "A stated directory role is sufficient as directory_position; do not create a blocking question merely because a fixed person or email was not supplied.",
       `Set locale to ${ledger.locale}. Write labels, descriptions, acknowledgements, assumptions, and questions in ${templateCopilotLocaleNames[ledger.locale]}.`,
       "Set schemaVersion to 1.",
-    ].join("\n"),
-    userText: sourceText,
-    failureMessage:
-      "The Copilot could not produce a valid requirements plan.",
-  });
+  ].join("\n");
+  const [primaryPlan, coveragePlan] = await Promise.all([
+    requestStructuredOutput({
+      configured,
+      schema: templateCopilotPlanV1Schema,
+      schemaName: "template_copilot_plan",
+      developerText: planRules,
+      userText: sourceText,
+      failureMessage:
+        "The Copilot could not produce a valid requirements plan.",
+    }),
+    requestStructuredOutput({
+      configured,
+      schema: templateCopilotPlanV1Schema,
+      schemaName: "template_copilot_plan_coverage",
+      developerText: [
+        planRules,
+        "Create an independent coverage candidate from the source, without relying on another model answer.",
+        "Count the named request fields, attachments, native-form fields, stages, independent conditions, and restricted handoffs before returning the plan. Your arrays must preserve every counted item exactly once.",
+        "Prefer separate conditional phases over merging independent conditions. Preserve every separately named participant even when several participate in parallel.",
+      ].join("\n"),
+      userText: sourceText,
+      failureMessage:
+        "The Copilot could not produce an independent coverage plan.",
+    }),
+  ]);
+  const plan = reconcileTemplateCopilotPlanCoverage(
+    primaryPlan,
+    coveragePlan,
+  );
   const result = compileTemplateCopilotPlan({
     plan,
     businessUnitId: ledger.businessUnitId,

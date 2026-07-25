@@ -206,6 +206,98 @@ export type TemplateCopilotPlanV1 = z.infer<
   typeof templateCopilotPlanV1Schema
 >;
 
+export function reconcileTemplateCopilotPlanCoverage(
+  primaryInput: TemplateCopilotPlanV1,
+  coverageInput: TemplateCopilotPlanV1,
+): TemplateCopilotPlanV1 {
+  const primary = templateCopilotPlanV1Schema.parse(primaryInput);
+  const coverage = templateCopilotPlanV1Schema.parse(coverageInput);
+  return templateCopilotPlanV1Schema.parse({
+    ...primary,
+    requestFields: selectHigherCoverage(
+      primary.requestFields,
+      coverage.requestFields,
+      scoreRequestFields,
+    ),
+    attachments: selectHigherCoverage(
+      primary.attachments,
+      coverage.attachments,
+      scoreAttachments,
+    ),
+    phases: selectHigherCoverage(
+      primary.phases,
+      coverage.phases,
+      scorePhases,
+    ),
+  });
+}
+
+function selectHigherCoverage<T>(
+  primary: T,
+  coverage: T,
+  score: (value: T) => number,
+) {
+  return score(coverage) > score(primary) ? coverage : primary;
+}
+
+function scoreRequestFields(
+  fields: TemplateCopilotPlanV1["requestFields"],
+) {
+  return (
+    uniqueNormalized(fields.map((field) => field.label)).size * 1_000 +
+    fields.filter((field) => field.type !== "text").length * 10 +
+    fields.reduce((total, field) => total + field.options.length, 0)
+  );
+}
+
+function scoreAttachments(
+  attachments: TemplateCopilotPlanV1["attachments"],
+) {
+  return (
+    uniqueNormalized(attachments.map((attachment) => attachment.label)).size *
+      10_000 +
+    attachments.reduce(
+      (total, attachment) => total + attachment.fields.length,
+      0,
+    ) *
+      100 +
+    attachments.filter((attachment) => attachment.requiredWhen).length * 25 +
+    attachments.filter((attachment) => attachment.inputMode === "manual_form")
+      .length *
+      10
+  );
+}
+
+function scorePhases(phases: TemplateCopilotPlanV1["phases"]) {
+  const stages = phases.flatMap((phase) => phase.stages);
+  return (
+    stages.length * 10_000 +
+    phases.filter((phase) => phase.condition).length * 1_000 +
+    stages.filter(
+      (stage) =>
+        stage.fieldVisibility !== "all" ||
+        stage.documentVisibility !== "all",
+    ).length *
+      100 +
+    stages.reduce(
+      (total, stage) =>
+        total +
+        stage.visibleFieldLabels.length +
+        stage.visibleDocumentLabels.length,
+      0,
+    ) +
+    phases.filter((phase) => phase.execution === "parallel").length
+  );
+}
+
+function uniqueNormalized(values: string[]) {
+  return new Set(
+    values.map((value) =>
+      value.normalize("NFKC").trim().toLocaleLowerCase(),
+    ),
+  );
+}
+
 export function detectTemplateCopilotLocale(
   text: string,
   fallback: TemplateCopilotLocale = "en",
