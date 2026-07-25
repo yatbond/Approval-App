@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/supabase/server";
-import { LogIn, ShieldCheck, UserPlus } from "lucide-react";
+import { LogIn, UserPlus } from "lucide-react";
+import Image from "next/image";
+import { ThemeToggle } from "@/app/theme-toggle";
+import { BuildVersionIndicator } from "@/app/build-version-indicator";
 
 export default async function LoginPage({
   searchParams,
@@ -16,91 +19,110 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#101214] p-4 text-neutral-100">
+    <main className="relative grid min-h-screen place-items-center border-t-4 border-[#f7941d] bg-[#f7f7f5] p-4 text-[#231f20]">
+      <ThemeToggle className="absolute right-4 top-4" />
       <form
         action={setupMode ? "/api/auth/sign-up" : "/api/auth/sign-in"}
         method="post"
-        className="w-full max-w-sm rounded-md border border-white/10 bg-white/[0.04] p-5"
+        className="w-full max-w-sm rounded-md border border-[#d2d2d2] bg-white p-6 shadow-[0_12px_30px_rgba(35,31,32,0.08)]"
       >
-        <div className="mb-5 flex items-center gap-3">
-          <div className="grid size-10 place-items-center rounded-md bg-emerald-500 text-[#101214]">
-            <ShieldCheck size={22} />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold">Approval App</h1>
-            <p className="text-sm text-neutral-400">
-              {setupMode ? "Create first admin" : "Sign in with email"}
+        <div className="mb-6 border-b border-[#e6e6e6] pb-5">
+          <span data-brand-logo className="inline-flex rounded-sm bg-white p-1">
+            <Image
+              src="/chunwo-logo.svg"
+              alt="Chun Wo"
+              width={180}
+              height={48}
+              priority
+              className="h-auto w-[180px] dark:hidden"
+            />
+            <Image
+              src="/chunwo-logo-dark.svg"
+              alt="Chun Wo"
+              width={180}
+              height={48}
+              priority
+              className="hidden h-auto w-[180px] dark:block"
+            />
+          </span>
+          <div className="mt-5 border-l-2 border-[#f7941d] pl-3">
+            <h1 className="text-lg font-bold">Approvals</h1>
+            <p className="text-sm text-[#666162]">
+              {setupMode ? "Administrator setup" : "Sign in to continue"}
             </p>
           </div>
         </div>
 
         {setupMode && (
           <label className="block">
-            <span className="mb-1 block text-xs text-neutral-400">Full name</span>
+            <span className="mb-1 block text-xs text-[#666162]">Name</span>
             <input
               name="fullName"
               autoComplete="name"
-              className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none transition focus:border-emerald-400/60"
+              className="h-11 w-full rounded-md border border-[#d2d2d2] bg-white px-3 text-sm outline-none transition focus:border-[#f7941d]"
               required
             />
           </label>
         )}
 
         <label className="block">
-          <span className="mb-1 block text-xs text-neutral-400">Email</span>
+          <span className="mb-1 block text-xs text-[#666162]">Email</span>
           <input
             name="email"
             type="email"
             autoComplete="email"
-            className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none transition focus:border-emerald-400/60"
+            className="h-11 w-full rounded-md border border-[#d2d2d2] bg-white px-3 text-sm outline-none transition focus:border-[#f7941d]"
             required
           />
         </label>
 
         <label className="mt-3 block">
-          <span className="mb-1 block text-xs text-neutral-400">Password</span>
+          <span className="mb-1 block text-xs text-[#666162]">Password</span>
           <input
             name="password"
             type="password"
             autoComplete="current-password"
-            className="h-11 w-full rounded-md border border-white/10 bg-[#121518] px-3 text-sm outline-none transition focus:border-emerald-400/60"
+            className="h-11 w-full rounded-md border border-[#d2d2d2] bg-white px-3 text-sm outline-none transition focus:border-[#f7941d]"
             required
           />
         </label>
 
         {params.error && (
-          <div className="mt-3 rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-100">
+          <div className="mt-3 rounded-md border border-rose-500/40 bg-rose-50 p-3 text-sm text-rose-800">
             {params.error}
           </div>
         )}
 
         {params.message === "check-email" && (
-          <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
-            Check your email to confirm the account, then sign in.
+          <div className="mt-3 rounded-md border border-[#f7941d]/50 bg-[#fff4e6] p-3 text-sm text-[#653a08]">
+            Confirm email, then sign in.
           </div>
         )}
 
         <button
           type="submit"
-          className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/12 px-3 text-sm text-emerald-100 transition hover:bg-emerald-400/20"
+          className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-md border border-[#e6810c] bg-[#f7941d] px-3 text-sm font-medium text-[#231f20] transition hover:bg-[#e6810c]"
         >
           {setupMode ? <UserPlus size={16} /> : <LogIn size={16} />}
-          {setupMode ? "Create admin account" : "Sign in"}
+          {setupMode ? "Create admin" : "Sign in"}
         </button>
 
-        <div className="mt-4 text-center text-sm text-neutral-400">
+        <div className="mt-4 text-center text-sm text-[#666162]">
           {setupMode ? (
-            <a className="text-emerald-200 hover:text-emerald-100" href="/login">
-              I already have an account
+            <a className="font-medium text-[#7b791c] hover:text-[#4d4c10]" href="/login">
+              Sign in
             </a>
           ) : (
             <a
-              className="text-emerald-200 hover:text-emerald-100"
+              className="font-medium text-[#7b791c] hover:text-[#4d4c10]"
               href="/login?mode=setup"
             >
-              First time? Create admin account
+              Create admin
             </a>
           )}
+        </div>
+        <div className="-mx-6 -mb-6 mt-5">
+          <BuildVersionIndicator />
         </div>
       </form>
     </main>

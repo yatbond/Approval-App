@@ -1,38 +1,42 @@
-import ApprovalWorkspace from "@/app/approval-workspace";
+import ApprovalWorkspaceLoader from "@/app/approval-workspace-loader";
 import { getDepartments, getWorkflowTemplates } from "@/lib/supabase-data";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/supabase/server";
-
-const allowedTabs = ["queue", "upload", "workflow", "admin"] as const;
-type Tab = (typeof allowedTabs)[number];
+import { loadApprovalRolloutDecisionForServer } from "@/lib/approval-rollout";
+import {
+  getInitialWorkspaceTab,
+  isNewRequestStartRequested,
+  type WorkspaceTab,
+} from "@/lib/workspace-tabs-state";
 
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; request?: string; new?: string }>;
 }) {
   const params = await searchParams;
-  const requestedTab = params.tab;
-  const initialTab: Tab = allowedTabs.includes(requestedTab as Tab)
-    ? (requestedTab as Tab)
-    : "queue";
+  const initialTab: WorkspaceTab = getInitialWorkspaceTab(params.tab);
   const user = await getCurrentUser();
 
   if (!user) {
     redirect("/login");
   }
 
-  const [departments, workflowTemplates] = await Promise.all([
+  const [departments, workflowTemplates, rollout] = await Promise.all([
     getDepartments(),
     getWorkflowTemplates(),
+    loadApprovalRolloutDecisionForServer(user.id),
   ]);
 
   return (
-    <ApprovalWorkspace
+    <ApprovalWorkspaceLoader
       initialTab={initialTab}
       sessionUser={user.email || "Signed in"}
       departments={departments}
       workflowTemplates={workflowTemplates}
+      allowLegacyReadFallback={rollout.legacyReadFallbackAllowed}
+      requestId={params.request || ""}
+      startNewRequest={isNewRequestStartRequested(params.new)}
     />
   );
 }

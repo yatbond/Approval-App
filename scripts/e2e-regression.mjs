@@ -1,0 +1,216 @@
+import { chromium } from "@playwright/test";
+
+const appUrl = process.env.APP_URL || "http://localhost:3000";
+const email = process.env.E2E_EMAIL || "";
+const password = process.env.E2E_PASSWORD || "";
+const authBypassEmail = process.env.E2E_AUTH_BYPASS_EMAIL || "";
+const headless = process.env.E2E_HEADLESS !== "false";
+const requestedBrowserChannel = process.env.E2E_BROWSER_CHANNEL || "chrome";
+const browserChannel =
+  requestedBrowserChannel === "chromium" ? undefined : requestedBrowserChannel;
+
+const requests = [
+  {
+    kind: "sequential",
+    id: process.env.E2E_SEQUENTIAL_REQUEST || "",
+    expectedText: ["Path and history", "Receipt reviewer", "Finance approval", "Merchant"],
+  },
+  {
+    kind: "parallel",
+    id: process.env.E2E_PARALLEL_REQUEST || "",
+    expectedText: ["Path and history", "Parallel", "QS review", "Commercial review", "Final approval", "Total Outstanding"],
+  },
+  {
+    kind: "conditional",
+    id: process.env.E2E_CONDITIONAL_REQUEST || "",
+    expectedText: ["Path and history", "Amount routing", "Executive approval", "Total Outstanding"],
+  },
+].filter((request) => request.id);
+
+if (!authBypassEmail && (!email || !password)) {
+  throw new Error("E2E_EMAIL and E2E_PASSWORD are required for the authenticated regression suite.");
+}
+
+const browser = await chromium.launch({
+  ...(browserChannel ? { channel: browserChannel } : {}),
+  headless,
+});
+
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  await signIn(page);
+  await verifyBuildIdentity(page);
+  await verifyPrimaryNavigation(page);
+  await verifyWorkflowLibrary(page);
+  await verifyFormsWorkspace(page);
+  await verifyQueueDecisionControls(page);
+  await verifyOperationalHealth(page);
+
+  for (const request of requests) {
+    await verifyTrackedRequest(page, request);
+  }
+
+  if (process.env.E2E_TEST_EMAIL_TO) {
+    await verifyEmailDelivery(page, process.env.E2E_TEST_EMAIL_TO);
+  }
+
+  console.log(
+    `Regression suite passed (${requests.length} tracked workflow fixture(s) checked).`,
+  );
+} finally {
+  await browser.close();
+}
+
+async function verifyBuildIdentity(page) {
+  await page.locator("[data-build-version-indicator]").waitFor({ timeout: 10_000 });
+  const response = await page.request.get(`${appUrl}/api/version`, {
+    headers: { "Cache-Control": "no-cache" },
+  });
+  const metadata = await response.json().catch(() => null);
+  if (
+    !response.ok() ||
+    metadata?.schemaVersion !== 1 ||
+    metadata?.application !== "approval-app" ||
+    !metadata?.release?.name
+  ) {
+    throw new Error(
+      `Build identity regression failed (${response.status()}): ${JSON.stringify(metadata)}`,
+    );
+  }
+}
+
+async function signIn(page) {
+  if (authBypassEmail) {
+    await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+    await expectInboxNavigation(page);
+    return;
+  }
+
+  await page.goto(`${appUrl}/login`, { waitUntil: "domcontentloaded" });
+  await page.locator('input[name="email"]').fill(email);
+  await page.locator('input[name="password"]').fill(password);
+  await Promise.all([
+    page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 20_000 }),
+    page.getByRole("button", { name: "Sign in", exact: true }).click(),
+  ]);
+  await expectInboxNavigation(page);
+}
+
+async function expectInboxNavigation(page) {
+  await page
+    .getByRole("link", { name: "Inbox", exact: true })
+    .waitFor({ timeout: 10_000 });
+}
+
+async function verifyPrimaryNavigation(page) {
+  for (const label of ["Inbox", "Tracking", "Drafts", "Workflow", "Forms", "Admin"]) {
+    const link = page.getByRole("link", { name: label, exact: true });
+    if ((await link.count()) !== 1) {
+      throw new Error(`Expected one ${label} navigation link.`);
+    }
+  }
+}
+
+async function verifyWorkflowLibrary(page) {
+  await page.goto(`${appUrl}/?tab=workflow`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Library", exact: true }).click();
+  await expectText(page, "Workflow library");
+  await expectText(page, "Available");
+  await expectText(page, "Archived");
+}
+
+async function verifyFormsWorkspace(page) {
+  await page.goto(`${appUrl}/?tab=forms`, { waitUntil: "domcontentloaded" });
+  await expectText(page, "Build reusable forms");
+  for (const label of ["Builder", "Layout", "Library"]) {
+    const button = page.getByRole("button", { name: label, exact: true });
+    if ((await button.count()) !== 1) {
+      throw new Error(`Expected one ${label} Forms workspace tab.`);
+    }
+  }
+  await page.getByRole("button", { name: "Library", exact: true }).click();
+  await expectText(page, "Form library");
+  await expectText(page, "Available");
+  await expectText(page, "Archived");
+}
+
+async function verifyQueueDecisionControls(page) {
+  await page.goto(`${appUrl}/?tab=queue`, { waitUntil: "domcontentloaded" });
+  await expectInboxNavigation(page);
+
+  const rejectButton = page.getByRole("button", { name: "Reject", exact: true });
+  if ((await rejectButton.count()) > 0) {
+    await expectText(page, "Reject + note");
+
+    const advancedReturn = page.getByText("Return to...", { exact: true });
+    if ((await advancedReturn.count()) > 0) {
+      await advancedReturn.waitFor({ timeout: 10_000 });
+    }
+  }
+}
+
+async function verifyOperationalHealth(page) {
+  await page.goto(`${appUrl}/?tab=admin`, { waitUntil: "domcontentloaded" });
+  await expectText(page, "Application release");
+  await page.locator("[data-build-version-panel]").waitFor({ timeout: 10_000 });
+  await expectText(page, "System health");
+  await expectText(page, "Last 24 hours");
+  for (const label of [
+    "Autosave",
+    "Document extraction",
+    "Email notification",
+    "Form intake",
+    "Collaboration",
+    "Workflow routing",
+  ]) {
+    await expectText(page, label);
+  }
+}
+
+async function verifyTrackedRequest(page, request) {
+  await page.goto(
+    `${appUrl}/?tab=tracking&request=${encodeURIComponent(request.id)}`,
+    { waitUntil: "domcontentloaded" },
+  );
+  await expectText(page, request.id, 20_000);
+  await expectText(page, "Approved");
+
+  const showHandoff = page.getByRole("switch", {
+    name: "Show handoff and visibility",
+    exact: true,
+  });
+  if ((await showHandoff.count()) === 1) {
+    await showHandoff.click();
+  }
+
+  for (const text of request.expectedText) {
+    await expectText(page, text);
+  }
+
+  console.log(`${request.kind} workflow passed: ${request.id}`);
+}
+
+async function verifyEmailDelivery(page, recipientEmail) {
+  const result = await page.evaluate(async (to) => {
+    const response = await fetch("/api/email/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to }),
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      body: await response.json().catch(() => ({})),
+    };
+  }, recipientEmail);
+
+  if (!result.ok || result.body?.failed > 0 || result.body?.error) {
+    throw new Error(
+      `Email regression failed (${result.status}): ${JSON.stringify(result.body)}`,
+    );
+  }
+}
+
+async function expectText(page, text, timeout = 10_000) {
+  await page.getByText(text, { exact: false }).first().waitFor({ timeout });
+}

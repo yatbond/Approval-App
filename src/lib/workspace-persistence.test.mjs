@@ -1,0 +1,350 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+  parseWorkspaceState,
+  sanitizeWorkspaceStateSnapshot,
+  serializeWorkspaceState,
+} from "./workspace-persistence.ts";
+
+test("sanitizes incomplete normalized template rows without crashing the workspace", () => {
+  const sanitized = sanitizeWorkspaceStateSnapshot({
+    selectedTemplateId: "incomplete",
+    approvalTasks: [],
+    businessDirectory: [],
+    workflowTemplates: [
+      {
+        id: "incomplete",
+        name: "Incomplete migration fixture",
+      },
+    ],
+    userRoleAssignments: [],
+    adminAuditEvents: [],
+    formLibrary: [],
+  });
+  assert.deepEqual(sanitized.workflowTemplates[0].documents, []);
+  assert.deepEqual(sanitized.workflowTemplates[0].documentTypes, []);
+  assert.deepEqual(sanitized.workflowTemplates[0].languages, []);
+  assert.deepEqual(sanitized.workflowTemplates[0].fields, []);
+  assert.deepEqual(sanitized.workflowTemplates[0].steps, []);
+});
+
+test("serializes and parses workspace state", () => {
+  const state = {
+    selectedTemplateId: "template-1",
+    approvalTasks: [
+      {
+        id: "APR-1",
+        title: "Request 1",
+        workflow: "Template 1",
+        requester: "Derrick",
+        requesterEmail: "derrick@example.com",
+        department: "Finance",
+        status: "pending",
+        due: "Today",
+        value: "HKD 100",
+        currentStep: "Approval",
+        currentOwner: "approver@example.com",
+        participants: ["derrick@example.com", "approver@example.com"],
+        lastAction: "Submitted",
+        extractedFields: { Total: "HKD 100" },
+        auditTrail: [],
+      },
+    ],
+    businessDirectory: [
+      {
+        id: "business-1",
+        name: "Business 1",
+        departments: ["Finance"],
+      },
+    ],
+    workflowTemplates: [
+      {
+        id: "template-1",
+        name: "Template 1",
+        business: "Business 1",
+        department: "Finance",
+        documentTypes: ["Invoice"],
+        documents: [
+          {
+            id: "document-1",
+            documentType: "Invoice",
+            format: "pdf",
+            required: true,
+            fields: [],
+          },
+        ],
+        languages: ["English"],
+        fields: [],
+        steps: [
+          {
+            name: "Finance approval 1",
+            role: "Approver",
+            approverName: "Approver",
+            approverEmail: "approver@example.com",
+            department: "Finance",
+            dueInHours: 24,
+            escalationRole: "Manager",
+            escalationName: "Manager",
+            escalationEmail: "manager@example.com",
+            condition: "Always",
+          },
+        ],
+      },
+    ],
+    userRoleAssignments: [
+      {
+        email: "approver@example.com",
+        name: "Approver",
+        role: "approver",
+        businessId: "business-1",
+        department: "Finance",
+      },
+    ],
+    adminAuditEvents: [
+      {
+        id: "template-template-1-1782025200000-created",
+        action: "template_created",
+        actor: "Derrick Pang",
+        actorEmail: "dpang@chunwo.com",
+        timestamp: "2026-06-21T07:00:00.000Z",
+        detail: "Created template Template 1.",
+        templateId: "template-1",
+        templateName: "Template 1",
+        templateVersion: 1,
+      },
+    ],
+    formLibrary: [],
+  };
+
+  assert.deepEqual(parseWorkspaceState(serializeWorkspaceState(state)), state);
+});
+
+test("returns null for invalid saved workspace state", () => {
+  assert.equal(parseWorkspaceState("{not valid json"), null);
+  assert.equal(parseWorkspaceState(JSON.stringify({ selectedTemplateId: 42 })), null);
+});
+
+test("parses older workspace state without saved approval tasks", () => {
+  const parsed = parseWorkspaceState(
+    JSON.stringify({
+      selectedTemplateId: "template-1",
+      businessDirectory: [],
+      workflowTemplates: [],
+    }),
+  );
+
+  assert.deepEqual(parsed?.approvalTasks, []);
+  assert.deepEqual(parsed?.adminAuditEvents, []);
+});
+
+test("repairs obsolete next-approver loops when loading saved workspace state", () => {
+  const parsed = parseWorkspaceState(
+    JSON.stringify({
+      selectedTemplateId: "template-1",
+      approvalTasks: [
+        {
+          id: "APR-LOOP",
+          title: "Legacy task",
+          workflow: "Legacy workflow",
+          requester: "Mandy",
+          requesterEmail: "mandy@example.com",
+          department: "Finance",
+          status: "pending",
+          due: "Today",
+          value: "HKD 100",
+          currentStep: "Next approver review",
+          currentOwner: "next.approver@example.com",
+          participants: ["mandy@example.com", "next.approver@example.com"],
+          lastAction: "Approved by Derrick",
+          extractedFields: {},
+          auditTrail: [
+            {
+              id: "APR-LOOP-event-1",
+              action: "approved",
+              actor: "Derrick",
+              actorEmail: "derrick@example.com",
+              timestamp: "2026-06-29 23:32",
+              detail: "Approved and sent to the next approver.",
+            },
+            {
+              id: "APR-LOOP-event-2",
+              action: "assigned",
+              actor: "System",
+              actorEmail: "system@example.com",
+              timestamp: "2026-06-29 23:32",
+              detail: "Assigned to next.approver@example.com for Next approver review.",
+            },
+          ],
+        },
+      ],
+      businessDirectory: [],
+      workflowTemplates: [],
+    }),
+  );
+
+  assert.equal(parsed?.approvalTasks[0].status, "approved");
+  assert.equal(parsed?.approvalTasks[0].auditTrail.length, 1);
+});
+
+test("keeps bounded workflow sample OCR images during workspace persistence", () => {
+  const state = {
+    selectedTemplateId: "template-1",
+    approvalTasks: [],
+    businessDirectory: [],
+    workflowTemplates: [
+      {
+        id: "template-1",
+        name: "Template 1",
+        business: "Business 1",
+        department: "Finance",
+        documentTypes: ["Invoice"],
+        documents: [
+          {
+            id: "document-1",
+            documentType: "Invoice",
+            format: "pdf",
+            required: true,
+            fields: [],
+            sample: {
+              fileName: "sample.pdf",
+              mimeType: "application/pdf",
+              dataUrl: `data:application/pdf;base64,${"x".repeat(1000)}`,
+              previewPages: [
+                {
+                  pageNumber: 1,
+                  mimeType: "image/png",
+                  imageBase64: "y".repeat(1000),
+                  pageText: "Subcontractor Ming Kee",
+                },
+              ],
+              pageImages: [
+                {
+                  pageNumber: 1,
+                  mimeType: "image/png",
+                  imageBase64: "z".repeat(1000),
+                  storagePath: "owner-1/workflow-samples/sample.png",
+                  pageText: "Subcontractor Ming Kee",
+                },
+              ],
+              savedAt: "2026-06-29T01:00:00.000Z",
+              trainingDraft: {
+                selectedFieldName: "subcontractor",
+                instructions: "Extract the subcontractor name.",
+                value: "Ming Kee",
+              },
+            },
+          },
+        ],
+        languages: ["English"],
+        fields: [],
+        steps: [],
+      },
+    ],
+    userRoleAssignments: [],
+    adminAuditEvents: [],
+  };
+
+  const serialized = serializeWorkspaceState(state);
+  assert.equal(serialized.includes("data:application/pdf"), false);
+  assert.equal(serialized.includes("y".repeat(100)), false);
+  assert.equal(serialized.includes("z".repeat(100)), true);
+  assert.equal(serialized.includes("Subcontractor Ming Kee"), true);
+  assert.equal(serialized.includes("Ming Kee"), true);
+
+  const parsed = parseWorkspaceState(JSON.stringify(state));
+  assert.deepEqual(parsed?.workflowTemplates[0].documents[0].sample, {
+    fileName: "sample.pdf",
+    mimeType: "application/pdf",
+    previewPages: [
+      {
+        pageNumber: 1,
+        mimeType: "image/png",
+        pageText: "Subcontractor Ming Kee",
+      },
+    ],
+    pageImages: [
+      {
+        pageNumber: 1,
+        mimeType: "image/png",
+        imageBase64: "z".repeat(1000),
+        storagePath: "owner-1/workflow-samples/sample.png",
+        pageText: "Subcontractor Ming Kee",
+      },
+    ],
+    savedAt: "2026-06-29T01:00:00.000Z",
+    trainingDraft: {
+      selectedFieldName: "subcontractor",
+      instructions: "Extract the subcontractor name.",
+      value: "Ming Kee",
+    },
+  });
+});
+
+test("keeps pinned reusable form metadata through workspace persistence", () => {
+  const state = {
+    selectedTemplateId: "template-form",
+    approvalTasks: [],
+    businessDirectory: [],
+    workflowTemplates: [
+      {
+        id: "template-form",
+        name: "Form workflow",
+        business: "Chun Wo",
+        department: "Finance",
+        documentTypes: ["Payment form"],
+        documents: [
+          {
+            id: "form-document",
+            documentType: "Payment form",
+            format: "text",
+            inputMode: "manual_form",
+            required: true,
+            fields: [],
+            formLibraryRef: {
+              definitionId: "payment-form-v2",
+              formKey: "payment-form",
+              version: 2,
+              source: "microsoft_forms",
+              responseMode: "complete_node",
+              responseUrl: "https://forms.cloud.microsoft/r/form-id",
+              externalFormId: "form-id",
+              schemaFingerprint: "schema-v2",
+              completionRequired: true,
+              selectedFieldNames: ["amount"],
+              selectedAttachmentNames: ["invoice"],
+            },
+          },
+        ],
+        languages: ["English"],
+        fields: [],
+        steps: [],
+      },
+    ],
+    userRoleAssignments: [],
+    adminAuditEvents: [],
+    formLibrary: [
+      {
+        id: "payment-form-v2",
+        formKey: "payment-form",
+        name: "Payment form",
+        source: "microsoft_forms",
+        version: 2,
+        status: "ready",
+        fields: [],
+        responseMode: "complete_node",
+        externalFormId: "form-id",
+        schemaFingerprint: "schema-v2",
+        createdByEmail: "owner@example.com",
+        createdAt: "2026-07-14T00:00:00.000Z",
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      },
+    ],
+  };
+
+  const parsed = parseWorkspaceState(serializeWorkspaceState(state));
+  const reference = parsed?.workflowTemplates[0].documents[0].formLibraryRef;
+  assert.equal(reference?.definitionId, "payment-form-v2");
+  assert.equal(reference?.externalFormId, "form-id");
+  assert.equal(reference?.schemaFingerprint, "schema-v2");
+  assert.equal(parsed?.formLibrary[0].version, 2);
+});

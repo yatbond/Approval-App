@@ -1,0 +1,1727 @@
+"use client";
+
+import {
+  ArrowRightLeft,
+  X,
+} from "lucide-react";
+import dynamic from "next/dynamic";
+import { useEffect, useMemo, useState } from "react";
+import {
+  getMissingRequiredCurrentNodeDocuments,
+} from "@/lib/request-builder";
+import {
+  analyzeConditionCoverage,
+  createWorkflowGraphFromTemplate,
+  simulateWorkflowTemplate,
+} from "@/lib/workflow-graph";
+import {
+  shouldHandleCanvasDeleteKey,
+  shouldHandleCanvasRedoKey,
+  shouldHandleCanvasUndoKey,
+} from "@/lib/workflow-keyboard";
+import {
+  isManualFormRequirement,
+} from "@/lib/workflow-documents";
+import {
+  getConditionContext,
+  workflowNodeOptions,
+} from "@/lib/workflow-condition-context";
+import {
+  getWorkflowHistory,
+  type WorkflowHistoryById,
+} from "@/lib/workflow-history";
+import {
+  type UserDirectoryEntry,
+} from "@/lib/user-directory";
+import { UserDirectoryDatalist } from "@/app/task-views";
+import { ConditionBoxDetails } from "@/app/condition-box-details";
+import { WorkflowTemplateLibrary } from "@/app/workflow-template-library";
+import { WorkflowTemplateBuilder } from "@/app/workflow-template-builder";
+import {
+  WorkflowBoxDocumentsEditor,
+  type WorkflowBoxDocumentDraft,
+} from "@/app/workflow-box-documents-editor";
+import { getWorkflowTemplateBuilderBusinessState } from "@/lib/workflow-template-builder-state";
+import { WorkflowRuntimePanel } from "@/app/workflow-runtime-panel";
+import { getSelectedRuntimeTask } from "@/lib/workflow-runtime-panel-state";
+import {
+  getWorkflowTestTasks,
+  type WorkflowTestRequestResult,
+} from "@/lib/workflow-test-request-state";
+import { WorkflowCanvasToolbar } from "@/app/workflow-canvas-toolbar";
+import { WorkflowEdgeDetails } from "@/app/workflow-edge-details";
+import {
+  getWorkflowUpdateSelectedEdgeRuleState,
+  getWorkflowUpdateSelectedEdgeState,
+} from "@/lib/workflow-edge-update-state";
+import { getWorkflowCanvasSelectionState } from "@/lib/workflow-canvas-selection-state";
+import { getWorkflowCanvasInstanceKey } from "@/lib/workflow-canvas-instance-state";
+import { getWorkflowCanvasDeleteState } from "@/lib/workflow-canvas-delete-state";
+import { getWorkflowCanvasResetState } from "@/lib/workflow-canvas-reset-state";
+import {
+  addWorkflowDocumentField,
+  removeWorkflowDocumentField,
+  updateWorkflowDocumentField,
+} from "@/lib/workflow-document-field-state";
+import {
+  appendExtractionExamplesToTemplate,
+} from "@/lib/template-recognition-state";
+import {
+  getWorkflowHandoffFieldNames,
+} from "@/lib/workflow-handoff-fields-state";
+import {
+  applyWorkflowHandoffProcessPatch,
+  getNextWorkflowHandoffProcessId,
+  type WorkflowHandoffProcessPatch,
+} from "@/lib/workflow-handoff-process-state";
+import {
+  getWorkflowAddOutcomeTargetState,
+  getWorkflowAddConditionCaseState,
+  getWorkflowAddFallbackConditionCaseState,
+  getWorkflowDeleteConditionCaseState,
+  getWorkflowUpdateConditionCaseState,
+} from "@/lib/workflow-condition-case-state";
+import {
+  getWorkflowConnectNodesState,
+  getWorkflowCreateNodeState,
+} from "@/lib/workflow-canvas-edit-state";
+import {
+  getWorkflowAddBoxDocumentState,
+  getWorkflowRemoveBoxDocumentState,
+  pruneUnusedWorkflowDocuments,
+} from "@/lib/workflow-box-document-state";
+import { getWorkflowHandoffDocumentOptions } from "@/lib/workflow-handoff-document-options-state";
+import {
+  getWorkflowTemplateDocumentState,
+  getWorkflowUpdateDocumentRequirementState,
+} from "@/lib/workflow-template-document-state";
+import { getWorkflowTemplateLoadState } from "@/lib/workflow-template-load-state";
+import { getWorkflowTemplateCopyState } from "@/lib/workflow-template-copy-state";
+import { getWorkflowTemplateSaveState } from "@/lib/workflow-template-save-state";
+import {
+  formatWorkflowTemplateOptionLabel,
+  getWorkflowCreateTemplateActionState,
+  getWorkflowDuplicateTemplateActionState,
+  getWorkflowPublishTemplateActionState,
+  getWorkflowTemplateBaseOptions,
+  hasWorkflowTemplateIdentityConflict,
+} from "@/lib/workflow-template-action-state";
+import { getWorkflowTemplateFamilyKey } from "@/lib/workflow-template-version-state";
+import {
+  defaultWorkflowEditorTab,
+  workflowEditorTabs,
+  type WorkflowEditorTab,
+} from "@/lib/workflow-editor-tabs-state";
+import { getWorkflowTemplateLifecycleState } from "@/lib/workflow-template-lifecycle-state";
+import {
+  ApprovalApiError,
+  validateActiveDirectoryEmails,
+} from "@/lib/approval-client";
+import {
+  getWorkflowRedoActionState,
+  getWorkflowUndoActionState,
+} from "@/lib/workflow-history-action-state";
+import {
+  getWorkflowCanvasDeleteConfirmation,
+  type ConfirmationRequest,
+} from "@/lib/confirmation-policy";
+import {
+  getWorkflowMoveNodeState,
+  getWorkflowUpdateSelectedNodeState,
+} from "@/lib/workflow-node-patch-state";
+import type {
+  ApprovalAction,
+  ApprovalTask,
+  BusinessUnit,
+  FormLibraryDefinition,
+  WorkflowGraph,
+  WorkflowGraphEdge,
+  WorkflowGraphNode,
+  WorkflowNodeKind,
+  ExtractionTrainingExample,
+  WorkflowField,
+  WorkflowTemplate,
+} from "@/lib/types";
+import { InfoTip } from "./ui-hint";
+import { WorkflowHandoffEditor } from "./workflow-handoff-editor";
+import {
+  attachLibraryFormToWorkflow,
+} from "@/lib/form-library-state";
+
+const WorkflowCanvas = dynamic(() => import("@/app/workflow-canvas"), {
+  loading: () => (
+    <div className="grid h-[68vh] min-h-[420px] place-items-center rounded-md border border-[#e6e6e6] bg-[#f7f7f5] text-sm text-neutral-500 lg:h-[calc(100vh-250px)] lg:min-h-[640px]">
+      Loading canvas...
+    </div>
+  ),
+  ssr: false,
+});
+
+export function WorkflowView({
+  businessDirectory,
+  tasks,
+  workflowTemplates,
+  formLibrary,
+  selectedTemplateId,
+  setSelectedTemplateId,
+  onDeleteTemplate,
+  adminRecordError,
+  onCreateTemplate,
+  onUpdateTemplate,
+  onActivateTemplateVersion,
+  onUpdateTemplateVersionComment,
+  userDirectory,
+  activeUser,
+  onRunWorkflowAction,
+  onCreateWorkflowTestRequest,
+  requestConfirmation,
+}: {
+  businessDirectory: BusinessUnit[];
+  tasks: ApprovalTask[];
+  workflowTemplates: WorkflowTemplate[];
+  formLibrary: import("@/lib/types").FormLibraryDefinition[];
+  selectedTemplateId: string;
+  setSelectedTemplateId: (id: string) => void;
+  onDeleteTemplate: (id: string) => void | Promise<void>;
+  adminRecordError?: string;
+  onCreateTemplate: (template: WorkflowTemplate) => void;
+  onUpdateTemplate: (template: WorkflowTemplate) => void;
+  onActivateTemplateVersion: (templateId: string) => void;
+  onUpdateTemplateVersionComment: (templateId: string, comment: string) => void;
+  userDirectory: UserDirectoryEntry[];
+  activeUser: UserDirectoryEntry;
+  onRunWorkflowAction: (taskId: string, action: ApprovalAction) => void;
+  onCreateWorkflowTestRequest: (
+    template: WorkflowTemplate,
+    testerEmail: string,
+  ) => WorkflowTestRequestResult;
+  requestConfirmation: (request: ConfirmationRequest) => Promise<boolean>;
+}) {
+  const workflow =
+    workflowTemplates.find((template) => template.id === selectedTemplateId) ||
+    workflowTemplates[0];
+  const workflowLifecycle = getWorkflowTemplateLifecycleState(workflow || null);
+  const persistedWorkflowGraph = useMemo(
+    () => (workflow ? createWorkflowGraphFromTemplate(workflow) : { nodes: [], edges: [] }),
+    [workflow],
+  );
+  const workflowGraph = persistedWorkflowGraph;
+  const workflowTestTasks = useMemo(
+    () => getWorkflowTestTasks(tasks, workflow),
+    [tasks, workflow],
+  );
+  const [selectedRuntimeTaskId, setSelectedRuntimeTaskId] = useState("");
+  const runtimeTask = useMemo(
+    () => getSelectedRuntimeTask(workflowTestTasks, selectedRuntimeTaskId),
+    [selectedRuntimeTaskId, workflowTestTasks],
+  );
+  const workflowSimulation = useMemo(
+    () => (workflow ? simulateWorkflowTemplate(workflow) : null),
+    [workflow],
+  );
+  const runtimeMissingDocuments = useMemo(
+    () =>
+      runtimeTask && workflow
+        ? getMissingRequiredCurrentNodeDocuments(runtimeTask, workflow)
+        : [],
+    [runtimeTask, workflow],
+  );
+  const activeWorkflowHistoryId = workflow?.id || "";
+  const [workflowHistoryById, setWorkflowHistoryById] =
+    useState<WorkflowHistoryById>({});
+  const workflowHistory = getWorkflowHistory(
+    workflowHistoryById,
+    activeWorkflowHistoryId,
+  );
+  const workflowUndoStack = workflow ? workflowHistory.undoStack : [];
+  const workflowRedoStack = workflow ? workflowHistory.redoStack : [];
+  const lastWorkflowEdit = workflow ? workflowHistory.lastEdit : "";
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [connectFromNodeId, setConnectFromNodeId] = useState<string | null>(null);
+  const [conditionOutcomeCaseId, setConditionOutcomeCaseId] = useState<string | null>(null);
+  const {
+    activeOutcomeTargetIds,
+    connectFromNode,
+    selectedGraphEdge,
+    selectedGraphNode,
+  } = useMemo(
+    () =>
+      getWorkflowCanvasSelectionState({
+        graph: workflowGraph,
+        selectedNodeId,
+        selectedEdgeId,
+        connectFromNodeId,
+        conditionOutcomeCaseId,
+      }),
+    [
+      conditionOutcomeCaseId,
+      connectFromNodeId,
+      selectedEdgeId,
+      selectedNodeId,
+      workflowGraph,
+    ],
+  );
+  const handoffFieldNames = useMemo(
+    () => (workflow ? getWorkflowHandoffFieldNames(workflow) : []),
+    [workflow],
+  );
+  const handoffDocumentOptions = useMemo(
+    () =>
+      workflow && selectedGraphNode
+        ? getWorkflowHandoffDocumentOptions({
+            template: workflow,
+            nodeId: selectedGraphNode.id,
+          })
+        : [],
+    [selectedGraphNode, workflow],
+  );
+  const [canvasViewResetNonce, setCanvasViewResetNonce] = useState(0);
+  const canvasInstanceKey = useMemo(
+    () =>
+      getWorkflowCanvasInstanceKey({
+        workflowId: workflow?.id || "",
+        resetNonce: canvasViewResetNonce,
+      }),
+    [canvasViewResetNonce, workflow?.id],
+  );
+  const [workflowEditorTab, setWorkflowEditorTab] =
+    useState<WorkflowEditorTab>(defaultWorkflowEditorTab);
+  const firstBusiness = businessDirectory[0];
+  const initialWorkflowBusiness = businessDirectory.find(
+    (business) => business.name === workflow?.business,
+  );
+  const [isCreatingTemplate, setIsCreatingTemplate] = useState(!workflow);
+  const [templateName, setTemplateName] = useState(
+    workflow?.name || "Untitled workflow",
+  );
+  const [businessId, setBusinessId] = useState(
+    initialWorkflowBusiness?.id || firstBusiness?.id || "",
+  );
+  const { selectedBusiness } = getWorkflowTemplateBuilderBusinessState({
+    businessDirectory,
+    businessId,
+  });
+  const [departmentName, setDepartmentName] = useState(
+    workflow?.department || selectedBusiness?.departments[0] || "",
+  );
+  const [baseTemplateId, setBaseTemplateId] = useState("");
+  const baseWorkflowTemplates = useMemo(
+    () => getWorkflowTemplateBaseOptions({ templates: workflowTemplates }),
+    [workflowTemplates],
+  );
+  const copySourceTemplates = useMemo(
+    () =>
+      getWorkflowTemplateBaseOptions({
+        templates: workflowTemplates,
+        excludeTemplateId: workflow?.id,
+      }),
+    [workflowTemplates, workflow?.id],
+  );
+  const [copySourceTemplateId, setCopySourceTemplateId] = useState("");
+  const [workflowActionMessage, setWorkflowActionMessage] = useState("");
+  const [isPublishing, setIsPublishing] = useState(false);
+  const baseTemplate =
+    baseWorkflowTemplates.find((template) => template.id === baseTemplateId) ||
+    null;
+  const copySourceTemplate =
+    copySourceTemplates.find((template) => template.id === copySourceTemplateId) ||
+    null;
+  const copySourceTemplateSelectValue = copySourceTemplate?.id || "";
+
+  function createTemplate() {
+    const nextState = getWorkflowCreateTemplateActionState({
+      templateName,
+      selectedBusinessName: selectedBusiness?.name || null,
+      departmentName,
+      baseTemplate,
+      existingTemplates: workflowTemplates,
+    });
+    if (!nextState.didCreate || !nextState.template) {
+      setWorkflowActionMessage(nextState.message || "");
+      return;
+    }
+
+    onCreateTemplate(nextState.template);
+    setIsCreatingTemplate(false);
+    setSelectedTemplateId(nextState.selectedTemplateId || nextState.template.id);
+    if (nextState.workflowEditorTab) {
+      setWorkflowEditorTab(nextState.workflowEditorTab);
+    }
+    if (nextState.shouldResetCanvasView) {
+      resetCanvasView();
+    }
+    setWorkflowActionMessage(
+      baseTemplate
+        ? `Created ${nextState.template.name} from ${baseTemplate.name}.`
+        : `Created blank workflow ${nextState.template.name}.`,
+    );
+  }
+
+  async function publishSelectedTemplate() {
+    const nextState = getWorkflowPublishTemplateActionState({
+      template: workflow,
+    });
+    if (!nextState.didCreate || !nextState.template) {
+      setWorkflowActionMessage(nextState.message || "");
+      return;
+    }
+
+    const assignmentEmails = [
+      ...nextState.template.steps.flatMap((step) => [
+        step.approverEmail,
+        step.escalationEmail || "",
+      ]),
+      ...(nextState.template.graph?.nodes.flatMap((node) => [
+        node.assigneeEmail || "",
+        node.escalationEmail || "",
+      ]) || []),
+    ];
+    setIsPublishing(true);
+    try {
+      await validateActiveDirectoryEmails(assignmentEmails);
+      onCreateTemplate(nextState.template);
+      setWorkflowActionMessage(`Published ${nextState.template.name}.`);
+    } catch (error) {
+      setWorkflowActionMessage(
+        error instanceof ApprovalApiError
+          ? `Cannot publish: ${error.message}`
+          : "Cannot publish because directory assignments could not be verified.",
+      );
+    } finally {
+      setIsPublishing(false);
+    }
+  }
+
+  function duplicateTemplateAsDraft(template: WorkflowTemplate) {
+    const nextState = getWorkflowDuplicateTemplateActionState({
+      template,
+      existingTemplates: workflowTemplates,
+    });
+    if (!nextState.didCreate || !nextState.template) {
+      setWorkflowActionMessage(nextState.message || "");
+      return;
+    }
+
+    onCreateTemplate(nextState.template);
+    setTemplateName(nextState.template.name);
+    const nextBusiness = businessDirectory.find(
+      (business) => business.name === nextState.template?.business,
+    );
+    if (nextBusiness) setBusinessId(nextBusiness.id);
+    setDepartmentName(nextState.template.department);
+    setIsCreatingTemplate(false);
+    setSelectedTemplateId(nextState.selectedTemplateId || nextState.template.id);
+    setWorkflowEditorTab(nextState.workflowEditorTab || "canvas");
+    resetCanvasView();
+    setWorkflowActionMessage(`Created editable draft ${nextState.template.name}.`);
+  }
+
+  function loadTemplateIntoBuilder(template: WorkflowTemplate) {
+    const nextState = getWorkflowTemplateLoadState({
+      template,
+      businessDirectory,
+      currentBusinessId: businessId,
+    });
+    setTemplateName(nextState.templateName);
+    if (nextState.shouldSetBusinessId) {
+      setBusinessId(nextState.businessId);
+    }
+    setDepartmentName(nextState.departmentName);
+    setSelectedTemplateId(nextState.selectedTemplateId);
+    setIsCreatingTemplate(false);
+    setWorkflowEditorTab(nextState.workflowEditorTab);
+    if (nextState.shouldResetCanvasView) {
+      resetCanvasView();
+    }
+  }
+
+  function selectTemplateInBuilder(templateId: string) {
+    const template = workflowTemplates.find((item) => item.id === templateId);
+    if (!template) return;
+    const nextState = getWorkflowTemplateLoadState({
+      template,
+      businessDirectory,
+      currentBusinessId: businessId,
+    });
+    setTemplateName(nextState.templateName);
+    if (nextState.shouldSetBusinessId) setBusinessId(nextState.businessId);
+    setDepartmentName(nextState.departmentName);
+    setSelectedTemplateId(nextState.selectedTemplateId);
+    setIsCreatingTemplate(false);
+    setWorkflowEditorTab("builder");
+  }
+
+  function selectTemplateInLibrary(templateId: string) {
+    const template = workflowTemplates.find((item) => item.id === templateId);
+    if (!template) return;
+    const nextState = getWorkflowTemplateLoadState({
+      template,
+      businessDirectory,
+      currentBusinessId: businessId,
+    });
+    setTemplateName(nextState.templateName);
+    if (nextState.shouldSetBusinessId) setBusinessId(nextState.businessId);
+    setDepartmentName(nextState.departmentName);
+    setSelectedTemplateId(nextState.selectedTemplateId);
+    setIsCreatingTemplate(false);
+  }
+
+  function startNewTemplate() {
+    const business = businessDirectory[0];
+    setIsCreatingTemplate(true);
+    setTemplateName("Untitled workflow");
+    setBusinessId(business?.id || "");
+    setDepartmentName(business?.departments[0] || "");
+    setBaseTemplateId("");
+    setWorkflowEditorTab("builder");
+    setWorkflowActionMessage("");
+  }
+
+  function saveTemplateDetails() {
+    if (!workflow || workflow.isDraft === false || !selectedBusiness) return;
+    const cleanName = templateName.trim();
+    const cleanDepartment = departmentName.trim();
+    if (!cleanName || !cleanDepartment) {
+      setWorkflowActionMessage("Add a workflow name and department before saving.");
+      return;
+    }
+    if (
+      hasWorkflowTemplateIdentityConflict({
+        templates: workflowTemplates,
+        name: cleanName,
+        business: selectedBusiness.name,
+        department: cleanDepartment,
+        excludeFamilyKey: getWorkflowTemplateFamilyKey(workflow),
+      })
+    ) {
+      setWorkflowActionMessage(
+        `A workflow named ${cleanName} already exists for ${selectedBusiness.name} / ${cleanDepartment}.`,
+      );
+      return;
+    }
+    saveWorkflowTemplate(
+      {
+        ...workflow,
+        name: cleanName,
+        business: selectedBusiness.name,
+        department: cleanDepartment,
+      },
+      "Updated workflow details",
+    );
+  }
+
+  function copyTemplateIntoCanvas() {
+    if (!workflow) {
+      return;
+    }
+
+    const nextState = getWorkflowTemplateCopyState({
+      targetTemplate: workflow,
+      sourceTemplate: copySourceTemplate,
+    });
+    if (!nextState.didCopy) {
+      return;
+    }
+
+    saveWorkflowTemplate(nextState.template, nextState.label);
+    setWorkflowEditorTab(nextState.workflowEditorTab);
+    if (nextState.shouldResetCanvasView) {
+      resetCanvasView();
+    }
+  }
+
+  function saveWorkflowTemplate(
+    nextTemplate: WorkflowTemplate,
+    label = "Updated workflow",
+  ) {
+    if (!workflow) {
+      return;
+    }
+    const prunedNextTemplate = pruneUnusedWorkflowDocuments(nextTemplate);
+
+    const previewState = getWorkflowTemplateSaveState({
+      currentTemplate: workflow,
+      nextTemplate: prunedNextTemplate,
+      label,
+      historyById: workflowHistoryById,
+      historyId: activeWorkflowHistoryId,
+    });
+    if (!previewState.didUpdate) {
+      if (previewState.message) {
+        setWorkflowActionMessage(previewState.message);
+      }
+      return;
+    }
+
+    setWorkflowHistoryById((historyById) => {
+      const nextState = getWorkflowTemplateSaveState({
+        currentTemplate: workflow,
+        nextTemplate: prunedNextTemplate,
+        label,
+        historyById,
+        historyId: activeWorkflowHistoryId,
+      });
+      return nextState.historyById;
+    });
+    onUpdateTemplate(prunedNextTemplate);
+    setWorkflowActionMessage(label);
+  }
+
+  function saveWorkflowGraph(nextGraph: WorkflowGraph, label = "Updated workflow") {
+    if (!workflow) {
+      return;
+    }
+
+    saveWorkflowTemplate({
+      ...workflow,
+      graph: nextGraph,
+    }, label);
+  }
+
+  function createCanvasNode(kind: WorkflowNodeKind) {
+    const nextState = getWorkflowCreateNodeState({
+      graph: workflowGraph,
+      kind,
+      selectedNodeId,
+    });
+    saveWorkflowGraph(nextState.graph, nextState.label);
+    setSelectedNodeId(nextState.selectedNodeId || null);
+    setSelectedEdgeId(nextState.selectedEdgeId || null);
+  }
+
+  function connectWorkflowNodes(sourceId: string, targetId: string) {
+    const nextState = getWorkflowConnectNodesState({
+      graph: workflowGraph,
+      sourceId,
+      targetId,
+    });
+    if (!nextState.didUpdate) {
+      return;
+    }
+
+    saveWorkflowGraph(nextState.graph, nextState.label);
+    setConnectFromNodeId(nextState.connectFromNodeId || null);
+    setSelectedNodeId(nextState.selectedNodeId || null);
+    setSelectedEdgeId(nextState.selectedEdgeId || null);
+  }
+
+  function resetCanvasView() {
+    const nextState = getWorkflowCanvasResetState({ canvasViewResetNonce });
+    setSelectedNodeId(nextState.selectedNodeId);
+    setSelectedEdgeId(nextState.selectedEdgeId);
+    setConnectFromNodeId(nextState.connectFromNodeId);
+    setConditionOutcomeCaseId(nextState.conditionOutcomeCaseId);
+    setCanvasViewResetNonce(
+      (nonce) =>
+        getWorkflowCanvasResetState({ canvasViewResetNonce: nonce })
+          .canvasViewResetNonce,
+    );
+  }
+
+  function undoWorkflowChange() {
+    const nextState = getWorkflowUndoActionState({
+      workflow,
+      historyById: workflowHistoryById,
+      historyId: activeWorkflowHistoryId,
+      undoStack: workflowUndoStack,
+    });
+    if (!nextState.didUpdate || !nextState.template) {
+      return;
+    }
+
+    setWorkflowHistoryById(nextState.historyById);
+    onUpdateTemplate(nextState.template);
+    if (nextState.shouldResetCanvas) {
+      resetCanvasView();
+    }
+  }
+
+  function redoWorkflowChange() {
+    const nextState = getWorkflowRedoActionState({
+      workflow,
+      historyById: workflowHistoryById,
+      historyId: activeWorkflowHistoryId,
+      redoStack: workflowRedoStack,
+    });
+    if (!nextState.didUpdate || !nextState.template) {
+      return;
+    }
+
+    setWorkflowHistoryById(nextState.historyById);
+    onUpdateTemplate(nextState.template);
+    if (nextState.shouldResetCanvas) {
+      resetCanvasView();
+    }
+  }
+
+  function addConditionCaseToSelectedBox() {
+    if (!selectedGraphNode) {
+      return;
+    }
+
+    const context = workflow
+      ? getConditionContext(workflowGraph, workflow, selectedGraphNode)
+      : null;
+    const nextState = getWorkflowAddConditionCaseState({
+      graph: workflowGraph,
+      selectedNodeId,
+      upstreamNodeIds:
+        context?.upstreamApprovalNodes.map((node) => node.id) || [],
+    });
+    if (nextState.didUpdate) {
+      saveWorkflowGraph(nextState.graph, nextState.label);
+    }
+  }
+
+  function addFallbackConditionCaseToSelectedBox() {
+    const nextState = getWorkflowAddFallbackConditionCaseState({
+      graph: workflowGraph,
+      selectedNodeId,
+    });
+    if (nextState.didUpdate) {
+      saveWorkflowGraph(nextState.graph, nextState.label);
+    }
+  }
+
+  function moveWorkflowNode(nodeId: string, x: number, y: number) {
+    const nextState = getWorkflowMoveNodeState({
+      graph: workflowGraph,
+      nodeId,
+      x,
+      y,
+    });
+    saveWorkflowGraph(nextState.graph, nextState.label);
+  }
+
+  function updateSelectedNode(patch: Partial<WorkflowGraphNode>) {
+    const nextState = getWorkflowUpdateSelectedNodeState({
+      graph: workflowGraph,
+      selectedNode: selectedGraphNode,
+      patch,
+    });
+    if (!nextState.didUpdate) {
+      return;
+    }
+
+    saveWorkflowGraph(nextState.graph, nextState.label);
+  }
+
+  function updateSelectedNodeHandoffView(
+    patch: Partial<NonNullable<WorkflowGraphNode["handoffView"]>>,
+  ) {
+    updateSelectedNode({
+      handoffView: {
+        ...(selectedGraphNode?.handoffView || {}),
+        ...patch,
+      },
+    });
+  }
+
+  function addSelectedNodeHandoffProcess() {
+    if (!workflow || !selectedGraphNode) {
+      return;
+    }
+
+    const fieldNames = getWorkflowHandoffFieldNames(workflow);
+    const processes = selectedGraphNode.handoffView?.processes || [];
+    updateSelectedNodeHandoffView({
+      processes: [
+        ...processes,
+        {
+          id: getNextWorkflowHandoffProcessId(processes),
+          type: "comparison",
+          label: "Compare",
+          leftField: fieldNames[0] || "",
+          operator: "=",
+          rightField: fieldNames[1] || fieldNames[0] || "",
+        },
+      ],
+    });
+  }
+
+  function updateSelectedNodeHandoffProcess(
+    processId: string,
+    patch: WorkflowHandoffProcessPatch,
+  ) {
+    const processes = selectedGraphNode?.handoffView?.processes || [];
+    updateSelectedNodeHandoffView({
+      processes: processes.map((process) =>
+        process.id === processId
+          ? applyWorkflowHandoffProcessPatch(process, patch)
+          : process,
+      ),
+    });
+  }
+
+  function removeSelectedNodeHandoffProcess(processId: string) {
+    const processes = selectedGraphNode?.handoffView?.processes || [];
+    updateSelectedNodeHandoffView({
+      processes: processes.filter((process) => process.id !== processId),
+    });
+  }
+
+  function addDocumentToSelectedBox(
+    draft: WorkflowBoxDocumentDraft,
+  ): WorkflowBoxDocumentDraft | null {
+    if (!workflow || !selectedGraphNode) {
+      return null;
+    }
+
+    const nextState = getWorkflowAddBoxDocumentState({
+      template: workflow,
+      selectedNodeId,
+      selectedNodeLabel: selectedGraphNode.label,
+      ...draft,
+    });
+    if (!nextState.didUpdate || !nextState.resetForm) {
+      return null;
+    }
+
+    saveWorkflowTemplate(nextState.template, nextState.label);
+    return nextState.resetForm;
+  }
+
+  function addLibraryFormToSelectedBox(
+    definition: FormLibraryDefinition,
+  ): boolean {
+    if (!workflow || !selectedGraphNode) {
+      return false;
+    }
+    const nextState = attachLibraryFormToWorkflow({
+      template: workflow,
+      nodeId: selectedGraphNode.id,
+      definition,
+    });
+    if (!nextState.didUpdate) {
+      setWorkflowActionMessage(nextState.message);
+      return false;
+    }
+    saveWorkflowTemplate(nextState.template, nextState.message);
+    return true;
+  }
+
+  function updateTemplateDocuments(
+    updater: (documents: WorkflowTemplate["documents"]) => WorkflowTemplate["documents"],
+  ) {
+    if (!workflow) {
+      return;
+    }
+
+    const nextDocuments = updater(workflow.documents);
+    const nextState = getWorkflowTemplateDocumentState({
+      template: workflow,
+      documents: nextDocuments,
+    });
+    saveWorkflowTemplate(nextState.template, nextState.label);
+  }
+
+  function updateBoxDocumentRequirement(
+    documentId: string,
+    patch: Parameters<typeof getWorkflowUpdateDocumentRequirementState>[0]["patch"],
+  ) {
+    if (!workflow) {
+      return;
+    }
+
+    const nextState = getWorkflowUpdateDocumentRequirementState({
+      template: workflow,
+      documentId,
+      patch,
+    });
+    saveWorkflowTemplate(nextState.template, nextState.label);
+  }
+
+  function removeBoxDocumentRequirement(documentId: string) {
+    if (!workflow || !selectedGraphNode) {
+      return;
+    }
+
+    const nextState = getWorkflowRemoveBoxDocumentState({
+      template: workflow,
+      nodeId: selectedGraphNode.id,
+      documentId,
+    });
+    if (!nextState.didUpdate) {
+      return;
+    }
+
+    saveWorkflowTemplate(nextState.template, nextState.label);
+  }
+
+  function updateBoxDocumentField(
+    documentId: string,
+    fieldIndex: number,
+    patch: Partial<
+      Pick<
+        WorkflowField,
+        | "label"
+        | "type"
+        | "instructions"
+        | "placeholder"
+        | "options"
+        | "required"
+      >
+    >,
+  ) {
+    updateTemplateDocuments((documents) =>
+      updateWorkflowDocumentField(documents, documentId, fieldIndex, patch),
+    );
+  }
+
+  function addBoxDocumentField(documentId: string) {
+    updateTemplateDocuments((documents) =>
+      addWorkflowDocumentField(documents, documentId),
+    );
+  }
+
+  function removeBoxDocumentField(documentId: string, fieldIndex: number) {
+    updateTemplateDocuments((documents) =>
+      removeWorkflowDocumentField(documents, documentId, fieldIndex),
+    );
+  }
+
+  function addRecognizedDocumentField(
+    documentId: string,
+    field: WorkflowField,
+    example?: ExtractionTrainingExample,
+  ) {
+    if (!workflow) {
+      return;
+    }
+
+    const nextDocuments = workflow.documents.map((document) => {
+      if (document.id !== documentId) {
+        return document;
+      }
+
+      const nextField = isManualFormRequirement(document)
+        ? {
+            ...field,
+            source: "manual" as const,
+            instructions:
+              field.instructions ||
+              `Requester enters ${field.label} in the digital form.`,
+          }
+        : field;
+      const hasExistingField = document.fields.some(
+        (existingField) => existingField.name === nextField.name,
+      );
+
+      return {
+        ...document,
+        fields: hasExistingField
+          ? document.fields.map((existingField) =>
+              existingField.name === nextField.name
+                ? {
+                    ...existingField,
+                    instructions:
+                      nextField.instructions || existingField.instructions,
+                  }
+                : existingField,
+            )
+          : [...document.fields, nextField],
+      };
+    });
+    const documentState = getWorkflowTemplateDocumentState({
+      template: workflow,
+      documents: nextDocuments,
+    });
+    const nextTemplate = example
+      ? appendExtractionExamplesToTemplate({
+          template: documentState.template,
+          examples: [example],
+        })
+      : documentState.template;
+    saveWorkflowTemplate(nextTemplate, `Added ${field.label} recognition field`);
+  }
+
+  async function deleteSelectedCanvasItem() {
+    const deleteState = getWorkflowCanvasDeleteState({
+      graph: workflowGraph,
+      selectedNodeId,
+      selectedEdgeId,
+      connectFromNodeId,
+    });
+    if (!deleteState.didDelete) {
+      return;
+    }
+
+    const itemLabel =
+      selectedGraphNode?.label ||
+      selectedGraphEdge?.label ||
+      (selectedGraphEdge ? "selected branch" : "selected box");
+    const confirmed = await requestConfirmation(
+      getWorkflowCanvasDeleteConfirmation({ itemLabel }),
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    saveWorkflowGraph(deleteState.graph, deleteState.label);
+    setSelectedNodeId(deleteState.selectedNodeId);
+    setSelectedEdgeId(deleteState.selectedEdgeId);
+    setConnectFromNodeId(deleteState.connectFromNodeId);
+  }
+
+  useEffect(() => {
+    function handleCanvasKeyDown(event: KeyboardEvent) {
+      const target = event.target;
+      const targetElement = target instanceof Element ? target : null;
+      const isContentEditable =
+        target instanceof HTMLElement
+          ? target.isContentEditable ||
+            Boolean(target.closest("[contenteditable='true']"))
+          : false;
+      const shouldUndo = shouldHandleCanvasUndoKey({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+        hasUndoHistory: workflowUndoStack.length > 0,
+        targetTagName: targetElement?.tagName,
+        isContentEditable,
+      });
+
+      if (shouldUndo) {
+        event.preventDefault();
+        undoWorkflowChange();
+        return;
+      }
+
+      const shouldRedo = shouldHandleCanvasRedoKey({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+        hasRedoHistory: workflowRedoStack.length > 0,
+        targetTagName: targetElement?.tagName,
+        isContentEditable,
+      });
+
+      if (shouldRedo) {
+        event.preventDefault();
+        redoWorkflowChange();
+        return;
+      }
+
+      const shouldDelete = shouldHandleCanvasDeleteKey({
+        key: event.key,
+        hasSelection: Boolean(selectedGraphNode || selectedGraphEdge),
+        targetTagName: targetElement?.tagName,
+        isContentEditable,
+      });
+
+      if (!shouldDelete) {
+        return;
+      }
+
+      event.preventDefault();
+      void deleteSelectedCanvasItem();
+    }
+
+    window.addEventListener("keydown", handleCanvasKeyDown);
+    return () => window.removeEventListener("keydown", handleCanvasKeyDown);
+  });
+
+  function updateSelectedEdge(patch: Partial<WorkflowGraphEdge>) {
+    const result = getWorkflowUpdateSelectedEdgeState({
+      graph: workflowGraph,
+      selectedEdge: selectedGraphEdge,
+      patch,
+    });
+    if (!result.didUpdate) {
+      return;
+    }
+
+    saveWorkflowGraph(result.graph, result.label);
+  }
+
+  function updateSelectedEdgeRule(
+    key: "field" | "operator" | "value",
+    value: string,
+  ) {
+    const result = getWorkflowUpdateSelectedEdgeRuleState({
+      graph: workflowGraph,
+      selectedEdge: selectedGraphEdge,
+      workflowFields: workflow?.fields || [],
+      key,
+      value,
+    });
+    if (!result.didUpdate) {
+      return;
+    }
+
+    saveWorkflowGraph(result.graph, result.label);
+  }
+
+  function updateSelectedConditionCase(
+    caseId: string,
+    patch: Parameters<typeof getWorkflowUpdateConditionCaseState>[0]["patch"],
+  ) {
+    const result = getWorkflowUpdateConditionCaseState({
+      graph: workflowGraph,
+      selectedNodeId: selectedGraphNode?.id || null,
+      caseId,
+      patch,
+    });
+    if (!result.didUpdate) {
+      return;
+    }
+
+    saveWorkflowGraph(result.graph, result.label);
+  }
+
+  async function deleteSelectedConditionCase(caseId: string) {
+    const result = getWorkflowDeleteConditionCaseState({
+      graph: workflowGraph,
+      selectedNodeId: selectedGraphNode?.id || null,
+      caseId,
+      activeOutcomeCaseId: conditionOutcomeCaseId,
+    });
+    if (!result.didUpdate) {
+      return;
+    }
+
+    const confirmed = await requestConfirmation(
+      getWorkflowCanvasDeleteConfirmation({ itemLabel: "selected condition" }),
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    saveWorkflowGraph(result.graph, result.label);
+    setConditionOutcomeCaseId(result.activeOutcomeCaseId);
+  }
+
+  function addClickedOutcomeToConditionCase(targetNodeId: string) {
+    const result = getWorkflowAddOutcomeTargetState({
+      graph: workflowGraph,
+      selectedNodeId: selectedGraphNode?.id || null,
+      activeOutcomeCaseId: conditionOutcomeCaseId,
+      targetNodeId,
+    });
+    if (!result.didUpdate) {
+      return false;
+    }
+
+    saveWorkflowGraph(result.graph, result.label);
+    return true;
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-md border border-[#e6e6e6] bg-white">
+        <div className="border-b border-[#e6e6e6] p-4">
+          <h2 className="font-semibold">
+            {isCreatingTemplate ? "New workflow" : workflow ? workflow.name : "No templates"}
+          </h2>
+          {!isCreatingTemplate && workflow ? (
+            <p className="text-sm text-neutral-400">
+              {workflow.business} - {workflow.department}
+            </p>
+          ) : (
+            <p className="text-sm text-neutral-400">Use Builder.</p>
+          )}
+          {!isCreatingTemplate && workflow && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <span className="rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-neutral-300">
+                Version {workflow.version || 1}
+              </span>
+              <span
+                className={`rounded-md border px-2 py-1 ${workflowLifecycleToneClassName(
+                  workflowLifecycle.statusTone,
+                )}`}
+              >
+                {workflowLifecycle.statusLabel}
+              </span>
+              {workflow.publishedAt && (
+                <span className="rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-neutral-400">
+                  Published {new Date(workflow.publishedAt).toLocaleString()}
+                </span>
+              )}
+            </div>
+          )}
+          <p className="mt-2 text-sm text-neutral-400">
+            {isCreatingTemplate
+              ? "Enter the workflow details below, then continue on Canvas."
+              : workflowLifecycle.detail}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {workflowEditorTabs.map((tab) => {
+              const activeClasses =
+                workflowEditorTab === tab.id
+                  ? "border-emerald-400/40 bg-emerald-400/12 text-emerald-100"
+                  : "border-[#e6e6e6] bg-white text-neutral-300 hover:border-[#d2d2d2]";
+              if (tab.mobileDisabled) {
+                return (
+                  <div key={tab.id} className="contents">
+                    <button
+                      type="button"
+                      disabled
+                      aria-label="Canvas (desktop only)"
+                      title="Canvas editing is available on tablet and desktop screens."
+                      className="min-h-11 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-sm text-neutral-500 md:hidden"
+                    >
+                      {tab.label}
+                      <span className="ml-1 text-xs">desktop</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWorkflowEditorTab(tab.id)}
+                      title={tab.label}
+                      className={`hidden min-h-11 rounded-md border px-3 py-2 text-sm transition md:inline-flex md:items-center ${activeClasses}`}
+                    >
+                      {tab.label}
+                    </button>
+                  </div>
+                );
+              }
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setWorkflowEditorTab(tab.id)}
+                  title={tab.label}
+                  className={`min-h-11 rounded-md border px-3 py-2 text-sm transition ${activeClasses}`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+          {adminRecordError && (
+            <p className="mt-3 rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-100">
+              {adminRecordError}
+            </p>
+          )}
+          {workflowActionMessage && (
+            <p className="mt-3 rounded-md border border-sky-400/30 bg-sky-400/10 p-3 text-sm text-sky-100">
+              {workflowActionMessage}
+            </p>
+          )}
+        </div>
+        {workflowEditorTab === "builder" && (
+          <WorkflowTemplateBuilder
+            templateName={templateName}
+            setTemplateName={setTemplateName}
+            businessDirectory={businessDirectory}
+            businessId={businessId}
+            setBusinessId={setBusinessId}
+            departmentName={departmentName}
+            setDepartmentName={setDepartmentName}
+            baseTemplateId={baseTemplateId}
+            setBaseTemplateId={setBaseTemplateId}
+            baseTemplates={baseWorkflowTemplates}
+            onCreateTemplate={createTemplate}
+            isCreating={isCreatingTemplate}
+            selectedTemplate={workflow || null}
+            workflowTemplates={workflowTemplates}
+            onSelectTemplate={selectTemplateInBuilder}
+            onStartNew={startNewTemplate}
+            onSaveDetails={saveTemplateDetails}
+            onCreateDraftVersion={() => workflow && duplicateTemplateAsDraft(workflow)}
+          />
+        )}
+        {workflow && workflowEditorTab === "canvas" && (
+          <div className="p-4">
+            <div className="rounded-md border border-sky-400/30 bg-sky-400/10 p-4 text-sm text-sky-100 md:hidden">
+              Canvas editing needs tablet or desktop.
+            </div>
+            <div className="hidden md:block">
+            <div className="relative min-w-0">
+              <WorkflowCanvasToolbar
+                connectFromNode={connectFromNode}
+                selectedNode={selectedGraphNode}
+                conditionOutcomeCaseId={conditionOutcomeCaseId}
+                onCreateNode={createCanvasNode}
+                onCancelConnect={() => setConnectFromNodeId(null)}
+                onDoneOutcomePick={() => setConditionOutcomeCaseId(null)}
+              />
+
+              <WorkflowRuntimePanel
+                runtimeTask={runtimeTask}
+                workflowSimulation={workflowSimulation}
+                runtimeMissingDocuments={runtimeMissingDocuments}
+                workflowUndoStack={workflowUndoStack}
+                workflowRedoStack={workflowRedoStack}
+                lastWorkflowEdit={lastWorkflowEdit}
+                onUndo={undoWorkflowChange}
+                onRedo={redoWorkflowChange}
+                onResetView={resetCanvasView}
+                onRunWorkflowAction={onRunWorkflowAction}
+                onStartWorkflowTest={(testerEmail) => {
+                  const result = onCreateWorkflowTestRequest(workflow, testerEmail);
+                  if (result.task?.id) {
+                    setSelectedRuntimeTaskId(result.task.id);
+                  }
+                  return result;
+                }}
+              />
+              <div className="mb-3 flex flex-col gap-2 rounded-md border border-[#e6e6e6] bg-white p-3 sm:flex-row sm:items-end">
+                <label className="min-w-0 flex-1">
+                  <span className="mb-1 block text-xs text-neutral-400">
+                    Copy from
+                  </span>
+                  <select
+                    value={copySourceTemplateSelectValue}
+                    onChange={(event) => setCopySourceTemplateId(event.target.value)}
+                    className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
+                  >
+                    <option value="">Blank workflow</option>
+                    {copySourceTemplates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {formatWorkflowTemplateOptionLabel(template)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={copyTemplateIntoCanvas}
+                  title="Copy the selected template workflow into the current canvas while keeping this template's name, business, and department. Choose Blank workflow to start fresh."
+                  className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-sky-400/40 bg-sky-400/12 px-4 py-2 text-sm text-sky-100 transition hover:bg-sky-400/20"
+                >
+                  <ArrowRightLeft size={15} />
+                  Copy
+                </button>
+              </div>
+              <WorkflowCanvas
+                graph={workflowGraph}
+                highlightedNodeIds={Array.from(activeOutcomeTargetIds)}
+                selectedEdgeId={selectedEdgeId}
+                canvasInstanceKey={canvasInstanceKey}
+                connectFromNodeId={connectFromNodeId}
+                onConnect={connectWorkflowNodes}
+                onMoveNode={moveWorkflowNode}
+                onNodeSelect={(nodeId) => {
+                  setSelectedNodeId(nodeId);
+                  setSelectedEdgeId(null);
+                }}
+                onEdgeSelect={(edgeId) => {
+                  setSelectedEdgeId(edgeId);
+                  setSelectedNodeId(null);
+                }}
+                onClearSelection={() => {
+                  setSelectedNodeId(null);
+                  setSelectedEdgeId(null);
+                }}
+                onOutcomeTargetClick={addClickedOutcomeToConditionCase}
+              />
+
+              {(selectedGraphNode || selectedGraphEdge) && (
+                <aside className="fixed inset-x-2 bottom-2 top-20 z-40 min-w-0 overflow-x-hidden overflow-y-auto rounded-md border border-[#e6e6e6] bg-white p-4 shadow-2xl dark:border-neutral-700 dark:bg-neutral-950 md:absolute md:inset-y-4 md:left-auto md:right-2 md:w-[min(420px,calc(100%-1rem))]">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-neutral-300">
+                      {selectedGraphNode ? "Box details" : "Branch details"}
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void deleteSelectedCanvasItem()}
+                        disabled={
+                          selectedGraphNode?.id === "start" || selectedGraphNode?.id === "end"
+                        }
+                        title={
+                          selectedGraphNode?.id === "start" || selectedGraphNode?.id === "end"
+                            ? "The start and end boxes cannot be deleted."
+                            : "Delete the selected box or branch from the workflow canvas."
+                        }
+                        className="flex min-h-8 items-center justify-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 text-xs text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <X size={13} />
+                        Delete
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedNodeId(null);
+                          setSelectedEdgeId(null);
+                        }}
+                        title="Close the details panel."
+                        className="flex size-8 items-center justify-center rounded-md border border-[#e6e6e6] text-neutral-300 transition hover:bg-[#f2f2f2]"
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {selectedGraphNode && (
+                <div className="mt-4 space-y-3">
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-neutral-400">Type</span>
+                    <select
+                      value={
+                        selectedGraphNode.kind === "review"
+                          ? "approval"
+                          : selectedGraphNode.kind
+                      }
+                      title="Choose what this box does in the workflow. Start and end boxes are fixed workflow boundaries."
+                      disabled={
+                        selectedGraphNode.id === "start" || selectedGraphNode.id === "end"
+                      }
+                      onChange={(event) =>
+                        updateSelectedNode({
+                          kind: event.target.value as WorkflowNodeKind,
+                          blocking:
+                            event.target.value !== "for_information" &&
+                            event.target.value !== "end",
+                        })
+                      }
+                      className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
+                    >
+                      <option value="start">Start</option>
+                      {selectedGraphNode.id === "end" && (
+                        <option value="end">End</option>
+                      )}
+                      {workflowNodeOptions.map((option) => (
+                        <option key={option.kind} value={option.kind}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-neutral-400">
+                      Position Name
+                    </span>
+                    <input
+                      value={selectedGraphNode.label}
+                      title="Position or role name shown inside this workflow box on the canvas."
+                      onChange={(event) => updateSelectedNode({ label: event.target.value })}
+                      className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
+                    />
+                  </label>
+                  {["submit_request", "approval", "review", "for_information"].includes(
+                    selectedGraphNode.kind,
+                  ) && (
+                    <>
+                      <label className="block">
+                        <span className="mb-1 block text-xs text-neutral-400">
+                          {selectedGraphNode.kind === "submit_request"
+                            ? "Submitter email (optional)"
+                            : "Person email (optional)"}
+                        </span>
+                        <input
+                          value={selectedGraphNode.assigneeEmail || ""}
+                          title={
+                            selectedGraphNode.kind === "submit_request"
+                              ? "Optional default email for this submit position. It can be filled or changed when the request starts."
+                              : "Optional default email for this workflow position. It can be filled or changed when the request starts."
+                          }
+                          onChange={(event) =>
+                            updateSelectedNode({ assigneeEmail: event.target.value })
+                          }
+                          type="email"
+                          list="workflow-user-directory"
+                          className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
+                        />
+                      </label>
+                      <label className="flex items-start gap-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 text-xs text-neutral-300">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={Boolean(selectedGraphNode.assigneeEmailFixed)}
+                          title="Lock this template email so the request starter cannot change it."
+                          onChange={(event) =>
+                            updateSelectedNode({
+                              assigneeEmailFixed: event.target.checked,
+                            })
+                          }
+                        />
+                        <span className="min-w-0">
+                          <span className="block font-medium text-neutral-100">
+                            Fixed email
+                          </span>
+                          <span className="mt-1 block text-neutral-500">
+                            Lock this default email when a real request starts.
+                          </span>
+                        </span>
+                      </label>
+                    </>
+                  )}
+                  {selectedGraphNode.kind === "submit_request" && (
+                    <div className="space-y-3 rounded-md border border-sky-500/20 bg-sky-500/10 p-3">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-semibold text-sky-100">
+                          Submitter
+                        </p>
+                        <InfoTip label="The person or team required to complete this submit box's documents or form fields." />
+                      </div>
+                      <label className="flex items-start gap-2 text-xs text-sky-100">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={Boolean(selectedGraphNode.allowSharedFulfillment)}
+                          title="When enabled, this submitter can see other submit boxes' required uploads and choose to fulfill them."
+                          onChange={(event) =>
+                            updateSelectedNode({
+                              allowSharedFulfillment: event.target.checked,
+                              requireSharedFulfillmentConfirmation:
+                                event.target.checked
+                                  ? selectedGraphNode.requireSharedFulfillmentConfirmation !== false
+                                  : selectedGraphNode.requireSharedFulfillmentConfirmation,
+                            })
+                          }
+                        />
+                        <span className="inline-flex items-center gap-1">
+                          Shared uploads
+                          <InfoTip label="Lets this submitter see and fulfill other submit boxes' upload requirements." />
+                        </span>
+                      </label>
+                      {selectedGraphNode.allowSharedFulfillment && (
+                        <label className="flex items-start gap-2 text-xs text-sky-100">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={
+                              selectedGraphNode.requireSharedFulfillmentConfirmation !== false
+                            }
+                            title="When enabled, a reviewer or initiator must confirm before a shared upload satisfies another submit box."
+                            onChange={(event) =>
+                              updateSelectedNode({
+                                requireSharedFulfillmentConfirmation:
+                                  event.target.checked,
+                              })
+                            }
+                          />
+                          <span className="inline-flex items-center gap-1">
+                            Confirm shared
+                            <InfoTip label="Shared uploads must be accepted by the assigned submitter or current reviewer before they count." />
+                          </span>
+                        </label>
+                      )}
+                    </div>
+                  )}
+                  {selectedGraphNode.kind !== "for_information" &&
+                    selectedGraphNode.kind !== "end" &&
+                    selectedGraphNode.kind !== "start" &&
+                    selectedGraphNode.kind !== "submit_request" && (
+                      <>
+                        <label className="block">
+                          <span className="mb-1 block text-xs text-neutral-400">
+                            Due hours
+                          </span>
+                          <input
+                            value={selectedGraphNode.dueInHours || 24}
+                            title="Number of hours before this step becomes due."
+                            onChange={(event) =>
+                              updateSelectedNode({
+                                dueInHours:
+                                  Number.parseInt(event.target.value, 10) || 0,
+                              })
+                            }
+                            inputMode="numeric"
+                            className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
+                          />
+                        </label>
+                        {["approval", "review"].includes(selectedGraphNode.kind) && (
+                          <details className="rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3">
+                            <summary
+                              className="cursor-pointer text-xs font-semibold text-neutral-300"
+                              title="Optional overdue routing and escalation contact."
+                            >
+                              Escalation (optional)
+                            </summary>
+                          <div className="mt-3 space-y-3">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <label className="block">
+                                <span className="mb-1 block text-xs text-neutral-400">
+                                  Escalation Position (optional)
+                                </span>
+                                <input
+                                  value={selectedGraphNode.escalationName || ""}
+                                  title="Optional escalation position or role for overdue tasks. It can be filled in this template or later when the request starts."
+                                  onChange={(event) =>
+                                    updateSelectedNode({
+                                      escalationName: event.target.value,
+                                    })
+                                  }
+                                  className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="mb-1 block text-xs text-neutral-400">
+                                  Escalation Email (optional)
+                                </span>
+                                <input
+                                  value={selectedGraphNode.escalationEmail || ""}
+                                  title="Optional email that receives the task when escalation is triggered. It can be filled or changed when the request starts unless fixed."
+                                  onChange={(event) =>
+                                    updateSelectedNode({
+                                      escalationEmail: event.target.value,
+                                    })
+                                  }
+                                  type="email"
+                                  list="workflow-user-directory"
+                                  className="h-10 w-full rounded-md border border-[#e6e6e6] bg-[#f7f7f5] px-3 text-sm outline-none focus:border-emerald-400/60"
+                                />
+                              </label>
+                            </div>
+                            <label className="flex items-start gap-2 rounded-md border border-[#e6e6e6] bg-[#f7f7f5] p-3 text-xs text-neutral-300">
+                              <input
+                                type="checkbox"
+                                className="mt-0.5"
+                                checked={Boolean(selectedGraphNode.escalationEmailFixed)}
+                                title="Lock this escalation email so the request starter cannot change it."
+                                onChange={(event) =>
+                                  updateSelectedNode({
+                                    escalationEmailFixed: event.target.checked,
+                                  })
+                                }
+                              />
+                              <span className="min-w-0">
+                                <span className="block font-medium text-neutral-100">
+                                  Fixed escalation email
+                                </span>
+                                <span className="mt-1 block text-neutral-500">
+                                  Lock this default escalation email when a real request starts.
+                                </span>
+                              </span>
+                            </label>
+                          </div>
+                          </details>
+                        )}
+                      </>
+                    )}
+                  {selectedGraphNode.kind === "for_information" && (
+                    <label className="flex items-center gap-2 text-sm text-neutral-300">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selectedGraphNode.acknowledgementRequired)}
+                        title="Require the FYI recipient to acknowledge that they have seen this item."
+                        onChange={(event) =>
+                          updateSelectedNode({
+                            acknowledgementRequired: event.target.checked,
+                          })
+                        }
+                      />
+                      Require ack
+                    </label>
+                  )}
+                  {workflow &&
+                    ["approval", "review", "for_information"].includes(
+                      selectedGraphNode.kind,
+                    ) && (
+                      <WorkflowHandoffEditor
+                        node={selectedGraphNode}
+                        fieldNames={handoffFieldNames}
+                        documentOptions={handoffDocumentOptions}
+                        onUpdateView={updateSelectedNodeHandoffView}
+                        onAddProcess={addSelectedNodeHandoffProcess}
+                        onUpdateProcess={updateSelectedNodeHandoffProcess}
+                        onRemoveProcess={removeSelectedNodeHandoffProcess}
+                      />
+                    )}
+                  {selectedGraphNode.kind === "condition" && workflow && (
+                    <ConditionBoxDetails
+                      context={getConditionContext(
+                        workflowGraph,
+                        workflow,
+                        selectedGraphNode,
+                      )}
+                      graph={workflowGraph}
+                      conditionNode={selectedGraphNode}
+                      coverage={analyzeConditionCoverage(
+                        workflowGraph,
+                        selectedGraphNode.id,
+                      )}
+                      activeOutcomeCaseId={conditionOutcomeCaseId}
+                      onAddCase={addConditionCaseToSelectedBox}
+                      onAddFallbackCase={addFallbackConditionCaseToSelectedBox}
+                      onDeleteCase={(caseId) => void deleteSelectedConditionCase(caseId)}
+                      onUpdateCase={updateSelectedConditionCase}
+                      onStartOutcomePick={(caseId) =>
+                        setConditionOutcomeCaseId((activeCaseId) =>
+                          activeCaseId === caseId ? null : caseId,
+                        )
+                      }
+                    />
+                  )}
+                  {["submit_request", "approval", "review"].includes(
+                    selectedGraphNode.kind,
+                  ) &&
+                    workflow && (
+                      <WorkflowBoxDocumentsEditor
+                        node={selectedGraphNode}
+                        template={workflow}
+                        formLibrary={formLibrary}
+                        onAddRequirement={addDocumentToSelectedBox}
+                        onAttachLibraryForm={addLibraryFormToSelectedBox}
+                        onUpdateRequirement={updateBoxDocumentRequirement}
+                        onRemoveRequirement={removeBoxDocumentRequirement}
+                        onAddField={addBoxDocumentField}
+                        onUpdateField={updateBoxDocumentField}
+                        onRemoveField={removeBoxDocumentField}
+                        onAddRecognizedField={addRecognizedDocumentField}
+                      />
+                    )}
+                    </div>
+                  )}
+
+                  {selectedGraphEdge && (
+                    <WorkflowEdgeDetails
+                      edge={selectedGraphEdge}
+                      workflowFields={workflow.fields}
+                      onUpdateEdge={updateSelectedEdge}
+                      onUpdateEdgeRule={updateSelectedEdgeRule}
+                    />
+                  )}
+                </aside>
+              )}
+              <UserDirectoryDatalist
+                id="workflow-user-directory"
+                users={userDirectory}
+              />
+            </div>
+            <div
+              data-workflow-publish-bar
+              className="sticky bottom-0 z-30 mt-4 flex justify-end border-t border-[#e6e6e6] bg-white/95 py-4 backdrop-blur-sm"
+            >
+              <button
+                type="button"
+                onClick={() => void publishSelectedTemplate()}
+                disabled={!workflowLifecycle.canPublish || isPublishing}
+                title={workflowLifecycle.publishTitle}
+                className="flex min-h-10 w-full items-center justify-center rounded-md border border-sky-400/40 bg-sky-400/12 px-4 py-2 text-sm font-medium text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+              >
+                {isPublishing ? "Verifying assignments..." : workflowLifecycle.publishLabel}
+              </button>
+            </div>
+            </div>
+          </div>
+        )}
+
+        {workflowEditorTab === "library" && (
+          <WorkflowTemplateLibrary
+            workflowTemplates={workflowTemplates}
+            selectedTemplateId={workflow?.id || ""}
+            onSelectTemplate={selectTemplateInLibrary}
+            onLoadTemplate={loadTemplateIntoBuilder}
+            onDuplicateTemplate={duplicateTemplateAsDraft}
+            onDeleteTemplate={onDeleteTemplate}
+            onActivateTemplateVersion={onActivateTemplateVersion}
+            onUpdateTemplateVersionComment={onUpdateTemplateVersionComment}
+            activeUserEmail={activeUser.email}
+            activeUserRole={activeUser.role}
+          />
+        )}
+
+      </section>
+
+    </div>
+  );
+}
+
+function workflowLifecycleToneClassName(statusTone: string) {
+  if (statusTone === "published") {
+    return "border-emerald-400/30 bg-emerald-400/10 text-emerald-100";
+  }
+  if (statusTone === "archived") {
+    return "border-neutral-500/30 bg-neutral-500/10 text-neutral-300";
+  }
+  if (statusTone === "empty") {
+    return "border-[#e6e6e6] bg-[#f7f7f5] text-neutral-400";
+  }
+  return "border-amber-400/30 bg-amber-400/10 text-amber-100";
+}

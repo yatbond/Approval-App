@@ -1,0 +1,193 @@
+import {
+  applyTaskAction,
+  getTaskActionBlockReason,
+} from "./approval-state.ts";
+import { getMissingRequiredCurrentNodeDocuments } from "./request-builder.ts";
+import { getCurrentNodeFormCompletionIssues } from "./current-node-form-state.ts";
+import { getCurrentNodeDocumentFieldIssues } from "./current-node-document-state.ts";
+import { findTemplateForTask } from "./task-display.ts";
+import { getTaskActionPreflightState } from "./task-action-state.ts";
+import { getWorkflowRunnerActionActor } from "./workflow-runner-action-state.ts";
+import { isWorkflowTestTask } from "./workflow-test-request-state.ts";
+import type {
+  ApprovalAction,
+  ApprovalActor,
+  ApprovalTask,
+  WorkflowTemplate,
+} from "./types.ts";
+
+type RecordTaskActionInput = {
+  tasks: ApprovalTask[];
+  selectedTask?: ApprovalTask;
+  templates: WorkflowTemplate[];
+  activeUser: ApprovalActor;
+  action: ApprovalAction;
+  comment: string;
+  targetEmail: string;
+  returnTargetNodeIds?: string[];
+};
+
+type TaskActionState = {
+  didApply: boolean;
+  tasks: ApprovalTask[];
+  actionError: string;
+  shouldClearInputs: boolean;
+  selectedTaskId?: string;
+};
+
+export function getWorkspaceRecordTaskActionState({
+  tasks,
+  selectedTask,
+  templates,
+  activeUser,
+  action,
+  comment,
+  targetEmail,
+  returnTargetNodeIds,
+}: RecordTaskActionInput): TaskActionState {
+  if (!selectedTask) {
+    return {
+      didApply: false,
+      tasks,
+      actionError: "",
+      shouldClearInputs: false,
+    };
+  }
+
+  const template = findTemplateForTask(selectedTask, templates);
+  const actionBlockReason = getTaskActionBlockReason({
+    task: selectedTask,
+    action,
+    actorEmail: activeUser.email,
+    template,
+  });
+  if (actionBlockReason) {
+    return {
+      didApply: false,
+      tasks,
+      actionError: actionBlockReason,
+      shouldClearInputs: false,
+    };
+  }
+
+  const missingCurrentDocuments =
+    template && (action === "approve" || action === "approve_with_comment")
+      ? getMissingRequiredCurrentNodeDocuments(selectedTask, template)
+      : [];
+  const missingCurrentForms =
+    template && (action === "approve" || action === "approve_with_comment")
+      ? getCurrentNodeFormCompletionIssues(selectedTask, template)
+      : [];
+  const missingCurrentDocumentFields =
+    template && (action === "approve" || action === "approve_with_comment")
+      ? getCurrentNodeDocumentFieldIssues(selectedTask, template)
+      : [];
+  const preflight = getTaskActionPreflightState({
+    action,
+    targetEmail,
+    missingCurrentDocuments,
+    missingCurrentForms,
+    missingCurrentDocumentFields,
+    pendingBlockingContributorRequests: (selectedTask.collaborationRequests || [])
+      .filter(
+        (request) =>
+          request.blocksApproval !== false && request.status === "requested",
+      ),
+    pendingSharedFulfillments: (selectedTask.sharedFulfillments || []).filter(
+      (fulfillment) =>
+        fulfillment.required && fulfillment.status === "pending_confirmation",
+    ),
+    pendingCorrectionRequests: (selectedTask.correctionRequests || []).filter(
+      (request) => request.blocksApproval && request.status === "requested",
+    ),
+  });
+
+  if (!preflight.canProceed) {
+    return {
+      didApply: false,
+      tasks,
+      actionError: preflight.errorMessage,
+      shouldClearInputs: false,
+    };
+  }
+
+  const nextTask = applyTaskAction(selectedTask, {
+    action,
+    actor: activeUser,
+    comment,
+    targetEmail,
+    template,
+    returnTargetNodeIds,
+  });
+
+  if (nextTask === selectedTask) {
+    return {
+      didApply: false,
+      tasks,
+      actionError: "The task did not change. Refresh the Inbox and try again.",
+      shouldClearInputs: false,
+    };
+  }
+
+  return {
+    didApply: true,
+    tasks: replaceTask(tasks, selectedTask.id, nextTask),
+    actionError: "",
+    shouldClearInputs: true,
+  };
+}
+
+export function getWorkspaceRunnerTaskActionState({
+  tasks,
+  templates,
+  taskId,
+  action,
+  fallbackEmail,
+}: {
+  tasks: ApprovalTask[];
+  templates: WorkflowTemplate[];
+  taskId: string;
+  action: ApprovalAction;
+  fallbackEmail: string;
+}): TaskActionState {
+  const task = tasks.find((item) => item.id === taskId);
+  if (!task) {
+    return {
+      didApply: false,
+      tasks,
+      actionError: "",
+      shouldClearInputs: false,
+    };
+  }
+
+  const template = findTemplateForTask(task, templates);
+  const actor = getWorkflowRunnerActionActor({
+    task,
+    action,
+    fallbackEmail,
+  });
+  const nextTask = applyTaskAction(task, {
+    action,
+    actor,
+    comment: isWorkflowTestTask(task)
+      ? "Workflow routing test"
+      : "Workflow runner action",
+    template,
+  });
+
+  return {
+    didApply: true,
+    tasks: replaceTask(tasks, taskId, nextTask),
+    actionError: "",
+    shouldClearInputs: false,
+    selectedTaskId: taskId,
+  };
+}
+
+function replaceTask(
+  tasks: ApprovalTask[],
+  taskId: string,
+  nextTask: ApprovalTask,
+) {
+  return tasks.map((task) => (task.id === taskId ? nextTask : task));
+}
