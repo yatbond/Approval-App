@@ -34,6 +34,7 @@ type CompileTemplateCopilotPlanInput = {
     summary: string;
     sourceMessageIds: string[];
   }>;
+  sourceRequirements?: string[];
 };
 
 type CompiledArtifacts = {
@@ -112,6 +113,8 @@ export function compileTemplateCopilotPlan(
   const attachmentRequirements = plan.attachments.map((attachment) => {
     const id = ids("attachment", attachment.label);
     const fields = normalizeFields(attachment.fields, ids, labels, id);
+    const required =
+      attachment.required || Boolean(attachment.requiredWhen);
     return {
       id,
       label: attachment.label,
@@ -123,14 +126,14 @@ export function compileTemplateCopilotPlan(
       ]
         .filter(Boolean)
         .join("\n"),
-      required: attachment.required,
+      required,
       inputMode: attachment.inputMode,
       acceptedFormats: unique(attachment.acceptedFormats),
-      minimumFiles: attachment.required
+      minimumFiles: required
         ? Math.max(1, attachment.minimumFiles)
         : Math.max(0, attachment.minimumFiles),
       maximumFiles: Math.max(
-        attachment.required ? 1 : 0,
+        required ? 1 : 0,
         attachment.minimumFiles,
         attachment.maximumFiles,
       ),
@@ -153,6 +156,11 @@ export function compileTemplateCopilotPlan(
         attachment.requireSharedFulfillmentConfirmation,
     };
   });
+  const unconditionalAttachmentIds = plan.attachments
+    .map((attachment, index) =>
+      attachment.requiredWhen ? null : attachmentRequirements[index].id,
+    )
+    .filter((id): id is string => Boolean(id));
   const attachmentByLabel = new Map(
     attachmentRequirements.map((attachment) => [
       normalizeLookup(attachment.label),
@@ -199,7 +207,7 @@ export function compileTemplateCopilotPlan(
       x: 280,
       y: 160,
       assigneeName: labels.requester,
-      documentIds: documents.map((document) => document.id),
+      documentIds: unconditionalAttachmentIds,
       allowSharedFulfillment:
         plan.collaboration.adHocContributors ||
         attachmentRequirements.some(
@@ -240,7 +248,7 @@ export function compileTemplateCopilotPlan(
     kind: "submit_request",
     label: labels.submit,
     description: plan.purpose,
-    attachmentRequirementIds: attachmentRequirements.map((item) => item.id),
+    attachmentRequirementIds: unconditionalAttachmentIds,
     blocking: true,
     assignee: { mode: "requester" },
     allowSharedFulfillment:
@@ -382,12 +390,12 @@ export function compileTemplateCopilotPlan(
       x: 1_360,
       y: 360,
       assigneeName: labels.requester,
-      documentIds: documents.map((document) => document.id),
+      documentIds: [],
       blocking: false,
       acknowledgementRequired: false,
       handoffView: {
-        fieldVisibility: { mode: "all" },
-        documentVisibility: { mode: "all" },
+        fieldVisibility: { mode: "hidden" },
+        documentVisibility: { mode: "none" },
         layout: "standard",
       },
     });
@@ -396,9 +404,7 @@ export function compileTemplateCopilotPlan(
       kind: "for_information",
       label: labels.completionNotice,
       description: labels.completionNotice,
-      attachmentRequirementIds: attachmentRequirements.map(
-        (requirement) => requirement.id,
-      ),
+      attachmentRequirementIds: [],
       blocking: false,
       assignee: { mode: "requester" },
       acknowledgementRequired: false,
@@ -513,6 +519,9 @@ export function compileTemplateCopilotPlan(
     pendingFyiNodeIds = [];
 
     if (phase.plan.condition) {
+      const conditionValue = normalizeConditionValue(
+        phase.plan.condition.value,
+      );
       const conditionFieldName = ensureConditionField({
         condition: phase.plan.condition,
         requestFields,
@@ -537,7 +546,7 @@ export function compileTemplateCopilotPlan(
             numericRule: {
               field: conditionFieldName,
               operator: phase.plan.condition.operator,
-              value: phase.plan.condition.value,
+              value: conditionValue,
             },
             join: phase.plan.condition.join,
             targetNodeIds: entryTargetIds,
@@ -556,7 +565,7 @@ export function compileTemplateCopilotPlan(
         id: conditionId,
         kind: "condition",
         label: phase.plan.condition.label,
-        description: `${phase.plan.condition.fieldLabel} ${phase.plan.condition.operator} ${phase.plan.condition.value}`,
+        description: `${phase.plan.condition.fieldLabel} ${phase.plan.condition.operator} ${conditionValue}`,
         attachmentRequirementIds: [],
         blocking: true,
       });
@@ -569,7 +578,7 @@ export function compileTemplateCopilotPlan(
           rule: {
             field: conditionFieldName,
             operator: phase.plan.condition.operator,
-            value: phase.plan.condition.value,
+            value: conditionValue,
             join: phase.plan.condition.join,
           },
         });
@@ -586,6 +595,123 @@ export function compileTemplateCopilotPlan(
     } else {
       nextTargetIds = entryTargetIds;
     }
+  }
+
+  for (
+    let attachmentIndex = plan.attachments.length - 1;
+    attachmentIndex >= 0;
+    attachmentIndex -= 1
+  ) {
+    const attachment = plan.attachments[attachmentIndex];
+    const condition = attachment.requiredWhen;
+    if (!condition) continue;
+
+    const requirement = attachmentRequirements[attachmentIndex];
+    const conditionValue = normalizeConditionValue(condition.value);
+    const conditionFieldName = ensureConditionField({
+      condition,
+      requestFields,
+      requestFieldByLabel,
+      allWorkflowFields,
+      allFieldByLabel,
+      ids,
+      labels,
+    });
+    const conditionalSubmitId = ids(
+      "submit",
+      `${attachment.label}-conditional`,
+    );
+    graphNodes.push({
+      id: conditionalSubmitId,
+      kind: "submit_request",
+      label: attachment.label,
+      x: 560,
+      y: 560,
+      assigneeName: labels.requester,
+      documentIds: [requirement.id],
+      allowSharedFulfillment: requirement.allowSharedFulfillment,
+      requireSharedFulfillmentConfirmation:
+        requirement.requireSharedFulfillmentConfirmation,
+      blocking: true,
+    });
+    dossierStageByNodeId.set(conditionalSubmitId, {
+      id: conditionalSubmitId,
+      kind: "submit_request",
+      label: attachment.label,
+      description: `${condition.fieldLabel} ${condition.operator} ${conditionValue}`,
+      attachmentRequirementIds: [requirement.id],
+      blocking: true,
+      assignee: { mode: "requester" },
+      allowSharedFulfillment: requirement.allowSharedFulfillment,
+      requireSharedFulfillmentConfirmation:
+        requirement.requireSharedFulfillmentConfirmation,
+    });
+    connectTargets(
+      graphEdges,
+      ids,
+      conditionalSubmitId,
+      nextTargetIds,
+      labels.continue,
+    );
+
+    const conditionId = ids("condition", `${attachment.label}-required`);
+    graphNodes.push({
+      id: conditionId,
+      kind: "condition",
+      label: condition.label,
+      x: 440,
+      y: 440,
+      blocking: true,
+      conditionCases: [
+        {
+          id: ids("case", `${attachment.label}-required`),
+          name: labels.matched,
+          numericRule: {
+            field: conditionFieldName,
+            operator: condition.operator,
+            value: conditionValue,
+          },
+          join: condition.join,
+          targetNodeIds: [conditionalSubmitId],
+        },
+        {
+          id: ids("case", `${attachment.label}-not-required`),
+          name: labels.fallback,
+          isFallback: true,
+          join: "and",
+          targetNodeIds: nextTargetIds,
+        },
+      ],
+    });
+    dossierStageByNodeId.set(conditionId, {
+      id: conditionId,
+      kind: "condition",
+      label: condition.label,
+      description: `${condition.fieldLabel} ${condition.operator} ${conditionValue}`,
+      attachmentRequirementIds: [],
+      blocking: true,
+    });
+    addEdge(graphEdges, ids, {
+      sourceId: conditionId,
+      targetId: conditionalSubmitId,
+      label: labels.matched,
+      branchType: "condition",
+      rule: {
+        field: conditionFieldName,
+        operator: condition.operator,
+        value: conditionValue,
+        join: condition.join,
+      },
+    });
+    connectTargets(
+      graphEdges,
+      ids,
+      conditionId,
+      nextTargetIds,
+      labels.fallback,
+      "condition",
+    );
+    nextTargetIds = [conditionId];
   }
 
   addEdge(graphEdges, ids, {
@@ -660,6 +786,13 @@ export function compileTemplateCopilotPlan(
       statement: item.summary.slice(0, 4_000),
       status: "confirmed" as const,
     }));
+  const sourceRequirementAssumptions = (input.sourceRequirements || [])
+    .filter((requirement) => requirement.trim())
+    .map((requirement) => ({
+      id: ids("requirement", requirement),
+      statement: requirement.trim().slice(0, 4_000),
+      status: "confirmed" as const,
+    }));
   const dossier = templateRequirementsDossierV1Schema.parse({
     schemaVersion: templateAuthoringContractVersion,
     dossierId: input.dossierId,
@@ -703,11 +836,15 @@ export function compileTemplateCopilotPlan(
         status: assumption.status,
       })),
       ...sourceAssumptions,
+      ...sourceRequirementAssumptions,
     ].slice(0, 100),
     openQuestions: plan.openQuestions.map((question) => ({
       id: ids("question", question.question),
       question: question.question,
-      importance: question.importance,
+      importance:
+        question.importance === "blocking" && !question.answer.trim()
+          ? ("important" as const)
+          : question.importance,
       ...(question.answer ? { answer: question.answer } : {}),
     })),
   });
@@ -1026,6 +1163,14 @@ function normalizeLookup(value: string) {
     .trim()
     .toLocaleLowerCase()
     .replace(/[\s\-_/（）()，,。.：:；;]+/gu, "");
+}
+
+function normalizeConditionValue(value: string) {
+  const trimmed = value.trim();
+  if (/^[+-]?\d{1,3}(?:[,\s]\d{3})+(?:\.\d+)?$/u.test(trimmed)) {
+    return trimmed.replace(/[,\s]/gu, "");
+  }
+  return trimmed;
 }
 
 function createIdFactory() {

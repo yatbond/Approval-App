@@ -1243,6 +1243,9 @@ function isActionableRouteNode(
   node: WorkflowGraphNode,
   allowUnassignedActionNodes = false,
 ) {
+  if (node.kind === "submit_request") {
+    return true;
+  }
   return (
     (node.kind === "approval" || node.kind === "review") &&
     (allowUnassignedActionNodes || Boolean(node.assigneeEmail?.trim()))

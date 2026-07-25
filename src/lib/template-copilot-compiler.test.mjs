@@ -102,6 +102,11 @@ test("compiler preserves completion notifications as nonblocking FYI handoffs", 
   );
 
   assert.equal(completionNotice?.assigneeName, "Requester");
+  assert.deepEqual(completionNotice?.documentIds, []);
+  assert.equal(
+    completionNotice?.handoffView?.documentVisibility?.mode,
+    "none",
+  );
   assert.ok(
     artifacts.definition.template.graph.edges.some(
       (edge) =>
@@ -111,6 +116,110 @@ test("compiler preserves completion notifications as nonblocking FYI handoffs", 
     ),
   );
   assert.equal(validateTemplateAuthoringDefinition(artifacts).valid, true);
+});
+
+test("compiler normalizes grouped numeric condition values", () => {
+  const plan = qualificationPlan("en");
+  plan.phases[1].condition.value = "2,000,000";
+
+  const artifacts = compileTemplateCopilotPlan({ ...scope, plan });
+  const condition = artifacts.definition.template.graph.nodes.find(
+    (node) => node.label === "High value",
+  );
+
+  assert.equal(condition?.conditionCases?.[0]?.numericRule?.value, "2000000");
+  assert.ok(
+    artifacts.dossier.stages.some(
+      (stage) =>
+        stage.kind === "condition" &&
+        stage.description.includes("2000000"),
+    ),
+  );
+});
+
+test("compiler enforces conditional attachments through a routed submit stage", () => {
+  const plan = qualificationPlan("en");
+  plan.attachments[1].required = false;
+  plan.attachments[1].minimumFiles = 0;
+  plan.attachments[1].requiredWhen = {
+    label: "High-value quotation required",
+    fieldLabel: "Total amount",
+    operator: ">=",
+    value: "50,000",
+    join: "and",
+  };
+
+  const artifacts = compileTemplateCopilotPlan({ ...scope, plan });
+  const initialSubmit = artifacts.definition.template.graph.nodes.find(
+    (node) => node.id === "submit-request",
+  );
+  const conditionalSubmit = artifacts.definition.template.graph.nodes.find(
+    (node) =>
+      node.kind === "submit_request" &&
+      node.id !== "submit-request" &&
+      node.documentIds?.includes("attachment-supplier-quotation"),
+  );
+  const condition = artifacts.definition.template.graph.nodes.find(
+    (node) => node.label === "High-value quotation required",
+  );
+  const quotation = artifacts.definition.template.documents.find(
+    (document) => document.id === "attachment-supplier-quotation",
+  );
+
+  assert.equal(
+    initialSubmit?.documentIds?.includes("attachment-supplier-quotation"),
+    false,
+  );
+  assert.ok(conditionalSubmit);
+  assert.equal(quotation?.required, true);
+  assert.equal(condition?.conditionCases?.[0]?.numericRule?.value, "50000");
+  const validation = validateTemplateAuthoringDefinition(artifacts);
+  assert.equal(validation.valid, true, JSON.stringify(validation.issues));
+});
+
+test("model questions remain visible without gaining executable blocking authority", () => {
+  const plan = qualificationPlan("en");
+  plan.openQuestions = [
+    {
+      question: "Which directory position should receive Finance approval?",
+      importance: "blocking",
+      answer: "",
+    },
+  ];
+
+  const artifacts = compileTemplateCopilotPlan({ ...scope, plan });
+
+  assert.deepEqual(artifacts.dossier.openQuestions, [
+    {
+      id: "question-which-directory-position-should-receive-finance-approval",
+      question: "Which directory position should receive Finance approval?",
+      importance: "important",
+    },
+  ]);
+  assert.deepEqual(artifacts.definition.generation.unresolvedQuestionIds, [
+    "question-which-directory-position-should-receive-finance-approval",
+  ]);
+  assert.equal(validateTemplateAuthoringDefinition(artifacts).valid, true);
+});
+
+test("compiler preserves exact employee requirement wording for traceability", () => {
+  const plan = qualificationPlan("zh-Hant");
+  const sourceRequirement =
+    "若差異超過百分之五，或核實金額超過港幣五百萬元，必須增加審批。";
+
+  const artifacts = compileTemplateCopilotPlan({
+    ...scope,
+    plan,
+    sourceRequirements: [sourceRequirement],
+  });
+
+  assert.ok(
+    artifacts.dossier.assumptions.some(
+      (assumption) =>
+        assumption.status === "confirmed" &&
+        assumption.statement === sourceRequirement,
+    ),
+  );
 });
 
 test("plan contract rejects executable graph authority from the model", () => {
