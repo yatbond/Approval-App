@@ -134,7 +134,7 @@ export const templateCopilotQualificationScenarios = [
       minimumDocuments: 3,
       minimumRequestFields: 8,
       minimumApprovalNodes: 4,
-      minimumConditionNodes: 1,
+      minimumConditionNodes: 2,
       requireFyi: true,
       requireParallelFanout: true,
       requireManualForm: true,
