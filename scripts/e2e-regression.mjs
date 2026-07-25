@@ -39,6 +39,7 @@ const browser = await chromium.launch({
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   await signIn(page);
+  await verifyBuildIdentity(page);
   await verifyPrimaryNavigation(page);
   await verifyWorkflowLibrary(page);
   await verifyFormsWorkspace(page);
@@ -58,6 +59,24 @@ try {
   );
 } finally {
   await browser.close();
+}
+
+async function verifyBuildIdentity(page) {
+  await page.locator("[data-build-version-indicator]").waitFor({ timeout: 10_000 });
+  const response = await page.request.get(`${appUrl}/api/version`, {
+    headers: { "Cache-Control": "no-cache" },
+  });
+  const metadata = await response.json().catch(() => null);
+  if (
+    !response.ok() ||
+    metadata?.schemaVersion !== 1 ||
+    metadata?.application !== "approval-app" ||
+    !metadata?.release?.name
+  ) {
+    throw new Error(
+      `Build identity regression failed (${response.status()}): ${JSON.stringify(metadata)}`,
+    );
+  }
 }
 
 async function signIn(page) {
@@ -132,6 +151,8 @@ async function verifyQueueDecisionControls(page) {
 
 async function verifyOperationalHealth(page) {
   await page.goto(`${appUrl}/?tab=admin`, { waitUntil: "domcontentloaded" });
+  await expectText(page, "Application release");
+  await page.locator("[data-build-version-panel]").waitFor({ timeout: 10_000 });
   await expectText(page, "System health");
   await expectText(page, "Last 24 hours");
   for (const label of [
