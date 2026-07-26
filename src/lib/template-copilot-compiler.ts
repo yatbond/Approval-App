@@ -112,8 +112,11 @@ export function compileTemplateCopilotPlan(
   input: CompileTemplateCopilotPlanInput,
 ): CompiledArtifacts {
   const plan = expandExplicitConditionalStageThresholds(
-    expandExplicitPairedDateFields(
-      templateCopilotPlanV1Schema.parse(input.plan),
+    expandExplicitCompensatingControlOwnerFields(
+      expandExplicitPairedDateFields(
+        templateCopilotPlanV1Schema.parse(input.plan),
+        input.sourceRequirements || [],
+      ),
       input.sourceRequirements || [],
     ),
     input.sourceRequirements || [],
@@ -1076,6 +1079,99 @@ function expandExplicitPairedDateFields(
       ...withoutCombined,
       ...(hasStart ? [] : [dateField(startText)]),
       ...(hasEnd ? [] : [dateField(endText)]),
+    ],
+  });
+}
+
+function expandExplicitCompensatingControlOwnerFields(
+  plan: TemplateCopilotPlanV1,
+  sourceRequirements: string[],
+) {
+  const source = sourceRequirements.join("\n").normalize("NFKC");
+  const explicitlyRequiresPair =
+    /\bcompensating controls?\s+(?:and|&)\s+(?:control\s+)?owner\b/i.test(
+      source,
+    ) ||
+    /補償控制(?:及|和|與)負責人/u.test(source) ||
+    /补偿控制(?:及|和|与)负责人/u.test(source);
+  if (!explicitlyRequiresPair) return plan;
+
+  const controlPattern =
+    plan.locale === "en" ? /\bcompensating controls?\b/i : /補償控制|补偿控制/u;
+  const ownerPattern =
+    plan.locale === "en" ? /\b(?:control\s+)?owner\b/i : /負責人|负责人/u;
+  const hasControl = plan.requestFields.some(
+    (field) =>
+      controlPattern.test(field.label) && !ownerPattern.test(field.label),
+  );
+  const hasOwner = plan.requestFields.some(
+    (field) =>
+      ownerPattern.test(field.label) && !controlPattern.test(field.label),
+  );
+  if (hasControl && hasOwner) return plan;
+
+  const withoutCombined = plan.requestFields.filter(
+    (field) =>
+      !(controlPattern.test(field.label) && ownerPattern.test(field.label)),
+  );
+  const localizedFields = {
+    controls: {
+      en: {
+        label: "Compensating controls",
+        instructions: "Describe the compensating controls.",
+      },
+      "zh-Hant": {
+        label: "補償控制",
+        instructions: "請說明補償控制。",
+      },
+      "zh-Hans": {
+        label: "补偿控制",
+        instructions: "请说明补偿控制。",
+      },
+    },
+    owner: {
+      en: {
+        label: "Control owner",
+        instructions: "Identify the person responsible for the controls.",
+      },
+      "zh-Hant": {
+        label: "負責人",
+        instructions: "請填寫補償控制的負責人。",
+      },
+      "zh-Hans": {
+        label: "负责人",
+        instructions: "请填写补偿控制的负责人。",
+      },
+    },
+  };
+  const controlsText = localizedFields.controls[plan.locale];
+  const ownerText = localizedFields.owner[plan.locale];
+  const requestField = ({
+    label,
+    instructions,
+    type,
+  }: {
+    label: string;
+    instructions: string;
+    type: "long_text" | "text";
+  }) => ({
+    label,
+    type,
+    required: true,
+    instructions,
+    placeholder: "",
+    options: [],
+    source: "manual" as const,
+  });
+
+  return templateCopilotPlanV1Schema.parse({
+    ...plan,
+    requestFields: [
+      ...withoutCombined,
+      ...(hasControl
+        ? []
+        : [requestField({ ...controlsText, type: "long_text" })]),
+      ...(hasOwner ? [] : [requestField({ ...ownerText, type: "text" })]),
     ],
   });
 }

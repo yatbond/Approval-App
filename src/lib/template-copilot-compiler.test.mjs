@@ -341,6 +341,44 @@ test("compiler expands explicitly paired start and end dates into separate field
   assert.equal(labels.includes("結束日期"), true);
 });
 
+test("compiler expands explicitly paired compensating controls and owner fields", () => {
+  const plan = qualificationPlan("zh-Hant");
+  plan.requestFields = [
+    field("政策名稱及條款", "text"),
+    field("豁免原因", "long_text"),
+    field("開始及結束日期", "date"),
+    field("風險等級", "select"),
+    field("受影響人數", "number"),
+    field("補償控制及負責人", "long_text"),
+  ];
+  plan.requestFields[3].options = ["低風險", "中風險", "高風險"];
+  plan.phases[1].condition = {
+    label: "高風險",
+    fieldLabel: "風險等級",
+    operator: "=",
+    value: "高風險",
+    join: "and",
+  };
+
+  const artifacts = compileTemplateCopilotPlan({
+    ...scope,
+    plan,
+    sourceRequirements: [
+      "必填欄位：政策名稱及條款、豁免原因、開始及結束日期、風險等級、受影響人數、補償控制及負責人。",
+    ],
+  });
+  const labels = artifacts.dossier.initiation.requestFields.map(
+    (requestField) => requestField.label,
+  );
+
+  assert.equal(labels.length, 8);
+  assert.equal(labels.includes("開始日期"), true);
+  assert.equal(labels.includes("結束日期"), true);
+  assert.equal(labels.includes("補償控制及負責人"), false);
+  assert.equal(labels.includes("補償控制"), true);
+  assert.equal(labels.includes("負責人"), true);
+});
+
 test("compiler splits an explicitly thresholded role out of an unconditional parallel phase", () => {
   const plan = qualificationPlan("en");
   plan.phases[1].condition = null;
