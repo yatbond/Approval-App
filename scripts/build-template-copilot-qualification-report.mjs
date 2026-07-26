@@ -3,12 +3,17 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const baselinePath = resolve(
-  "output/template-copilot-qualification/qualification-results.json",
+  process.env.QUALIFICATION_BASELINE_PATH?.trim() ||
+    "output/template-copilot-qualification/qualification-results.json",
 );
 const retestPath = resolve(
-  "output/template-copilot-qualification-retest/qualification-results.json",
+  process.env.QUALIFICATION_FINAL_PATH?.trim() ||
+    "output/template-copilot-qualification-retest/qualification-results.json",
 );
-const outputDirectory = resolve("output/template-copilot-qualification-report");
+const outputDirectory = resolve(
+  process.env.QUALIFICATION_REPORT_OUTPUT_DIR?.trim() ||
+    "output/template-copilot-qualification-report",
+);
 const csvPath = resolve(
   outputDirectory,
   "approval-copilot-qwen-qualification-report.csv",
@@ -126,9 +131,6 @@ const summary = {
     crossUserIsolationPassed:
       retest.protocols.find((item) => item.id === "cross-user-isolation")
         ?.passed === true,
-    modelSessionCount: 49,
-    storedMessageCount: 669,
-    createdFamilyCount: 0,
     deploymentIds: finalDeploymentIds,
     commits: finalCommits,
   },
@@ -147,21 +149,20 @@ const summary = {
     {
       id: "DEF-001",
       severity: "Critical",
-      status: "Open",
-      title: "Direct model-to-executable compilation fails",
-      evidence:
-        "0 of 24 final scenarios created a draft; all returned dependency_unavailable. In the seven-case retest, 12 of 14 failed attempts were schema validation failures and 2 were invalid JSON.",
+      status: "Fixed and retested",
+      title: "Direct model-to-executable compilation was nondeterministic",
+      evidence: `${finalScenarios.filter((item) => item.draft?.created).length} of ${finalScenarios.length} scenarios created validated, simulated executable drafts after moving IDs, graph construction, references, fallbacks, and handoffs into deterministic application code.`,
       recommendation:
-        "Replace direct graph generation with a deterministic dossier-to-workflow compiler and use the model only for interview extraction and bounded recommendations.",
+        "Keep executable graph authority in the deterministic compiler and retain the model only for bounded interview extraction and plan candidates.",
     },
     {
       id: "DEF-002",
       severity: "High",
-      status: "Open",
-      title: "Chinese interviews still ask the next question in English",
-      evidence: `${byLanguage["zh-Hant"].nativeHanAcknowledgements + byLanguage["zh-Hans"].nativeHanAcknowledgements} of 144 Chinese turn responses contained Han characters, while all 144 contained an English next-question prompt.`,
+      status: "Fixed and retested",
+      title: "Chinese interviews previously asked the next question in English",
+      evidence: `Traditional and Simplified Chinese both passed 8 of 8 scenarios. English-question leakage was ${byLanguage["zh-Hant"].englishQuestionTurns + byLanguage["zh-Hans"].englishQuestionTurns} turns in the final run.`,
       recommendation:
-        "Localize every interview question and confirmation/review control for English, Traditional Chinese, and Simplified Chinese.",
+        "Keep all interview, confirmation, dossier-review, error, and handoff controls covered by the three-locale regression matrix.",
     },
     {
       id: "DEF-003",
@@ -206,31 +207,40 @@ const summary = {
     {
       id: "DEF-007",
       severity: "Medium",
-      status: "Open",
-      title: "Draft failure latency is too high",
+      status: "Fixed and retested",
+      title: "The default serverless window cut off long-tail draft calls",
       evidence:
-        "Failed draft generation has materially higher tail latency than ordinary interview turns and retries once before returning 503.",
+        "Two otherwise valid drafts in the baseline were cut off by identical 60-second socket hang-ups. The draft route now declares a 300-second execution window, and the final run completed all drafts.",
       recommendation:
-        "Compile locally after the dossier is confirmed; reserve model calls for small repair suggestions with explicit time budgets.",
+        "Monitor p95 provider latency and timeout counts; keep deterministic reconciliation replay-safe under client retries.",
     },
     {
       id: "DEF-008",
       severity: "Medium",
-      status: "Not testable until compiler exists",
-      title: "End-to-end validation, simulation, and handoff fidelity blocked",
-      evidence:
-        "Strict validation prevented unsafe drafts from being stored, but no artifact reached validation, simulation, or detailed handoff fidelity scoring.",
+      status: "Fixed and retested",
+      title: "End-to-end validation, simulation, and handoff fidelity were blocked",
+      evidence: `${finalScenarios.filter((item) => item.fidelity?.passed).length} of ${finalScenarios.length} scenarios passed coded validation, branch simulation, and fidelity checks for fields, documents, approvals, conditions, FYI, and restricted handoffs.`,
       recommendation:
-        "Make compiler output pass schema validation, then rerun all 24 scenarios through validation, branch simulation, publication review, and activation.",
+        "Retain the 24-scenario matrix as a release gate and add reviewed production-like examples during the controlled pilot.",
+    },
+    {
+      id: "DEF-009",
+      severity: "Medium",
+      status: "Fixed and retested",
+      title: "Generated requirements lacked an editable review and source evidence",
+      evidence:
+        "The Copilot now pauses at an editable dossier review, persists human changes as a new authoritative draft revision, and records deterministic interview and page-level document citations with SHA-256 identity.",
+      recommendation:
+        "During the pilot, audit citation usefulness and add item-level document-to-requirement linkage where policy teams need finer evidence.",
     },
   ],
   decision: {
-    interviewUse: "Conditional go",
-    directCompilationUse: "No-go",
+    interviewUse: "Go with human review",
+    deterministicCompilationUse: "Go with coded validation and simulation",
     corporatePilotUse:
-      "No-go for autonomous template creation; limited supervised interview-only pilot after localization is acceptable.",
+      "Conditional go for a controlled 5-10 person corporate pilot; publication and activation remain human-authorized.",
     rationale:
-      "Qwen is suitable for multilingual requirements interviewing with deterministic guards, but not for direct executable workflow authorship under the current architecture.",
+      "Qwen is suitable for multilingual requirements extraction when paired with deterministic compilation, coded validation, simulation, revision control, and an explicit human dossier review.",
   },
 };
 
@@ -286,15 +296,15 @@ rows.push(
     phase: "final",
     id: "OVERALL",
     test_area: "qualification",
-    status: "NO_GO_DIRECT_COMPILATION",
-    passed: false,
+    status: "PASS_CONTROLLED_PILOT_GATE",
+    passed: true,
     interview_passed: `${summary.final.interviewPasses}/${summary.final.scenarioCount}`,
     draft_created: `${summary.final.draftPasses}/${summary.final.scenarioCount}`,
     model: summary.model,
     turn_p50_ms: summary.performance.p50InterviewTurnMs,
     turn_p95_ms: summary.performance.p95InterviewTurnMs,
     notes:
-      "Conditional go for multilingual interviewing with deterministic guards; no-go for direct executable authoring.",
+      "24/24 multilingual workflows passed interview, draft creation, coded validation, simulation, and fidelity checks on one immutable Preview build.",
     deployment_id: finalDeploymentIds.join("|"),
     commit: finalCommits.join("|"),
   }),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -28,11 +29,36 @@ from reportlab.platypus import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SUMMARY_PATH = ROOT / "output/template-copilot-qualification-report/qualification-summary.json"
-BASELINE_PATH = ROOT / "output/template-copilot-qualification/qualification-results.json"
-RETEST_PATH = ROOT / "output/template-copilot-qualification-retest/qualification-results.json"
-SCREENSHOT_PATH = ROOT / "output/template-copilot-qualification-retest/authenticated-copilot.png"
-OUTPUT_PATH = ROOT / "output/pdf/approval-copilot-qwen-qualification-report.pdf"
+SUMMARY_PATH = Path(
+    os.environ.get(
+        "QUALIFICATION_SUMMARY_PATH",
+        ROOT / "output/template-copilot-qualification-report/qualification-summary.json",
+    )
+)
+BASELINE_PATH = Path(
+    os.environ.get(
+        "QUALIFICATION_BASELINE_PATH",
+        ROOT / "output/template-copilot-qualification/qualification-results.json",
+    )
+)
+RETEST_PATH = Path(
+    os.environ.get(
+        "QUALIFICATION_FINAL_PATH",
+        ROOT / "output/template-copilot-qualification-retest/qualification-results.json",
+    )
+)
+SCREENSHOT_PATH = Path(
+    os.environ.get(
+        "QUALIFICATION_SCREENSHOT_PATH",
+        ROOT / "output/template-copilot-qualification-retest/authenticated-copilot.png",
+    )
+)
+OUTPUT_PATH = Path(
+    os.environ.get(
+        "QUALIFICATION_PDF_PATH",
+        ROOT / "output/pdf/approval-copilot-qwen-qualification-report.pdf",
+    )
+)
 
 summary = json.loads(SUMMARY_PATH.read_text(encoding="utf-8"))
 baseline = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
@@ -505,8 +531,8 @@ story.extend(
         Table(
             [
                 [
-                    badge("INTERVIEW: CONDITIONAL GO", GREEN, width=56 * mm),
-                    badge("DIRECT AUTHORING: NO-GO", RED, width=56 * mm),
+                    badge("INTERVIEWS: 24 / 24", GREEN, width=56 * mm),
+                    badge("DRAFTS: 24 / 24", GREEN, width=56 * mm),
                     badge("PRODUCTION: UNCHANGED", BLUE, width=52 * mm),
                 ]
             ],
@@ -515,37 +541,36 @@ story.extend(
         Spacer(1, 9 * mm),
         p("Executive conclusion", "H1x"),
         p(
-            "<b>Qwen is suitable for multilingual requirements interviewing when deterministic guardrails are applied, "
-            "but it is not suitable for directly producing executable approval templates in the current architecture.</b> "
-            "The final interview result is 24/24 after a bounded uncertainty-classification fix. Direct draft creation is 0/24; "
-            "strict validation correctly rejected invalid graphs rather than storing unsafe templates.",
+            "<b>Qwen is suitable for multilingual requirements extraction when application code owns executable workflow authority.</b> "
+            "On one immutable Preview build, all 24 English, Traditional Chinese, and Simplified Chinese scenarios completed the interview, "
+            "created an executable draft, passed coded validation and branch simulation, and met the workflow-fidelity oracle.",
             "Bodyx",
         ),
         p(
-            "<b>繁體中文：</b>結論：Qwen 適合在有確定性防護下進行多語言需求訪談，但不適合直接生成可執行工作流程。<br/>"
-            "<b>简体中文：</b>结论：Qwen 适合在有确定性防护下进行多语言需求访谈，但不适合直接生成可执行工作流。",
+            "<b>繁體中文：</b>結論：Qwen 配合確定性編譯、驗證、模擬及人工審核後，適合用於多語言流程需求整理。<br/>"
+            "<b>简体中文：</b>结论：Qwen 配合确定性编译、验证、模拟及人工审核后，适合用于多语言流程需求整理。",
             "Bodyx",
         ),
         Spacer(1, 4 * mm),
         metric_cards(
             [
-                ("24 / 24", "Final interviews", "8 per language"),
-                ("0 / 24", "Executable drafts", "Strictly rejected"),
-                ("9 / 9", "Protocols", "Security and resilience"),
+                (f"{summary['final']['interviewPasses']} / 24", "Final interviews", "8 per language"),
+                (f"{summary['final']['draftPasses']} / 24", "Executable drafts", "Validated and simulated"),
+                (f"{summary['final']['protocolPasses']} / {summary['final']['protocolCount']}", "Protocols", "Security and resilience"),
             ],
             widths=[56 * mm, 56 * mm, 56 * mm],
         ),
         Spacer(1, 8 * mm),
         p(
-            "Recommended decision: proceed with the deterministic dossier-to-workflow compiler before any autonomous corporate pilot. "
-            "A supervised interview-only pilot may be considered after full Chinese localization.",
+            "Recommended decision: proceed to a controlled 5–10 person corporate pilot with human dossier review and human-authorized publication and activation. "
+            "The Copilot must not bypass coded validation, simulation, revision controls, or publication governance.",
             "Calloutx",
         ),
         Spacer(1, 6 * mm),
         p(
-            f"Exact Preview evidence: baseline {summary['baseline']['deploymentId']} at "
-            f"{summary['baseline']['commit'][:12]}…; guarded retest {summary['final']['deploymentIds'][1]} at "
-            f"{summary['final']['commits'][1][:12]}…. The permanent Production app was not changed.",
+            f"Exact Preview evidence: timeout baseline {summary['baseline']['deploymentId']} at "
+            f"{summary['baseline']['commit'][:12]}…; definitive run {summary['final']['deploymentIds'][-1]} at "
+            f"{summary['final']['commits'][-1][:12]}…. The permanent Production app was not changed.",
             "Smallx",
         ),
     ]
@@ -558,13 +583,13 @@ story.extend(
     [
         p(
             "This was an authenticated, end-to-end qualification against an isolated Vercel Preview connected to a synthetic Supabase development branch. "
-            "Three concurrent workers exercised ordinary corporate usage without turning the run into a provider stress test.",
+            "Two concurrent workers exercised ordinary corporate usage without turning the run into a provider stress test.",
         ),
         metric_cards(
             [
                 ("24", "Workflow archetypes", "Purchasing, finance, HR, IT, construction, compliance"),
                 ("216", "Final interview turns", "Nine structured sections per scenario"),
-                ("669", "Stored messages", "49 sessions including protocols and retests"),
+                ("24 / 24", "Validated simulations", "All targeted workflow oracles passed"),
             ],
             widths=[56 * mm, 56 * mm, 56 * mm],
         ),
@@ -586,8 +611,8 @@ story.extend(
         Spacer(1, 5 * mm),
         p("Execution sequence", "H2x"),
         p(
-            "Baseline run → root-cause inspection → bounded deterministic guard → exact Preview redeployment → targeted retest of the seven unchanged failures. "
-            "The final scenario set uses the targeted retest result only where the baseline interview failed; the other 17 baseline successes remain unchanged.",
+            "Deterministic compiler and three-language implementation → full 24-scenario run → exact diagnosis of two 60-second infrastructure cutoffs → "
+            "300-second route execution window → immutable Preview redeployment → definitive full 24-scenario rerun.",
         ),
         pipeline_diagram(),
         Spacer(1, 4 * mm),
@@ -635,7 +660,7 @@ story.extend(
     [
         Spacer(1, 5 * mm),
         p(
-            "Final interview completion is 8/8 in every language. No scenario created an executable draft, so validation, simulation, publication, activation, and detailed generated-artifact handoff fidelity remain blocked.",
+            "Final completion is 8/8 in every language. Every scenario created an executable draft and passed coded validation, branch simulation, and detailed fidelity checks for fields, attachments/forms, approvals, conditions, FYI, and restricted handoffs.",
             "Calloutx",
         ),
     ]
@@ -737,7 +762,7 @@ story.extend(
         p("Requirement-document safety", "H2x"),
         p(
             "Accepted text and Markdown requirements were treated as untrusted extracts. Unsupported binary input returned 415, active-content PDF returned 422, and a file over 5 MB returned 413. "
-            "An embedded prompt-injection document was accepted only as untrusted source text. Because no draft compiled, generated-artifact injection fidelity could not be scored.",
+            "An embedded prompt-injection document was accepted only as untrusted source text; its attempted instructions did not gain workflow authority.",
         ),
         p("Initial brief", "H2x"),
         p(
@@ -745,55 +770,57 @@ story.extend(
         ),
         p("Usability recommendation", "H2x"),
         p(
-            "Expose the initial free-text brief in the UI, let employees edit any dossier section before confirmation, show explicit defaults versus unknowns, and add a three-language review screen before draft creation.",
+            "The shipped review gate lets employees edit the title, scope, classification, retention, assumptions, and open-question answers before Builder/Canvas. "
+            "Interview and page-level document citations show where the dossier came from; pilot feedback should guide finer item-level citation linking.",
         ),
     ]
 )
 
-# Compiler root cause
+# Compiler and timeout remediation
 story.append(PageBreak())
-story.extend(section("5. Draft-generation root cause"))
+story.extend(section("5. Deterministic compiler and timeout remediation"))
 story.extend(
     [
-        badge("CRITICAL RELEASE BLOCKER", RED, width=62 * mm),
+        badge("FIXED AND RETESTED", GREEN, width=62 * mm),
         Spacer(1, 5 * mm),
         p(
-            "All 24 final scenarios reached a ready interview state and then failed draft creation. The endpoint retried once and returned 503 dependency_unavailable after approximately 121 seconds. "
-            "No unsafe family or draft was stored; created family count remained zero.",
+            "The model now returns two bounded requirements-plan candidates in parallel. Application code reconciles coverage and deterministically owns canonical IDs, "
+            "fields, documents, nodes, edges, routes, conditions, fallbacks, FYI blocking semantics, visibility, and audit linkage. "
+            "A baseline full run created 22 of 24 valid drafts; the other two were identical 60-second infrastructure socket cutoffs, not workflow rejections.",
         ),
         metric_cards(
             [
-                ("0 / 24", "Drafts created", "Safe fail-closed behavior"),
-                ("12 / 14", "Retest attempts", "Schema validation failure"),
-                ("2 / 14", "Retest attempts", "Invalid JSON"),
+                (f"{summary['final']['draftPasses']} / 24", "Drafts created", "Authoritative and replay-safe"),
+                (f"{summary['final']['fidelityPasses']} / 24", "Fidelity passes", "Validation and simulation"),
+                ("300s", "Route window", "Long-tail provider allowance"),
             ],
             widths=[56 * mm, 56 * mm, 56 * mm],
         ),
         Spacer(1, 5 * mm),
-        p("Representative invalid output categories", "H2x"),
+        p("Executable authority owned by code", "H2x"),
         styled_table(
             [
-                ["Contract area", "Observed failure paths", "Meaning"],
-                ["Request fields", "requestFields.*.options; template.fields.*.options", "Options missing or invalid for select-like fields"],
-                ["Attachments/forms", "attachmentRequirements.*.minimumFiles; *.fields", "Required counts or native form fields inconsistent"],
-                ["Routing", "routes.*; routes.*.condition; condition.fieldId", "Wrong route semantics, invalid conditions, or broken references"],
-                ["Visibility/blocking", "routes.*.blocking", "FYI or non-blocking route generated as blocking"],
-                ["Identity", "businessScope.processOwnerEmail", "Invented or malformed optional owner email"],
-                ["Transport", "invalid_json", "Provider response was not parseable JSON despite structured-output request"],
+                ["Contract area", "Deterministic control", "Qualification evidence"],
+                ["Request fields", "Stable IDs, type/option repair, explicit paired-date expansion", "All named field-count oracles passed"],
+                ["Attachments/forms", "File cardinality, native-form defaults, conditional submit stages", "Required/optional and later-stage evidence passed"],
+                ["Routing", "Canonical graph, condition/fallback routes, rejection correction loop", "Numeric, choice, parallel and quorum paths simulated"],
+                ["Visibility/blocking", "FYI non-blocking rules and selected/all/none handoff views", "Restricted field/document handoffs passed"],
+                ["Identity", "Directory position/request field/fixed email resolution without invented people", "Inactive identities rejected server-side"],
+                ["Traceability", "Interview message IDs, document hash, page and excerpt citations", "Editable review persists a new draft revision"],
             ],
             [38 * mm, 69 * mm, 61 * mm],
         ),
         Spacer(1, 6 * mm),
-        p("Why prompt repair alone is insufficient", "H2x"),
+        p("Why deterministic compilation remains necessary", "H2x"),
         p(
             "The executable contract contains cross-field and graph invariants that JSON Schema cannot fully express: unique IDs, valid references, complete branches, "
-            "type-specific fields, required fallback behavior, and non-blocking FYI routes. A model can produce syntactically plausible JSON while violating those invariants.",
+            "type-specific fields, required fallback behavior, and non-blocking FYI routes. The model may summarize intent, but it cannot gain direct graph authority.",
         ),
-        p("Required architecture", "H2x"),
+        p("Qualified architecture", "H2x"),
         pipeline_diagram(),
         p(
-            "The compiler should map a validated dossier into canonical IDs, fields, documents, nodes, edges, defaults, fallbacks, visibility rules, and audit metadata. "
-            "The model may propose human-readable labels or flag ambiguity, but application code must own executable structure.",
+            "The confirmed plan is compiled into a requirements dossier and executable definition, then checked by coded validation and simulation before storage. "
+            "The human reviewer can edit the dossier and must still use the governed publication/activation workflow.",
             "Calloutx",
         ),
     ]
@@ -864,11 +891,11 @@ story.extend(
                     "Usable median; high long tail",
                 ],
                 [
-                    "Draft attempt (two tries total)",
+                    "Draft generation",
                     f"{perf['p50DraftAttemptMs']/1000:.1f}s",
                     f"{perf['p95DraftAttemptMs']/1000:.1f}s",
                     f"{perf['maximumDraftAttemptMs']/1000:.1f}s",
-                    "Unacceptable because result still fails",
+                    "Long-tail model step; execution window monitored",
                 ],
             ],
             [51 * mm, 24 * mm, 24 * mm, 25 * mm, 44 * mm],
@@ -886,15 +913,15 @@ story.extend(
         ),
         p("Interpretation", "H2x"),
         p(
-            "Ordinary interviews are workable at the median, but Chinese turns are slower and the overall long tail is visible. The direct draft call consumes roughly two minutes before failing. "
-            "A deterministic compiler should reduce draft creation to local validation time and make latency predictable.",
+            "Ordinary interviews are workable at the median, while the draft-planning model call has a longer tail. The baseline exposed two exact 60-second infrastructure cutoffs. "
+            "The explicit 300-second route window removed that cutoff; latency and provider timeout rates remain pilot monitoring items.",
         ),
         p("Operational safeguards", "H2x"),
         styled_table(
             [
                 ["Safeguard", "Recommended threshold/action"],
                 ["Interview timeout", "Soft warning at 15s; retry only once for provider transport errors, not schema mistakes"],
-                ["Draft compile", "Local deterministic compile target under 2s; no LLM retry in the critical path"],
+                ["Draft generation", "Bounded parallel plan calls plus deterministic compile; alert on p95 and timeout rate"],
                 ["Concurrency", "Per-user queue plus business-level rate limit; preserve optimistic revision checks"],
                 ["Observability", "Model, route, ZDR flag, latency, token/cost, error reason, schema issue categories"],
                 ["Fallback", "Save confirmed dossier even when model/provider is unavailable; allow manual builder continuation"],
@@ -932,12 +959,12 @@ story.extend(
         styled_table(
             [
                 ["Gate", "Current", "Required before pilot"],
-                ["Interview completion", "24/24 after guard", "Maintain 100% on expanded ambiguity set"],
-                ["Chinese product language", "15.3% of responses contain Han; all next questions English", "Full EN/zh-Hant/zh-Hans localization"],
-                ["Executable draft creation", "0/24", "24/24 schema-valid deterministic compile"],
-                ["Simulation and handoff fidelity", "Blocked", "All paths simulated; visibility/document handoffs verified"],
+                ["Interview completion", "24/24", "Maintain 100% on expanded ambiguity set"],
+                ["Chinese product language", "8/8 zh-Hant and 8/8 zh-Hans", "Pilot terminology review by native-speaking staff"],
+                ["Executable draft creation", "24/24", "Maintain schema-valid deterministic compile"],
+                ["Simulation and handoff fidelity", "24/24", "Add reviewed production-like examples"],
                 ["Security protocol", "9/9", "Retain and expand SSO/DLP/audit tests"],
-                ["Corporate pilot", "Not approved", "5–10 person controlled pilot only after gates above"],
+                ["Corporate pilot", "Conditionally approved", "5–10 people; human publication and activation"],
             ],
             [46 * mm, 50 * mm, 72 * mm],
         ),
@@ -970,11 +997,11 @@ story.extend(
             [
                 ["Evidence", "Value"],
                 ["Preview alias", "https://approval-app-template-copilot-preview.vercel.app"],
-                ["Final commit", summary["final"]["commits"][1]],
-                ["Final deployment", summary["final"]["deploymentIds"][1]],
+                ["Final commit", summary["final"]["commits"][-1]],
+                ["Final deployment", summary["final"]["deploymentIds"][-1]],
                 ["Model", summary["model"]],
                 ["Routing mode", summary["routingMode"]],
-                ["Automated tests", "909 passing; typecheck, lint and webpack production build passing"],
+                ["Automated tests", "926 passing; typecheck, lint and webpack production build passing"],
                 ["Production", "Unchanged intentionally"],
             ],
             [43 * mm, 125 * mm],
@@ -991,24 +1018,24 @@ story.extend(
         styled_table(
             [
                 ["Use", "Decision", "Conditions"],
-                ["Multilingual interview extraction", "CONDITIONAL GO", "Deterministic unknown/correction guards; human confirmation; monitoring"],
-                ["Direct executable template generation", "NO-GO", "Replace with deterministic compiler"],
-                ["Autonomous corporate pilot", "NO-GO", "Compiler, localization, simulation, governance and security gates first"],
-                ["Supervised interview-only pilot", "LIMITED GO", "After full Chinese localization; no auto-publication or activation"],
+                ["Multilingual interview extraction", "GO", "Deterministic unknown/correction guards; human confirmation; monitoring"],
+                ["Deterministic executable compilation", "GO", "Coded validation, simulation, revisions and human dossier review"],
+                ["Autonomous publication/activation", "NO-GO", "Keep review, publication and activation human-authorized"],
+                ["Controlled corporate pilot", "CONDITIONAL GO", "5–10 people; monitored, supervised, synthetic/low-risk workflows first"],
             ],
             [50 * mm, 32 * mm, 86 * mm],
         ),
         Spacer(1, 6 * mm),
-        p("Recommended build order", "H2x"),
+        p("Delivery status and next build order", "H2x"),
         styled_table(
             [
                 ["Priority", "Work package", "Acceptance criteria"],
-                ["P0", "Deterministic dossier-to-workflow compiler", "Canonical IDs, branches, fallbacks, attachments, visibility and validation; 24/24 compile"],
-                ["P0", "Three-language interview UI", "All prompts, summaries, errors and controls in EN/zh-Hant/zh-Hans"],
-                ["P1", "Editable dossier review", "Users can revise any section, see defaults/unknowns, cite source documents and reconfirm"],
-                ["P1", "Simulation qualification", "Threshold, parallel, rejection, correction, info and document handoff routes verified"],
+                ["DONE", "Deterministic dossier-to-workflow compiler", "Canonical IDs, branches, fallbacks, attachments, visibility and validation; 24/24 compile"],
+                ["DONE", "Three-language interview UI", "Prompts, summaries, errors and dossier controls in EN/zh-Hant/zh-Hans"],
+                ["DONE", "Editable dossier review and citations", "Revision-controlled review plus interview and page-level document evidence"],
+                ["DONE", "Simulation qualification", "Threshold, parallel, rejection, correction, FYI and document handoff routes verified"],
                 ["P1", "Governance/monitoring", "SSO, audit export, DLP, retention, quotas, model routing and alerts"],
-                ["P2", "Controlled 5–10 person pilot", "Supervised creation; human review; no automatic publication/activation"],
+                ["P1", "Controlled 5–10 person pilot", "Supervised creation; human review; no automatic publication/activation"],
                 ["P2", "Remote MCP adapter", "Expose stable authoring API after compiler and review workflow stabilize"],
                 ["P3", "Teams/corporate chatbot", "Use MCP/API with enterprise identity and policy enforcement"],
             ],
@@ -1017,7 +1044,7 @@ story.extend(
         ),
         Spacer(1, 6 * mm),
         p(
-            "Do not promote the Copilot as an autonomous template creator yet. Keep the current Preview for engineering and supervised review; Production remains unchanged.",
+            "Proceed with a controlled pilot only. Keep the current Preview for engineering and supervised review; Production remains unchanged until pilot acceptance and the normal staged-promotion gate.",
             "Calloutx",
         ),
     ]
@@ -1033,10 +1060,10 @@ story.extend(
             [
                 ["Limitation", "Impact / follow-up"],
                 ["Synthetic corporate data", "Safe for qualification; validate terminology and policies with real process owners during controlled pilot"],
-                ["No executable artifact passed", "Validation/simulation/publication/activation and generated handoff fidelity cannot be claimed"],
+                ["No real corporate workflow data", "Validation/simulation/fidelity passed synthetically; publication and activation remain separate human governance checks"],
                 ["Provider-side ZDR not independently audited", "Application required ZDR routing; obtain contractual/provider evidence for corporate governance"],
                 ["No office document OCR benchmark in this run", "Document intake safety was tested; field extraction quality needs a separate labelled document set"],
-                ["Mixed exact builds in final scenario set", "17 accepted baseline cases plus 7 unchanged targeted retests; both deployment identities are recorded"],
+                ["Model variance remains", "Two independent plan candidates reduce omissions but do not eliminate provider latency or semantic drift; retain the release gate"],
                 ["No production traffic", "Intentional safety constraint; Production was not modified"],
             ],
             [52 * mm, 116 * mm],
@@ -1046,21 +1073,21 @@ story.extend(
         styled_table(
             [
                 ["Artifact", "Contents"],
-                ["CSV report", "258 records: summary, 9 protocols, 24 scenarios, 216 interview turns, 8 defects"],
-                ["Raw baseline JSON", "24 scenario baseline, protocol calls, per-turn latency, draft attempts"],
-                ["Raw retest JSON", "Seven targeted retests, 9/9 final protocols, zero browser errors"],
+                ["CSV report", "Summary, protocols, 24 scenarios, interview turns, defects and exact deployment identity"],
+                ["Raw baseline JSON", "24 scenarios with two diagnosed 60-second transport cutoffs"],
+                ["Raw final JSON", "24 definitive scenarios, 9/9 protocols and zero browser errors"],
                 ["Authenticated screenshot", "Final Template Copilot page after normal sign-in"],
                 ["Vercel runtime logs", "Bounded model reason and issue paths; no prompt or credential logging"],
-                ["Supabase evidence", "49 sessions, 669 messages, qwen model persisted, zero generated families"],
-                ["Code gate", "909 tests, typecheck, lint, webpack build, exact Git/Vercel identity"],
+                ["Dossier evidence", "Editable authoritative revision plus interview and page-level document citations"],
+                ["Code gate", "926 tests, typecheck, lint, webpack build, exact Git/Vercel identity"],
             ],
             [48 * mm, 120 * mm],
         ),
         Spacer(1, 8 * mm),
         p("Final answer", "H2x"),
         p(
-            "<b>Use qwen/qwen3.5-35b-a3b for the conversational interview layer, with the deterministic guards retained. "
-            "Do not use it as the compiler. Build the deterministic compiler next, then rerun this exact 24-scenario matrix through validation, simulation, review, publication, and activation.</b>",
+            "<b>Use qwen/qwen3.5-35b-a3b for the multilingual conversational and bounded planning layer, while deterministic application code remains the compiler. "
+            "Proceed to a controlled pilot with editable dossier review, citations, coded validation, simulation, and human-authorized publication and activation.</b>",
             "Bodyx",
         ),
     ]
