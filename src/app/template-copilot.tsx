@@ -347,7 +347,7 @@ export function TemplateCopilot({
 
   if (!state) {
     return (
-      <section className="rounded-md border border-[#d9e4df] bg-[#f7fbf9] p-5">
+      <section className="rounded-md border border-[#d9e4df] bg-[#f7fbf9] p-5 dark:border-neutral-700 dark:bg-neutral-950">
         <div className="flex items-start gap-3">
           <div className="rounded-full bg-emerald-100 p-2 text-emerald-700">
             <Bot aria-hidden="true" size={20} />
@@ -372,7 +372,7 @@ export function TemplateCopilot({
                       event.target.value as TemplateCopilotLocale,
                     )
                   }
-                  className="mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
+                  className="template-copilot-control mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
                 >
                   {templateCopilotLocales.map((item) => (
                     <option key={item} value={item}>
@@ -393,7 +393,7 @@ export function TemplateCopilot({
                     setBusinessUnitId(id);
                     setDepartmentName(business?.departments[0] || "");
                   }}
-                  className="mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
+                  className="template-copilot-control mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
                 >
                   {availableBusinesses.map((business) => (
                     <option key={business.id} value={business.id}>
@@ -407,7 +407,7 @@ export function TemplateCopilot({
                 <select
                   value={departmentName}
                   onChange={(event) => setDepartmentName(event.target.value)}
-                  className="mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
+                  className="template-copilot-control mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
                 >
                   {(selectedBusiness?.departments || []).map((department) => (
                     <option key={department} value={department}>
@@ -436,7 +436,7 @@ export function TemplateCopilot({
   return (
     <section
       aria-label={copy.title}
-      className="grid gap-4 rounded-md border border-[#d9e4df] bg-[#f7fbf9] p-4 lg:grid-cols-[minmax(0,1fr)_280px]"
+      className="grid gap-4 rounded-md border border-[#d9e4df] bg-[#f7fbf9] p-4 dark:border-neutral-700 dark:bg-neutral-950 lg:grid-cols-[minmax(0,1fr)_280px]"
     >
       <div className="min-w-0">
         <div
@@ -448,7 +448,7 @@ export function TemplateCopilot({
               key={message.id}
               className={
                 message.role === "assistant"
-                  ? "mr-8 rounded-md bg-[#f1f6f3] p-3 text-sm text-neutral-800"
+                  ? "mr-8 rounded-md bg-[#f1f6f3] p-3 text-sm text-neutral-800 dark:bg-neutral-800 dark:text-white"
                   : "ml-8 rounded-md bg-emerald-700 p-3 text-sm text-white"
               }
             >
@@ -489,7 +489,7 @@ export function TemplateCopilot({
               disabled={busy || state.status === "ready"}
               aria-label={copy.answerLabel}
               rows={3}
-              className="min-h-20 flex-1 resize-y rounded-md border border-[#d8d8d8] bg-white p-3 text-sm"
+              className="template-copilot-control min-h-20 flex-1 resize-y rounded-md border border-[#d8d8d8] bg-white p-3 text-sm"
               placeholder={
                 state.status === "ready"
                   ? copy.confirmed
@@ -598,7 +598,7 @@ function DossierReviewEditor({
 }) {
   const copy = dossierReviewCopy[locale];
   return (
-    <section className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-4">
+    <section className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-4 dark:border-neutral-700 dark:bg-neutral-900">
       <div className="flex items-start gap-3">
         <FileText
           aria-hidden="true"
@@ -620,7 +620,7 @@ function DossierReviewEditor({
             onChange={(event) =>
               onChange({ ...dossier, title: event.target.value })
             }
-            className="mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
+            className="template-copilot-control mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
           />
         </label>
         <label className="text-sm text-neutral-700">
@@ -639,7 +639,7 @@ function DossierReviewEditor({
                 },
               })
             }
-            className="mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
+            className="template-copilot-control mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
           >
             <option value="internal">{copy.internal}</option>
             <option value="confidential">{copy.confidential}</option>
@@ -656,7 +656,7 @@ function DossierReviewEditor({
           onChange={(event) =>
             onChange({ ...dossier, purpose: event.target.value })
           }
-          className="mt-1 w-full rounded-md border border-[#d8d8d8] bg-white p-3"
+          className="template-copilot-control mt-1 w-full rounded-md border border-[#d8d8d8] bg-white p-3"
         />
       </label>
       <label className="mt-3 block max-w-xs text-sm text-neutral-700">
@@ -675,7 +675,7 @@ function DossierReviewEditor({
               },
             })
           }
-          className="mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
+          className="template-copilot-control mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
         />
       </label>
 
@@ -721,7 +721,7 @@ function DossierReviewEditor({
                       ),
                     })
                   }
-                  className="rounded-md border border-[#d8d8d8] p-2 text-sm"
+                  className="template-copilot-control rounded-md border border-[#d8d8d8] p-2 text-sm"
                 />
                 <select
                   aria-label={`${copy.status} ${index + 1}`}
@@ -742,7 +742,7 @@ function DossierReviewEditor({
                       ),
                     })
                   }
-                  className="min-h-11 rounded-md border border-[#d8d8d8] bg-white px-2 text-sm"
+                  className="template-copilot-control min-h-11 rounded-md border border-[#d8d8d8] bg-white px-2 text-sm"
                 >
                   <option value="proposed">{copy.proposed}</option>
                   <option value="confirmed">{copy.confirmed}</option>
@@ -782,7 +782,7 @@ function DossierReviewEditor({
                       ),
                     })
                   }
-                  className="mt-2 w-full rounded-md border border-[#d8d8d8] p-2"
+                  className="template-copilot-control mt-2 w-full rounded-md border border-[#d8d8d8] p-2"
                 />
               </label>
             ))}

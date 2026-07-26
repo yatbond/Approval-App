@@ -42,6 +42,10 @@ const workflowViewSource = await readFile(
   new URL("../app/workflow-view.tsx", import.meta.url),
   "utf8",
 );
+const templateCopilotSource = await readFile(
+  new URL("../app/template-copilot.tsx", import.meta.url),
+  "utf8",
+);
 const darkLogoSource = await readFile(
   new URL("../../public/chunwo-logo-dark.svg", import.meta.url),
   "utf8",
@@ -108,6 +112,29 @@ test("keeps dark mode foregrounds and placeholders readable", () => {
   assert.match(
     globalsSource,
     /html\[data-theme="dark"\] ::placeholder[\s\S]*color: #aaa4a5/,
+  );
+});
+
+test("gives every Copilot form control a dark gray surface and white text", () => {
+  assert.match(
+    globalsSource,
+    /html\[data-theme="dark"\] \.template-copilot-control \{[\s\S]*background-color: #343031 !important;[\s\S]*color: #ffffff !important;[\s\S]*caret-color: #ffffff;/,
+  );
+  assert.match(
+    globalsSource,
+    /html\[data-theme="dark"\] \.template-copilot-control::placeholder \{[\s\S]*color: #cbc6c7;/,
+  );
+  assert.equal(
+    templateCopilotSource.match(/template-copilot-control/g)?.length,
+    11,
+  );
+  assert.match(
+    templateCopilotSource,
+    /bg-\[\#f7fbf9\][^"\n]*dark:bg-neutral-950/,
+  );
+  assert.match(
+    templateCopilotSource,
+    /bg-\[\#f1f6f3\][^"\n]*dark:bg-neutral-800/,
   );
 });
 
