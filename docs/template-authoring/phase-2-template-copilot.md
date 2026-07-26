@@ -4,6 +4,65 @@
 
 The model is an interpreter and draft generator, not an authority.
 
+## Copilot v2 Step 1: field ledger foundation
+
+`TEMPLATE_COPILOT_V2=true` is a server-only gate for the v2 field ledger.
+With the flag off, all existing Copilot routes and schema-version-1 sessions
+continue to use the v1 ten-section flow unchanged.
+
+V2 stores a JSONB-compatible `schemaVersion: 2` ledger with stable field IDs,
+bounded canonical values and evidence, status (`candidate`, `committed`,
+`unknown`, `not_applicable`, `unresolved`, or `conflicting`), human
+confirmation metadata, coded applicability/blocking, and pinned dependency and
+question-library metadata. The v2 mutation adapter derives its actor from the
+authenticated server context, validates a bounded operation before calling the
+existing service-only revision/idempotency RPC, and returns server-derived gaps
+and readiness. Model output can create neither a committed fact nor a readiness
+state.
+
+The Step 1 migration `20260726163240_template_copilot_v2_ledger.sql` adds a
+service-role-only v2 start RPC, a locked fact-mutation RPC, a locked legacy
+upgrade RPC, idempotency receipts, and append-only audit events. Each audit
+event records the server-derived actor, operation, fact ID, command hash,
+before/after revision, outcome, and bounded result detail. The database lock
+and expected-revision comparison prevent a server's pre-validation read from
+overwriting a concurrent edit. Reusing an idempotency key with a different
+canonical command hash is rejected.
+
+V2 receipts and audit events are intentionally immutable retention evidence:
+there are no application-role update/delete grants, immutable-row triggers
+reject changes, and restrictive foreign keys prevent a session or profile from
+being silently deleted underneath its audit trail. Any future retention or
+deletion workflow must be an explicitly reviewed migration with equivalent
+audit preservation.
+
+The v2 fact route accepts only a fact ID, expected revision, idempotency key,
+and an operation-specific bounded payload. It never accepts a whole ledger,
+an actor, a confirmation timestamp, readiness, or audit data. The server loads
+the current owner-scoped session, derives actor and clock, validates the typed
+value, and returns only the RPC's persisted result. `human_commit` and
+`resolve_conflict` are distinct operations; neither a candidate nor an unknown
+can overwrite a committed, human-confirmed N/A, or conflicting fact.
+
+Draft, publication, and activation readiness are pure ledger-derived results.
+Candidates, unknowns, unresolved facts, conflicts, unmet dependencies, and
+compiler errors are returned as coded gaps. Activation additionally requires a
+later lifecycle action to prove the exact revision was published; an interview
+can never make a template activation-ready by itself.
+
+V1 remains a distinct parser and is read-only to v2 code. An upgrade starts
+with a deterministic preview that maps each v1 section summary to candidate
+facts (or unresolved facts), including its legacy source references. A caller
+must approve the exact preview hash before a v2 ledger is created, and that
+operation creates candidates only—never committed executable facts. There is no
+v2-to-v1 conversion and no silent reinterpretation.
+
+The preview hash covers the source session ID and revision, business/department
+scope, locale, sanitized-document identity (ID/name/SHA-256), target library
+version, mappings, and unresolved IDs. Approval is itself a revisioned,
+idempotent server mutation. A changed source or preview hash is rejected rather
+than converted.
+
 - A deterministic ten-section ledger decides which question is next.
 - Critical sections cannot be completed as unknown.
 - Only an explicit confirmation moves a session to `ready`.

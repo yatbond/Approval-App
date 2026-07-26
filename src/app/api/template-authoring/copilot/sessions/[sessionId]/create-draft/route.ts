@@ -24,6 +24,7 @@ import {
 } from "@/lib/template-authoring-server-data";
 import { validateTemplateAuthoringDefinition } from "@/lib/template-authoring-validation";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
+import { isTemplateCopilotV2Enabled } from "@/lib/template-copilot-v2-feature";
 
 // Two independent bounded model calls run in parallel before deterministic
 // reconciliation. Keep the serverless execution window above the provider's
@@ -69,6 +70,22 @@ export async function POST(
         correlationId,
         { error: { code: "not_found", message: "The Copilot session was not found." } },
         404,
+      );
+    }
+    if (current.ledger.schemaVersion !== 1) {
+      return approvalJson(
+        cookieSource,
+        correlationId,
+        { error: { code: "v2_session_read_only", message: "This v2 Copilot session must use its dedicated v2 draft path." } },
+        409,
+      );
+    }
+    if (isTemplateCopilotV2Enabled()) {
+      return approvalJson(
+        cookieSource,
+        correlationId,
+        { error: { code: "v1_session_read_only", message: "This legacy Copilot session is read-only in v2. Preview and approve its explicit upgrade instead." } },
+        409,
       );
     }
     if (

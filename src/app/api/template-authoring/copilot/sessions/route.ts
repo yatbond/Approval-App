@@ -30,6 +30,8 @@ import {
 } from "@/lib/template-copilot-server-data";
 import { templateCopilotSessionListQuerySchema } from "@/lib/template-copilot-history";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
+import { isTemplateCopilotV2Enabled } from "@/lib/template-copilot-v2-feature";
+import { createTemplateCopilotV2Session } from "@/lib/template-copilot-v2-server-data";
 
 export async function GET(request: NextRequest) {
   const resolved = await createApprovalServerContext(request);
@@ -133,6 +135,28 @@ export async function POST(request: NextRequest) {
     const locale =
       parsed.data.locale ||
       detectTemplateCopilotLocale(parsed.data.initialRequirement || "");
+    if (isTemplateCopilotV2Enabled()) {
+      if (parsed.data.initialRequirement) {
+        return approvalJson(
+          cookieSource,
+          correlationId,
+          { error: { code: "v2_initial_requirement_not_available", message: "Describe-everything intake is not enabled in this Copilot v2 foundation release." } },
+          422,
+        );
+      }
+      const result = await createTemplateCopilotV2Session({
+        service,
+        actor,
+        clientMessageId: parsed.data.clientMessageId,
+        scope: { ...scope, locale },
+      });
+      return templateAuthoringRpcResponse({
+        cookieSource,
+        correlationId,
+        result,
+        appliedStatus: 201,
+      });
+    }
     const ledger = createTemplateCopilotLedger({ ...scope, locale });
     const assistantMessage = initialAssistantMessage({
       locale,

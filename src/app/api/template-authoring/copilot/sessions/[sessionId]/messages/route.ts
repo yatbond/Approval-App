@@ -27,6 +27,7 @@ import {
   loadTemplateCopilotSession,
 } from "@/lib/template-copilot-server-data";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
+import { isTemplateCopilotV2Enabled } from "@/lib/template-copilot-v2-feature";
 
 export async function POST(
   request: NextRequest,
@@ -55,6 +56,22 @@ export async function POST(
         correlationId,
         { error: { code: "not_found", message: "The Copilot session was not found." } },
         404,
+      );
+    }
+    if (current.ledger.schemaVersion !== 1) {
+      return approvalJson(
+        cookieSource,
+        correlationId,
+        { error: { code: "v2_session_read_only", message: "This v2 Copilot session must use its dedicated v2 interview path." } },
+        409,
+      );
+    }
+    if (isTemplateCopilotV2Enabled()) {
+      return approvalJson(
+        cookieSource,
+        correlationId,
+        { error: { code: "v1_session_read_only", message: "This legacy Copilot session is read-only in v2. Preview and approve its explicit upgrade instead." } },
+        409,
       );
     }
     if (current.status !== "interviewing" && current.status !== "ready") {

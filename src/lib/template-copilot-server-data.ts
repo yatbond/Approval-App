@@ -3,9 +3,9 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ApprovalRuntimeProfile } from "./approval-runtime.ts";
 import {
-  templateCopilotLedgerSchema,
-  type TemplateCopilotLedger,
-} from "./template-copilot-ledger.ts";
+  templateCopilotStoredLedgerSchema,
+  type TemplateCopilotStoredLedger,
+} from "./template-copilot-facts.ts";
 import {
   orderTemplateCopilotMessages,
   transcriptMessageFromStored,
@@ -59,7 +59,7 @@ export async function createTemplateCopilotSession({
   service: SupabaseClient;
   actor: ApprovalRuntimeProfile;
   clientMessageId: string;
-  ledger: TemplateCopilotLedger;
+  ledger: TemplateCopilotStoredLedger;
   assistantMessage: string;
 }) {
   const { data, error } = await service.rpc(
@@ -103,7 +103,9 @@ export async function loadTemplateCopilotSession({
   if (!copilotSession) return null;
   return {
     ...copilotSession,
-    ledger: templateCopilotLedgerSchema.parse(copilotSession.ledger),
+    // Read both ledgers without running v2 logic. A stored v1 session remains
+    // a v1 session until an explicit, previewed upgrade is approved server-side.
+    ledger: templateCopilotStoredLedgerSchema.parse(copilotSession.ledger),
     messages: orderTemplateCopilotMessages(messages || []),
   };
 }
@@ -152,7 +154,7 @@ export async function listTemplateCopilotSessions({
   );
 
   return rows.map((row) => {
-    const ledger = templateCopilotLedgerSchema.parse(row.ledger);
+    const ledger = templateCopilotStoredLedgerSchema.parse(row.ledger);
     const profile = profilesById.get(row.owner_id);
     return {
       id: row.id,
@@ -218,7 +220,7 @@ export async function advanceTemplateCopilotSession({
   clientMessageId: string;
   userMessage: string;
   assistantMessage: string;
-  ledger: TemplateCopilotLedger;
+  ledger: TemplateCopilotStoredLedger;
   status: "interviewing" | "ready";
   model: string;
   structuredDetail?: Record<string, unknown>;
