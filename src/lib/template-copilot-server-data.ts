@@ -6,6 +6,12 @@ import {
   templateCopilotLedgerSchema,
   type TemplateCopilotLedger,
 } from "./template-copilot-ledger.ts";
+import {
+  orderTemplateCopilotMessages,
+  transcriptMessageFromStored,
+  type TemplateCopilotSessionSummary,
+  type TemplateCopilotTranscript,
+} from "./template-copilot-history.ts";
 
 export async function resolveTemplateCopilotScope({
   service,
@@ -98,7 +104,97 @@ export async function loadTemplateCopilotSession({
   return {
     ...copilotSession,
     ledger: templateCopilotLedgerSchema.parse(copilotSession.ledger),
-    messages: messages || [],
+    messages: orderTemplateCopilotMessages(messages || []),
+  };
+}
+
+export async function listTemplateCopilotSessions({
+  session,
+  service,
+  actor,
+  view,
+  limit,
+}: {
+  session: SupabaseClient;
+  service: SupabaseClient;
+  actor: ApprovalRuntimeProfile;
+  view: "mine" | "review";
+  limit: number;
+}): Promise<TemplateCopilotSessionSummary[]> {
+  let builder = session
+    .from("template_copilot_sessions")
+    .select(
+      "id,owner_id,family_id,draft_id,status,revision,ledger,model,created_at,updated_at",
+    )
+    .order("updated_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(limit);
+  if (view === "mine") {
+    builder = builder.eq("owner_id", actor.id);
+  }
+  const { data, error } = await builder;
+  if (error) throw error;
+  const rows = data || [];
+
+  const ownerIds =
+    view === "review"
+      ? Array.from(new Set(rows.map((row) => row.owner_id)))
+      : [];
+  const { data: profiles, error: profilesError } = ownerIds.length
+    ? await service
+        .from("profiles")
+        .select("id,email,full_name")
+        .in("id", ownerIds)
+    : { data: [], error: null };
+  if (profilesError) throw profilesError;
+  const profilesById = new Map(
+    (profiles || []).map((profile) => [profile.id, profile]),
+  );
+
+  return rows.map((row) => {
+    const ledger = templateCopilotLedgerSchema.parse(row.ledger);
+    const profile = profilesById.get(row.owner_id);
+    return {
+      id: row.id,
+      familyId: row.family_id,
+      draftId: row.draft_id,
+      status: row.status as TemplateCopilotSessionSummary["status"],
+      revision: Number(row.revision),
+      model: row.model,
+      locale: ledger.locale,
+      businessName: ledger.businessName,
+      departmentName: ledger.departmentName,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      ...(profile
+        ? {
+            owner: {
+              fullName: profile.full_name,
+              email: profile.email,
+            },
+          }
+        : {}),
+    };
+  });
+}
+
+export function templateCopilotTranscriptFromStored(
+  stored: Awaited<ReturnType<typeof loadTemplateCopilotSession>>,
+): TemplateCopilotTranscript | null {
+  if (!stored) return null;
+  return {
+    id: stored.id,
+    familyId: stored.family_id,
+    draftId: stored.draft_id,
+    status: stored.status as TemplateCopilotTranscript["status"],
+    revision: Number(stored.revision),
+    model: stored.model,
+    locale: stored.ledger.locale,
+    businessName: stored.ledger.businessName,
+    departmentName: stored.ledger.departmentName,
+    createdAt: stored.created_at,
+    updatedAt: stored.updated_at,
+    messages: stored.messages.map(transcriptMessageFromStored),
   };
 }
 

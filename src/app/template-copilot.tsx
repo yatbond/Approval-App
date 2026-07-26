@@ -18,6 +18,7 @@ import {
   templateCopilotLocales,
   type TemplateCopilotLocale,
 } from "@/lib/template-copilot-plan";
+import { TemplateCopilotHistoryPanel } from "./template-copilot-history-panel";
 
 type ChatMessage = {
   id: string;
@@ -357,6 +358,9 @@ export function TemplateCopilot({
             <p className="mt-1 text-sm text-neutral-600">
               {copy.description}
             </p>
+            <p className="mt-2 text-xs leading-5 text-neutral-500">
+              {copy.historyNotice}
+            </p>
             {!availableBusinesses.length && (
               <p role="status" className="mt-3 text-sm text-amber-700">
                 {copy.directoryLoading}
@@ -427,6 +431,7 @@ export function TemplateCopilot({
               {busy ? copy.starting : copy.start}
             </button>
             {error && <ErrorMessage message={error} />}
+            <TemplateCopilotHistoryPanel locale={selectedLocale} />
           </div>
         </div>
       </section>
@@ -573,6 +578,9 @@ export function TemplateCopilot({
         )}
         <p className="mt-3 text-xs leading-5 text-neutral-500">
           {copy.fileBoundary}
+        </p>
+        <p className="mt-3 border-t border-[#e6e6e6] pt-3 text-xs leading-5 text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+          {copy.historyNotice}
         </p>
       </aside>
     </section>
@@ -1039,6 +1047,7 @@ const templateCopilotCopy: Record<
     generate: string;
     fileBoundary: string;
     draftCreated: string;
+    historyNotice: string;
   }
 > = {
   en: {
@@ -1069,6 +1078,8 @@ const templateCopilotCopy: Record<
       "Files are bounded and treated as untrusted data. PDF active content is rejected. Human review is always required before publication.",
     draftCreated:
       "Editable draft created. Review it in Builder and Canvas, run validation and simulation, then send it for publication review.",
+    historyNotice:
+      "This conversation is saved with your account. You can reopen it later, and authorized IT administrators may review it to improve the Copilot.",
   },
   "zh-Hant": {
     title: "流程範本助理",
@@ -1096,6 +1107,8 @@ const templateCopilotCopy: Record<
       "文件大小及內容均受限制，並視為不受信任的資料。含主動內容的 PDF 會被拒絕。發布前必須由人員審核。",
     draftCreated:
       "可編輯草稿已建立。請在建構器及畫布中審核、執行驗證和模擬，然後提交發布審核。",
+    historyNotice:
+      "此對話會儲存在你的帳戶。你可日後重新開啟，而獲授權的資訊科技管理員可審閱記錄以改進流程助理。",
   },
   "zh-Hans": {
     title: "流程模板助手",
@@ -1123,6 +1136,8 @@ const templateCopilotCopy: Record<
       "文件大小和内容均受限制，并视为不受信任的数据。包含主动内容的 PDF 会被拒绝。发布前必须由人员审核。",
     draftCreated:
       "可编辑草稿已创建。请在构建器和画布中审核、运行验证和模拟，然后提交发布审核。",
+    historyNotice:
+      "此对话会保存在你的账户。你可日后重新打开，而获授权的信息技术管理员可审阅记录以改进流程助手。",
   },
 };
 

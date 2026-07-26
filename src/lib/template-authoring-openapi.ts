@@ -79,12 +79,29 @@ export const templateAuthoringOpenApi = {
       }),
     },
     "/api/template-authoring/copilot/sessions": {
+      get: operation("listTemplateCopilotSessions", "List saved Copilot interviews", {
+        parameters: [
+          queryParameter("view", {
+            type: "string",
+            enum: ["mine", "review"],
+            default: "mine",
+            description:
+              "Employees can read mine. Review requires an active Admin or superuser role.",
+          }),
+          queryParameter("limit", {
+            type: "integer",
+            minimum: 1,
+            maximum: 50,
+            default: 20,
+          }),
+        ],
+      }),
       post: operation("startTemplateCopilotSession", "Start a governed requirements interview", {
         requestBody: jsonRequest("TemplateCopilotStartCommand"),
       }),
     },
     "/api/template-authoring/copilot/sessions/{sessionId}": {
-      get: operation("getTemplateCopilotSession", "Read an owner-scoped interview", {
+      get: operation("getTemplateCopilotSession", "Read an owner- or Admin-scoped transcript", {
         parameters: [pathParameter("sessionId")],
       }),
     },

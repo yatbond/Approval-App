@@ -3,8 +3,12 @@ import {
   approvalError,
   approvalJson,
   createApprovalServerContext,
+  safeApprovalLog,
 } from "@/lib/approval-server";
-import { loadTemplateCopilotSession } from "@/lib/template-copilot-server-data";
+import {
+  loadTemplateCopilotSession,
+  templateCopilotTranscriptFromStored,
+} from "@/lib/template-copilot-server-data";
 
 export async function GET(
   request: NextRequest,
@@ -12,7 +16,7 @@ export async function GET(
 ) {
   const resolved = await createApprovalServerContext(request);
   if (!resolved.ok) return approvalError(resolved);
-  const { session, cookieSource, correlationId } = resolved.context;
+  const { session, actor, cookieSource, correlationId } = resolved.context;
   const { sessionId } = await context.params;
   try {
     const result = await loadTemplateCopilotSession({ session, sessionId });
@@ -24,7 +28,12 @@ export async function GET(
         404,
       );
     }
-    return approvalJson(cookieSource, correlationId, { session: result });
+    const transcript = templateCopilotTranscriptFromStored(result);
+    safeApprovalLog("template_copilot_session_read", correlationId, {
+      viewer: result.owner_id === actor.id ? "owner" : "admin",
+      status: result.status,
+    });
+    return approvalJson(cookieSource, correlationId, { session: transcript });
   } catch {
     return approvalJson(
       cookieSource,

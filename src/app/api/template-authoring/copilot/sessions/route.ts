@@ -25,9 +25,81 @@ import {
 import {
   advanceTemplateCopilotSession,
   createTemplateCopilotSession,
+  listTemplateCopilotSessions,
   resolveTemplateCopilotScope,
 } from "@/lib/template-copilot-server-data";
+import { templateCopilotSessionListQuerySchema } from "@/lib/template-copilot-history";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
+
+export async function GET(request: NextRequest) {
+  const resolved = await createApprovalServerContext(request);
+  if (!resolved.ok) return approvalError(resolved);
+  const { session, service, actor, cookieSource, correlationId } =
+    resolved.context;
+  const parsed = templateCopilotSessionListQuerySchema.safeParse({
+    view: request.nextUrl.searchParams.get("view") || undefined,
+    limit: request.nextUrl.searchParams.get("limit") || undefined,
+  });
+  if (!parsed.success) {
+    return approvalJson(
+      cookieSource,
+      correlationId,
+      {
+        error: {
+          code: "invalid_request",
+          message: "The Copilot history query is invalid.",
+        },
+      },
+      400,
+    );
+  }
+  if (parsed.data.view === "review" && !actor.isAdmin) {
+    return approvalJson(
+      cookieSource,
+      correlationId,
+      {
+        error: {
+          code: "forbidden",
+          message: "Administrator access is required to review Copilot sessions.",
+        },
+      },
+      403,
+    );
+  }
+
+  try {
+    const sessions = await listTemplateCopilotSessions({
+      session,
+      service,
+      actor,
+      view: parsed.data.view,
+      limit: parsed.data.limit,
+    });
+    safeApprovalLog("template_copilot_session_list_read", correlationId, {
+      view: parsed.data.view,
+      resultCount: sessions.length,
+    });
+    return approvalJson(cookieSource, correlationId, {
+      view: parsed.data.view,
+      sessions,
+    });
+  } catch (error) {
+    safeApprovalLog("template_copilot_session_list_failed", correlationId, {
+      errorName: error instanceof Error ? error.name : "unknown",
+    });
+    return approvalJson(
+      cookieSource,
+      correlationId,
+      {
+        error: {
+          code: "dependency_unavailable",
+          message: "Copilot history is temporarily unavailable.",
+        },
+      },
+      503,
+    );
+  }
+}
 
 export async function POST(request: NextRequest) {
   const resolved = await createApprovalServerContext(request);

@@ -15,6 +15,10 @@ import {
   wrapUntrustedRequirementText,
 } from "./template-copilot-safety.ts";
 import { createStableTemplateCopilotArtifactIdentity } from "./template-copilot-identity.ts";
+import {
+  orderTemplateCopilotMessages,
+  templateCopilotSessionListQuerySchema,
+} from "./template-copilot-history.ts";
 
 const scope = {
   businessUnitId: "11111111-1111-4111-8111-111111111111",
@@ -254,4 +258,115 @@ test("Copilot persistence is owner scoped and RPC-only", async () => {
     sql,
     /grant execute on function public\.(create|advance|link)_template_copilot[\s\S]{0,300}to authenticated;/,
   );
+});
+
+test("saved Copilot history queries are bounded and distinguish owner from Admin review", () => {
+  assert.deepEqual(
+    templateCopilotSessionListQuerySchema.parse({}),
+    { view: "mine", limit: 20 },
+  );
+  assert.deepEqual(
+    templateCopilotSessionListQuerySchema.parse({
+      view: "review",
+      limit: "50",
+    }),
+    { view: "review", limit: 50 },
+  );
+  assert.equal(
+    templateCopilotSessionListQuerySchema.safeParse({
+      view: "review",
+      limit: 51,
+    }).success,
+    false,
+  );
+  assert.equal(
+    templateCopilotSessionListQuerySchema.safeParse({
+      view: "all",
+      limit: 20,
+    }).success,
+    false,
+  );
+});
+
+test("same-timestamp persisted turns always render user before Copilot", () => {
+  const timestamp = "2026-07-26T09:00:00.000Z";
+  const ordered = orderTemplateCopilotMessages([
+    {
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      client_message_id: "turn:abcdefgh",
+      role: "assistant",
+      content: "Assistant",
+      created_at: timestamp,
+    },
+    {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      client_message_id: "turn:abcdefgh",
+      role: "user",
+      content: "User",
+      created_at: timestamp,
+    },
+  ]);
+  assert.deepEqual(
+    ordered.map((message) => message.role),
+    ["user", "assistant"],
+  );
+});
+
+test("Copilot history exposes owner-only and Admin review product surfaces", async () => {
+  const listRoute = await readFile(
+    new URL(
+      "../app/api/template-authoring/copilot/sessions/route.ts",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const serverData = await readFile(
+    new URL("./template-copilot-server-data.ts", import.meta.url),
+    "utf8",
+  );
+  const employeeHistory = await readFile(
+    new URL("../app/template-copilot-history-panel.tsx", import.meta.url),
+    "utf8",
+  );
+  const adminReview = await readFile(
+    new URL("../app/admin-copilot-review-panel.tsx", import.meta.url),
+    "utf8",
+  );
+  const adminView = await readFile(
+    new URL("../app/admin-view.tsx", import.meta.url),
+    "utf8",
+  );
+  const detailRoute = await readFile(
+    new URL(
+      "../app/api/template-authoring/copilot/sessions/[sessionId]/route.ts",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(listRoute, /parsed\.data\.view === "review" && !actor\.isAdmin/);
+  assert.match(serverData, /builder = builder\.eq\("owner_id", actor\.id\)/);
+  assert.match(employeeHistory, /view=mine&limit=20/);
+  const clientApi = await readFile(
+    new URL("./template-copilot-client.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(clientApi, /cache: "no-store"/);
+  assert.match(adminReview, /view=review&limit=50/);
+  assert.match(adminReview, /This view is read-only/);
+  assert.match(adminView, /<AdminCopilotReviewPanel \/>/);
+  assert.match(detailRoute, /viewer: result\.owner_id === actor\.id \? "owner" : "admin"/);
+  assert.match(detailRoute, /templateCopilotTranscriptFromStored/);
+  assert.doesNotMatch(detailRoute, /structured_detail/);
+});
+
+test("employees receive multilingual disclosure before Copilot logging starts", async () => {
+  const client = await readFile(
+    new URL("../app/template-copilot.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(client, /This conversation is saved with your account/);
+  assert.match(client, /獲授權的資訊科技管理員可審閱記錄/);
+  assert.match(client, /获授权的信息技术管理员可审阅记录/);
+  assert.match(client, /<TemplateCopilotHistoryPanel locale=\{selectedLocale\} \/>/);
 });
