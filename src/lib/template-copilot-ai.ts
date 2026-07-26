@@ -446,6 +446,14 @@ export async function generateTemplateAuthoringArtifacts({
         summary: section.summary,
         sourceMessageIds: section.sourceMessageIds,
       })),
+    requirementDocuments: ledger.requirementDocumentExtracts.map(
+      ({ id, fileName, sha256, text }) => ({
+        id,
+        fileName,
+        sha256,
+        text,
+      }),
+    ),
     sourceRequirements: messages
       .filter(
         (message) =>

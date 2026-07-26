@@ -34,6 +34,12 @@ type CompileTemplateCopilotPlanInput = {
     summary: string;
     sourceMessageIds: string[];
   }>;
+  requirementDocuments?: Array<{
+    id: string;
+    fileName: string;
+    sha256: string;
+    text: string;
+  }>;
   sourceRequirements?: string[];
 };
 
@@ -888,6 +894,11 @@ export function compileTemplateCopilotPlan(
       statement: requirement.trim().slice(0, 4_000),
       status: "confirmed" as const,
     }));
+  const citations = createDossierCitations({
+    sourceSummaries: input.sourceSummaries || [],
+    requirementDocuments: input.requirementDocuments || [],
+    ids,
+  });
   const dossier = templateRequirementsDossierV1Schema.parse({
     schemaVersion: templateAuthoringContractVersion,
     dossierId: input.dossierId,
@@ -942,6 +953,7 @@ export function compileTemplateCopilotPlan(
           : question.importance,
       ...(question.answer ? { answer: question.answer } : {}),
     })),
+    citations,
   });
 
   const template: WorkflowTemplate = {
@@ -1388,4 +1400,91 @@ function slug(value: string) {
 
 function unique<T>(values: T[]) {
   return [...new Set(values)];
+}
+
+const dossierSectionTargetPaths: Record<string, string[]> = {
+  identity_scope: ["title", "purpose", "businessScope"],
+  initiators_fields: ["initiation"],
+  attachments: ["attachmentRequirements"],
+  stages_participants: ["stages"],
+  conditions_exceptions: ["routes"],
+  collaboration_corrections: ["collaboration"],
+  timing_escalation: ["stages"],
+  visibility_notifications: ["collaboration.statusVisibility", "notifications"],
+  governance: ["governance"],
+};
+
+function createDossierCitations({
+  sourceSummaries,
+  requirementDocuments,
+  ids,
+}: {
+  sourceSummaries: NonNullable<
+    CompileTemplateCopilotPlanInput["sourceSummaries"]
+  >;
+  requirementDocuments: NonNullable<
+    CompileTemplateCopilotPlanInput["requirementDocuments"]
+  >;
+  ids: ReturnType<typeof createIdFactory>;
+}) {
+  const interviewCitations = sourceSummaries.flatMap((summary) => {
+    const messageIds = unique(summary.sourceMessageIds).slice(0, 100);
+    if (!messageIds.length) return [];
+    return (dossierSectionTargetPaths[summary.sectionId] || ["dossier"]).map(
+      (targetPath) => ({
+        id: ids("citation", `${summary.sectionId}-${targetPath}`),
+        targetPath,
+        source: {
+          type: "interview" as const,
+          sectionId: summary.sectionId,
+          messageIds,
+        },
+      }),
+    );
+  });
+  const documentCitations = requirementDocuments.flatMap((document) =>
+    extractDocumentCitationSnippets(document.text).map((snippet, index) => ({
+      id: ids("citation", `${document.id}-${snippet.pageNumber || index + 1}`),
+      targetPath: "dossier",
+      source: {
+        type: "document" as const,
+        documentId: document.id,
+        fileName: document.fileName,
+        sha256: document.sha256,
+        ...(snippet.pageNumber
+          ? { pageNumber: snippet.pageNumber }
+          : {}),
+        excerpt: snippet.excerpt,
+      },
+    })),
+  );
+  return [...interviewCitations, ...documentCitations].slice(0, 300);
+}
+
+function extractDocumentCitationSnippets(
+  text: string,
+): Array<{ pageNumber?: number; excerpt: string }> {
+  const pageMarkers = [...text.matchAll(/\[Page\s+(\d+)\]\s*/giu)];
+  if (!pageMarkers.length) {
+    const excerpt = citationExcerpt(text);
+    return excerpt ? [{ excerpt }] : [];
+  }
+  return pageMarkers
+    .slice(0, 20)
+    .map((marker, index) => {
+      const start = (marker.index || 0) + marker[0].length;
+      const end =
+        index + 1 < pageMarkers.length
+          ? pageMarkers[index + 1].index
+          : text.length;
+      return {
+        pageNumber: Number(marker[1]),
+        excerpt: citationExcerpt(text.slice(start, end)),
+      };
+    })
+    .filter((item) => item.excerpt);
+}
+
+function citationExcerpt(value: string) {
+  return value.replace(/\s+/gu, " ").trim().slice(0, 500);
 }

@@ -25,6 +25,11 @@ import {
 import { validateTemplateAuthoringDefinition } from "@/lib/template-authoring-validation";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
 
+// Two independent bounded model calls run in parallel before deterministic
+// reconciliation. Keep the serverless execution window above the provider's
+// normal long-tail latency so an otherwise valid draft is not cut off at 60s.
+export const maxDuration = 300;
+
 const commandSchema = z
   .object({
     expectedRevision: z.number().int().min(1),

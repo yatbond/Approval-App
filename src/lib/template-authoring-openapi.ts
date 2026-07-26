@@ -166,6 +166,20 @@ export const templateAuthoringOpenApi = {
           governance: { type: "object" },
           assumptions: { type: "array", maxItems: 100 },
           openQuestions: { type: "array", maxItems: 100 },
+          citations: {
+            type: "array",
+            maxItems: 300,
+            items: {
+              type: "object",
+              required: ["id", "targetPath", "source"],
+              properties: {
+                id: boundedString(120),
+                targetPath: boundedString(500),
+                source: { type: "object" },
+              },
+              additionalProperties: false,
+            },
+          },
         },
         additionalProperties: false,
       },

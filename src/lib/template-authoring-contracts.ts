@@ -246,6 +246,32 @@ export const templateRouteSchema = z
     }
   });
 
+export const templateDossierCitationSchema = z
+  .object({
+    id: boundedId,
+    targetPath: z.string().trim().min(1).max(500),
+    source: z.discriminatedUnion("type", [
+      z
+        .object({
+          type: z.literal("interview"),
+          sectionId: boundedId,
+          messageIds: z.array(boundedId).min(1).max(100),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("document"),
+          documentId: boundedId,
+          fileName: z.string().trim().min(1).max(300),
+          sha256: z.string().regex(/^[0-9a-f]{64}$/),
+          pageNumber: z.number().int().min(1).max(10_000).optional(),
+          excerpt: z.string().trim().min(1).max(500),
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
+
 export const templateRequirementsDossierV1Schema = z
   .object({
     schemaVersion: z.literal(templateAuthoringContractVersion),
@@ -363,6 +389,7 @@ export const templateRequirementsDossierV1Schema = z
           .strict(),
       )
       .max(100),
+    citations: z.array(templateDossierCitationSchema).max(300).default([]),
   })
   .strict()
   .superRefine(validateDossierReferences);

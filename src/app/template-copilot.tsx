@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Bot, FileUp, Send, Sparkles } from "lucide-react";
+import { Bot, FileText, FileUp, Save, Send, Sparkles } from "lucide-react";
 import type { BusinessUnit, WorkflowTemplate } from "@/lib/types";
 import { workflowTemplateFromDefinition } from "@/lib/template-authoring-definition";
 import type {
@@ -30,6 +30,14 @@ type CopilotState = {
   revision: number;
   status: "interviewing" | "ready" | "draft_created";
   ledger: TemplateCopilotLedger;
+};
+
+type DraftReviewState = {
+  familyId: string;
+  draftId: string;
+  revision: number;
+  dossier: TemplateRequirementsDossierV1;
+  definition: TemplateDefinitionV1;
 };
 
 export function TemplateCopilot({
@@ -67,6 +75,8 @@ export function TemplateCopilot({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [draftReview, setDraftReview] = useState<DraftReviewState | null>(null);
+  const [reviewDirty, setReviewDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const locale = state?.ledger.locale || selectedLocale;
   const copy = templateCopilotCopy[locale];
@@ -229,17 +239,14 @@ export function TemplateCopilot({
           }),
         },
       );
-      const template = {
-        ...workflowTemplateFromDefinition(
-          response.definition as TemplateDefinitionV1,
-        ),
-        authoringFamilyId: String(response.familyId),
-        authoringDraftId: String(response.draftId),
-        authoringRevision: 1,
-        authoringDossier:
-          response.dossier as TemplateRequirementsDossierV1,
-      };
-      onDraftCreated(template);
+      setDraftReview({
+        familyId: String(response.familyId),
+        draftId: String(response.draftId),
+        revision: Number(response.authoringRevision || 1),
+        dossier: response.dossier as TemplateRequirementsDossierV1,
+        definition: response.definition as TemplateDefinitionV1,
+      });
+      setReviewDirty(false);
       setState((current) =>
         current
           ? {
@@ -255,7 +262,7 @@ export function TemplateCopilot({
           id: crypto.randomUUID(),
           role: "assistant",
           content:
-            copy.draftCreated,
+            dossierReviewCopy[locale].reviewBeforeBuilder,
         },
       ]);
     } catch (caught) {
@@ -263,6 +270,79 @@ export function TemplateCopilot({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function saveDossierReview() {
+    if (!draftReview || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const definition: TemplateDefinitionV1 = {
+        ...draftReview.definition,
+        template: {
+          ...draftReview.definition.template,
+          name: draftReview.dossier.title,
+        },
+        generation: {
+          ...draftReview.definition.generation,
+          unresolvedQuestionIds: draftReview.dossier.openQuestions
+            .filter((question) => !question.answer?.trim())
+            .map((question) => question.id),
+        },
+      };
+      const response = await api(
+        `/api/template-authoring/drafts/${draftReview.draftId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            expectedRevision: draftReview.revision,
+            dossier: draftReview.dossier,
+            definition,
+            changeReason:
+              "Human-reviewed requirements dossier updated before visual workflow editing.",
+            idempotencyKey: messageId("dossier-review"),
+          }),
+        },
+      );
+      setDraftReview((current) =>
+        current
+          ? {
+              ...current,
+              revision: Number(response.revision),
+              definition,
+            }
+          : current,
+      );
+      setReviewDirty(false);
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: dossierReviewCopy[locale].saved,
+        },
+      ]);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function continueToBuilder() {
+    if (!draftReview || reviewDirty || busy) return;
+    onDraftCreated({
+      ...workflowTemplateFromDefinition(draftReview.definition),
+      authoringFamilyId: draftReview.familyId,
+      authoringDraftId: draftReview.draftId,
+      authoringRevision: draftReview.revision,
+      authoringDossier: draftReview.dossier,
+    });
+  }
+
+  function updateReviewedDossier(dossier: TemplateRequirementsDossierV1) {
+    setDraftReview((current) => (current ? { ...current, dossier } : current));
+    setReviewDirty(true);
   }
 
   if (!state) {
@@ -384,6 +464,17 @@ export function TemplateCopilot({
             </p>
           )}
         </div>
+        {draftReview && (
+          <DossierReviewEditor
+            locale={locale}
+            dossier={draftReview.dossier}
+            dirty={reviewDirty}
+            busy={busy}
+            onChange={updateReviewedDossier}
+            onSave={saveDossierReview}
+            onContinue={continueToBuilder}
+          />
+        )}
         {state.status !== "draft_created" && (
           <div className="mt-3 flex gap-2">
             <textarea
@@ -487,6 +578,441 @@ export function TemplateCopilot({
     </section>
   );
 }
+
+function DossierReviewEditor({
+  locale,
+  dossier,
+  dirty,
+  busy,
+  onChange,
+  onSave,
+  onContinue,
+}: {
+  locale: TemplateCopilotLocale;
+  dossier: TemplateRequirementsDossierV1;
+  dirty: boolean;
+  busy: boolean;
+  onChange: (dossier: TemplateRequirementsDossierV1) => void;
+  onSave: () => void;
+  onContinue: () => void;
+}) {
+  const copy = dossierReviewCopy[locale];
+  return (
+    <section className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-4">
+      <div className="flex items-start gap-3">
+        <FileText
+          aria-hidden="true"
+          className="mt-0.5 shrink-0 text-sky-700"
+          size={20}
+        />
+        <div className="min-w-0 flex-1">
+          <h4 className="font-semibold text-neutral-900">{copy.title}</h4>
+          <p className="mt-1 text-sm text-neutral-600">{copy.description}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <label className="text-sm text-neutral-700">
+          {copy.workflowTitle}
+          <input
+            value={dossier.title}
+            maxLength={200}
+            onChange={(event) =>
+              onChange({ ...dossier, title: event.target.value })
+            }
+            className="mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
+          />
+        </label>
+        <label className="text-sm text-neutral-700">
+          {copy.classification}
+          <select
+            value={dossier.businessScope.dataClassification}
+            onChange={(event) =>
+              onChange({
+                ...dossier,
+                businessScope: {
+                  ...dossier.businessScope,
+                  dataClassification: event.target.value as
+                    | "internal"
+                    | "confidential"
+                    | "restricted",
+                },
+              })
+            }
+            className="mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
+          >
+            <option value="internal">{copy.internal}</option>
+            <option value="confidential">{copy.confidential}</option>
+            <option value="restricted">{copy.restricted}</option>
+          </select>
+        </label>
+      </div>
+      <label className="mt-3 block text-sm text-neutral-700">
+        {copy.purpose}
+        <textarea
+          value={dossier.purpose}
+          maxLength={4_000}
+          rows={3}
+          onChange={(event) =>
+            onChange({ ...dossier, purpose: event.target.value })
+          }
+          className="mt-1 w-full rounded-md border border-[#d8d8d8] bg-white p-3"
+        />
+      </label>
+      <label className="mt-3 block max-w-xs text-sm text-neutral-700">
+        {copy.retention}
+        <input
+          type="number"
+          min={1}
+          max={3_650}
+          value={dossier.governance.retentionDays}
+          onChange={(event) =>
+            onChange({
+              ...dossier,
+              governance: {
+                ...dossier.governance,
+                retentionDays: Number(event.target.value),
+              },
+            })
+          }
+          className="mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
+        />
+      </label>
+
+      <div className="mt-4 rounded-md border border-sky-100 bg-white p-3">
+        <h5 className="text-sm font-semibold text-neutral-900">
+          {copy.compiledCoverage}
+        </h5>
+        <p className="mt-1 text-xs leading-5 text-neutral-600">
+          {copy.coverageSummary
+            .replace("{fields}", String(dossier.initiation.requestFields.length))
+            .replace(
+              "{attachments}",
+              String(dossier.attachmentRequirements.length),
+            )
+            .replace("{stages}", String(dossier.stages.length))
+            .replace("{routes}", String(dossier.routes.length))}
+        </p>
+      </div>
+
+      {dossier.assumptions.length > 0 && (
+        <div className="mt-4">
+          <h5 className="text-sm font-semibold text-neutral-900">
+            {copy.assumptions}
+          </h5>
+          <div className="mt-2 space-y-2">
+            {dossier.assumptions.map((assumption, index) => (
+              <div
+                key={assumption.id}
+                className="grid gap-2 rounded-md border border-sky-100 bg-white p-2 md:grid-cols-[1fr_150px]"
+              >
+                <textarea
+                  aria-label={`${copy.assumption} ${index + 1}`}
+                  value={assumption.statement}
+                  maxLength={4_000}
+                  rows={2}
+                  onChange={(event) =>
+                    onChange({
+                      ...dossier,
+                      assumptions: dossier.assumptions.map((item) =>
+                        item.id === assumption.id
+                          ? { ...item, statement: event.target.value }
+                          : item,
+                      ),
+                    })
+                  }
+                  className="rounded-md border border-[#d8d8d8] p-2 text-sm"
+                />
+                <select
+                  aria-label={`${copy.status} ${index + 1}`}
+                  value={assumption.status}
+                  onChange={(event) =>
+                    onChange({
+                      ...dossier,
+                      assumptions: dossier.assumptions.map((item) =>
+                        item.id === assumption.id
+                          ? {
+                              ...item,
+                              status: event.target.value as
+                                | "proposed"
+                                | "confirmed"
+                                | "rejected",
+                            }
+                          : item,
+                      ),
+                    })
+                  }
+                  className="min-h-11 rounded-md border border-[#d8d8d8] bg-white px-2 text-sm"
+                >
+                  <option value="proposed">{copy.proposed}</option>
+                  <option value="confirmed">{copy.confirmed}</option>
+                  <option value="rejected">{copy.rejected}</option>
+                </select>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {dossier.openQuestions.length > 0 && (
+        <div className="mt-4">
+          <h5 className="text-sm font-semibold text-neutral-900">
+            {copy.openQuestions}
+          </h5>
+          <div className="mt-2 space-y-2">
+            {dossier.openQuestions.map((question, index) => (
+              <label
+                key={question.id}
+                className="block rounded-md border border-sky-100 bg-white p-3 text-sm text-neutral-700"
+              >
+                {question.question}
+                <textarea
+                  aria-label={`${copy.answer} ${index + 1}`}
+                  value={question.answer || ""}
+                  maxLength={4_000}
+                  rows={2}
+                  placeholder={copy.answerPlaceholder}
+                  onChange={(event) =>
+                    onChange({
+                      ...dossier,
+                      openQuestions: dossier.openQuestions.map((item) =>
+                        item.id === question.id
+                          ? { ...item, answer: event.target.value }
+                          : item,
+                      ),
+                    })
+                  }
+                  className="mt-2 w-full rounded-md border border-[#d8d8d8] p-2"
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4">
+        <h5 className="text-sm font-semibold text-neutral-900">
+          {copy.citations} ({dossier.citations.length})
+        </h5>
+        {dossier.citations.length ? (
+          <ul className="mt-2 max-h-56 space-y-2 overflow-y-auto">
+            {dossier.citations.map((citation) => (
+              <li
+                key={citation.id}
+                className="rounded-md border border-sky-100 bg-white p-3 text-xs leading-5 text-neutral-600"
+              >
+                <p className="font-semibold text-neutral-800">
+                  {citation.targetPath}
+                </p>
+                {citation.source.type === "interview" ? (
+                  <p>
+                    {copy.interviewSource}: {citation.source.sectionId} ·{" "}
+                    {citation.source.messageIds.length} {copy.messages}
+                  </p>
+                ) : (
+                  <>
+                    <p>
+                      {citation.source.fileName}
+                      {citation.source.pageNumber
+                        ? ` · ${copy.page} ${citation.source.pageNumber}`
+                        : ""}
+                      {" · "}
+                      SHA-256 {citation.source.sha256.slice(0, 12)}…
+                    </p>
+                    <p className="mt-1 text-neutral-700">
+                      “{citation.source.excerpt}”
+                    </p>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-xs text-neutral-500">{copy.noCitations}</p>
+        )}
+      </div>
+
+      <p className="mt-4 text-xs leading-5 text-neutral-500">
+        {copy.structuralEditing}
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={busy || !dirty}
+          className="inline-flex min-h-11 items-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          <Save aria-hidden="true" size={16} />
+          {busy ? copy.saving : dirty ? copy.save : copy.savedButton}
+        </button>
+        <button
+          type="button"
+          onClick={onContinue}
+          disabled={busy || dirty}
+          className="inline-flex min-h-11 items-center gap-2 rounded-md border border-sky-300 bg-white px-4 py-2 text-sm font-medium text-sky-800 disabled:opacity-50"
+        >
+          <Sparkles aria-hidden="true" size={16} />
+          {dirty ? copy.saveFirst : copy.continue}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+const dossierReviewCopy: Record<
+  TemplateCopilotLocale,
+  {
+    title: string;
+    description: string;
+    reviewBeforeBuilder: string;
+    workflowTitle: string;
+    classification: string;
+    internal: string;
+    confidential: string;
+    restricted: string;
+    purpose: string;
+    retention: string;
+    compiledCoverage: string;
+    coverageSummary: string;
+    assumptions: string;
+    assumption: string;
+    status: string;
+    proposed: string;
+    confirmed: string;
+    rejected: string;
+    openQuestions: string;
+    answer: string;
+    answerPlaceholder: string;
+    citations: string;
+    interviewSource: string;
+    messages: string;
+    page: string;
+    noCitations: string;
+    structuralEditing: string;
+    save: string;
+    saving: string;
+    saved: string;
+    savedButton: string;
+    saveFirst: string;
+    continue: string;
+  }
+> = {
+  en: {
+    title: "Editable requirements dossier",
+    description:
+      "Review the human-readable source of truth before opening the generated workflow.",
+    reviewBeforeBuilder:
+      "The draft is valid. Review and save its requirements dossier before continuing to Builder and Canvas.",
+    workflowTitle: "Workflow title",
+    classification: "Data classification",
+    internal: "Internal",
+    confidential: "Confidential",
+    restricted: "Restricted",
+    purpose: "Purpose and scope",
+    retention: "Retention period (days)",
+    compiledCoverage: "Compiled workflow coverage",
+    coverageSummary:
+      "{fields} request fields · {attachments} attachment/form requirements · {stages} dossier stages · {routes} routes",
+    assumptions: "Requirements and assumptions",
+    assumption: "Requirement or assumption",
+    status: "Status",
+    proposed: "Proposed",
+    confirmed: "Confirmed",
+    rejected: "Rejected",
+    openQuestions: "Open questions",
+    answer: "Answer",
+    answerPlaceholder: "Record the reviewed answer",
+    citations: "Source citations",
+    interviewSource: "Interview section",
+    messages: "source message(s)",
+    page: "page",
+    noCitations: "No source citations were recorded.",
+    structuralEditing:
+      "Edit workflow structure, fields, attachments, stages, and routes in Builder and Canvas after this dossier review.",
+    save: "Save dossier review",
+    saving: "Saving…",
+    saved: "The reviewed dossier was saved as a new authoritative revision.",
+    savedButton: "Dossier saved",
+    saveFirst: "Save changes first",
+    continue: "Continue to Builder & Canvas",
+  },
+  "zh-Hant": {
+    title: "可編輯需求檔案",
+    description: "開啟已生成流程前，請審核這份供人閱讀的需求依據。",
+    reviewBeforeBuilder:
+      "草稿已通過驗證。請先審核並儲存需求檔案，然後再前往建構器及畫布。",
+    workflowTitle: "流程名稱",
+    classification: "資料分類",
+    internal: "內部",
+    confidential: "機密",
+    restricted: "受限制",
+    purpose: "目的及範圍",
+    retention: "保留期限（日）",
+    compiledCoverage: "已編譯流程涵蓋範圍",
+    coverageSummary:
+      "{fields} 個申請欄位 · {attachments} 項附件／表格要求 · {stages} 個需求階段 · {routes} 條路徑",
+    assumptions: "需求及假設",
+    assumption: "需求或假設",
+    status: "狀態",
+    proposed: "建議",
+    confirmed: "已確認",
+    rejected: "已拒絕",
+    openQuestions: "待決問題",
+    answer: "答案",
+    answerPlaceholder: "記錄經審核的答案",
+    citations: "來源引證",
+    interviewSource: "訪談章節",
+    messages: "則來源訊息",
+    page: "第",
+    noCitations: "沒有記錄來源引證。",
+    structuralEditing:
+      "完成需求檔案審核後，請在建構器及畫布編輯流程結構、欄位、附件、階段和路徑。",
+    save: "儲存需求檔案審核",
+    saving: "正在儲存……",
+    saved: "已將審核後的需求檔案儲存為新的權威修訂。",
+    savedButton: "需求檔案已儲存",
+    saveFirst: "請先儲存變更",
+    continue: "前往建構器及畫布",
+  },
+  "zh-Hans": {
+    title: "可编辑需求档案",
+    description: "打开已生成流程前，请审核这份供人阅读的需求依据。",
+    reviewBeforeBuilder:
+      "草稿已通过验证。请先审核并保存需求档案，然后再前往构建器及画布。",
+    workflowTitle: "流程名称",
+    classification: "数据分类",
+    internal: "内部",
+    confidential: "机密",
+    restricted: "受限制",
+    purpose: "目的及范围",
+    retention: "保留期限（天）",
+    compiledCoverage: "已编译流程涵盖范围",
+    coverageSummary:
+      "{fields} 个申请字段 · {attachments} 项附件／表单要求 · {stages} 个需求阶段 · {routes} 条路径",
+    assumptions: "需求及假设",
+    assumption: "需求或假设",
+    status: "状态",
+    proposed: "建议",
+    confirmed: "已确认",
+    rejected: "已拒绝",
+    openQuestions: "待决问题",
+    answer: "答案",
+    answerPlaceholder: "记录经审核的答案",
+    citations: "来源引用",
+    interviewSource: "访谈章节",
+    messages: "条来源消息",
+    page: "第",
+    noCitations: "没有记录来源引用。",
+    structuralEditing:
+      "完成需求档案审核后，请在构建器及画布编辑流程结构、字段、附件、阶段和路径。",
+    save: "保存需求档案审核",
+    saving: "正在保存……",
+    saved: "已将审核后的需求档案保存为新的权威修订。",
+    savedButton: "需求档案已保存",
+    saveFirst: "请先保存更改",
+    continue: "前往构建器及画布",
+  },
+};
 
 const templateCopilotCopy: Record<
   TemplateCopilotLocale,

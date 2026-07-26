@@ -279,6 +279,45 @@ test("compiler preserves exact employee requirement wording for traceability", (
   );
 });
 
+test("compiler creates deterministic interview and page-level document citations", () => {
+  const plan = qualificationPlan("en");
+  const input = {
+    ...scope,
+    plan,
+    sourceSummaries: [
+      {
+        sectionId: "attachments",
+        summary: "A signed quotation is required.",
+        sourceMessageIds: ["turn:attachments-001"],
+      },
+    ],
+    requirementDocuments: [
+      {
+        id: "document-policy",
+        fileName: "Purchasing policy.pdf",
+        sha256: "a".repeat(64),
+        text: "[Page 1]\nA quotation is mandatory.\n[Page 2]\nKeep it for seven years.",
+      },
+    ],
+  };
+
+  const first = compileTemplateCopilotPlan(input);
+  const second = compileTemplateCopilotPlan(input);
+  assert.deepEqual(first.dossier.citations, second.dossier.citations);
+  assert.ok(
+    first.dossier.citations.some(
+      (citation) =>
+        citation.targetPath === "attachmentRequirements" &&
+        citation.source.type === "interview" &&
+        citation.source.messageIds.includes("turn:attachments-001"),
+    ),
+  );
+  const pages = first.dossier.citations
+    .filter((citation) => citation.source.type === "document")
+    .map((citation) => citation.source.pageNumber);
+  assert.deepEqual(pages, [1, 2]);
+});
+
 test("compiler expands explicitly paired start and end dates into separate fields", () => {
   const plan = qualificationPlan("zh-Hant");
   plan.requestFields = [
