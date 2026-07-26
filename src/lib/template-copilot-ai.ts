@@ -400,7 +400,7 @@ export async function generateTemplateAuthoringArtifacts({
       `Set locale to ${ledger.locale}. Write labels, descriptions, acknowledgements, assumptions, and questions in ${templateCopilotLocaleNames[ledger.locale]}.`,
       "Set schemaVersion to 1.",
   ].join("\n");
-  const [primaryPlan, coveragePlan] = await Promise.all([
+  const planCandidates = await Promise.allSettled([
     requestStructuredOutput({
       configured,
       schema: templateCopilotPlanV1Schema,
@@ -425,10 +425,24 @@ export async function generateTemplateAuthoringArtifacts({
         "The Copilot could not produce an independent coverage plan.",
     }),
   ]);
-  const plan = reconcileTemplateCopilotPlanCoverage(
-    primaryPlan,
-    coveragePlan,
+  const validPlans = planCandidates.flatMap((candidate) =>
+    candidate.status === "fulfilled" ? [candidate.value] : [],
   );
+  if (!validPlans.length) {
+    const failure = planCandidates.find(
+      (candidate) => candidate.status === "rejected",
+    );
+    throw failure?.status === "rejected"
+      ? failure.reason
+      : new TemplateCopilotModelError(
+          "The Copilot could not produce a valid requirements plan.",
+          { reasonCode: "missing_structured_output" },
+        );
+  }
+  const plan =
+    validPlans.length === 1
+      ? validPlans[0]
+      : reconcileTemplateCopilotPlanCoverage(validPlans[0], validPlans[1]);
   const result = compileTemplateCopilotPlan({
     plan,
     businessUnitId: ledger.businessUnitId,

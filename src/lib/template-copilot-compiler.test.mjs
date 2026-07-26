@@ -341,6 +341,35 @@ test("compiler expands explicitly paired start and end dates into separate field
   assert.equal(labels.includes("結束日期"), true);
 });
 
+test("compiler splits an explicitly thresholded role out of an unconditional parallel phase", () => {
+  const plan = qualificationPlan("en");
+  plan.phases[1].condition = null;
+
+  const artifacts = compileTemplateCopilotPlan({
+    ...scope,
+    plan,
+    sourceRequirements: [
+      "Finance approval is required only above HKD 500,000.",
+    ],
+  });
+  const finance = artifacts.definition.template.graph.nodes.find((node) =>
+    /finance/i.test(node.label),
+  );
+  const threshold = artifacts.definition.template.graph.nodes.find(
+    (node) =>
+      node.kind === "condition" &&
+      node.conditionCases?.some(
+        (conditionCase) =>
+          conditionCase.numericRule?.value === "500000" &&
+          conditionCase.targetNodeIds.includes(finance?.id || ""),
+      ),
+  );
+
+  assert.ok(finance);
+  assert.ok(threshold);
+  assert.equal(validateTemplateAuthoringDefinition(artifacts).valid, true);
+});
+
 test("plan contract rejects executable graph authority from the model", () => {
   const plan = qualificationPlan("zh-Hans");
   const result = templateCopilotPlanV1Schema.safeParse({

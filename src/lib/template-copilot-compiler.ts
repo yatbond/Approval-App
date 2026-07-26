@@ -111,8 +111,11 @@ const localized = {
 export function compileTemplateCopilotPlan(
   input: CompileTemplateCopilotPlanInput,
 ): CompiledArtifacts {
-  const plan = expandExplicitPairedDateFields(
-    templateCopilotPlanV1Schema.parse(input.plan),
+  const plan = expandExplicitConditionalStageThresholds(
+    expandExplicitPairedDateFields(
+      templateCopilotPlanV1Schema.parse(input.plan),
+      input.sourceRequirements || [],
+    ),
     input.sourceRequirements || [],
   );
   const ids = createIdFactory();
@@ -1075,6 +1078,137 @@ function expandExplicitPairedDateFields(
       ...(hasEnd ? [] : [dateField(endText)]),
     ],
   });
+}
+
+function expandExplicitConditionalStageThresholds(
+  plan: TemplateCopilotPlanV1,
+  sourceRequirements: string[],
+) {
+  if (plan.locale !== "en") return plan;
+  const sentences = sourceRequirements
+    .join("\n")
+    .normalize("NFKC")
+    .split(/(?<=[.!?])|\r?\n/u)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const numericFields = plan.requestFields.filter((field) =>
+    ["number", "currency"].includes(field.type),
+  );
+  let phases = structuredClone(plan.phases);
+  let changed = false;
+
+  for (const sentence of sentences) {
+    if (!/\bonly\b/i.test(sentence)) continue;
+    const comparison = explicitComparison(sentence);
+    const numeric = sentence.match(
+      /\b(?:HKD|USD|CNY|RMB|EUR|GBP)?\s*([0-9][0-9,\s]*(?:\.[0-9]+)?)/iu,
+    );
+    if (!comparison || !numeric) continue;
+    const value = normalizeConditionValue(numeric[1]);
+    if (
+      phases.some(
+        (phase) =>
+          phase.condition &&
+          normalizeConditionValue(phase.condition.value) === value,
+      )
+    ) {
+      continue;
+    }
+    const field =
+      numericFields.find((candidate) =>
+        sentence
+          .toLocaleLowerCase()
+          .includes(candidate.label.toLocaleLowerCase()),
+      ) || (numericFields.length === 1 ? numericFields[0] : undefined);
+    if (!field) continue;
+
+    const match = findStageMentionedInSentence(phases, sentence);
+    if (!match) continue;
+    const phase = phases[match.phaseIndex];
+    const stage = phase.stages[match.stageIndex];
+    const conditionalPhase = {
+      label: `${stage.label} threshold`,
+      execution: "sequential" as const,
+      condition: {
+        label: `${stage.label} ${comparison.label}`,
+        fieldLabel: field.label,
+        operator: comparison.operator,
+        value,
+        join: "and" as const,
+      },
+      stages: [stage],
+    };
+    if (phase.stages.length === 1) {
+      phases[match.phaseIndex] = {
+        ...phase,
+        condition: conditionalPhase.condition,
+      };
+    } else {
+      phases = [
+        ...phases.slice(0, match.phaseIndex),
+        {
+          ...phase,
+          stages: phase.stages.filter(
+            (_, stageIndex) => stageIndex !== match.stageIndex,
+          ),
+        },
+        conditionalPhase,
+        ...phases.slice(match.phaseIndex + 1),
+      ];
+    }
+    changed = true;
+  }
+
+  return changed
+    ? templateCopilotPlanV1Schema.parse({ ...plan, phases })
+    : plan;
+}
+
+function explicitComparison(sentence: string) {
+  if (/\b(?:at\s+least|not\s+less\s+than)\b/i.test(sentence)) {
+    return { operator: ">=" as const, label: "at least" };
+  }
+  if (/\b(?:at\s+most|not\s+more\s+than)\b/i.test(sentence)) {
+    return { operator: "<=" as const, label: "at most" };
+  }
+  if (/\b(?:above|over|exceeds?|greater\s+than|more\s+than)\b/i.test(sentence)) {
+    return { operator: ">" as const, label: "above threshold" };
+  }
+  if (/\b(?:below|under|less\s+than)\b/i.test(sentence)) {
+    return { operator: "<" as const, label: "below threshold" };
+  }
+  return null;
+}
+
+function findStageMentionedInSentence(
+  phases: TemplateCopilotPlanV1["phases"],
+  sentence: string,
+) {
+  const normalizedSentence = normalizeLookup(sentence);
+  const matches = phases.flatMap((phase, phaseIndex) =>
+    phase.stages.flatMap((stage, stageIndex) => {
+      const participant =
+        stage.participant.directoryPosition || stage.participant.email;
+      const candidates = [participant, stage.label]
+        .map((value) =>
+          normalizeLookup(
+            value.replace(
+              /\b(?:approval|review|endorsement|notification|fyi)\b/giu,
+              "",
+            ),
+          ),
+        )
+        .filter((value) => value.length >= 4);
+      const score = Math.max(
+        0,
+        ...candidates.map((candidate) =>
+          normalizedSentence.includes(candidate) ? candidate.length : 0,
+        ),
+      );
+      return score ? [{ phaseIndex, stageIndex, score }] : [];
+    }),
+  );
+  return matches.sort((left, right) => right.score - left.score)[0] || null;
 }
 
 function normalizeFields(
