@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "candidateSourceRevision": "1ba6e8031d866b9d94a89863cc39303f9f935e61",
+  "questionLibraryVersion": "v2.2",
+  "conceptLibraryVersion": "concepts.v1.0",
+  "reviewPackageRows": 1176,
+  "conceptContentFingerprint": "fnv1a64:18974b8087ddb5a4",
+  "questionContentFingerprint": "fnv1a64:561391552a3ba191",
+  "locales": {
+    "en": {
+      "decision": "pending"
+    },
+    "zh-Hant": {
+      "decision": "pending"
+    },
+    "zh-Hans": {
+      "decision": "pending"
+    }
+  }
+}

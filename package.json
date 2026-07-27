@@ -34,6 +34,7 @@
     "test:e2e:template-copilot-v2-step7": "node scripts/test-template-copilot-v2-step7-browser.mjs",
     "test:e2e:template-copilot-v2-step8": "node scripts/test-template-copilot-v2-step8-browser.mjs",
     "review:template-copilot-v2-step8": "node --import tsx scripts/export-template-copilot-v2-step8-language-review.mjs",
+    "review:validate-template-copilot-v2-step8": "node --import tsx scripts/validate-template-copilot-v2-step8-signoff.mjs",
     "test:template-copilot-v2-extraction-qualification": "node scripts/test-template-copilot-v2-extraction-qualification.mjs",
     "test:template-copilot-v2-step3-qualification": "node scripts/test-template-copilot-v2-step3-qualification.mjs",
     "test:openrouter:copilot-model": "node scripts/test-openrouter-copilot-model.mjs",

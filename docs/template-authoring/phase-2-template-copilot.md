@@ -476,7 +476,12 @@ locales, plus all 180 localized resolver-specific prompts that replace the
 general prompt after a user selects fixed email, staff-directory role, or
 request-field email. Reviewers must inspect meaning, natural language,
 terminology, examples, option labels, every visible prompt variant, and
-consistency with the language-independent semantic fields. Each locale needs:
+consistency with the language-independent semantic fields. Per-row reviewer
+fields are available for corrections and exceptions; reviewers do not need to
+repeat the same identity on every approved row. After inspecting every row for
+one locale, record one locale-wide decision in
+`docs/template-authoring/step-8-language-review-signoff.json`. Each locale
+needs:
 
 1. a named accountable reviewer with authority for that language and business
    workflow terminology;
@@ -486,6 +491,19 @@ consistency with the language-independent semantic fields. Each locale needs:
    controlled ticket or signed review record; and
 4. corrections returned as a new candidate followed by a regenerated
    fingerprint and a complete renewed review.
+
+Validate the completed sign-off with:
+
+`npm run review:validate-template-copilot-v2-step8`
+
+The validator binds all three decisions to candidate commit
+`1ba6e8031d866b9d94a89863cc39303f9f935e61`, the
+1,176-row package, both exact content fingerprints, named reviewers,
+timestamps, evidence references, and an explicit attestation that every row
+for that locale was reviewed. It reports `PENDING` while decisions are
+outstanding, `REJECTED` when any reviewer requires a revised candidate, and
+`APPROVED` only when all three pass. It fails closed on placeholders, missing
+evidence, false attestations, or candidate drift.
 
 After approval evidence is received, copy the named evidence into the pinned
 concept and question review manifests, enable only the approved locales in the
