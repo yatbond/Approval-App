@@ -5,6 +5,7 @@
  */
 export type TemplateCopilotV2Flag = Readonly<{ enabled: boolean }>;
 type TemplateCopilotV2Environment = Readonly<{ TEMPLATE_COPILOT_V2?: string }>;
+type TemplateCopilotV2Step4Environment = Readonly<{ TEMPLATE_COPILOT_V2_STEP4?: string }>;
 type TemplateCopilotV2ExtractionEnvironment = Readonly<{
   TEMPLATE_COPILOT_V2_EXTRACTION_SHADOW?: string;
   TEMPLATE_COPILOT_V2_CANDIDATE_CREATION?: string;
@@ -21,6 +22,16 @@ export function isTemplateCopilotV2Enabled(
   env?: TemplateCopilotV2Environment,
 ) {
   return getTemplateCopilotV2Flag(env).enabled;
+}
+
+/** Step 4 is independently kill-switchable. It is server-derived capability
+ * metadata, never a browser-controlled flag, so an existing v2.1 ledger can
+ * remain readable while the enhanced controls are withdrawn. */
+export function isTemplateCopilotV2Step4Enabled(
+  env?: TemplateCopilotV2Step4Environment,
+) {
+  const runtimeEnvironment = process.env as unknown as TemplateCopilotV2Step4Environment;
+  return (env || runtimeEnvironment).TEMPLATE_COPILOT_V2_STEP4 === "true";
 }
 
 export function requireTemplateCopilotV2(

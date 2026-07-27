@@ -5,7 +5,8 @@ export type TemplateCopilotV2ClientAnswer = Readonly<{ kind: "text"; text: strin
 export type TemplateCopilotV2PendingCommand = Readonly<{ idempotencyKey: string; expectedRevision: number; answer: TemplateCopilotV2ClientAnswer; questionId: string; primaryDecisionId: string }>;
 export type TemplateCopilotV2SpecialCommand = Readonly<{ operation: "defer" } | { operation: "not_applicable"; reason: string } | { operation: "reopen"; decisionId: string }>;
 export type TemplateCopilotV2PendingSpecialCommand = Readonly<{ sessionId: string; idempotencyKey: string; expectedRevision: number; command: TemplateCopilotV2SpecialCommand }>;
-export type TemplateCopilotV2PendingStart = Readonly<{ idempotencyKey: string; businessUnitId: string; departmentName: string; locale: "en" | "zh-Hant" | "zh-Hans"; initialRequirement?: string }>;
+export type TemplateCopilotV2QuestionLibraryVersion = "v2.0" | "v2.1";
+export type TemplateCopilotV2PendingStart = Readonly<{ idempotencyKey: string; businessUnitId: string; departmentName: string; locale: "en" | "zh-Hant" | "zh-Hans"; questionLibraryVersion: TemplateCopilotV2QuestionLibraryVersion; initialRequirement?: string }>;
 export type TemplateCopilotClientChatMessage = Readonly<{
   id: string;
   clientMessageId: string;
@@ -93,15 +94,41 @@ export function parseTemplateCopilotV2PendingSpecialCommand(value: unknown): Tem
   return null;
 }
 
+/** Pending starts created before Step 4 have no library pin. Treat that
+ * persisted shape as v2.0 forever: a response-lost retry must retain both its
+ * original intent and the original server-side command hash after deployment. */
+export function parseTemplateCopilotV2PendingStart(value: unknown): TemplateCopilotV2PendingStart | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<TemplateCopilotV2PendingStart>;
+  if (
+    typeof candidate.idempotencyKey !== "string"
+    || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(candidate.idempotencyKey)
+    || typeof candidate.businessUnitId !== "string"
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate.businessUnitId)
+    || typeof candidate.departmentName !== "string"
+    || !candidate.departmentName.trim()
+    || !["en", "zh-Hant", "zh-Hans"].includes(String(candidate.locale))
+    || (candidate.initialRequirement !== undefined && typeof candidate.initialRequirement !== "string")
+  ) return null;
+  return Object.freeze({
+    idempotencyKey: candidate.idempotencyKey,
+    businessUnitId: candidate.businessUnitId,
+    departmentName: candidate.departmentName,
+    locale: candidate.locale as TemplateCopilotV2PendingStart["locale"],
+    questionLibraryVersion: candidate.questionLibraryVersion === "v2.1" ? "v2.1" : "v2.0",
+    ...(candidate.initialRequirement?.trim() ? { initialRequirement: candidate.initialRequirement } : {}),
+  });
+}
+
 /** A start is also an immutable command.  Retaining its complete intent means
  * a lost 201 is retried with exactly the same durable key; changing scope or
  * language is an explicit new command, never an accidental replay. */
-export function nextTemplateCopilotV2PendingStart({ pending, businessUnitId, departmentName, locale, initialRequirement, createKey }: {
-  pending: TemplateCopilotV2PendingStart | null; businessUnitId: string; departmentName: string; locale: TemplateCopilotV2PendingStart["locale"]; initialRequirement?: string; createKey: () => string;
+export function nextTemplateCopilotV2PendingStart({ pending, businessUnitId, departmentName, locale, questionLibraryVersion = "v2.1", initialRequirement, createKey }: {
+  pending: TemplateCopilotV2PendingStart | null; businessUnitId: string; departmentName: string; locale: TemplateCopilotV2PendingStart["locale"]; questionLibraryVersion?: TemplateCopilotV2QuestionLibraryVersion; initialRequirement?: string; createKey: () => string;
 }) {
-  const normalized = { businessUnitId, departmentName, locale, ...(initialRequirement ? { initialRequirement } : {}) };
+  const normalized = { businessUnitId, departmentName, locale, questionLibraryVersion, ...(initialRequirement ? { initialRequirement } : {}) };
   if (pending) {
-    if (pending.businessUnitId === normalized.businessUnitId && pending.departmentName === normalized.departmentName && pending.locale === normalized.locale && pending.initialRequirement === normalized.initialRequirement) return pending;
+    if (pending.businessUnitId === normalized.businessUnitId && pending.departmentName === normalized.departmentName && pending.locale === normalized.locale && pending.questionLibraryVersion === normalized.questionLibraryVersion && pending.initialRequirement === normalized.initialRequirement) return pending;
     throw new Error("Retry or resolve the previous Copilot start before changing its scope.");
   }
   return Object.freeze({ idempotencyKey: createKey(), ...normalized });
@@ -117,6 +144,7 @@ export type TemplateCopilotStartIntent = Readonly<{
   businessUnitId: string;
   departmentName: string;
   locale: "en" | "zh-Hant" | "zh-Hans";
+  questionLibraryVersion?: TemplateCopilotV2QuestionLibraryVersion;
   initialRequirement?: string;
 }>;
 export type TemplateCopilotStartRequest = TemplateCopilotStartIntent & Readonly<{ clientMessageId: string }>;
@@ -241,6 +269,7 @@ export function selectTemplateCopilotStartIntent(
     businessUnitId: pending.businessUnitId,
     departmentName: pending.departmentName,
     locale: pending.locale,
+    questionLibraryVersion: pending.questionLibraryVersion,
     ...(pending.initialRequirement
       ? { initialRequirement: pending.initialRequirement }
       : {}),
@@ -270,7 +299,13 @@ export async function executeTemplateCopilotStart<Response>({
   if (!lifecycle.isCurrent()) return null;
   if (schemaVersion === 1) {
     const clientMessageId = createKey();
-    const response = await request({ ...intent, clientMessageId }, 1);
+    const legacyIntent = {
+      businessUnitId: intent.businessUnitId,
+      departmentName: intent.departmentName,
+      locale: intent.locale,
+      ...(intent.initialRequirement ? { initialRequirement: intent.initialRequirement } : {}),
+    };
+    const response = await request({ ...legacyIntent, clientMessageId }, 1);
     if (!lifecycle.isCurrent()) return null;
     return { schemaVersion, clientMessageId, response } as const;
   }
@@ -280,12 +315,13 @@ export async function executeTemplateCopilotStart<Response>({
     businessUnitId: intent.businessUnitId,
     departmentName: intent.departmentName,
     locale: intent.locale,
+    questionLibraryVersion: intent.questionLibraryVersion,
     initialRequirement: intent.initialRequirement,
     createKey,
   });
   installPendingV2(command);
   try {
-    const response = await request({ ...intent, clientMessageId: command.idempotencyKey }, 2);
+    const response = await request({ ...intent, questionLibraryVersion: command.questionLibraryVersion, clientMessageId: command.idempotencyKey }, 2);
     if (!lifecycle.isCurrent()) return null;
     installPendingV2(null);
     return { schemaVersion, clientMessageId: command.idempotencyKey, response } as const;

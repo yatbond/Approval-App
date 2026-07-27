@@ -75,6 +75,10 @@ test("candidate mode selects the atomic answer-plus-job RPC and exact replay sel
     from: (table) => ({
       select() { return this; },
       eq() { return this; },
+      order: async () => table === "template_copilot_messages" ? ({ data: [
+        { id: answerClientMessageId, client_message_id: answerClientMessageId, role: "user", content: "Purchase Approval", created_at: "2026-07-27T12:00:00.000Z" },
+        { id: `${answerClientMessageId}-assistant`, client_message_id: answerClientMessageId, role: "assistant", content: calls[0]?.args.p_assistant_message || "Saved: Purchase Approval", created_at: "2026-07-27T12:00:01.000Z" },
+      ], error: null }) : ({ data: [], error: null }),
       maybeSingle: async () => {
         if (table === "template_copilot_v2_operation_receipts") return { data: receipt, error: null };
         if (table === "template_copilot_sessions") return { data: stored, error: null };

@@ -10,7 +10,7 @@ import {
   decodeTemplateCopilotMessageCursor,
   templateCopilotTranscriptFromStored,
 } from "@/lib/template-copilot-server-data";
-import { isTemplateCopilotV2Enabled } from "@/lib/template-copilot-v2-feature";
+import { isTemplateCopilotV2Enabled, isTemplateCopilotV2Step4Enabled } from "@/lib/template-copilot-v2-feature";
 import { getTemplateCopilotV2InterviewState, getTemplateCopilotV2SpecialReview } from "@/lib/template-copilot-question-library";
 
 export async function GET(
@@ -40,7 +40,7 @@ export async function GET(
     }
     const transcript = templateCopilotTranscriptFromStored(result);
     const sessionPayload = result.ledger.schemaVersion === 2 && isTemplateCopilotV2Enabled()
-      ? { ...transcript, interview: getTemplateCopilotV2InterviewState(result.ledger), specialReview: getTemplateCopilotV2SpecialReview(result.ledger) }
+      ? { ...transcript, interview: getTemplateCopilotV2InterviewState(result.ledger), specialReview: getTemplateCopilotV2SpecialReview(result.ledger), step4Enabled: isTemplateCopilotV2Step4Enabled() }
       : transcript;
     safeApprovalLog("template_copilot_session_read", correlationId, {
       viewer: result.owner_id === actor.id ? "owner" : "admin",

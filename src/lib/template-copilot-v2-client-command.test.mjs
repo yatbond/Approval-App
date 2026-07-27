@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyTemplateCopilotV2Reconciliation, canReplaceTemplateCopilotV2Transcript, canRestoreTemplateCopilotV2Draft, createTemplateCopilotClientChatMessage, createTemplateCopilotV2LifecycleFence, discoverTemplateCopilotV2Recovery, executeTemplateCopilotStart, mergeTemplateCopilotClientChatMessages, nextTemplateCopilotV2PendingCommand, nextTemplateCopilotV2PendingSpecialCommand, nextTemplateCopilotV2PendingStart, parseTemplateCopilotClientChatMessages, parseTemplateCopilotV2PendingSpecialCommand, reconcileTemplateCopilotV2PendingCommand, releaseTemplateCopilotV2ClientAfterRollback, resolveTemplateCopilotV2ExplicitConflict, resolveTemplateCopilotV2Failure, resolveTemplateCopilotV2SpecialReconciliation, resolveTemplateCopilotV2StartFailure, selectNewerTemplateCopilotV2Snapshot, selectTemplateCopilotStartIntent, templateCopilotV2FailureNeedsReconcile, templateCopilotV2InterviewMutationBlocked } from "./template-copilot-v2-client-command.ts";
+import { applyTemplateCopilotV2Reconciliation, canReplaceTemplateCopilotV2Transcript, canRestoreTemplateCopilotV2Draft, createTemplateCopilotClientChatMessage, createTemplateCopilotV2LifecycleFence, discoverTemplateCopilotV2Recovery, executeTemplateCopilotStart, mergeTemplateCopilotClientChatMessages, nextTemplateCopilotV2PendingCommand, nextTemplateCopilotV2PendingSpecialCommand, nextTemplateCopilotV2PendingStart, parseTemplateCopilotClientChatMessages, parseTemplateCopilotV2PendingSpecialCommand, parseTemplateCopilotV2PendingStart, reconcileTemplateCopilotV2PendingCommand, releaseTemplateCopilotV2ClientAfterRollback, resolveTemplateCopilotV2ExplicitConflict, resolveTemplateCopilotV2Failure, resolveTemplateCopilotV2SpecialReconciliation, resolveTemplateCopilotV2StartFailure, selectNewerTemplateCopilotV2Snapshot, selectTemplateCopilotStartIntent, templateCopilotV2FailureNeedsReconcile, templateCopilotV2InterviewMutationBlocked } from "./template-copilot-v2-client-command.ts";
 
 function freshLifecycle() {
   return createTemplateCopilotV2LifecycleFence().capture();
@@ -16,6 +16,26 @@ test("v2 start retains its exact command over first-call stale closures, retries
   assert.throws(() => nextTemplateCopilotV2PendingStart({ pending: first, businessUnitId: "other", departmentName: "Finance", locale: "en", createKey: () => "start:three" }), /previous Copilot start/);
   assert.equal(resolveTemplateCopilotV2StartFailure({ status: 422, command: first, currentPending: first }).pending, null);
   assert.equal(resolveTemplateCopilotV2StartFailure({ status: 503, command: first, currentPending: first }).retain, true);
+});
+
+test("a response-lost pre-Step-4 start remains pinned to v2.0 after v2.1 ships", async () => {
+  const recovered = parseTemplateCopilotV2PendingStart({
+    idempotencyKey: "start:legacy-v20",
+    businessUnitId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    departmentName: "Treasury",
+    locale: "en",
+  });
+  assert.equal(recovered.questionLibraryVersion, "v2.0");
+  const sent = [];
+  await executeTemplateCopilotStart({
+    lifecycle: freshLifecycle(), schemaVersion: 2,
+    intent: selectTemplateCopilotStartIntent({ businessUnitId: "other", departmentName: "Other", locale: "zh-Hant", questionLibraryVersion: "v2.1" }, recovered),
+    loadPendingV2: () => recovered, installPendingV2: () => {}, createKey: () => "must-not-create",
+    request: async (request) => { sent.push(request); return { sessionId: "kept" }; },
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].clientMessageId, "start:legacy-v20");
+  assert.equal(sent[0].questionLibraryVersion, "v2.0");
 });
 
 test("v1 start never reads, persists, reduces, replays, or scope-locks v2 pending state", async () => {
@@ -81,6 +101,7 @@ test("capability-gated UI recovery never reads v2 storage in v1 and restores bot
     businessUnitId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     departmentName: "Treasury",
     locale: "zh-Hant",
+    questionLibraryVersion: "v2.0",
   });
   const pendingSpecial = nextTemplateCopilotV2PendingSpecialCommand({
     pending: null,
@@ -139,6 +160,7 @@ test("capability-gated UI recovery never reads v2 storage in v1 and restores bot
       businessUnitId: pendingStart.businessUnitId,
       departmentName: pendingStart.departmentName,
       locale: pendingStart.locale,
+      questionLibraryVersion: "v2.0",
     },
     "reload uses the immutable recovered scope instead of a reset selector default",
   );

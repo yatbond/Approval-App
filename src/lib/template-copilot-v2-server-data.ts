@@ -14,7 +14,7 @@ import {
   type V2FactTransition,
 } from "./template-copilot-facts.ts";
 import { getTemplateCopilotReadiness } from "./template-copilot-readiness.ts";
-import { requireTemplateCopilotV2, type TemplateCopilotV2Flag } from "./template-copilot-v2-feature.ts";
+import { isTemplateCopilotV2Step4Enabled, requireTemplateCopilotV2, type TemplateCopilotV2Flag } from "./template-copilot-v2-feature.ts";
 import { getTemplateCopilotQuestionLibrary, getTemplateCopilotV2InterviewState, getTemplateCopilotV2SpecialReview, reopenTemplateCopilotV2Decision, type TemplateCopilotAtomicAnswerInput } from "./template-copilot-question-library.ts";
 import { orderTemplateCopilotMessages } from "./template-copilot-history.ts";
 import {
@@ -25,18 +25,23 @@ import {
   templateCopilotV2CandidateOutputSchema,
   type TemplateCopilotV2Candidate,
 } from "./template-copilot-v2-candidates.ts";
+import { getTemplateCopilotV2CommittedAcknowledgement } from "./template-copilot-v2-step4.ts";
 
 export function templateCopilotV2CommandHash(command: unknown) {
   return createHash("sha256").update(JSON.stringify(sortJson(command))).digest("hex");
 }
 
-export async function createTemplateCopilotV2Session({ service, actor, clientMessageId, scope, flag }: {
+export async function createTemplateCopilotV2Session({ service, actor, clientMessageId, scope, questionLibraryVersion = "v2.0", flag }: {
   service: SupabaseClient; actor: ApprovalRuntimeProfile; clientMessageId: string;
   scope: { businessUnitId: string; businessName: string; departmentId: string; departmentName: string; locale: "en" | "zh-Hant" | "zh-Hans" };
+  questionLibraryVersion?: "v2.0" | "v2.1";
   flag?: TemplateCopilotV2Flag;
 }) {
   requireTemplateCopilotV2(flag);
-  const ledger = createTemplateCopilotV2Ledger(scope, flag);
+  // The request's pinned library version is included in the start command hash.
+  // A pre-Step-4 response-lost v2.0 start therefore replays identically after
+  // deployment rather than becoming a different v2.1 create command.
+  const ledger = createTemplateCopilotV2Ledger({ ...scope, questionLibraryVersion }, flag);
   const interview = getTemplateCopilotV2InterviewState(ledger);
   const introduction = scope.locale === "zh-Hant"
     ? "我會逐步詢問簡單問題，協助你建立可供審核的流程方案。"
@@ -111,8 +116,20 @@ export async function applyTemplateCopilotV2AtomicAnswer({ session, service, act
     });
     if (error) throw error;
     const result = withV2InterviewState(data as Record<string, unknown>);
-    const currentLedger = result.ledger ? templateCopilotV2LedgerSchema.parse(result.ledger) : stored.ledger;
-    return { ...result, assistantMessage: atomicAssistantMessage(currentLedger.locale, getTemplateCopilotV2InterviewState(currentLedger)) };
+    // A readable receipt proves only that the key exists. The locked RPC is
+    // the owner check: never query transcript content unless it confirms this
+    // actor's exact command replayed. Receipts store identifiers/metadata, not
+    // an acknowledgement body.
+    if (result.outcome !== "replayed") return result;
+    const messages = await loadV2PersistedCommandTranscript(session, sessionId, idempotencyKey, actor.id);
+    const originalAssistantMessage = messages.find((message) => message.role === "assistant")?.content;
+    return {
+      ...result,
+      // Exact retries use the original assistant transcript written in the
+      // same transaction as the ledger and receipt identifiers; never derive
+      // an acknowledgement from a later reopened/reanswered ledger.
+      ...(originalAssistantMessage ? { assistantMessage: originalAssistantMessage, messages } : { assistantMessage: undefined }),
+    };
   }
   const interview = getTemplateCopilotV2InterviewState(stored.ledger);
   if (!interview.nextQuestion) return { outcome: "invalid_transition" };
@@ -129,7 +146,11 @@ export async function applyTemplateCopilotV2AtomicAnswer({ session, service, act
   }
   const nextLedger = applyTemplateCopilotV2AtomicDecision({ ledger: stored.ledger, decisionId: interview.nextQuestion.primaryDecisionId, answer: input.kind === "choice" ? { kind: "choice", optionId: input.optionId, display: question.answer.options?.find((option) => option.optionId === input.optionId)?.label[stored.ledger.locale] || input.optionId } : input, provenance: [{ kind: "human_editor", sourceId: `answer:${idempotencyKey}`, sourceMessageIds: [] }], answeredAt: new Date().toISOString(), flag });
   const nextInterview = getTemplateCopilotV2InterviewState(nextLedger);
-  const assistantMessage = atomicAssistantMessage(stored.ledger.locale, nextInterview);
+  const assistantMessage = atomicAssistantMessage(
+    nextLedger.locale,
+    nextInterview,
+    getTemplateCopilotV2CommittedAcknowledgement({ ledger: nextLedger, decisionId: interview.nextQuestion.primaryDecisionId }),
+  );
   const selectedOption = input.kind === "choice" ? question.answer.options?.find((option) => option.optionId === input.optionId) : undefined;
   const userMessage = input.kind === "text" ? input.text : selectedOption?.label[stored.ledger.locale] || input.optionId;
   const { data, error } = await service.rpc(enqueueExtractionJob ? "answer_template_copilot_v2_decision_with_extraction_job" : "answer_template_copilot_v2_decision", {
@@ -141,7 +162,41 @@ export async function applyTemplateCopilotV2AtomicAnswer({ session, service, act
     ...(enqueueExtractionJob ? { p_enqueue_extraction: true } : {}),
   });
   if (error) throw error;
-  return withV2InterviewState(data as Record<string, unknown>);
+  const result = withV2InterviewState(data as Record<string, unknown>);
+  // A competing double-click can miss the preflight receipt and reach the
+  // locked RPC after the first caller commits. That RPC replay is allowed to
+  // return a newer session ledger, so it must never be used to manufacture an
+  // acknowledgement. Recover the exact command's durable assistant turn or
+  // fail closed without a saved claim.
+  if (result.outcome === "replayed") {
+    try {
+      const messages = await loadV2PersistedCommandTranscript(session, sessionId, idempotencyKey, actor.id);
+      const originalAssistantMessage = messages.find((message) => message.role === "assistant")?.content;
+      return {
+        ...result,
+        ...(originalAssistantMessage ? { assistantMessage: originalAssistantMessage, messages } : { assistantMessage: undefined }),
+      };
+    } catch {
+      return { ...result, assistantMessage: undefined };
+    }
+  }
+  // A stale/invalid RPC response can still contain another tab's current
+  // ledger. Acknowledgement is permitted only for this command's applied or
+  // exact replay outcome, never merely because a similarly named decision now
+  // exists in a newer authoritative snapshot.
+  const committedLedger = result.outcome === "applied" && result.ledger
+    ? templateCopilotV2LedgerSchema.parse(result.ledger)
+    : null;
+  return {
+    ...result,
+    ...(committedLedger ? {
+      // The RPC response contains the assistant message transactionally saved
+      // in the receipt/transcript. Preserve it verbatim if present.
+      assistantMessage: typeof result.assistantMessage === "string"
+        ? result.assistantMessage
+        : atomicAssistantMessage(committedLedger.locale, getTemplateCopilotV2InterviewState(committedLedger), getTemplateCopilotV2CommittedAcknowledgement({ ledger: committedLedger, decisionId: interview.nextQuestion.primaryDecisionId })),
+    } : {}),
+  };
 }
 
 /** Gated batch persistence for one broad answer. The model output has already
@@ -560,10 +615,13 @@ function specialTranscript(locale: "en" | "zh-Hant" | "zh-Hans", command: Templa
   return { userMessage: command.operation === "defer" ? labels.defer : command.operation === "reopen" ? labels.reopen : `${labels.na}: ${command.reason.trim()}`, assistantMessage: `${acknowledgement} ${next}`.trim() };
 }
 
-function atomicAssistantMessage(locale: "en" | "zh-Hant" | "zh-Hans", interview: ReturnType<typeof getTemplateCopilotV2InterviewState>) {
-  if (interview.state === "question" && interview.nextQuestion) return interview.nextQuestion.prompt;
-  if (interview.state === "complete") return locale === "zh-Hant" ? "所有適用的決定已完成。" : locale === "zh-Hans" ? "所有适用的决定已完成。" : "All applicable decisions are complete.";
-  return locale === "zh-Hant" ? "此訪談需要重新載入後才能繼續。" : locale === "zh-Hans" ? "此访谈需要重新加载后才能继续。" : "This interview needs to be reloaded before it can continue.";
+function atomicAssistantMessage(locale: "en" | "zh-Hant" | "zh-Hans", interview: ReturnType<typeof getTemplateCopilotV2InterviewState>, acknowledgement?: string | null) {
+  const next = interview.state === "question" && interview.nextQuestion
+    ? interview.nextQuestion.prompt
+    : interview.state === "complete"
+      ? locale === "zh-Hant" ? "所有適用的決定已完成。" : locale === "zh-Hans" ? "所有适用的决定已完成。" : "All applicable decisions are complete."
+      : locale === "zh-Hant" ? "此訪談需要重新載入後才能繼續。" : locale === "zh-Hans" ? "此访谈需要重新加载后才能继续。" : "This interview needs to be reloaded before it can continue.";
+  return acknowledgement ? `${acknowledgement} ${next}` : next;
 }
 
 export async function previewTemplateCopilotV1Upgrade({ session, sessionId, flag }: { session: SupabaseClient; sessionId: string; flag?: TemplateCopilotV2Flag }) {
@@ -601,13 +659,14 @@ function sortJson(value: unknown): unknown {
   return value;
 }
 
-async function loadV2PersistedCommandTranscript(session: SupabaseClient, sessionId: string, idempotencyKey: string): Promise<TemplateCopilotV2PersistedCommandMessage[]> {
-  const { data: transcriptRows, error: transcriptError } = await session
+async function loadV2PersistedCommandTranscript(session: SupabaseClient, sessionId: string, idempotencyKey: string, ownerId?: string): Promise<TemplateCopilotV2PersistedCommandMessage[]> {
+  let query = session
     .from("template_copilot_messages")
     .select("id,client_message_id,role,content,created_at")
     .eq("session_id", sessionId)
-    .eq("client_message_id", idempotencyKey)
-    .order("created_at", { ascending: true });
+    .eq("client_message_id", idempotencyKey);
+  if (ownerId) query = query.eq("owner_id", ownerId);
+  const { data: transcriptRows, error: transcriptError } = await query.order("created_at", { ascending: true });
   if (transcriptError) throw transcriptError;
   const messages = orderTemplateCopilotMessages(transcriptRows || []).flatMap((row) => {
     if ((row.role !== "user" && row.role !== "assistant")
@@ -697,5 +756,5 @@ async function loadV2Receipt(session: SupabaseClient, sessionId: string, idempot
 function withV2InterviewState(result: Record<string, unknown>) {
   if (!result.ledger) return result;
   const ledger = templateCopilotV2LedgerSchema.parse(result.ledger);
-  return { ...result, interview: getTemplateCopilotV2InterviewState(ledger), specialReview: getTemplateCopilotV2SpecialReview(ledger) };
+  return { ...result, interview: getTemplateCopilotV2InterviewState(ledger), specialReview: getTemplateCopilotV2SpecialReview(ledger), step4Enabled: isTemplateCopilotV2Step4Enabled() };
 }

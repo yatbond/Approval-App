@@ -5,6 +5,7 @@ import {
   type TemplateCopilotFactId,
   type TemplateCopilotV2Ledger,
 } from "./template-copilot-facts.ts";
+import { getTemplateCopilotV2Step4Interaction, type TemplateCopilotV2Step4Interaction } from "./template-copilot-v2-step4.ts";
 
 const questionIdSchema = z.string().regex(/^v2\.[a-z][a-z0-9_.-]{2,95}$/);
 const libraryVersionSchema = z.string().regex(/^v2\.\d+$/);
@@ -324,8 +325,17 @@ const v2QuestionLibrary = freezeQuestionLibrary(validateTemplateCopilotQuestionL
   })),
 }));
 
+// Step 4 changes interaction affordances, not question semantics. Existing
+// v2.0 sessions remain pinned to their original library and therefore retain
+// their old controls during a rollback; fresh sessions explicitly pin v2.1.
+const v21QuestionLibrary = freezeQuestionLibrary(validateTemplateCopilotQuestionLibrary({
+  version: "v2.1",
+  questions: v2QuestionLibrary.questions,
+}));
+
 const libraryByVersion: Readonly<Record<string, TemplateCopilotQuestionLibrary>> = Object.freeze({
   "v2.0": v2QuestionLibrary,
+  "v2.1": v21QuestionLibrary,
 });
 
 export function getTemplateCopilotQuestionLibrary(version: string): TemplateCopilotQuestionLibrary {
@@ -428,6 +438,7 @@ export type TemplateCopilotV2InterviewState = Readonly<{
     helpLabel: string;
     helpBody: string;
     uncertainty: Readonly<{ notSure: true; notApplicable: "never" | "when_optional" }>;
+    interaction?: TemplateCopilotV2Step4Interaction;
     exampleLabel?: string;
     example?: string;
     options?: readonly Readonly<{ optionId: string; label: string }>[];
@@ -509,6 +520,12 @@ export function getTemplateCopilotV2InterviewState(ledgerInput: TemplateCopilotV
   }));
   const selected = [...selectable].sort(compareQuestions)[0];
   if (selected) {
+    const interaction = getTemplateCopilotV2Step4Interaction({
+      libraryVersion: library.version,
+      questionId: selected.questionId,
+      answerType: selected.answer.type,
+      locale: ledger.locale,
+    });
     return Object.freeze({
       libraryVersion: library.version,
       state: "question",
@@ -523,6 +540,7 @@ export function getTemplateCopilotV2InterviewState(ledgerInput: TemplateCopilotV
         helpLabel: ledger.locale === "zh-Hant" ? "說明" : ledger.locale === "zh-Hans" ? "说明" : "Help",
         helpBody: selected.help.body[ledger.locale],
         uncertainty: selected.uncertainty,
+        ...(interaction ? { interaction } : {}),
         ...(selected.example ? { exampleLabel: ledger.locale === "zh-Hant" ? "例子" : ledger.locale === "zh-Hans" ? "示例" : "Example", example: selected.example[ledger.locale] } : {}),
         ...(selected.answer.options ? { options: Object.freeze(selected.answer.options.map((option) => Object.freeze({ optionId: option.optionId, label: option.label[ledger.locale] }))) } : {}),
         prompt: pinnedPromptForQuestion(selected, ledger),

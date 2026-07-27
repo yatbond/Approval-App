@@ -334,3 +334,40 @@ creation. N/A is available only where the pinned question explicitly permits
 it and requires a bounded reason. Reopening removes the server-computed reverse
 closure of both prerequisite and applicability dependencies, so answers from a
 former branch cannot survive a correction.
+
+## Copilot v2 Step 4: guided answer aids without hidden answers
+
+New v2 sessions pin `questionLibraryVersion: v2.1`. The version adds only a
+deterministic interaction contract; it does not alter a question ID, decision
+ID, validation rule, or mutation endpoint. Existing `v2.0` sessions retain
+their previous controls, so disabling the v2 rollout continues to render the
+plain typed v1 flow without deleting v2 ledgers or prior answers.
+
+`TEMPLATE_COPILOT_V2_STEP4` is an independent, server-only, default-off
+switch. With it off, a persisted `v2.1` ledger remains fully answerable but
+uses the conservative plain typed composer (an exact visible choice label is
+still resolved to its server-owned option ID). Turning the switch back on
+restores the same v2.1 aids without changing its ledger, answers, or version.
+The original answer acknowledgement is a durable assistant transcript turn
+written in the same transaction as the receipt identifiers. An exact retry
+after a later reopen/re-answer reads that same-command transcript only after
+the locked owner check confirms replay; it never reconstructs an acknowledgement
+from a newer ledger value.
+
+For applicable v2.1 questions, the controller may return optional suggestions,
+an alternate example, a `Why are you asking?` help disclosure, and localized
+labels in English, Traditional Chinese, and Simplified Chinese. Suggestions
+only populate the editable local draft. Examples are visibly marked **Example
+only — not a recommendation**, and viewing or rotating them calls no answer,
+special-decision, extraction, or candidate API. Text answers always retain
+free entry and `Something else` clears a suggested draft. Choice selection is
+local until the user presses an explicit `Continue`; that is the only action
+that creates the existing revisioned, idempotent answer command.
+
+The browser never says an answer was saved while a request is pending. After
+the answer RPC returns, the server derives the acknowledgement from the
+returned authoritative ledger's canonical display value. Rejected, stale, and
+ambiguous writes therefore retain the existing exact-key retry/reconciliation
+behaviour and cannot create a false acknowledgement. Deferred and permitted
+N/A decisions remain visible in the server-derived special review/readiness
+state and final transcript playback.

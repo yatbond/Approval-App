@@ -83,10 +83,17 @@ test("atomic answers bind only the server-chosen decision, persist one append, a
   assert.equal(rpcArgs.p_decision_id, "decision.workflow.name.name");
   assert.equal(Object.keys(rpcArgs.p_ledger.atomicDecisions).length, 1);
   assert.equal(result.interview.nextQuestion.primaryDecisionId, "decision.workflow.purpose.purpose");
+  assert.equal(result.assistantMessage, "Saved: Invoice approval What job should this workflow help people complete?");
   const replayHash = templateCopilotV2CommandHash({ operation: "atomic_answer", sessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", expectedRevision: 1, idempotencyKey: "atomic:first", answer: { kind: "text", text: "Invoice approval" } });
   const replaySession = { from(table) {
     if (table === "template_copilot_v2_operation_receipts") {
-      return { select() { return { eq() { return { eq() { return { maybeSingle: async () => ({ data: { command_hash: replayHash, response: { appliedRevision: 2, decisionId: "decision.workflow.name.name", questionId: "v2.workflow.name.name", assistantMessage: "What job should this workflow help people complete?" } }, error: null }) }; } }; } }; } };
+      return { select() { return { eq() { return { eq() { return { maybeSingle: async () => ({ data: { command_hash: replayHash, response: { appliedRevision: 2, decisionId: "decision.workflow.name.name", questionId: "v2.workflow.name.name" } }, error: null }) }; } }; } }; } };
+    }
+    if (table === "template_copilot_messages") {
+      return { select() { return this; }, eq() { return this; }, order: async () => ({ data: [
+        { id: "atomic:first", client_message_id: "atomic:first", role: "user", content: "Invoice approval", created_at: "2026-07-27T12:00:00.000Z" },
+        { id: "atomic:first-assistant", client_message_id: "atomic:first", role: "assistant", content: rpcArgs.p_assistant_message, created_at: "2026-07-27T12:00:01.000Z" },
+      ], error: null }) };
     }
     assert.equal(table, "template_copilot_sessions");
     return { select() { return { eq() { return { maybeSingle: async () => ({ data: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", owner_id: actor.id, status: "interviewing", revision: 2, ledger: rpcArgs.p_ledger }, error: null }) }; } }; } };
@@ -95,6 +102,7 @@ test("atomic answers bind only the server-chosen decision, persist one append, a
   const replay = await applyTemplateCopilotV2AtomicAnswer({ session: replaySession, service: { rpc: async (_name, args) => { replayArgs = args; return { data: { outcome: "replayed", revision: 2, status: "interviewing", ledger: rpcArgs.p_ledger, assistantMessage: "What job should this workflow help people complete?" }, error: null }; } }, actor, sessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", expectedRevision: 1, idempotencyKey: "atomic:first", answer: "Invoice approval", flag: enabled });
   assert.equal(replay.outcome, "replayed");
   assert.equal(replayArgs.p_decision_id, "decision.workflow.name.name");
+  assert.equal(replay.assistantMessage, rpcArgs.p_assistant_message, "replay keeps the exact acknowledgement saved by the original command");
 });
 
 test("a valid 8000-character atomic text answer commits with a bounded display preview", async () => {
@@ -111,7 +119,8 @@ test("a valid 8000-character atomic text answer commits with a bounded display p
   assert.equal(decision.display.length, 500);
   assert.equal(decision.display.endsWith("…"), true);
   assert.equal(rpcArgs.p_user_message, answer, "the durable transcript keeps the canonical full answer, not its display preview");
-  assert.equal(rpcArgs.p_assistant_message, "What job should this workflow help people complete?");
+  assert.match(rpcArgs.p_assistant_message, /^Saved: /);
+  assert.match(rpcArgs.p_assistant_message, /What job should this workflow help people complete\?$/);
 });
 
 test("choice questions reject free prose and accept only their server-owned option IDs", async () => {

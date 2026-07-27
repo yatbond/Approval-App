@@ -36,3 +36,22 @@ export function getTemplateCopilotComposerRenderContract({ schemaVersion, status
 export function getTemplateCopilotAnswerLimit(schemaVersion: 1 | 2) {
   return schemaVersion === 2 ? 8_000 : 16_000;
 }
+
+/** Step 4 is a server-owned presentation capability. When disabled, an
+ * existing v2.1 choice stays answerable through a typed fallback; the client
+ * still maps an exact label back to the server-owned option ID before writing. */
+export function getTemplateCopilotV2Step4RenderContract({
+  schemaVersion,
+  hasInteraction,
+  enabled,
+}: {
+  schemaVersion: 1 | 2;
+  hasInteraction: boolean;
+  enabled: boolean;
+}) {
+  const enhanced = schemaVersion === 2 && hasInteraction && enabled;
+  return Object.freeze({
+    enhanced,
+    plainTypedFallback: schemaVersion === 2 && hasInteraction && !enabled,
+  });
+}

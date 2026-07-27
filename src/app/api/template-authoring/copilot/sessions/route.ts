@@ -183,6 +183,9 @@ export async function POST(request: NextRequest) {
         actor,
         clientMessageId: parsed.data.clientMessageId,
         scope: { ...scope, locale },
+        // Missing is intentionally v2.0 for old response-lost browser
+        // commands; current browsers persist and send their explicit v2.1 pin.
+        questionLibraryVersion: parsed.data.questionLibraryVersion || "v2.0",
       });
       return withTemplateCopilotStartSchemaVersion(templateAuthoringRpcResponse({
         cookieSource,

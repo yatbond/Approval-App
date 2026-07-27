@@ -76,6 +76,7 @@ export const templateCopilotStartSchema = z
     businessUnitId: z.string().uuid(),
     departmentName: z.string().trim().min(1).max(200),
     locale: templateCopilotLocaleSchema.optional(),
+    questionLibraryVersion: z.enum(["v2.0", "v2.1"]).optional(),
     initialRequirement: z.string().trim().min(1).max(16_000).optional(),
     clientMessageId: z
       .string()

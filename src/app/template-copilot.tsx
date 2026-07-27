@@ -17,8 +17,8 @@ import {
 import type { TemplateCopilotV2Ledger } from "@/lib/template-copilot-facts";
 import { templateCopilotUnicodeCodePointCount } from "@/lib/template-copilot-unicode";
 import type { TemplateCopilotV2InterviewState, TemplateCopilotV2SpecialReviewItem } from "@/lib/template-copilot-question-library";
-import { applyTemplateCopilotV2Reconciliation, canReplaceTemplateCopilotV2Transcript, canRestoreTemplateCopilotV2Draft, createTemplateCopilotClientChatMessage, createTemplateCopilotV2LifecycleFence, discoverTemplateCopilotV2Recovery, executeTemplateCopilotStart, mergeTemplateCopilotClientChatMessages, nextTemplateCopilotV2PendingCommand, nextTemplateCopilotV2PendingSpecialCommand, parseTemplateCopilotClientChatMessages, parseTemplateCopilotV2PendingSpecialCommand, releaseTemplateCopilotV2ClientAfterRollback, resolveTemplateCopilotV2ExplicitConflict, resolveTemplateCopilotV2Failure, resolveTemplateCopilotV2SpecialReconciliation, selectNewerTemplateCopilotV2Snapshot, selectTemplateCopilotStartIntent, templateCopilotV2FailureNeedsReconcile, templateCopilotV2InterviewMutationBlocked, type TemplateCopilotClientChatMessage, type TemplateCopilotStartSchemaVersion, type TemplateCopilotV2LifecycleLease, type TemplateCopilotV2PendingCommand, type TemplateCopilotV2PendingSpecialCommand, type TemplateCopilotV2PendingStart, type TemplateCopilotV2SpecialCommand } from "@/lib/template-copilot-v2-client-command";
-import { getTemplateCopilotAnswerLimit, getTemplateCopilotComposerRenderContract, getTemplateCopilotV2InputMode } from "@/lib/template-copilot-v2-ui-contract";
+import { applyTemplateCopilotV2Reconciliation, canReplaceTemplateCopilotV2Transcript, canRestoreTemplateCopilotV2Draft, createTemplateCopilotClientChatMessage, createTemplateCopilotV2LifecycleFence, discoverTemplateCopilotV2Recovery, executeTemplateCopilotStart, mergeTemplateCopilotClientChatMessages, nextTemplateCopilotV2PendingCommand, nextTemplateCopilotV2PendingSpecialCommand, parseTemplateCopilotClientChatMessages, parseTemplateCopilotV2PendingSpecialCommand, parseTemplateCopilotV2PendingStart, releaseTemplateCopilotV2ClientAfterRollback, resolveTemplateCopilotV2ExplicitConflict, resolveTemplateCopilotV2Failure, resolveTemplateCopilotV2SpecialReconciliation, selectNewerTemplateCopilotV2Snapshot, selectTemplateCopilotStartIntent, templateCopilotV2FailureNeedsReconcile, templateCopilotV2InterviewMutationBlocked, type TemplateCopilotClientChatMessage, type TemplateCopilotStartSchemaVersion, type TemplateCopilotV2LifecycleLease, type TemplateCopilotV2PendingCommand, type TemplateCopilotV2PendingSpecialCommand, type TemplateCopilotV2PendingStart, type TemplateCopilotV2SpecialCommand } from "@/lib/template-copilot-v2-client-command";
+import { getTemplateCopilotAnswerLimit, getTemplateCopilotComposerRenderContract, getTemplateCopilotV2InputMode, getTemplateCopilotV2Step4RenderContract } from "@/lib/template-copilot-v2-ui-contract";
 import { templateCopilotApiErrorCode, templateCopilotApiErrorFromResponse, templateCopilotApiErrorStatus } from "@/lib/template-copilot-api-error";
 import {
   formatTemplateCopilotV2ReviewValue,
@@ -38,23 +38,7 @@ const pendingTemplateCopilotV2StartStorageKey = "approval-template-copilot-v2-pe
 function loadPendingTemplateCopilotV2Start(): TemplateCopilotV2PendingStart | null {
   if (typeof window === "undefined") return null;
   try {
-    const value = JSON.parse(window.sessionStorage.getItem(pendingTemplateCopilotV2StartStorageKey) || "null") as Partial<TemplateCopilotV2PendingStart> | null;
-    if (!value) return null;
-    const parsed = templateCopilotStartSchema.safeParse({
-      businessUnitId: value.businessUnitId,
-      departmentName: value.departmentName,
-      locale: value.locale,
-      clientMessageId: value.idempotencyKey,
-      ...(value.initialRequirement !== undefined ? { initialRequirement: value.initialRequirement } : {}),
-    });
-    if (!parsed.success || !parsed.data.locale) return null;
-    return Object.freeze({
-      idempotencyKey: parsed.data.clientMessageId,
-      businessUnitId: parsed.data.businessUnitId,
-      departmentName: parsed.data.departmentName,
-      locale: parsed.data.locale,
-      ...(parsed.data.initialRequirement ? { initialRequirement: parsed.data.initialRequirement } : {}),
-    });
+    return parseTemplateCopilotV2PendingStart(JSON.parse(window.sessionStorage.getItem(pendingTemplateCopilotV2StartStorageKey) || "null"));
   } catch { return null; }
 }
 function persistPendingTemplateCopilotV2Start(value: TemplateCopilotV2PendingStart | null) {
@@ -84,6 +68,7 @@ type V2CopilotState = Omit<V1CopilotState, "ledger"> & {
   ledger: TemplateCopilotV2Ledger;
   interview: TemplateCopilotV2InterviewState;
   specialReview: readonly TemplateCopilotV2SpecialReviewItem[];
+  step4Enabled?: boolean;
 };
 type CopilotState = V1CopilotState | V2CopilotState;
 function isV2State(state: CopilotState): state is V2CopilotState {
@@ -211,6 +196,9 @@ export function TemplateCopilot({
   const [state, setState] = useState<CopilotState | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [selectedChoiceOptionId, setSelectedChoiceOptionId] = useState<string | null>(null);
+  const [questionHelpVisible, setQuestionHelpVisible] = useState(false);
+  const [exampleIndex, setExampleIndex] = useState(0);
   const [notApplicableReason, setNotApplicableReason] = useState("");
   const [extractionRationale, setExtractionRationale] = useState("");
   const [busy, setBusy] = useState(false);
@@ -220,6 +208,8 @@ export function TemplateCopilot({
   const [draftReview, setDraftReview] = useState<DraftReviewState | null>(null);
   const [reviewDirty, setReviewDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const answerInputRef = useRef<HTMLTextAreaElement>(null);
+  const v2QuestionHeadingRef = useRef<HTMLHeadingElement>(null);
   const resolvedV2CommandKeys = useRef(new Set<string>());
   const activeV2CommandRef = useRef<TemplateCopilotV2PendingCommand | null>(null);
   const draftGenerationRef = useRef(0);
@@ -331,6 +321,26 @@ export function TemplateCopilot({
   const answerLimit = getTemplateCopilotAnswerLimit(state && isV2State(state) ? 2 : 1);
   const v2ReplayPending = Boolean(state && isV2State(state) && templateCopilotV2InterviewMutationBlocked({ pendingAnswer: pendingV2Command, pendingSpecial: pendingV2SpecialCommand }));
   const v2SpecialReview = state && isV2State(state) ? state.specialReview : [];
+  const v2StoredInteraction = state && isV2State(state) ? state.interview.nextQuestion?.interaction : undefined;
+  const step4Render = getTemplateCopilotV2Step4RenderContract({ schemaVersion: state && isV2State(state) ? 2 : 1, hasInteraction: Boolean(v2StoredInteraction), enabled: Boolean(state && isV2State(state) && state.step4Enabled) });
+  const v2Interaction = step4Render.enhanced ? v2StoredInteraction : undefined;
+  const v2PlainTypedFallback = step4Render.plainTypedFallback;
+  const v2Examples = state && isV2State(state) && state.interview.nextQuestion
+    ? [state.interview.nextQuestion.example, ...(v2Interaction?.alternateExamples || [])].filter((example): example is string => Boolean(example))
+    : [];
+  const v2VisibleExample = v2Examples[Math.min(exampleIndex, Math.max(v2Examples.length - 1, 0))];
+
+  useEffect(() => {
+    if (!state || !isV2State(state) || v2InputMode !== "answerable" || pendingV2Command || pendingV2SpecialCommand) return;
+    const frame = window.requestAnimationFrame(() => {
+      const question = state.interview.nextQuestion;
+      const target = question?.answerType === "choice" && !v2PlainTypedFallback
+        ? v2QuestionHeadingRef.current
+        : answerInputRef.current;
+      target?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [state, v2InputMode, v2PlainTypedFallback, pendingV2Command, pendingV2SpecialCommand]);
 
   const completed = useMemo(
     () =>
@@ -349,6 +359,12 @@ export function TemplateCopilot({
     if (!lifecycle.isCurrent()) return null;
     const selected = selectNewerTemplateCopilotV2Snapshot(latestV2StateRef.current, next);
     const installed = lifecycle.commit(() => {
+      const priorQuestionId = latestV2StateRef.current?.interview.nextQuestion?.questionId;
+      if (priorQuestionId !== selected.interview.nextQuestion?.questionId) {
+        setSelectedChoiceOptionId(null);
+        setQuestionHelpVisible(false);
+        setExampleIndex(0);
+      }
       v2ClientResidueRef.current = true;
       latestV2StateRef.current = selected;
       setState((current) => {
@@ -367,6 +383,7 @@ export function TemplateCopilot({
       businessUnitId,
       departmentName,
       locale: startLocale,
+      questionLibraryVersion: "v2.1",
       // Validate the directory intent before creating either a v1 request key
       // or a persisted v2 command.
       clientMessageId: "start:validation",
@@ -421,6 +438,7 @@ export function TemplateCopilot({
         businessUnitId,
         departmentName,
         locale: startLocale,
+        questionLibraryVersion: "v2.1",
       }, recovery.pendingStart);
       const started = await executeTemplateCopilotStart({
         lifecycle: operationLifecycle,
@@ -474,6 +492,7 @@ export function TemplateCopilot({
         ledger: response.ledger as TemplateCopilotV2Ledger,
         interview: responseInterview as TemplateCopilotV2InterviewState,
         specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [],
+        step4Enabled: response.step4Enabled === true,
       } satisfies V2CopilotState : {
         sessionId: String(response.sessionId), revision: Number(response.revision),
         status: String(response.status) as V1CopilotState["status"], ledger: response.ledger as TemplateCopilotLedger,
@@ -528,6 +547,7 @@ export function TemplateCopilot({
       ledger: saved.ledger as TemplateCopilotV2Ledger,
       interview: saved.interview as TemplateCopilotV2InterviewState,
       specialReview: Array.isArray((saved as { specialReview?: unknown }).specialReview) ? (saved as { specialReview: TemplateCopilotV2SpecialReviewItem[] }).specialReview : [],
+      step4Enabled: (saved as { step4Enabled?: unknown }).step4Enabled === true,
     } satisfies V2CopilotState;
     const authoritative = installV2State(lifecycle, serverState);
     if (!authoritative || !lifecycle.isCurrent()) return null;
@@ -577,6 +597,7 @@ export function TemplateCopilot({
       ledger: saved.ledger as TemplateCopilotV2Ledger,
       interview: saved.interview as TemplateCopilotV2InterviewState,
       specialReview: Array.isArray(saved.specialReview) ? saved.specialReview as TemplateCopilotV2SpecialReviewItem[] : [],
+      step4Enabled: (saved as { step4Enabled?: unknown }).step4Enabled === true,
     });
   }
 
@@ -610,7 +631,7 @@ export function TemplateCopilot({
       if (!lifecycle.isCurrent()) return false;
       const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
       if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) throw new Error(copy.invalidInterviewUpdate);
-      if (!installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [] })) return false;
+      if (!installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], step4Enabled: response.step4Enabled === true })) return false;
       lifecycle.commit(() => {
         resolvedV2CommandKeys.current.add(command.idempotencyKey);
         if (activeV2CommandRef.current?.idempotencyKey === command.idempotencyKey) activeV2CommandRef.current = null;
@@ -705,7 +726,7 @@ export function TemplateCopilot({
       if (!lifecycle.isCurrent()) return;
       const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
       if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) throw new Error(copy.invalidInterviewUpdate);
-      installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [] });
+      installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], step4Enabled: response.step4Enabled === true });
     } catch {
       if (!lifecycle.isCurrent()) return;
       try {
@@ -736,7 +757,7 @@ export function TemplateCopilot({
       if (!lifecycle.isCurrent()) return;
       const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
       if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) throw new Error(copy.invalidInterviewUpdate);
-      installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [] });
+      installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], step4Enabled: response.step4Enabled === true });
     } catch {
       if (!lifecycle.isCurrent()) return;
       try {
@@ -822,7 +843,7 @@ export function TemplateCopilot({
       if (!lifecycle.isCurrent()) return null;
       outcome = ["committed", "missing", "idempotency_conflict", "not_found"].includes(String(reconciled.outcome)) ? String(reconciled.outcome) as typeof outcome : "unavailable";
       if ((reconciled.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion === 2 && reconciled.interview) {
-        if (!installV2State(lifecycle, { sessionId, revision: Number(reconciled.revision), status: String(reconciled.status) as V2CopilotState["status"], ledger: reconciled.ledger as TemplateCopilotV2Ledger, interview: reconciled.interview as TemplateCopilotV2InterviewState, specialReview: Array.isArray(reconciled.specialReview) ? reconciled.specialReview as TemplateCopilotV2SpecialReviewItem[] : [] })) return null;
+        if (!installV2State(lifecycle, { sessionId, revision: Number(reconciled.revision), status: String(reconciled.status) as V2CopilotState["status"], ledger: reconciled.ledger as TemplateCopilotV2Ledger, interview: reconciled.interview as TemplateCopilotV2InterviewState, specialReview: Array.isArray(reconciled.specialReview) ? reconciled.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], step4Enabled: reconciled.step4Enabled === true })) return null;
       }
       const reconciledMessages = chatMessagesFromStored(reconciled.messages);
       if (reconciledMessages) {
@@ -832,9 +853,9 @@ export function TemplateCopilot({
         try {
           const snapshot = await api(`/api/template-authoring/copilot/sessions/${sessionId}?messageDirection=tail&messageLimit=100`, { method: "GET" });
           if (!lifecycle.isCurrent()) return null;
-          const saved = snapshot.session as { revision?: unknown; status?: unknown; ledger?: unknown; interview?: unknown; specialReview?: unknown; messages?: unknown };
+          const saved = snapshot.session as { revision?: unknown; status?: unknown; ledger?: unknown; interview?: unknown; specialReview?: unknown; step4Enabled?: unknown; messages?: unknown };
           if ((saved?.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion === 2 && saved.interview) {
-            if (!installV2State(lifecycle, { sessionId, revision: Number(saved.revision), status: String(saved.status) as V2CopilotState["status"], ledger: saved.ledger as TemplateCopilotV2Ledger, interview: saved.interview as TemplateCopilotV2InterviewState, specialReview: Array.isArray(saved.specialReview) ? saved.specialReview as TemplateCopilotV2SpecialReviewItem[] : [] })) return null;
+            if (!installV2State(lifecycle, { sessionId, revision: Number(saved.revision), status: String(saved.status) as V2CopilotState["status"], ledger: saved.ledger as TemplateCopilotV2Ledger, interview: saved.interview as TemplateCopilotV2InterviewState, specialReview: Array.isArray(saved.specialReview) ? saved.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], step4Enabled: saved.step4Enabled === true })) return null;
             const authoritativeMessages = chatMessagesFromStored(saved.messages);
             if (authoritativeMessages) {
               commitV2ReactState(lifecycle, setMessages, (current) => mergeChatMessages(current, authoritativeMessages));
@@ -892,7 +913,7 @@ export function TemplateCopilot({
       if (!lifecycle.isCurrent()) return;
       const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
       if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) throw new Error(copy.invalidInterviewUpdate);
-      if (!installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [] })) return;
+      if (!installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], step4Enabled: response.step4Enabled === true })) return;
       installPendingV2Special(lifecycle, pendingV2SpecialRef.current?.idempotencyKey === command.idempotencyKey ? null : pendingV2SpecialRef.current);
       // These are confirmed, durable transcript rows.  A retry keeps the
       // stable command/role IDs so an eventual authoritative history merge
@@ -960,18 +981,22 @@ export function TemplateCopilot({
         setError(copy.answerTooLong);
         return;
       }
-      if (state.interview.nextQuestion?.answerType === "choice") {
+      const choice = state.interview.nextQuestion?.answerType === "choice"
+        ? state.interview.nextQuestion.options?.find((option) => option.optionId.toLocaleLowerCase("en") === message.toLocaleLowerCase("en") || option.label.toLocaleLowerCase(locale) === message.toLocaleLowerCase(locale))
+        : undefined;
+      if (state.interview.nextQuestion?.answerType === "choice" && (!v2PlainTypedFallback || !choice)) {
         setError(copy.chooseListedOption);
         return;
       }
-      void submitV2({ kind: "text", text: message }, (command, lifecycle) => {
+      const answer = choice ? { kind: "choice" as const, optionId: choice.optionId } : { kind: "text" as const, text: message };
+      void submitV2(answer, (command, lifecycle) => {
         lifecycle.commit(() => {
           draftGenerationRef.current += 1;
         });
         commitV2ReactState(lifecycle, setDraft, () => "");
         commitV2ReactState(lifecycle, setMessages, (current) => current.some((item) => item.id === command.idempotencyKey)
           ? current
-          : [...current, createTemplateCopilotClientChatMessage({ clientMessageId: command.idempotencyKey, role: "user", content: message })]);
+          : [...current, createTemplateCopilotClientChatMessage({ clientMessageId: command.idempotencyKey, role: "user", content: choice?.label || message })]);
       });
       return;
     }
@@ -1393,33 +1418,54 @@ export function TemplateCopilot({
           />
         )}
         {state.status !== "draft_created" && (
-          <div className="mt-3 flex gap-2">
-            {isV2State(state) && v2InputMode === "answerable" && state.interview.nextQuestion?.example && (
-              <p className="mb-2 w-full rounded-md bg-sky-50 p-2 text-xs text-sky-900 dark:bg-neutral-800 dark:text-white"><strong>{state.interview.nextQuestion.exampleLabel}:</strong> {state.interview.nextQuestion.example}</p>
+          <div className="mt-3 space-y-3">
+            {isV2State(state) && v2InputMode === "answerable" && state.interview.nextQuestion && <h4 ref={v2QuestionHeadingRef} id="copilot-current-question" tabIndex={-1} className="w-full text-sm font-semibold text-neutral-900 dark:text-white">{state.interview.nextQuestion.prompt}</h4>}
+            {isV2State(state) && v2InputMode === "answerable" && v2VisibleExample && (
+              <div className="mb-2 w-full rounded-md border border-sky-300 bg-sky-50 p-3 text-xs text-sky-950 dark:border-sky-700 dark:bg-neutral-800 dark:text-white">
+                <p className="font-semibold">{v2Interaction?.labels.exampleOnly || state.interview.nextQuestion?.exampleLabel}</p>
+                <p className="mt-1">{v2VisibleExample}</p>
+                {v2Interaction && v2Examples.length > 1 && <button type="button" onClick={() => setExampleIndex((current) => (current + 1) % v2Examples.length)} className="mt-2 min-h-11 rounded-md border border-sky-500 px-3 text-sm font-medium text-sky-950 dark:text-sky-100">{v2Interaction.labels.showAnotherExample}</button>}
+              </div>
             )}
             {isV2State(state) && v2InputMode === "answerable" && state.interview.nextQuestion?.helpConceptRef && (
-              <p id="copilot-current-question-help" className="mb-2 w-full text-xs text-neutral-600 dark:text-neutral-300" aria-label={state.interview.nextQuestion.helpLabel}>{state.interview.nextQuestion.helpLabel}: {state.interview.nextQuestion.helpBody}</p>
+              v2Interaction ? <div className="mb-2 w-full"><button type="button" aria-expanded={questionHelpVisible} aria-controls="copilot-current-question-help" onClick={() => setQuestionHelpVisible((current) => !current)} className="min-h-11 rounded-md border border-neutral-500 px-3 text-sm text-neutral-800 dark:text-neutral-100">{v2Interaction.labels.whyAsking}</button>{questionHelpVisible && <p id="copilot-current-question-help" className="mt-2 text-xs text-neutral-700 dark:text-neutral-200">{state.interview.nextQuestion.helpBody}</p>}</div> : <p id="copilot-current-question-help" className="mb-2 w-full text-xs text-neutral-600 dark:text-neutral-300" aria-label={state.interview.nextQuestion.helpLabel}>{state.interview.nextQuestion.helpLabel}: {state.interview.nextQuestion.helpBody}</p>
             )}
             {isV2State(state) && v2InputMode === "complete" ? (
               <p className="w-full rounded-md bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">{copy.interviewComplete} {copy.interviewCompleteNextAction}</p>
             ) : isV2State(state) && v2InputMode === "blocked" ? (
               <p className="w-full rounded-md bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">{copy.interviewBlocked} {copy.interviewBlockedSupport}</p>
-            ) : isV2State(state) && composer?.showChoiceButtons && state.interview.nextQuestion?.options ? (
+            ) : isV2State(state) && composer?.showChoiceButtons && !v2PlainTypedFallback && state.interview.nextQuestion?.options ? (
               <div className="flex w-full flex-wrap gap-2">
-                <fieldset className="contents" aria-describedby="copilot-current-question-help">
+                <fieldset className="contents" aria-describedby={v2Interaction ? (questionHelpVisible ? "copilot-current-question-help" : undefined) : "copilot-current-question-help"}>
                   <legend className="sr-only">{state.interview.nextQuestion.prompt}</legend>
                   <div className="flex flex-wrap gap-2">
-                    {state.interview.nextQuestion.options.map((option) => <button key={option.optionId} type="button" disabled={busy || v2ReplayPending} onClick={() => void submitV2({ kind: "choice", optionId: option.optionId }, (command, lifecycle) => commitV2ReactState(lifecycle, setMessages, (current) => {
-                      const id = command.idempotencyKey;
-                      return current.some((message) => message.id === id) ? current : [...current, createTemplateCopilotClientChatMessage({ clientMessageId: id, role: "user", content: option.label })];
-                    }))} className="min-h-11 rounded-md border border-sky-400 bg-white px-3 text-sm text-sky-900 dark:bg-neutral-800 dark:text-white">{option.label}</button>)}
+                    {state.interview.nextQuestion.options.map((option) => <button key={option.optionId} type="button" disabled={busy || v2ReplayPending} aria-pressed={v2Interaction?.requiresExplicitContinue ? selectedChoiceOptionId === option.optionId : undefined} onClick={() => {
+                      if (v2Interaction?.requiresExplicitContinue) setSelectedChoiceOptionId(option.optionId);
+                      else void submitV2({ kind: "choice", optionId: option.optionId }, (command, lifecycle) => commitV2ReactState(lifecycle, setMessages, (current) => {
+                        const id = command.idempotencyKey;
+                        return current.some((message) => message.id === id) ? current : [...current, createTemplateCopilotClientChatMessage({ clientMessageId: id, role: "user", content: option.label })];
+                      }));
+                    }} className={`min-h-11 rounded-md border px-3 text-sm dark:bg-neutral-800 dark:text-white ${v2Interaction?.requiresExplicitContinue && selectedChoiceOptionId === option.optionId ? "border-emerald-700 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-600 dark:bg-emerald-950 dark:text-emerald-100" : "border-sky-400 bg-white text-sky-900"}`}>{option.label}</button>)}
+                    {v2Interaction?.requiresExplicitContinue && <button type="button" disabled={busy || v2ReplayPending || !selectedChoiceOptionId} onClick={() => {
+                      const option = state.interview.nextQuestion?.options?.find((item) => item.optionId === selectedChoiceOptionId);
+                      if (!option || !selectedChoiceOptionId) return;
+                      void submitV2({ kind: "choice", optionId: selectedChoiceOptionId }, (command, lifecycle) => commitV2ReactState(lifecycle, setMessages, (current) => {
+                        const id = command.idempotencyKey;
+                        return current.some((message) => message.id === id) ? current : [...current, createTemplateCopilotClientChatMessage({ clientMessageId: id, role: "user", content: option.label })];
+                      }));
+                    }} className="min-h-11 rounded-md bg-emerald-700 px-4 text-sm font-medium text-white disabled:opacity-50">{v2Interaction.labels.continue}</button>}
                     {state.interview.nextQuestion.uncertainty.notSure && <button type="button" disabled={busy || v2ReplayPending} onClick={() => void submitV2Special({ operation: "defer" })} className="min-h-11 rounded-md border border-amber-500 px-3 text-sm text-amber-900 dark:text-amber-200">{copy.notSure}</button>}
                     {state.interview.nextQuestion.uncertainty.notApplicable === "when_optional" && <><label className="sr-only" htmlFor="copilot-not-applicable-reason">{copy.notApplicableReason}</label><input id="copilot-not-applicable-reason" value={notApplicableReason} disabled={busy || v2ReplayPending} onChange={(event) => { if (templateCopilotUnicodeCodePointCount(event.target.value) <= 500) setNotApplicableReason(event.target.value); }} maxLength={1000} className="template-copilot-control min-h-11 rounded-md border border-neutral-400 bg-white px-3 text-sm dark:bg-neutral-800 dark:text-white" placeholder={copy.notApplicableReason} /><button type="button" disabled={busy || v2ReplayPending || !notApplicableReason.trim()} onClick={() => void submitV2Special({ operation: "not_applicable", reason: notApplicableReason.trim() })} className="min-h-11 rounded-md border border-neutral-400 px-3 text-sm text-neutral-700 dark:text-neutral-200">{copy.notApplicable}</button></>}
                   </div>
                 </fieldset>
               </div>
-            ) : composer?.showTextComposer ? <>
+            ) : (composer?.showTextComposer || v2PlainTypedFallback) ? <div className="flex w-full flex-wrap items-end gap-2">
+            {isV2State(state) && v2Interaction && <div className="flex w-full flex-wrap gap-2" aria-label={state.interview.nextQuestion?.prompt}>
+              {v2Interaction.suggestions.map((suggestion) => <button key={suggestion.id} type="button" disabled={busy || v2ReplayPending} onClick={() => { draftGenerationRef.current += 1; setDraft(suggestion.text); }} className="min-h-11 rounded-md border border-sky-500 bg-white px-3 text-sm text-sky-950 dark:bg-neutral-800 dark:text-sky-100">{suggestion.text}</button>)}
+              <button type="button" disabled={busy || v2ReplayPending} onClick={() => { draftGenerationRef.current += 1; setDraft(""); }} className="min-h-11 rounded-md border border-neutral-500 px-3 text-sm text-neutral-800 dark:text-neutral-100">{v2Interaction.labels.somethingElse}</button>
+            </div>}
             <textarea
+              ref={answerInputRef}
               value={draft}
               onChange={(event) => {
                 draftGenerationRef.current += 1;
@@ -1433,8 +1479,8 @@ export function TemplateCopilot({
               }}
               disabled={busy || v2ReplayPending || (!isV2State(state) && state.status === "ready")}
               aria-label={copy.answerLabel}
-              aria-describedby="template-copilot-answer-length"
-              maxLength={isV2State(state) ? 16_000 : answerLimit}
+              aria-describedby={v2Interaction && questionHelpVisible ? "template-copilot-answer-length copilot-current-question-help" : "template-copilot-answer-length"}
+              maxLength={answerLimit}
               rows={3}
               className="template-copilot-control min-h-20 flex-1 resize-y rounded-md border border-[#d8d8d8] bg-white p-3 text-sm"
               placeholder={
@@ -1455,7 +1501,7 @@ export function TemplateCopilot({
             </button>
             {isV2State(state) && state.interview.nextQuestion?.uncertainty.notSure && <button type="button" disabled={busy || v2ReplayPending} onClick={() => void submitV2Special({ operation: "defer" })} className="min-h-11 self-end rounded-md border border-amber-500 px-3 text-sm text-amber-900 dark:text-amber-200">{copy.notSure}</button>}
             {isV2State(state) && state.interview.nextQuestion?.uncertainty.notApplicable === "when_optional" && <><label className="sr-only" htmlFor="copilot-not-applicable-reason-text">{copy.notApplicableReason}</label><input id="copilot-not-applicable-reason-text" value={notApplicableReason} disabled={busy || v2ReplayPending} onChange={(event) => { if (templateCopilotUnicodeCodePointCount(event.target.value) <= 500) setNotApplicableReason(event.target.value); }} maxLength={1000} className="template-copilot-control min-h-11 self-end rounded-md border border-neutral-400 bg-white px-3 text-sm dark:bg-neutral-800 dark:text-white" placeholder={copy.notApplicableReason} /><button type="button" disabled={busy || v2ReplayPending || !notApplicableReason.trim()} onClick={() => void submitV2Special({ operation: "not_applicable", reason: notApplicableReason.trim() })} className="min-h-11 self-end rounded-md border border-neutral-400 px-3 text-sm text-neutral-700 dark:text-neutral-200">{copy.notApplicable}</button></>}
-            </> : null}
+            </div> : null}
           </div>
         )}
         {pendingV2Command && !pendingV2SpecialCommand && isV2State(state) && v2InputMode === "answerable" && (

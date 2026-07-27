@@ -17,7 +17,7 @@ import {
 import { templateCopilotV2SpecialEnvelopeSchema } from "./template-copilot-v2-special-contract.ts";
 import { createTemplateCopilotLedger } from "./template-copilot-ledger.ts";
 import { getTemplateCopilotReadiness } from "./template-copilot-readiness.ts";
-import { getTemplateCopilotV2Flag, isTemplateCopilotV2Enabled, TemplateCopilotV2DisabledError } from "./template-copilot-v2-feature.ts";
+import { getTemplateCopilotV2Flag, isTemplateCopilotV2Enabled, isTemplateCopilotV2Step4Enabled, TemplateCopilotV2DisabledError } from "./template-copilot-v2-feature.ts";
 import { getTemplateCopilotQuestionLibrary, getTemplateCopilotV2InterviewState, validateTemplateCopilotQuestionLibrary } from "./template-copilot-question-library.ts";
 
 const enabled = { enabled: true };
@@ -57,6 +57,12 @@ test("v2 fact ids and empty ledger are stable and gated", () => {
   assert.throws(() => createTemplateCopilotV2Ledger(scope), TemplateCopilotV2DisabledError);
   assert.deepEqual(createTemplateCopilotV2Ledger(scope, enabled), createTemplateCopilotV2Ledger(scope, enabled));
   assert.deepEqual(Object.keys(createTemplateCopilotV2Ledger(scope, enabled).facts), templateCopilotFactIds);
+});
+
+test("Step 4 has an independent default-off server rollout gate", () => {
+  assert.equal(isTemplateCopilotV2Step4Enabled({}), false);
+  assert.equal(isTemplateCopilotV2Step4Enabled({ TEMPLATE_COPILOT_V2_STEP4: "false" }), false);
+  assert.equal(isTemplateCopilotV2Step4Enabled({ TEMPLATE_COPILOT_V2_STEP4: "true" }), true);
 });
 
 test("fact-specific semantic schemas reject arbitrary executable values", () => {
@@ -406,7 +412,7 @@ test("Step 2 visible recovery and control copy is complete in all three supporte
   for (const key of keys) assert.equal((client.match(new RegExp(`\\b${key}:`, "g")) || []).length, 4, `${key} must have a type and all three locales`);
   assert.match(client, /\? copy\.currentDecision :/);
   assert.match(client, /getTemplateCopilotAnswerLimit/);
-  assert.match(client, /maxLength=\{isV2State\(state\) \? 16_000 : answerLimit\}/);
+  assert.match(client, /maxLength=\{answerLimit\}/);
   assert.match(client, /template-copilot-answer-length/);
   assert.doesNotMatch(client, /\? "Current decision"/);
   assert.doesNotMatch(client, /The guided interview did not return|Could not reload the latest|returned an invalid update/);
