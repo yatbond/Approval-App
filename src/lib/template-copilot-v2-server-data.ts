@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ApprovalRuntimeProfile } from "./approval-runtime.ts";
 import {
+  applyTemplateCopilotV2FactTransition,
   applyTemplateCopilotV2AtomicDecision,
   approveLegacyTemplateCopilotUpgrade,
   createTemplateCopilotV2Ledger,
@@ -14,7 +15,7 @@ import {
   type TemplateCopilotFactId,
   type V2FactTransition,
 } from "./template-copilot-facts.ts";
-import { getTemplateCopilotV2ModeFlags, isTemplateCopilotV2Step4Enabled, isTemplateCopilotV2Step5EditingEnabled, requireTemplateCopilotV2, type TemplateCopilotV2Flag } from "./template-copilot-v2-feature.ts";
+import { getTemplateCopilotV2ModeFlags, getTemplateCopilotV2StructuredEditorFlags, isTemplateCopilotV2Step4Enabled, isTemplateCopilotV2Step5EditingEnabled, isTemplateCopilotV2StructuredEditorEnabled, requireTemplateCopilotV2, type TemplateCopilotV2Flag } from "./template-copilot-v2-feature.ts";
 import { getTemplateCopilotQuestionLibrary, getTemplateCopilotV2InterviewState, getTemplateCopilotV2SpecialReview, reopenTemplateCopilotV2Decision, type TemplateCopilotAtomicAnswerInput } from "./template-copilot-question-library.ts";
 import { orderTemplateCopilotMessages } from "./template-copilot-history.ts";
 import {
@@ -32,9 +33,21 @@ import {
   type TemplateCopilotV2ModeState,
   type TemplateCopilotV2SourceSnapshot,
 } from "./template-copilot-v2-modes.ts";
+import {
+  TemplateCopilotV2StructuredFactsError,
+  TemplateCopilotV2StructuredEditorUnavailableError,
+  isTemplateCopilotV2StrictStructuredValue,
+  templateCopilotV2StructuredFactIds,
+  validateTemplateCopilotV2CommittedStrictStructures,
+  validateTemplateCopilotV2StructuredMutation,
+} from "./template-copilot-v2-structured-facts.ts";
 
 export function templateCopilotV2CommandHash(command: unknown) {
   return createHash("sha256").update(JSON.stringify(sortJson(command))).digest("hex");
+}
+
+function sameTemplateCopilotV2CanonicalValue(left: unknown, right: unknown) {
+  return JSON.stringify(sortJson(left)) === JSON.stringify(sortJson(right));
 }
 
 export async function createTemplateCopilotV2Session({ service, actor, clientMessageId, scope, questionLibraryVersion = "v2.0", flag }: {
@@ -77,15 +90,43 @@ export async function applyTemplateCopilotV2Mutation({
   expectedRevision: number; idempotencyKey: string; factId: TemplateCopilotFactId; transition: V2FactTransition; flag?: TemplateCopilotV2Flag;
 }) {
   requireTemplateCopilotV2(flag);
-  // Kept in the public service signature for API compatibility.  Fact edits
-  // intentionally do not use it: receipt/owner/current-ledger checks belong
-  // to the locked database RPC, not a preflight client query.
-  void session;
   const command = templateCopilotV2FactTransitionSchema.parse(transition);
   const canonicalValue = "payload" in command
     ? normalizeTemplateCopilotCommittedValue(factId, command.payload.canonicalValue)
     : null;
   const reason = command.operation === "mark_not_applicable" ? command.reason : null;
+  // Cross-fact references cannot be validated from an isolated JSON value.
+  // Validate an exact-revision prospective ledger through the caller's
+  // owner-scoped client, then let the locked RPC re-check ownership, revision,
+  // receipt, and field shape. A later revision skips this preflight so an
+  // exact lost-response retry can still be resolved by its database receipt.
+  if (
+    factId === "request.fields"
+    || factId === "timing.rules"
+    || factId === "workflow.stages"
+    || templateCopilotV2StructuredFactIds.includes(factId as (typeof templateCopilotV2StructuredFactIds)[number])
+  ) {
+    const stored = await loadV2StoredSession(session, sessionId, actor.id);
+    if (
+      stored?.ledger.schemaVersion === 2
+      && Number(stored.revision) === expectedRevision
+    ) {
+      const prospective = applyTemplateCopilotV2FactTransition({
+        ledger: stored.ledger,
+        factId,
+        transition: command,
+        actorId: actor.id,
+        confirmedAt: new Date().toISOString(),
+        flag,
+      });
+      const issues = validateTemplateCopilotV2StructuredMutation({
+        before: stored.ledger,
+        after: prospective,
+        factId,
+      });
+      if (issues.length) throw new TemplateCopilotV2StructuredFactsError(issues);
+    }
+  }
   // Provenance and original wording are intentionally not part of this hash:
   // map edits cannot choose either persisted field.  The database derives both
   // from the locked owner, operation, and idempotency key.
@@ -627,7 +668,21 @@ export async function resolveTemplateCopilotV2CommittedExtractionConflict({
   if (!stored || stored.ledger.schemaVersion !== 2) return { outcome: "not_found" };
   const conflict = stored.ledger.extractionEvidence.conflicts.find((item) => item.conflictId === conflictId && item.state === "open");
   if (!conflict) throw new TemplateCopilotFactTransitionError("The extraction conflict is no longer available.");
+  const storedFact = stored.ledger.facts[conflict.factId];
   const projected = projectTemplateCopilotV2CommittedExtractionConflict({ ledger: stored.ledger, conflictId, resolution: choice, humanValue, rationale, actorId: actor.id, confirmedAt: new Date().toISOString(), beforeRevision: expectedRevision });
+  const projectedValue = projected.facts[conflict.factId].canonicalValue;
+  const unchangedAlreadyAuthoritativeKeep = choice === "keep_existing"
+    && ["committed", "not_applicable"].includes(storedFact.status)
+    && sameTemplateCopilotV2CanonicalValue(storedFact.canonicalValue, projectedValue);
+  if (
+    !unchangedAlreadyAuthoritativeKeep
+    && isTemplateCopilotV2StrictStructuredValue(conflict.factId, projectedValue)
+    && !isTemplateCopilotV2StructuredEditorEnabled(conflict.factId)
+  ) {
+    throw new TemplateCopilotV2StructuredEditorUnavailableError(conflict.factId);
+  }
+  const structuredIssues = validateTemplateCopilotV2CommittedStrictStructures(projected);
+  if (structuredIssues.length) throw new TemplateCopilotV2StructuredFactsError(structuredIssues);
   const resolvedHumanValue = choice === "commit_human_value" ? projected.extractionEvidence.history.at(-1)?.humanValue : undefined;
   const { data, error } = await service.rpc("apply_template_copilot_v2_extraction", {
     p_actor_id: actor.id, p_session_id: sessionId, p_expected_revision: expectedRevision,
@@ -650,7 +705,17 @@ export async function confirmTemplateCopilotV2Candidate({ session, service, acto
   }
   const stored = await loadV2StoredSession(session, sessionId);
   if (!stored || stored.ledger.schemaVersion !== 2) return { outcome: "not_found" };
+  const candidate = stored.ledger.extractionEvidence.candidates.find((item) => item.candidateId === candidateId && item.state === "open");
   const ledger = projectTemplateCopilotV2CandidateConfirmation({ ledger: stored.ledger, candidateId, actorId: actor.id, confirmedAt: new Date().toISOString(), beforeRevision: expectedRevision });
+  if (
+    candidate
+    && isTemplateCopilotV2StrictStructuredValue(candidate.factId, ledger.facts[candidate.factId].canonicalValue)
+    && !isTemplateCopilotV2StructuredEditorEnabled(candidate.factId)
+  ) {
+    throw new TemplateCopilotV2StructuredEditorUnavailableError(candidate.factId);
+  }
+  const structuredIssues = validateTemplateCopilotV2CommittedStrictStructures(ledger);
+  if (structuredIssues.length) throw new TemplateCopilotV2StructuredFactsError(structuredIssues);
   const { data, error } = await service.rpc("apply_template_copilot_v2_extraction", { p_actor_id: actor.id, p_session_id: sessionId, p_expected_revision: expectedRevision, p_idempotency_key: idempotencyKey, p_command_hash: commandHash, p_operation: "candidate_confirmation", p_candidate_id: candidateId, p_conflict_id: null, p_choice: null, p_rationale: null, p_human_value: null, p_ledger: ledger, p_evidence_hash: templateCopilotV2CandidateEvidenceHash({ candidateId }) });
   if (error) throw error;
   return withV2InterviewState(data as Record<string, unknown>);
@@ -912,5 +977,5 @@ function withV2InterviewState(result: Record<string, unknown>) {
   if (!result.ledger) return result;
   const ledger = templateCopilotV2LedgerSchema.parse(result.ledger);
   const interview = getTemplateCopilotV2InterviewState(ledger);
-  return { ...result, interview, specialReview: getTemplateCopilotV2SpecialReview(ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled(), modeFlags: getTemplateCopilotV2ModeFlags() };
+  return { ...result, interview, specialReview: getTemplateCopilotV2SpecialReview(ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled(), modeFlags: getTemplateCopilotV2ModeFlags(), structuredEditorFlags: getTemplateCopilotV2StructuredEditorFlags() };
 }

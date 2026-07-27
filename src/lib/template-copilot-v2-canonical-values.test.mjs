@@ -135,6 +135,16 @@ const alternateValues = {
 
 test("all 16 client commands and server RPCs use identical schema-normalized canonical bytes", async () => {
   assert.deepEqual(Object.keys(rawValues), [...templateCopilotFactIds]);
+  const missingOwnedSession = {
+    from: () => {
+      const query = {
+        select: () => query,
+        eq: () => query,
+        maybeSingle: async () => ({ data: null, error: null }),
+      };
+      return query;
+    },
+  };
   for (const [index, factId] of templateCopilotFactIds.entries()) {
     const idempotencyKey = `map:canonical:${index}`;
     const expected = normalizeTemplateCopilotCommittedValue(
@@ -168,7 +178,7 @@ test("all 16 client commands and server RPCs use identical schema-normalized can
 
     let rpcArgs;
     await applyTemplateCopilotV2Mutation({
-      session: {},
+      session: missingOwnedSession,
       service: {
         rpc: async (_name, args) => {
           rpcArgs = args;
@@ -430,4 +440,56 @@ test("PostgreSQL accepts only ECMAScript-trimmed values and stores the normalize
     sql,
     /jsonb_build_object\('status','committed','canonicalValue',p_canonical_value/i,
   );
+});
+
+test("legacy and strict Step 7 rows cannot be mixed inside one canonical array", () => {
+  const mixed = {
+    "attachments.requirements": [
+      { label: "Legacy invoice", required: true, formats: ["pdf"] },
+      {
+        id: "attachment-invoice",
+        label: "Strict invoice",
+        kind: "attachment",
+        required: true,
+        formats: ["pdf"],
+        minimumQuantity: 1,
+        maximumQuantity: 1,
+        maximumFileSizeMb: 20,
+        stage: "request_submission",
+        contributorPolicy: "requester_only",
+        confirmationPolicy: "requester_confirms",
+      },
+    ],
+    "workflow.conditions": [
+      { field: "Amount", operator: ">", value: 100, matchingRoute: "Review", otherwiseRoute: "Done" },
+      {
+        id: "condition-amount",
+        sequence: 1,
+        field: "Amount",
+        operator: ">",
+        value: 100,
+        currency: "HKD",
+        matchingRoute: "complete",
+        otherwiseRoute: "return_for_correction",
+      },
+    ],
+    "notifications.rules": [
+      { event: "Submitted", recipients: ["Requester"], channel: "email" },
+      {
+        id: "notification-submitted",
+        event: "request_submitted",
+        recipients: ["requester"],
+        timing: { mode: "immediate" },
+        channel: "default",
+        visibility: "recipients_only",
+      },
+    ],
+  };
+  for (const [factId, value] of Object.entries(mixed)) {
+    assert.throws(
+      () => normalizeTemplateCopilotCommittedValue(factId, value),
+      undefined,
+      factId,
+    );
+  }
 });

@@ -1,5 +1,12 @@
 import { templateCopilotFactDefinitions, templateCopilotFactIds, type TemplateCopilotFactEntry, type TemplateCopilotFactId, type TemplateCopilotV2Ledger } from "./template-copilot-facts.ts";
 import { getTemplateCopilotReadiness, type TemplateCopilotReadiness } from "./template-copilot-readiness.ts";
+import {
+  compileTemplateCopilotV2StructuredFact,
+  previewTemplateCopilotV2StructuredFact,
+  templateCopilotV2AttachmentRequirementsSchema,
+  templateCopilotV2ConditionRulesSchema,
+  templateCopilotV2NotificationRulesSchema,
+} from "./template-copilot-v2-structured-facts.ts";
 
 /* Ledger values are narrowed by their fact-specific schema before this
  * presentation-only formatter receives them. */
@@ -39,9 +46,12 @@ const enumText = (value: unknown, locale: Locale) => {
   return typeof value === "string" && names[value] ? pick(names[value], locale) : String(value ?? "");
 };
 const person = (value: any, locale: Locale) => `${enumText(value?.mode, locale)}${value?.value ? `: ${value.value}` : ""}`;
-function lines(id: TemplateCopilotFactId, value: any, locale: Locale): string[] {
+function lines(id: TemplateCopilotFactId, value: any, locale: Locale, ledger?: TemplateCopilotV2Ledger): string[] {
   const t = copy(locale);
   if (value === undefined) return [];
+  if (id === "attachments.requirements" && templateCopilotV2AttachmentRequirementsSchema.safeParse(value).success) return [...previewTemplateCopilotV2StructuredFact(id, ledger ? compileTemplateCopilotV2StructuredFact(ledger, id) : value, locale)];
+  if (id === "workflow.conditions" && templateCopilotV2ConditionRulesSchema.safeParse(value).success) return [...previewTemplateCopilotV2StructuredFact(id, ledger ? compileTemplateCopilotV2StructuredFact(ledger, id) : value, locale)];
+  if (id === "notifications.rules" && templateCopilotV2NotificationRulesSchema.safeParse(value).success) return [...previewTemplateCopilotV2StructuredFact(id, ledger ? compileTemplateCopilotV2StructuredFact(ledger, id) : value, locale)];
   if (["workflow.name", "workflow.purpose", "governance.owner"].includes(id)) return [text(value)];
   if (id === "workflow.scope" || id === "collaboration.policy" || id === "visibility.policy") return [value.description, ...(value.rules || []).map((rule: string) => `${t.rule}: ${rule}`)].filter(Boolean);
   if (id === "request.initiator_policy") return [`${t.who}: ${enumText(value.mode, locale)}`, `${t.policy}: ${value.description}`];
@@ -58,7 +68,7 @@ function lines(id: TemplateCopilotFactId, value: any, locale: Locale): string[] 
 }
 function provenance(entry: TemplateCopilotFactEntry, locale: Locale) { const label = (kind: string) => locale === "zh-Hant" ? ({ message: "訊息", document: "文件", legacy_section: "舊版段落", human_editor: "人員編輯" }[kind] || kind) : locale === "zh-Hans" ? ({ message: "消息", document: "文件", legacy_section: "旧版段落", human_editor: "人工编辑" }[kind] || kind) : ({ message: "Message", document: "Document", legacy_section: "Legacy section", human_editor: "Human edit" }[kind] || kind); const messages = locale === "en" ? "messages" : locale === "zh-Hant" ? "訊息" : "消息"; return entry.provenance.map((item) => `${label(item.kind)}: ${item.sourceId}${item.sourceMessageIds.length ? ` (${messages}: ${item.sourceMessageIds.join(", ")})` : ""}${item.excerpt ? ` — ${item.excerpt}` : ""}`); }
 function downstream(id: TemplateCopilotFactId) { const found = new Set<TemplateCopilotFactId>(); let changed = true; while (changed) { changed = false; for (const candidate of templateCopilotFactIds) if (!found.has(candidate) && templateCopilotFactDefinitions[candidate].dependsOn.some((parent) => parent === id || found.has(parent))) { found.add(candidate); changed = true; } } return templateCopilotFactIds.filter((candidate) => found.has(candidate)); }
-function projectEvidence({ factId, entry, locale, kind, invalidatedBy }: { factId: TemplateCopilotFactId; entry: Pick<TemplateCopilotFactEntry, "status" | "canonicalValue" | "originalWording" | "notApplicableReason" | "confirmation" | "provenance">; locale: Locale; kind: TemplateCopilotV2ProjectedEvidence["kind"]; invalidatedBy?: TemplateCopilotFactId }): TemplateCopilotV2ProjectedEvidence {
+function projectEvidence({ factId, entry, locale, kind, invalidatedBy, ledger }: { factId: TemplateCopilotFactId; entry: Pick<TemplateCopilotFactEntry, "status" | "canonicalValue" | "originalWording" | "notApplicableReason" | "confirmation" | "provenance">; locale: Locale; kind: TemplateCopilotV2ProjectedEvidence["kind"]; invalidatedBy?: TemplateCopilotFactId; ledger?: TemplateCopilotV2Ledger }): TemplateCopilotV2ProjectedEvidence {
   const t = copy(locale);
   const confirmation = entry.confirmation ? `${t.confirmed}: ${entry.confirmation.actorId} · ${entry.confirmation.confirmedAt}` : undefined;
   return Object.freeze({
@@ -66,7 +76,14 @@ function projectEvidence({ factId, entry, locale, kind, invalidatedBy }: { factI
     status: entry.status,
     stateLabel: templateCopilotV2ProjectionStateLabel(entry.status, locale),
     ...(entry.canonicalValue === undefined ? {} : { canonicalValue: entry.canonicalValue }),
-    lines: Object.freeze(entry.status === "not_applicable" ? [`${t.reason}: ${entry.notApplicableReason || ""}`] : lines(factId, entry.canonicalValue, locale)),
+    lines: Object.freeze(entry.status === "not_applicable"
+      ? [`${t.reason}: ${entry.notApplicableReason || ""}`]
+      : lines(
+        factId,
+        entry.canonicalValue,
+        locale,
+        entry.status === "committed" ? ledger : undefined,
+      )),
     ...(entry.originalWording ? { originalWording: entry.originalWording } : {}),
     ...(entry.notApplicableReason ? { notApplicableReason: entry.notApplicableReason } : {}),
     ...(confirmation ? { confirmation } : {}),
@@ -79,7 +96,7 @@ export function projectTemplateCopilotV2AuthoritativeLedger(ledger: TemplateCopi
   const t = copy(locale);
   return Object.freeze({ locale, readiness, facts: Object.freeze(templateCopilotFactIds.map((factId) => {
     const entry = ledger.facts[factId];
-    const current = projectEvidence({ factId, entry, locale, kind: "current" });
+    const current = projectEvidence({ factId, entry, locale, kind: "current", ledger });
     const history = Object.freeze(entry.staleHistory.map((item) => {
       const historical = projectEvidence({ factId, entry: item, locale, kind: "stale", invalidatedBy: item.invalidatedBy });
       const historicalConflicts = Object.freeze((item.conflictEvidence || []).map((conflict) => projectEvidence({ factId, entry: { status: "conflicting", canonicalValue: conflict.canonicalValue, provenance: conflict.provenance }, locale, kind: "conflict" })));

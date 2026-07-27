@@ -358,6 +358,70 @@ files per interview.
 Corporate deployment should put the upload route behind the organisation's
 malware-scanning gateway before broadening accepted formats.
 
+## Copilot v2 Step 7: structured workflow settings
+
+Step 7 replaces free-form editing for document/form requirements, routing
+conditions, and notifications with purpose-built cards. The persisted value is
+the authority; localized preview sentences are generated from that value and
+are never parsed back into a workflow.
+
+The attachment/form card records a stable ID, plain name, file-versus-form
+kind, requiredness, accepted formats, minimum and maximum quantity, file-size
+limit, submission step, contributor policy, and confirmation policy. File
+formats and a per-file limit of at most 25 MB are required for uploads and
+forbidden for in-app forms. A request-submission item cannot use step-owner
+confirmation because no workflow step owns that point in the process.
+
+The condition card selects an existing request field, comparison, typed value,
+currency or unit where the field requires one, matching route, otherwise route,
+and deterministic sequence. Routes may target an existing workflow step, a
+later named condition, completion, or correction. Duplicate IDs/sequences,
+dangling or ambiguous field references, missing units/currencies, backward
+condition links, equal outcomes, and cycles are rejected.
+
+The notification card uses an allow-listed event and recipient group rather
+than arbitrary addresses. It records immediate/before-due/after-due timing,
+bounded hour offsets, company-default or explicit delivery, recipient-only or
+participant visibility, and an existing workflow step where the event or
+recipient requires one. Due-soon and overdue messages require a committed
+default due time; a due-soon offset cannot exceed that due window. A
+previous-step recipient is rejected when the selected step has no earlier
+step.
+
+The three server-only, default-off rollout switches are:
+
+- `TEMPLATE_COPILOT_V2_ATTACHMENT_EDITOR`
+- `TEMPLATE_COPILOT_V2_CONDITION_EDITOR`
+- `TEMPLATE_COPILOT_V2_NOTIFICATION_EDITOR`
+
+Each switch gates its UI control, authenticated map mutation, candidate
+confirmation, and conflict resolution. Turning a switch off keeps saved
+canonical values, evidence, previews, and exact idempotent replays available
+read-only, but cannot promote a strict candidate into authority.
+`TEMPLATE_COPILOT_V2_STEP5_EDITING` remains the parent map-editing gate.
+
+The Step 7 migration
+`20260728140000_template_copilot_v2_structured_editors.sql` extends the locked
+RPC's private fact-value validator. It continues accepting legacy Step 5 shapes
+so older sessions remain readable, while new Step 7 edits must pass the strict
+TypeScript schema, owner-scoped prospective-ledger reference validation, and
+the database's bounded structural validation. The authenticated fact command
+is capped at 2 MB; the database permits up to 2,000 recursive JSON nodes while
+retaining the earlier depth, per-string, per-array, per-object, and key limits.
+Private validation functions are explicitly revoked from browser roles.
+
+The production authoritative map calls the deterministic structured compiler
+for committed Step 7 values and renders localized previews from the compiler
+output. Candidate, conflict, and historical alternatives remain visibly
+non-authoritative and are previewed without being compiled. Full draft,
+publication, and activation lifecycle integration remains a Step 9 gate.
+
+Do not enable a Step 7 switch before applying the migration in an isolated
+environment and passing the schema, truth-table, reference, cycle, round-trip,
+compiler-equivalence, accessibility, authenticated mutation, replay, and
+stale-tab qualifications. Rollback is flag-first and never converts a stored
+structure into prose.
+
 ## Operations
 
 Required server variables:

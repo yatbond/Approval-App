@@ -35,6 +35,92 @@ function textCandidate(factId, value, messageId = "m1") {
   };
 }
 
+function structuredCandidate(factId, value, valueType, messageId = "structured") {
+  const originalWording = JSON.stringify(value);
+  return {
+    factId,
+    valueType,
+    value,
+    originalWording,
+    evidence: [{
+      path: "/",
+      messageId,
+      startCodePoint: 0,
+      endCodePoint: Array.from(originalWording).length,
+      exactText: originalWording,
+    }],
+    confidence: "high",
+    ambiguity: "none",
+  };
+}
+
+const strictStructuredCandidates = [
+  structuredCandidate("attachments.requirements", [{
+    id: "attachment-invoice",
+    label: "Invoice",
+    kind: "attachment",
+    required: true,
+    formats: ["pdf"],
+    minimumQuantity: 1,
+    maximumQuantity: 1,
+    maximumFileSizeMb: 20,
+    stage: "request_submission",
+    contributorPolicy: "requester_only",
+    confirmationPolicy: "requester_confirms",
+  }], "attachments", "structured-attachments"),
+  structuredCandidate("workflow.conditions", [{
+    id: "condition-amount",
+    sequence: 1,
+    field: "Amount",
+    operator: ">=",
+    value: 1000,
+    currency: "HKD",
+    matchingRoute: "complete",
+    otherwiseRoute: "return_for_correction",
+  }], "conditions", "structured-conditions"),
+  structuredCandidate("notifications.rules", [{
+    id: "notification-submitted",
+    event: "request_submitted",
+    recipients: ["requester"],
+    timing: { mode: "immediate" },
+    channel: "default",
+    visibility: "recipients_only",
+  }], "notifications", "structured-notifications"),
+];
+
+function structuredCandidateBase(factId) {
+  let ledger = createTemplateCopilotV2Ledger(scope, flag);
+  if (factId === "workflow.conditions") {
+    ledger = committedLedgerOn(ledger, "request.fields", [{
+      label: "Amount",
+      type: "currency",
+      required: true,
+      options: ["HKD"],
+    }]);
+  }
+  return ledger;
+}
+
+function withStructuredEditorFlagsDisabled(run) {
+  const names = [
+    "TEMPLATE_COPILOT_V2_ATTACHMENT_EDITOR",
+    "TEMPLATE_COPILOT_V2_CONDITION_EDITOR",
+    "TEMPLATE_COPILOT_V2_NOTIFICATION_EDITOR",
+  ];
+  const before = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  names.forEach((name) => {
+    process.env[name] = "false";
+  });
+  return Promise.resolve()
+    .then(run)
+    .finally(() => {
+      for (const name of names) {
+        if (before[name] === undefined) delete process.env[name];
+        else process.env[name] = before[name];
+      }
+    });
+}
+
 function harness({ ledger = createTemplateCopilotV2Ledger(scope, flag), revision = 1, receipt = null, absent = false, rpcOutcome = "applied" } = {}) {
   const stored = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", owner_id: actor.id, status: "interviewing", revision, ledger };
   const calls = [];
@@ -76,8 +162,12 @@ async function createCandidateReview(h) {
 }
 
 function committedLedger(factId, value) {
+  return committedLedgerOn(createTemplateCopilotV2Ledger(scope, flag), factId, value);
+}
+
+function committedLedgerOn(ledger, factId, value) {
   return applyTemplateCopilotV2FactTransition({
-    ledger: createTemplateCopilotV2Ledger(scope, flag), factId,
+    ledger, factId,
     transition: { operation: "human_commit", payload: { canonicalValue: value, provenance: [{ kind: "human_editor", sourceId: `manual:${factId}`, sourceMessageIds: [] }] } },
     actorId: actor.id, confirmedAt: "2026-07-27T00:00:00Z", flag,
   });
@@ -228,4 +318,154 @@ test("review commands are server-v2-gated, not candidate-creation-gated; atomic 
   await applyTemplateCopilotV2AtomicAnswer({ session: exact.session, service: exact.service, actor, sessionId: exact.stored.id, expectedRevision: 1, idempotencyKey: exactKey, answer: "Purchase Approval", flag });
   assert.equal(exact.calls.filter((call) => call.name === "answer_template_copilot_v2_decision").length, 1, "exact replay uses the locked answer receipt path once");
   assert.equal(exact.calls.filter((call) => call.name === "apply_template_copilot_v2_extraction").length, 0, "exact answer replay cannot duplicate extraction persistence");
+});
+
+test("disabled Step 7 flags block every strict candidate confirmation before RPC while preserving exact replay", async () => {
+  await withStructuredEditorFlagsDisabled(async () => {
+    for (const candidate of strictStructuredCandidates) {
+      const candidateLedger = projectTemplateCopilotV2Candidates({
+        ledger: structuredCandidateBase(candidate.factId),
+        candidates: [candidate],
+      }).ledger;
+      const open = candidateLedger.extractionEvidence.candidates.find((item) =>
+        item.factId === candidate.factId && item.state === "open");
+      const h = harness({ ledger: candidateLedger });
+      await assert.rejects(
+        () => confirmTemplateCopilotV2Candidate({
+          session: h.session,
+          service: h.service,
+          actor,
+          sessionId: h.stored.id,
+          expectedRevision: 1,
+          idempotencyKey: `disabled-confirm:${candidate.factId}`,
+          candidateId: open.candidateId,
+          flag,
+        }),
+        (error) => error?.name === "TemplateCopilotV2StructuredEditorUnavailableError",
+      );
+      assert.equal(h.calls.length, 0, candidate.factId);
+    }
+
+    const candidate = strictStructuredCandidates[0];
+    const candidateLedger = projectTemplateCopilotV2Candidates({
+      ledger: structuredCandidateBase(candidate.factId),
+      candidates: [candidate],
+    }).ledger;
+    const candidateId = candidateLedger.extractionEvidence.candidates[0].candidateId;
+    const key = "strict-confirm-replay";
+    const hash = templateCopilotV2CommandHash({
+      operation: "candidate_confirmation",
+      sessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      expectedRevision: 1,
+      candidateId,
+    });
+    const replay = harness({
+      ledger: candidateLedger,
+      revision: 8,
+      receipt: { command_hash: hash, response: { ledger: candidateLedger, revision: 2 } },
+    });
+    const result = await confirmTemplateCopilotV2Candidate({
+      session: replay.session,
+      service: replay.service,
+      actor,
+      sessionId: replay.stored.id,
+      expectedRevision: 1,
+      idempotencyKey: key,
+      candidateId,
+      flag,
+    });
+    assert.equal(result.revision, 8);
+    assert.equal(replay.calls.length, 0);
+  });
+});
+
+test("disabled Step 7 flags block strict conflict authority changes, including candidate keep-existing promotion", async () => {
+  await withStructuredEditorFlagsDisabled(async () => {
+    for (const candidate of strictStructuredCandidates) {
+      const legacyValue = candidate.factId === "attachments.requirements"
+        ? [{ label: "Legacy invoice", required: true, formats: ["pdf"] }]
+        : candidate.factId === "workflow.conditions"
+          ? [{ field: "Amount", operator: ">", value: 100, matchingRoute: "Done", otherwiseRoute: "Correct" }]
+          : [{ event: "Submitted", recipients: ["Requester"], channel: "email" }];
+      let base = structuredCandidateBase(candidate.factId);
+      base = committedLedgerOn(base, candidate.factId, legacyValue);
+      for (const choice of ["commit_incoming", "commit_human_value"]) {
+        const conflictLedger = projectTemplateCopilotV2Candidates({
+          ledger: base,
+          candidates: [candidate],
+        }).ledger;
+        const conflict = conflictLedger.extractionEvidence.conflicts.find((item) => item.state === "open");
+        const h = harness({ ledger: conflictLedger });
+        await assert.rejects(
+          () => resolveTemplateCopilotV2CommittedExtractionConflict({
+            session: h.session,
+            service: h.service,
+            actor,
+            sessionId: h.stored.id,
+            expectedRevision: 1,
+            idempotencyKey: `disabled-${choice}:${candidate.factId}`,
+            conflictId: conflict.conflictId,
+            choice,
+            ...(choice === "commit_human_value" ? { humanValue: candidate.value } : {}),
+            flag,
+          }),
+          (error) => error?.name === "TemplateCopilotV2StructuredEditorUnavailableError",
+        );
+        assert.equal(h.calls.length, 0, `${candidate.factId}:${choice}`);
+      }
+    }
+
+    const first = strictStructuredCandidates[0];
+    const second = structuredCandidate(
+      first.factId,
+      [{ ...first.value[0], id: "attachment-receipt", label: "Receipt" }],
+      first.valueType,
+      "structured-attachment-second",
+    );
+    const candidateLedger = projectTemplateCopilotV2Candidates({
+      ledger: structuredCandidateBase(first.factId),
+      candidates: [first],
+    }).ledger;
+    const candidateConflictLedger = projectTemplateCopilotV2Candidates({
+      ledger: candidateLedger,
+      candidates: [second],
+    }).ledger;
+    const candidateConflict = candidateConflictLedger.extractionEvidence.conflicts.find((item) => item.state === "open");
+    const candidateKeep = harness({ ledger: candidateConflictLedger });
+    await assert.rejects(
+      () => resolveTemplateCopilotV2CommittedExtractionConflict({
+        session: candidateKeep.session,
+        service: candidateKeep.service,
+        actor,
+        sessionId: candidateKeep.stored.id,
+        expectedRevision: 1,
+        idempotencyKey: "disabled-candidate-keep",
+        conflictId: candidateConflict.conflictId,
+        choice: "keep_existing",
+        flag,
+      }),
+      (error) => error?.name === "TemplateCopilotV2StructuredEditorUnavailableError",
+    );
+    assert.equal(candidateKeep.calls.length, 0);
+
+    const committedStrict = committedLedger(first.factId, first.value);
+    const committedConflictLedger = projectTemplateCopilotV2Candidates({
+      ledger: committedStrict,
+      candidates: [second],
+    }).ledger;
+    const committedConflict = committedConflictLedger.extractionEvidence.conflicts.find((item) => item.state === "open");
+    const committedKeep = harness({ ledger: committedConflictLedger });
+    await resolveTemplateCopilotV2CommittedExtractionConflict({
+      session: committedKeep.session,
+      service: committedKeep.service,
+      actor,
+      sessionId: committedKeep.stored.id,
+      expectedRevision: 1,
+      idempotencyKey: "disabled-committed-keep",
+      conflictId: committedConflict.conflictId,
+      choice: "keep_existing",
+      flag,
+    });
+    assert.equal(committedKeep.calls.length, 1, "unchanged already-committed authority remains resolvable during rollback");
+  });
 });

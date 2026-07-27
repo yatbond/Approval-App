@@ -16,6 +16,11 @@ type TemplateCopilotV2ModeEnvironment = Readonly<{
   TEMPLATE_COPILOT_V2_DESCRIBE_EVERYTHING?: string;
   TEMPLATE_COPILOT_V2_SIMILAR_TEMPLATE?: string;
 }>;
+type TemplateCopilotV2StructuredEditorEnvironment = Readonly<{
+  TEMPLATE_COPILOT_V2_ATTACHMENT_EDITOR?: string;
+  TEMPLATE_COPILOT_V2_CONDITION_EDITOR?: string;
+  TEMPLATE_COPILOT_V2_NOTIFICATION_EDITOR?: string;
+}>;
 
 export function getTemplateCopilotV2Flag(
   env?: TemplateCopilotV2Environment,
@@ -100,4 +105,29 @@ export function getTemplateCopilotV2ModeFlags(env?: TemplateCopilotV2ModeEnviron
 export function isTemplateCopilotV2ModeEnabled(mode: "guided" | "describe_everything" | "similar_template", env?: TemplateCopilotV2ModeEnvironment) {
   const flags = getTemplateCopilotV2ModeFlags(env);
   return mode === "guided" ? flags.guided : mode === "describe_everything" ? flags.describeEverything : flags.similarTemplate;
+}
+
+/** Step 7 editors roll out independently. A disabled editor never discards
+ * its canonical value: the authoritative map keeps rendering it read-only. */
+export function getTemplateCopilotV2StructuredEditorFlags(
+  env?: TemplateCopilotV2StructuredEditorEnvironment,
+) {
+  const selected = env || process.env as TemplateCopilotV2StructuredEditorEnvironment;
+  return Object.freeze({
+    attachments: selected.TEMPLATE_COPILOT_V2_ATTACHMENT_EDITOR === "true",
+    conditions: selected.TEMPLATE_COPILOT_V2_CONDITION_EDITOR === "true",
+    notifications: selected.TEMPLATE_COPILOT_V2_NOTIFICATION_EDITOR === "true",
+  });
+}
+
+export function isTemplateCopilotV2StructuredEditorEnabled(
+  factId: "attachments.requirements" | "workflow.conditions" | "notifications.rules",
+  env?: TemplateCopilotV2StructuredEditorEnvironment,
+) {
+  const flags = getTemplateCopilotV2StructuredEditorFlags(env);
+  return factId === "attachments.requirements"
+    ? flags.attachments
+    : factId === "workflow.conditions"
+      ? flags.conditions
+      : flags.notifications;
 }

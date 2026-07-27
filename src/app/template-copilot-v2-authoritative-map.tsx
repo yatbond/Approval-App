@@ -20,6 +20,15 @@ import type {
   TemplateCopilotV2AuthoritativeProjection,
   TemplateCopilotV2ProjectedEvidence,
 } from "@/lib/template-copilot-v2-authoritative-projection";
+import {
+  formatTemplateCopilotV2StructuredIssue,
+  prepareTemplateCopilotV2StructuredEditorValue,
+  templateCopilotV2StructuredFactIds,
+  validateTemplateCopilotV2StructuredFacts,
+  type TemplateCopilotV2StructuredFactId,
+  type TemplateCopilotV2StructuredIssue,
+} from "@/lib/template-copilot-v2-structured-facts";
+import { TemplateCopilotV2StructuredFactEditor } from "./template-copilot-v2-structured-editors";
 
 /* The editor is intentionally a small form-state layer around sixteen distinct
  * schema outputs. The authoritative Zod schema validates every value at its
@@ -84,6 +93,7 @@ type Copy = Readonly<{
   confirmed: string;
   conflict: string;
   history: string;
+  readOnly: string;
 }>;
 const copyFor = (locale: Locale): Copy =>
   locale === "zh-Hant"
@@ -138,6 +148,7 @@ const copyFor = (locale: Locale): Copy =>
         confirmed: "人員確認",
         conflict: "衝突替代值",
         history: "先前值",
+        readOnly: "此專用編輯器目前為唯讀；已儲存設定不受影響。",
       }
     : locale === "zh-Hans"
       ? {
@@ -191,6 +202,7 @@ const copyFor = (locale: Locale): Copy =>
           confirmed: "人工确认",
           conflict: "冲突备选值",
           history: "先前值",
+          readOnly: "此专用编辑器目前为只读；已保存设置不受影响。",
         }
       : {
           edit: "Edit saved fact",
@@ -244,6 +256,7 @@ const copyFor = (locale: Locale): Copy =>
           confirmed: "Human confirmation",
           conflict: "Conflicting alternative",
           history: "Prior value",
+          readOnly: "This purpose-built editor is currently read-only. Its saved settings are unchanged.",
         };
 const optionText = (locale: Locale, value: string) => {
   const copy: Record<string, readonly [string, string, string]> = {
@@ -328,6 +341,12 @@ const nonAlwaysFacts = new Set<TemplateCopilotFactId>([
   "governance.policies",
   "governance.retention",
 ]);
+const isStructuredFact = (
+  factId: TemplateCopilotFactId,
+): factId is TemplateCopilotV2StructuredFactId =>
+  templateCopilotV2StructuredFactIds.includes(
+    factId as TemplateCopilotV2StructuredFactId,
+  );
 function Field({ label, children }: { label: string; children: ReactNode }) {
   const id = useId();
   const control = isValidElement<{ id?: string; "aria-label"?: string }>(
@@ -1115,12 +1134,18 @@ export function TemplateCopilotV2AuthoritativeMap({
   ledger,
   projection,
   editingEnabled,
+  structuredEditorFlags,
   busy,
   onTransition,
 }: {
   ledger: TemplateCopilotV2Ledger;
   projection?: TemplateCopilotV2AuthoritativeProjection;
   editingEnabled: boolean;
+  structuredEditorFlags?: Readonly<{
+    attachments: boolean;
+    conditions: boolean;
+    notifications: boolean;
+  }>;
   busy: boolean;
   onTransition: (
     factId: TemplateCopilotFactId,
@@ -1131,15 +1156,24 @@ export function TemplateCopilotV2AuthoritativeMap({
   const [value, setValue] = useState<unknown>(undefined);
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
+  const [structuredIssues, setStructuredIssues] = useState<
+    readonly TemplateCopilotV2StructuredIssue[]
+  >([]);
   const [status, setStatus] = useState("");
   const locale = ledger.locale as Locale;
   const copy = copyFor(locale);
   if (!projection) return null;
   const start = (id: TemplateCopilotFactId) => {
     setEditing(id);
-    setValue(ledger.facts[id].canonicalValue ?? defaults(id));
+    const initial = ledger.facts[id].canonicalValue ?? defaults(id);
+    setValue(
+      isStructuredFact(id)
+        ? prepareTemplateCopilotV2StructuredEditorValue(id, initial)
+        : initial,
+    );
     setReason("");
     setError("");
+    setStructuredIssues([]);
     setStatus("");
     requestAnimationFrame(() =>
       document
@@ -1153,6 +1187,7 @@ export function TemplateCopilotV2AuthoritativeMap({
     const previous = editing;
     setEditing(null);
     setError("");
+    setStructuredIssues([]);
     requestAnimationFrame(() =>
       document.getElementById(`copilot-map-edit-${previous}`)?.focus(),
     );
@@ -1162,9 +1197,25 @@ export function TemplateCopilotV2AuthoritativeMap({
       id,
       value,
     );
+    const nextStructuredIssues =
+      action === "save" && isStructuredFact(id)
+        ? validateTemplateCopilotV2StructuredFacts(ledger, {
+            attachments:
+              id === "attachments.requirements" ? canonicalValue : undefined,
+            conditions:
+              id === "workflow.conditions" ? canonicalValue : undefined,
+            notifications:
+              id === "notifications.rules" ? canonicalValue : undefined,
+          })
+        : [];
+    setStructuredIssues(nextStructuredIssues);
     const validation =
       action === "save"
-        ? validateTemplateCopilotV2MapEditorValue(id, canonicalValue, locale)
+        ? isStructuredFact(id)
+          ? nextStructuredIssues.map((issue) =>
+              formatTemplateCopilotV2StructuredIssue(issue, locale),
+            )
+          : validateTemplateCopilotV2MapEditorValue(id, canonicalValue, locale)
         : action === "not_applicable" && !reason.trim()
           ? [copy.naReason]
           : [];
@@ -1227,6 +1278,14 @@ export function TemplateCopilotV2AuthoritativeMap({
       </p>
       <ul className="space-y-3">
         {projection.facts.map((row) => {
+          const structuredEnabled = row.factId === "attachments.requirements"
+            ? structuredEditorFlags?.attachments === true
+            : row.factId === "workflow.conditions"
+              ? structuredEditorFlags?.conditions === true
+              : row.factId === "notifications.rules"
+                ? structuredEditorFlags?.notifications === true
+                : true;
+          const rowEditingEnabled = editingEnabled && structuredEnabled;
           const hasOpenExtractionSidecar =
             ledger.extractionEvidence.candidates.some(
               (candidate) =>
@@ -1293,7 +1352,7 @@ export function TemplateCopilotV2AuthoritativeMap({
                   ? `${copy.changing} ${downstreamLabel(row.downstreamImpact)}`
                   : copy.noDownstream}
               </p>
-              {editingEnabled && editing !== row.factId && (
+              {rowEditingEnabled && editing !== row.factId && (
                 <button
                   id={`copilot-map-edit-${row.factId}`}
                   type="button"
@@ -1304,18 +1363,36 @@ export function TemplateCopilotV2AuthoritativeMap({
                   {copy.edit}
                 </button>
               )}
+              {editingEnabled && isStructuredFact(row.factId) && !structuredEnabled && (
+                <p className="mt-2 rounded border border-neutral-200 bg-neutral-50 p-2 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
+                  {copy.readOnly}
+                </p>
+              )}
               {editing === row.factId && (
                 <div
                   id={`copilot-map-editor-${row.factId}`}
                   className="mt-3 min-w-0 space-y-3 rounded border border-sky-300 bg-sky-50 p-3 dark:bg-neutral-900"
                 >
-                  <StructuredEditor
-                    factId={row.factId}
-                    value={value}
-                    onChange={setValue}
-                    copy={copy}
-                    locale={locale}
-                  />
+                  {isStructuredFact(row.factId) ? (
+                    <TemplateCopilotV2StructuredFactEditor
+                      factId={row.factId}
+                      value={value}
+                      ledger={ledger}
+                      onChange={setValue}
+                      locale={locale}
+                      issues={structuredIssues.filter(
+                        (issue) => issue.factId === row.factId,
+                      )}
+                    />
+                  ) : (
+                    <StructuredEditor
+                      factId={row.factId}
+                      value={value}
+                      onChange={setValue}
+                      copy={copy}
+                      locale={locale}
+                    />
+                  )}
                   <p className="text-amber-800 dark:text-amber-200">
                     {row.downstreamImpact.length
                       ? `${copy.changing} ${downstreamLabel(row.downstreamImpact)}.`

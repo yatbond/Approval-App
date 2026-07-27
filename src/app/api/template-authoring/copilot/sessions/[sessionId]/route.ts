@@ -10,7 +10,7 @@ import {
   decodeTemplateCopilotMessageCursor,
   templateCopilotTranscriptFromStored,
 } from "@/lib/template-copilot-server-data";
-import { getTemplateCopilotV2ModeFlags, isTemplateCopilotV2Enabled, isTemplateCopilotV2Step4Enabled, isTemplateCopilotV2Step5EditingEnabled } from "@/lib/template-copilot-v2-feature";
+import { getTemplateCopilotV2ModeFlags, getTemplateCopilotV2StructuredEditorFlags, isTemplateCopilotV2Enabled, isTemplateCopilotV2Step4Enabled, isTemplateCopilotV2Step5EditingEnabled } from "@/lib/template-copilot-v2-feature";
 import { getTemplateCopilotV2InterviewState, getTemplateCopilotV2SpecialReview } from "@/lib/template-copilot-question-library";
 import { projectTemplateCopilotV2AuthoritativeLedger } from "@/lib/template-copilot-v2-authoritative-projection";
 import { loadTemplateCopilotV2AuthoringModeState } from "@/lib/template-copilot-v2-server-data";
@@ -46,7 +46,7 @@ export async function GET(
       const ledger = result.ledger;
       const interview = getTemplateCopilotV2InterviewState(ledger);
       const modeState = await loadTemplateCopilotV2AuthoringModeState(service, result.id);
-      sessionPayload = { ...transcript, interview, specialReview: getTemplateCopilotV2SpecialReview(ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled(), modeFlags: getTemplateCopilotV2ModeFlags(), modeState };
+      sessionPayload = { ...transcript, interview, specialReview: getTemplateCopilotV2SpecialReview(ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled(), modeFlags: getTemplateCopilotV2ModeFlags(), structuredEditorFlags: getTemplateCopilotV2StructuredEditorFlags(), modeState };
     }
     safeApprovalLog("template_copilot_session_read", correlationId, {
       viewer: result.owner_id === actor.id ? "owner" : "admin",

@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  templateCopilotV2AttachmentRequirementsSchema,
+  templateCopilotV2ConditionRulesSchema,
+  templateCopilotV2NotificationRulesSchema,
+} from "./template-copilot-v2-structured-facts.ts";
 
 /** Browser-safe canonical fact-value contract. This module is the single
  * normalization boundary used before a command is persisted, hashed, sent to
@@ -53,7 +58,7 @@ const fieldSchema = z.object({
   required: z.boolean(),
   options: z.array(boundedLabel).max(100).default([]),
 }).strict();
-const attachmentSchema = z.object({
+const legacyAttachmentSchema = z.object({
   label: boundedLabel,
   required: z.boolean(),
   formats: z.array(z.enum(["text", "pdf", "image", "excel_csv"])).max(4).default([]),
@@ -65,7 +70,7 @@ const stageSchema = z.object({
   participant: participantSchema,
   sequence: z.number().int().min(1).max(100),
 }).strict();
-const conditionSchema = z.object({
+const legacyConditionSchema = z.object({
   field: boundedLabel,
   operator: z.enum(["=", "!=", ">", ">=", "<", "<=", "contains"]),
   value: z.union([boundedTextValue, z.number().finite()]),
@@ -94,14 +99,23 @@ export const templateCopilotCommittedValueSchemas: Readonly<Record<TemplateCopil
   "workflow.scope": policySchema,
   "request.initiator_policy": z.object({ mode: z.enum(["any_employee", "directory_role", "requester_selected"]), description: boundedTextValue }).strict(),
   "request.fields": z.array(fieldSchema).min(1).max(100),
-  "attachments.requirements": z.array(attachmentSchema).max(50),
+  "attachments.requirements": z.union([
+    templateCopilotV2AttachmentRequirementsSchema,
+    z.array(legacyAttachmentSchema).max(50),
+  ]),
   "workflow.stages": z.array(stageSchema).min(1).max(100),
-  "workflow.conditions": z.array(conditionSchema).max(50),
+  "workflow.conditions": z.union([
+    templateCopilotV2ConditionRulesSchema,
+    z.array(legacyConditionSchema).max(50),
+  ]),
   "workflow.rejection_policy": rejectionPolicySchema,
   "collaboration.policy": policySchema,
   "timing.rules": z.object({ defaultDueHours: z.number().int().min(1).max(8760).optional(), escalation: policySchema.optional() }).strict(),
   "visibility.policy": policySchema,
-  "notifications.rules": z.array(z.object({ event: boundedLabel, recipients: z.array(boundedLabel).min(1).max(50), channel: z.enum(["in_app", "email"]) }).strict()).max(100),
+  "notifications.rules": z.union([
+    templateCopilotV2NotificationRulesSchema,
+    z.array(z.object({ event: boundedLabel, recipients: z.array(boundedLabel).min(1).max(50), channel: z.enum(["in_app", "email"]) }).strict()).max(100),
+  ]),
   "governance.owner": boundedLabel,
   "governance.policies": z.array(boundedTextValue).max(50),
   "governance.retention": z.object({ period: boundedLabel, rationale: boundedTextValue.optional() }).strict(),

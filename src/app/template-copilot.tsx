@@ -120,10 +120,23 @@ type V2CopilotState = Omit<V1CopilotState, "ledger"> & {
   projection?: TemplateCopilotV2AuthoritativeProjection;
   modeState?: TemplateCopilotV2ModeState;
   modeFlags?: { guided: boolean; describeEverything: boolean; similarTemplate: boolean };
+  structuredEditorFlags?: { attachments: boolean; conditions: boolean; notifications: boolean };
 };
 type CopilotState = V1CopilotState | V2CopilotState;
 function isV2State(state: CopilotState): state is V2CopilotState {
   return state.ledger.schemaVersion === 2;
+}
+function structuredEditorFlagsFrom(value: unknown): V2CopilotState["structuredEditorFlags"] {
+  if (!value || typeof value !== "object") return undefined;
+  const flags = (value as { structuredEditorFlags?: unknown }).structuredEditorFlags;
+  if (!flags || typeof flags !== "object") return undefined;
+  const candidate = flags as Record<string, unknown>;
+  if (!["attachments", "conditions", "notifications"].every((key) => typeof candidate[key] === "boolean")) return undefined;
+  return {
+    attachments: candidate.attachments as boolean,
+    conditions: candidate.conditions as boolean,
+    notifications: candidate.notifications as boolean,
+  };
 }
 
 type TemplateCopilotV2ExtractionCandidate = TemplateCopilotV2Ledger["extractionEvidence"]["candidates"][number];
@@ -457,6 +470,9 @@ export function TemplateCopilot({
       ...next,
       modeFlags: next.modeFlags || latestV2StateRef.current?.modeFlags,
       modeState: next.modeState || latestV2StateRef.current?.modeState,
+      structuredEditorFlags:
+        next.structuredEditorFlags ||
+        latestV2StateRef.current?.structuredEditorFlags,
     } satisfies V2CopilotState;
     const selected = selectNewerTemplateCopilotV2Snapshot(latestV2StateRef.current, candidate);
     const installed = lifecycle.commit(() => {
@@ -506,7 +522,7 @@ export function TemplateCopilot({
       if (!lifecycle.isCurrent()) return "This view has changed. Please try again.";
       const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
       if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) return "The saved result was incomplete. Refresh and review the latest map.";
-      if (!installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: response.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: response.step4Enabled === true, step5EditingEnabled: response.step5EditingEnabled === true })) return "This view has changed. Please try again.";
+      if (!installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: response.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: response.step4Enabled === true, step5EditingEnabled: response.step5EditingEnabled === true, structuredEditorFlags: structuredEditorFlagsFrom(response) })) return "This view has changed. Please try again.";
       installPendingMapEdit(null);
       return null;
     } catch (caught) {
@@ -518,7 +534,7 @@ export function TemplateCopilot({
           const snapshot = await api(`/api/template-authoring/copilot/sessions/${state.sessionId}?messageDirection=tail&messageLimit=100`, { method: "GET" });
           const saved = snapshot.session as { revision?: unknown; status?: unknown; ledger?: unknown; interview?: unknown; specialReview?: unknown; projection?: unknown; step4Enabled?: unknown; step5EditingEnabled?: unknown };
           if ((saved.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion === 2 && saved.interview) {
-            const installed = installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(saved.revision), status: String(saved.status) as V2CopilotState["status"], ledger: saved.ledger as TemplateCopilotV2Ledger, interview: saved.interview as TemplateCopilotV2InterviewState, specialReview: Array.isArray(saved.specialReview) ? saved.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: saved.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: saved.step4Enabled === true, step5EditingEnabled: saved.step5EditingEnabled === true });
+            const installed = installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(saved.revision), status: String(saved.status) as V2CopilotState["status"], ledger: saved.ledger as TemplateCopilotV2Ledger, interview: saved.interview as TemplateCopilotV2InterviewState, specialReview: Array.isArray(saved.specialReview) ? saved.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: saved.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: saved.step4Enabled === true, step5EditingEnabled: saved.step5EditingEnabled === true, structuredEditorFlags: structuredEditorFlagsFrom(saved) });
             if (installed) { installPendingMapEdit(null); reloaded = true; }
           }
         } catch {
@@ -528,8 +544,37 @@ export function TemplateCopilot({
           ? "Another edit was saved first. The latest authoritative map has been loaded; review it and try again."
           : "Another edit may have been saved first, but the authoritative map response was incomplete. Your exact pending edit is retained; refresh and retry.";
       }
-      if (templateCopilotApiErrorStatus(caught) === 404) installPendingMapEdit(null);
-      return templateCopilotApiErrorStatus(caught) === 404 ? "Map editing has been turned off. Your saved map is still read-only." : "The change was not confirmed. Retry the same saved edit.";
+      if (templateCopilotApiErrorStatus(caught) === 404) {
+        installPendingMapEdit(null);
+        const structuredRollback =
+          templateCopilotApiErrorCode(caught) === "structured_editor_unavailable";
+        lifecycle.commit(() => setState((current) => {
+          if (!current || !isV2State(current) || current.sessionId !== pending.sessionId) return current;
+          if (!structuredRollback) return { ...current, step5EditingEnabled: false };
+          const flags = current.structuredEditorFlags || {
+            attachments: false,
+            conditions: false,
+            notifications: false,
+          };
+          return {
+            ...current,
+            structuredEditorFlags: {
+              ...flags,
+              ...(pending.factId === "attachments.requirements"
+                ? { attachments: false }
+                : pending.factId === "workflow.conditions"
+                  ? { conditions: false }
+                  : pending.factId === "notifications.rules"
+                    ? { notifications: false }
+                    : {}),
+            },
+          };
+        }));
+        return structuredRollback
+          ? "This editor has been turned off. Its saved setting remains read-only."
+          : "Map editing has been turned off. Your saved map is still read-only.";
+      }
+      return "The change was not confirmed. Retry the same saved edit.";
     } finally {
       lifecycle.commit(() => setBusy(false));
     }
@@ -654,6 +699,7 @@ export function TemplateCopilot({
         step4Enabled: response.step4Enabled === true,
         step5EditingEnabled: response.step5EditingEnabled === true,
         modeFlags: response.modeFlags as V2CopilotState["modeFlags"],
+        structuredEditorFlags: structuredEditorFlagsFrom(response),
       } satisfies V2CopilotState : {
         sessionId: String(response.sessionId), revision: Number(response.revision),
         status: String(response.status) as V1CopilotState["status"], ledger: response.ledger as TemplateCopilotLedger,
@@ -711,6 +757,7 @@ export function TemplateCopilot({
       projection: (saved as { projection?: unknown }).projection as TemplateCopilotV2AuthoritativeProjection,
       step4Enabled: (saved as { step4Enabled?: unknown }).step4Enabled === true,
       step5EditingEnabled: (saved as { step5EditingEnabled?: unknown }).step5EditingEnabled === true,
+      structuredEditorFlags: structuredEditorFlagsFrom(saved),
     } satisfies V2CopilotState;
     const authoritative = installV2State(lifecycle, serverState);
     if (!authoritative || !lifecycle.isCurrent()) return null;
@@ -763,6 +810,7 @@ export function TemplateCopilot({
       projection: (saved as { projection?: unknown }).projection as TemplateCopilotV2AuthoritativeProjection,
       step4Enabled: (saved as { step4Enabled?: unknown }).step4Enabled === true,
       step5EditingEnabled: (saved as { step5EditingEnabled?: unknown }).step5EditingEnabled === true,
+      structuredEditorFlags: structuredEditorFlagsFrom(saved),
     });
   }
 
@@ -796,7 +844,7 @@ export function TemplateCopilot({
       if (!lifecycle.isCurrent()) return false;
       const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
       if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) throw new Error(copy.invalidInterviewUpdate);
-      if (!installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: response.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: response.step4Enabled === true, step5EditingEnabled: response.step5EditingEnabled === true })) return false;
+      if (!installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: response.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: response.step4Enabled === true, step5EditingEnabled: response.step5EditingEnabled === true, structuredEditorFlags: structuredEditorFlagsFrom(response) })) return false;
       lifecycle.commit(() => {
         resolvedV2CommandKeys.current.add(command.idempotencyKey);
         if (activeV2CommandRef.current?.idempotencyKey === command.idempotencyKey) activeV2CommandRef.current = null;
@@ -891,7 +939,7 @@ export function TemplateCopilot({
       if (!lifecycle.isCurrent()) return;
       const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
       if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) throw new Error(copy.invalidInterviewUpdate);
-      installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: response.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: response.step4Enabled === true, step5EditingEnabled: response.step5EditingEnabled === true });
+      installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: response.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: response.step4Enabled === true, step5EditingEnabled: response.step5EditingEnabled === true, structuredEditorFlags: structuredEditorFlagsFrom(response) });
     } catch {
       if (!lifecycle.isCurrent()) return;
       try {
@@ -922,7 +970,7 @@ export function TemplateCopilot({
       if (!lifecycle.isCurrent()) return;
       const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
       if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) throw new Error(copy.invalidInterviewUpdate);
-      installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: response.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: response.step4Enabled === true, step5EditingEnabled: response.step5EditingEnabled === true });
+      installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: response.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: response.step4Enabled === true, step5EditingEnabled: response.step5EditingEnabled === true, structuredEditorFlags: structuredEditorFlagsFrom(response) });
     } catch {
       if (!lifecycle.isCurrent()) return;
       try {
@@ -1011,7 +1059,7 @@ export function TemplateCopilot({
       if (!lifecycle.isCurrent()) return null;
       outcome = ["committed", "missing", "idempotency_conflict", "not_found"].includes(String(reconciled.outcome)) ? String(reconciled.outcome) as typeof outcome : "unavailable";
       if ((reconciled.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion === 2 && reconciled.interview) {
-        if (!installV2State(lifecycle, { sessionId, revision: Number(reconciled.revision), status: String(reconciled.status) as V2CopilotState["status"], ledger: reconciled.ledger as TemplateCopilotV2Ledger, interview: reconciled.interview as TemplateCopilotV2InterviewState, specialReview: Array.isArray(reconciled.specialReview) ? reconciled.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: reconciled.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: reconciled.step4Enabled === true, step5EditingEnabled: reconciled.step5EditingEnabled === true })) return null;
+        if (!installV2State(lifecycle, { sessionId, revision: Number(reconciled.revision), status: String(reconciled.status) as V2CopilotState["status"], ledger: reconciled.ledger as TemplateCopilotV2Ledger, interview: reconciled.interview as TemplateCopilotV2InterviewState, specialReview: Array.isArray(reconciled.specialReview) ? reconciled.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: reconciled.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: reconciled.step4Enabled === true, step5EditingEnabled: reconciled.step5EditingEnabled === true, structuredEditorFlags: structuredEditorFlagsFrom(reconciled) })) return null;
       }
       const reconciledMessages = chatMessagesFromStored(reconciled.messages);
       if (reconciledMessages) {
@@ -1023,7 +1071,7 @@ export function TemplateCopilot({
           if (!lifecycle.isCurrent()) return null;
           const saved = snapshot.session as { revision?: unknown; status?: unknown; ledger?: unknown; interview?: unknown; specialReview?: unknown; projection?: unknown; step4Enabled?: unknown; step5EditingEnabled?: unknown; messages?: unknown };
           if ((saved?.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion === 2 && saved.interview) {
-            if (!installV2State(lifecycle, { sessionId, revision: Number(saved.revision), status: String(saved.status) as V2CopilotState["status"], ledger: saved.ledger as TemplateCopilotV2Ledger, interview: saved.interview as TemplateCopilotV2InterviewState, specialReview: Array.isArray(saved.specialReview) ? saved.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: saved.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: saved.step4Enabled === true, step5EditingEnabled: saved.step5EditingEnabled === true })) return null;
+            if (!installV2State(lifecycle, { sessionId, revision: Number(saved.revision), status: String(saved.status) as V2CopilotState["status"], ledger: saved.ledger as TemplateCopilotV2Ledger, interview: saved.interview as TemplateCopilotV2InterviewState, specialReview: Array.isArray(saved.specialReview) ? saved.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: saved.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: saved.step4Enabled === true, step5EditingEnabled: saved.step5EditingEnabled === true, structuredEditorFlags: structuredEditorFlagsFrom(saved) })) return null;
             const authoritativeMessages = chatMessagesFromStored(saved.messages);
             if (authoritativeMessages) {
               commitV2ReactState(lifecycle, setMessages, (current) => mergeChatMessages(current, authoritativeMessages));
@@ -1081,7 +1129,7 @@ export function TemplateCopilot({
       if (!lifecycle.isCurrent()) return;
       const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
       if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) throw new Error(copy.invalidInterviewUpdate);
-      if (!installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: response.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: response.step4Enabled === true, step5EditingEnabled: response.step5EditingEnabled === true })) return;
+      if (!installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [], projection: response.projection as TemplateCopilotV2AuthoritativeProjection, step4Enabled: response.step4Enabled === true, step5EditingEnabled: response.step5EditingEnabled === true, structuredEditorFlags: structuredEditorFlagsFrom(response) })) return;
       installPendingV2Special(lifecycle, pendingV2SpecialRef.current?.idempotencyKey === command.idempotencyKey ? null : pendingV2SpecialRef.current);
       // These are confirmed, durable transcript rows.  A retry keeps the
       // stable command/role IDs so an eventual authoritative history merge
@@ -1215,6 +1263,7 @@ export function TemplateCopilot({
         projection: response.projection as TemplateCopilotV2AuthoritativeProjection,
         step4Enabled: response.step4Enabled === true,
         step5EditingEnabled: response.step5EditingEnabled === true,
+        structuredEditorFlags: structuredEditorFlagsFrom(response),
         modeFlags: response.modeFlags as V2CopilotState["modeFlags"],
         modeState: response.modeState as TemplateCopilotV2ModeState | undefined,
       });
@@ -1389,6 +1438,7 @@ export function TemplateCopilot({
           projection: response.projection as TemplateCopilotV2AuthoritativeProjection,
           step4Enabled: response.step4Enabled === true,
           step5EditingEnabled: response.step5EditingEnabled === true,
+          structuredEditorFlags: structuredEditorFlagsFrom(response),
           modeFlags: response.modeFlags as V2CopilotState["modeFlags"],
           modeState: response.modeState as TemplateCopilotV2ModeState | undefined,
         });
@@ -1950,7 +2000,7 @@ export function TemplateCopilot({
             {selectedMode === "similar_template" && <p className="mt-1 text-xs text-neutral-700 dark:text-neutral-200">{modeUiCopy.similarLabel}</p>}
           </section>;
         })()}
-        {isV2State(state) && <div className="mt-4"><TemplateCopilotV2AuthoritativeMap ledger={state.ledger} projection={state.projection} editingEnabled={state.step5EditingEnabled === true} busy={busy} onTransition={saveAuthoritativeMapFact} /></div>}
+        {isV2State(state) && <div className="mt-4"><TemplateCopilotV2AuthoritativeMap ledger={state.ledger} projection={state.projection} editingEnabled={state.step5EditingEnabled === true} structuredEditorFlags={state.structuredEditorFlags} busy={busy} onTransition={saveAuthoritativeMapFact} /></div>}
         {isV2State(state) && extractionReview && extractionReview.candidates.length > 0 && (
           <section className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900 dark:bg-neutral-800 dark:text-sky-100" aria-label={extractionReviewCopy.candidateSectionAria}>
             <p className="font-medium">{extractionReviewCopy.candidateHeading}</p>
