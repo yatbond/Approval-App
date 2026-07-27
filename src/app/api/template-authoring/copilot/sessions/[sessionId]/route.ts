@@ -10,8 +10,9 @@ import {
   decodeTemplateCopilotMessageCursor,
   templateCopilotTranscriptFromStored,
 } from "@/lib/template-copilot-server-data";
-import { isTemplateCopilotV2Enabled, isTemplateCopilotV2Step4Enabled } from "@/lib/template-copilot-v2-feature";
+import { isTemplateCopilotV2Enabled, isTemplateCopilotV2Step4Enabled, isTemplateCopilotV2Step5EditingEnabled } from "@/lib/template-copilot-v2-feature";
 import { getTemplateCopilotV2InterviewState, getTemplateCopilotV2SpecialReview } from "@/lib/template-copilot-question-library";
+import { projectTemplateCopilotV2AuthoritativeLedger } from "@/lib/template-copilot-v2-authoritative-projection";
 
 export async function GET(
   request: NextRequest,
@@ -40,7 +41,7 @@ export async function GET(
     }
     const transcript = templateCopilotTranscriptFromStored(result);
     const sessionPayload = result.ledger.schemaVersion === 2 && isTemplateCopilotV2Enabled()
-      ? { ...transcript, interview: getTemplateCopilotV2InterviewState(result.ledger), specialReview: getTemplateCopilotV2SpecialReview(result.ledger), step4Enabled: isTemplateCopilotV2Step4Enabled() }
+      ? (() => { const interview = getTemplateCopilotV2InterviewState(result.ledger); return { ...transcript, interview, specialReview: getTemplateCopilotV2SpecialReview(result.ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(result.ledger, { inapplicableFactIds: interview.inapplicableFactIds }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled() }; })()
       : transcript;
     safeApprovalLog("template_copilot_session_read", correlationId, {
       viewer: result.owner_id === actor.id ? "owner" : "admin",

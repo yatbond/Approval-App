@@ -3,7 +3,7 @@ import { z } from "zod";
 import { approvalError, approvalJson, createApprovalServerContext, safeApprovalLog } from "@/lib/approval-server";
 import { readBoundedJson } from "@/lib/bounded-request";
 import { classifyTemplateCopilotV2OperationError, templateCopilotFactIds, templateCopilotV2FactTransitionSchema } from "@/lib/template-copilot-facts";
-import { isTemplateCopilotV2Enabled } from "@/lib/template-copilot-v2-feature";
+import { isTemplateCopilotV2Enabled, isTemplateCopilotV2Step5EditingEnabled } from "@/lib/template-copilot-v2-feature";
 import { applyTemplateCopilotV2Mutation } from "@/lib/template-copilot-v2-server-data";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
 
@@ -20,6 +20,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
   const { session, service, actor, cookieSource, correlationId } = resolved.context;
   if (!isTemplateCopilotV2Enabled()) {
     return approvalJson(cookieSource, correlationId, { error: { code: "not_found", message: "The Copilot v2 fact endpoint is unavailable." } }, 404);
+  }
+  if (!isTemplateCopilotV2Step5EditingEnabled()) {
+    return approvalJson(cookieSource, correlationId, { error: { code: "not_found", message: "The Copilot map editor is unavailable." } }, 404);
   }
   const { sessionId } = await context.params;
   const body = await readBoundedJson(request, 32_000);

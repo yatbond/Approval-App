@@ -6,6 +6,7 @@
 export type TemplateCopilotV2Flag = Readonly<{ enabled: boolean }>;
 type TemplateCopilotV2Environment = Readonly<{ TEMPLATE_COPILOT_V2?: string }>;
 type TemplateCopilotV2Step4Environment = Readonly<{ TEMPLATE_COPILOT_V2_STEP4?: string }>;
+type TemplateCopilotV2Step5Environment = Readonly<{ TEMPLATE_COPILOT_V2_STEP5_EDITING?: string }>;
 type TemplateCopilotV2ExtractionEnvironment = Readonly<{
   TEMPLATE_COPILOT_V2_EXTRACTION_SHADOW?: string;
   TEMPLATE_COPILOT_V2_CANDIDATE_CREATION?: string;
@@ -32,6 +33,14 @@ export function isTemplateCopilotV2Step4Enabled(
 ) {
   const runtimeEnvironment = process.env as unknown as TemplateCopilotV2Step4Environment;
   return (env || runtimeEnvironment).TEMPLATE_COPILOT_V2_STEP4 === "true";
+}
+
+/** Step 5 starts read-only. Editing is independently disabled until its
+ * revision/reconciliation rollout is qualified; the authoritative map stays
+ * visible when this switch is off. */
+export function isTemplateCopilotV2Step5EditingEnabled(env?: TemplateCopilotV2Step5Environment) {
+  const runtimeEnvironment = process.env as unknown as TemplateCopilotV2Step5Environment;
+  return (env || runtimeEnvironment).TEMPLATE_COPILOT_V2_STEP5_EDITING === "true";
 }
 
 export function requireTemplateCopilotV2(

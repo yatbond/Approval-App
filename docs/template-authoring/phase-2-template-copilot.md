@@ -247,6 +247,65 @@ review POST routes would misrepresent that contract; add them only with the
 complete v2 public surface, strict response/error schemas, and an explicit
 versioned integration commitment.
 
+## Step 5 authoritative workflow map
+
+With `TEMPLATE_COPILOT_V2_STEP5_EDITING=true`, the Copilot shows an
+authoritative, server-produced workflow map. It is a projection of the saved
+v2 ledger and readiness calculation, not a browser-side workflow model. A
+refresh therefore reproduces the same saved facts, provenance, conflicts,
+stale correction trail, dependency impact, and readiness gaps.
+
+The map is initially safe to release read-only. When editing is enabled, each
+of the sixteen fact schemas has a purpose-built control: prose, policies,
+initiator selection, request fields, document requirements, ordered or
+parallel stages and participant resolution, If–then routing, rejection,
+correction, timing and escalation, visibility, notifications, ownership,
+governance, and retention. Normal users never enter a raw JSON value. The
+editor validates its typed value before sending it; the revisioned server RPC
+performs the authoritative fact-schema validation, owner check, transition,
+audit, and dependency invalidation.
+
+Changing a saved prerequisite intentionally reopens all direct and transitive
+dependent facts while preserving their bounded stale-history evidence. The UI
+states that impact before save. Candidate, conflict, unknown, and applicable
+N/A paths use their existing restricted transitions; a client cannot convert
+an N/A or unknown state into an executable fact without a valid human save.
+An idempotency key and the last typed pending edit are kept only as a
+best-effort session recovery aid. A lost response is safe to retry, while a
+same-key or two-tab stale response reloads the server snapshot instead of
+overwriting it.
+
+The map labels, state messages, editor labels, help, and validation feedback
+are localized for English, Traditional Chinese, and Simplified Chinese. Its
+controls have visible labels, 40px touch targets, responsive wrapping,
+long-content/CJK breaking, live error status, and edit-button focus
+restoration after a save or cancellation.
+
+Qualification has two layers. The deterministic offline contract exercises all
+sixteen fact schemas and each saved, suggested, conflicting, unresolved,
+unknown, and applicable N/A presentation in all three locales, including
+typed-number preservation and blank optional-field removal. The authenticated
+Preview gate (`npm run test:e2e:template-copilot-v2-step5`) then exercises real
+keyboard open/cancel/focus restoration, responsive touch targets, light/dark
+axe scans, and the authoritative live-status region. It requires the Step 5
+flag and fact-delta migration to be enabled in Preview; it is not a substitute
+for the offline deterministic contract.
+
+The projection is also a historical record, not a summary that discards prior
+evidence. Every invalidated value retains its typed display, original wording,
+N/A reason where applicable, human confirmation, and bounded provenance/source
+coordinates. Current and historical conflicts render both alternatives with
+their separate evidence. The Preview qualification additionally exercises a
+real structured save, local validation and live success/error status, committed
+and N/A corrections, and a two-tab stale revision that reloads rather than
+overwrites the authoritative session. A lost-response/remount command keeps the
+same revision, idempotency key, operation, and typed value for safe retry.
+
+Do not enable the Step 5 edit flag before the fact-delta migration and the
+focused correction/race tests have passed. Flag rollback returns the map to
+read-only and preserves all ledger data, audit evidence, and pending recovery
+records.
+
 ## Requirements files
 
 The first release accepts text, Markdown, and PDF up to 5 MB, with at most five

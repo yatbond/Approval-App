@@ -17,7 +17,7 @@ import {
 import { templateCopilotV2SpecialEnvelopeSchema } from "./template-copilot-v2-special-contract.ts";
 import { createTemplateCopilotLedger } from "./template-copilot-ledger.ts";
 import { getTemplateCopilotReadiness } from "./template-copilot-readiness.ts";
-import { getTemplateCopilotV2Flag, isTemplateCopilotV2Enabled, isTemplateCopilotV2Step4Enabled, TemplateCopilotV2DisabledError } from "./template-copilot-v2-feature.ts";
+import { getTemplateCopilotV2Flag, isTemplateCopilotV2Enabled, isTemplateCopilotV2Step4Enabled, isTemplateCopilotV2Step5EditingEnabled, TemplateCopilotV2DisabledError } from "./template-copilot-v2-feature.ts";
 import { getTemplateCopilotQuestionLibrary, getTemplateCopilotV2InterviewState, validateTemplateCopilotQuestionLibrary } from "./template-copilot-question-library.ts";
 
 const enabled = { enabled: true };
@@ -65,6 +65,12 @@ test("Step 4 has an independent default-off server rollout gate", () => {
   assert.equal(isTemplateCopilotV2Step4Enabled({ TEMPLATE_COPILOT_V2_STEP4: "true" }), true);
 });
 
+test("Step 5 editing is independently default-off and requires an exact server flag", () => {
+  assert.equal(isTemplateCopilotV2Step5EditingEnabled({}), false);
+  assert.equal(isTemplateCopilotV2Step5EditingEnabled({ TEMPLATE_COPILOT_V2_STEP5_EDITING: "false" }), false);
+  assert.equal(isTemplateCopilotV2Step5EditingEnabled({ TEMPLATE_COPILOT_V2_STEP5_EDITING: "true" }), true);
+});
+
 test("fact-specific semantic schemas reject arbitrary executable values", () => {
   const ledger = createTemplateCopilotV2Ledger(scope, enabled);
   const invalidName = () => applyTemplateCopilotV2FactTransition({ ledger, factId: "workflow.name", actorId, confirmedAt, flag: enabled, transition: { operation: "human_commit", payload: { ...payload("workflow.name"), canonicalValue: { arbitrary: true } } } });
@@ -77,6 +83,14 @@ test("fact-specific semantic schemas reject arbitrary executable values", () => 
   }
   assert.throws(() => applyTemplateCopilotV2FactTransition({ ledger, factId: "workflow.stages", actorId, confirmedAt, flag: enabled, transition: { operation: "human_commit", payload: { ...payload("workflow.stages"), canonicalValue: [{ label: "Unsafe" }] } } }));
   assert.throws(() => applyTemplateCopilotV2FactTransition({ ledger, factId: "workflow.name", actorId, confirmedAt, flag: enabled, transition: { operation: "human_commit", payload: { ...payload("workflow.name"), confirmation: { actorId } } } }));
+});
+
+test("human correction transitions preserve a bounded stale correction trail", () => {
+  let ledger = createTemplateCopilotV2Ledger(scope, enabled);
+  ledger = applyTemplateCopilotV2FactTransition({ ledger, factId: "workflow.name", actorId, confirmedAt, flag: enabled, transition: { operation: "human_commit", payload: payload("workflow.name") } });
+  ledger = applyTemplateCopilotV2FactTransition({ ledger, factId: "workflow.name", actorId, confirmedAt: "2026-07-28T08:00:00.000Z", flag: enabled, transition: { operation: "human_replace", payload: { ...payload("workflow.name"), canonicalValue: "Corrected invoice approval" } } });
+  assert.equal(ledger.facts["workflow.name"].staleHistory.at(-1).canonicalValue, "Invoice approval");
+  assert.equal(ledger.facts["workflow.name"].staleHistory.at(-1).invalidatedBy, "workflow.name");
 });
 
 test("atomic text preserves up to 8000 canonical characters with a Unicode-safe bounded display preview", () => {
@@ -153,15 +167,70 @@ test("atomic decision kinds reject forged cross-field combinations and enforce t
   assert.equal(parses({ kind: "text", answer: "Text", ...common, answeredAt: "not-a-timestamp" }), false, "timestamp remains RFC3339");
 });
 
-test("explicit transition table protects committed, N/A, and conflicts", () => {
+test("explicit transition table protects saved facts from extraction candidates and reserves conflict resolution", () => {
   const ledger = createTemplateCopilotV2Ledger(scope, enabled);
   const candidate = applyTemplateCopilotV2FactTransition({ ledger, factId: "workflow.name", actorId, confirmedAt, flag: enabled, transition: { operation: "record_candidate", payload: { ...payload("workflow.name"), canonicalValue: "Invoice approval" } } });
   const committed = applyTemplateCopilotV2FactTransition({ ledger: candidate, factId: "workflow.name", actorId, confirmedAt, flag: enabled, transition: { operation: "human_commit", payload: payload("workflow.name") } });
   assert.equal(committed.facts["workflow.name"].confirmation.actorId, actorId);
   assert.throws(() => applyTemplateCopilotV2FactTransition({ ledger: committed, factId: "workflow.name", actorId, confirmedAt, flag: enabled, transition: { operation: "record_candidate", payload: { ...payload("workflow.name"), canonicalValue: "Other" } } }));
-  assert.throws(() => applyTemplateCopilotV2FactTransition({ ledger: committed, factId: "workflow.name", actorId, confirmedAt, flag: enabled, transition: { operation: "mark_unknown" } }));
+  assert.equal(applyTemplateCopilotV2FactTransition({ ledger: committed, factId: "workflow.name", actorId, confirmedAt, flag: enabled, transition: { operation: "mark_unknown" } }).facts["workflow.name"].status, "unknown");
   assert.throws(() => applyTemplateCopilotV2FactTransition({ ledger, factId: "workflow.name", actorId, confirmedAt, flag: enabled, transition: { operation: "mark_not_applicable", reason: "skip" } }));
   assert.throws(() => applyTemplateCopilotV2FactTransition({ ledger: candidate, factId: "workflow.name", actorId, confirmedAt, flag: enabled, transition: { operation: "resolve_conflict", payload: payload("workflow.name") } }));
+});
+
+test("optional fact correction state/action matrix is executable and preserves every superseded state", () => {
+  const factId = "attachments.requirements";
+  const firstValue = [];
+  const correctedValue = [{ label: "Invoice", required: true, formats: ["pdf"] }];
+  const commandPayload = (canonicalValue) => ({ ...payload(factId), canonicalValue });
+  const transition = (ledger, operation, canonicalValue = correctedValue, reason = "Does not apply") =>
+    applyTemplateCopilotV2FactTransition({
+      ledger,
+      factId,
+      actorId,
+      confirmedAt: "2026-07-29T08:00:00.000Z",
+      flag: enabled,
+      transition: operation === "mark_unknown"
+        ? { operation }
+        : operation === "mark_not_applicable"
+          ? { operation, reason }
+          : { operation, payload: commandPayload(canonicalValue) },
+    });
+  const stateLedger = (state) => {
+    const empty = createTemplateCopilotV2Ledger(scope, enabled);
+    if (state === "unresolved") return empty;
+    if (state === "candidate") return applyTemplateCopilotV2FactTransition({ ledger: empty, factId, actorId, confirmedAt, flag: enabled, transition: { operation: "record_candidate", payload: commandPayload(firstValue) } });
+    if (state === "committed") return applyTemplateCopilotV2FactTransition({ ledger: empty, factId, actorId, confirmedAt, flag: enabled, transition: { operation: "human_commit", payload: commandPayload(firstValue) } });
+    if (state === "unknown") return transition(empty, "mark_unknown");
+    if (state === "not_applicable") return transition(empty, "mark_not_applicable", correctedValue, "Initial reason");
+    const candidate = stateLedger("candidate");
+    return applyTemplateCopilotV2FactTransition({ ledger: candidate, factId, actorId, confirmedAt, flag: enabled, transition: { operation: "record_candidate", payload: commandPayload(correctedValue) } });
+  };
+  const saveOperation = {
+    unresolved: "human_commit",
+    candidate: "human_commit",
+    committed: "human_replace",
+    unknown: "human_commit",
+    not_applicable: "human_replace",
+    conflicting: "resolve_conflict",
+  };
+  for (const state of Object.keys(saveOperation)) {
+    const source = stateLedger(state);
+    const save = transition(source, saveOperation[state]);
+    assert.equal(save.facts[factId].status, "committed", `${state} -> save`);
+    if (state !== "unresolved") assert.equal(save.facts[factId].staleHistory.at(-1).status, state, `${state} save history`);
+
+    for (const [action, expectedStatus] of [["mark_unknown", "unknown"], ["mark_not_applicable", "not_applicable"]]) {
+      if (state === "conflicting") {
+        assert.throws(() => transition(source, action), TemplateCopilotFactTransitionError, `${state} -> ${action}`);
+      } else {
+        const corrected = transition(source, action, correctedValue, state === "not_applicable" ? "Corrected reason" : "Does not apply");
+        assert.equal(corrected.facts[factId].status, expectedStatus, `${state} -> ${action}`);
+        if (state !== "unresolved") assert.equal(corrected.facts[factId].staleHistory.at(-1).status, state, `${state} ${action} history`);
+        if (action === "mark_not_applicable") assert.equal(corrected.facts[factId].notApplicableReason, state === "not_applicable" ? "Corrected reason" : "Does not apply");
+      }
+    }
+  }
 });
 
 test("candidate evidence is deduplicated, while competing candidates retain both alternatives", () => {

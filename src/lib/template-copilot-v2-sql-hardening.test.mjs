@@ -23,6 +23,10 @@ const extractionSql = await readFile(
   new URL("../../supabase/migrations/20260727230000_template_copilot_v2_extraction_evidence.sql", import.meta.url),
   "utf8",
 );
+const factDeltaSql = await readFile(
+  new URL("../../supabase/migrations/20260728000000_template_copilot_v2_fact_delta.sql", import.meta.url),
+  "utf8",
+);
 
 function extractPinnedGraph(sql) {
   const match = sql.match(/\$v2_dependency_graph\$(\{[\s\S]*\})\$v2_dependency_graph\$/);
@@ -90,14 +94,16 @@ function extractFunctionBody(sql, functionName) {
   return sql.slice(bodyStart + "as $$".length, bodyEnd);
 }
 
-test("both hardened migrations parse as PostgreSQL SQL and PL/pgSQL", async () => {
-  const [atomicAst, atomicPlPgSql, specialAst, specialPlPgSql, extractionAst, extractionPlPgSql] = await Promise.all([
+test("all hardened Copilot mutation migrations parse as PostgreSQL SQL and PL/pgSQL", async () => {
+  const [atomicAst, atomicPlPgSql, specialAst, specialPlPgSql, extractionAst, extractionPlPgSql, factDeltaAst, factDeltaPlPgSql] = await Promise.all([
     parse(atomicSql),
     parsePlPgSQL(atomicSql),
     parse(specialSql),
     parsePlPgSQL(specialSql),
     parse(extractionSql),
     parsePlPgSQL(extractionSql),
+    parse(factDeltaSql),
+    parsePlPgSQL(factDeltaSql),
   ]);
   assert.ok(atomicAst.stmts.length >= 6);
   assert.equal(atomicPlPgSql.plpgsql_funcs.length, 1);
@@ -112,6 +118,9 @@ test("both hardened migrations parse as PostgreSQL SQL and PL/pgSQL", async () =
   assert.match(extractionSql, /create(?:\s+or\s+replace)?\s+function\s+private\.audit_template_copilot_v2_extraction_attempt/i);
   assert.match(extractionSql, /revoke all on function private\.audit_template_copilot_v2_extraction_attempt[\s\S]+from public, anon, authenticated/i);
   assert.doesNotMatch(extractionSql, /grant execute on function public\.apply_template_copilot_v2_extraction[\s\S]+to authenticated/i);
+  assert.ok(factDeltaAst.stmts.length >= 18);
+  assert.ok(factDeltaPlPgSql.plpgsql_funcs.length >= 8);
+  assert.match(factDeltaSql, /revoke all on function public\.mutate_template_copilot_v2_fact_delta\(uuid,uuid,bigint,text,text,text,text,jsonb,text\) from public, anon, authenticated/i);
 });
 
 test("extraction mutation remains owner-locked, bounded, replay-safe, and cannot replace a committed fact", () => {
@@ -329,4 +338,18 @@ test("special receipt preflight is owner-first and emits at most one terminal au
   assert.ok(invalidProjectionCheck < candidateLedgerCheck, "the explicit invalid projection must be classified without inspecting placeholder payloads");
   assert.match(specialSql, /revoke all on function public\.reconcile_template_copilot_v2_special_decision\(uuid,uuid,text,text\)[\s\S]+grant execute on function public\.reconcile_template_copilot_v2_special_decision\(uuid,uuid,text,text\)[\s\S]+to service_role/);
   assert.match(specialSql, /apply_template_copilot_v2_special_decision\(uuid,uuid,bigint,text,text,text,boolean,text,text\[\],jsonb,text,text,jsonb,jsonb\)/);
+});
+
+test("fact mutation audits every safe terminal attempt once through one redacted helper", () => {
+  const body = extractFunctionBody(factDeltaSql, "public.mutate_template_copilot_v2_fact_delta");
+  const helper = extractFunctionBody(factDeltaSql, "private.audit_template_copilot_v2_fact_attempt");
+  const ownerCheck = body.indexOf("if not found or s.owner_id is distinct from p_actor_id then");
+  const firstAudit = body.indexOf("private.audit_template_copilot_v2_fact_attempt");
+  assert.ok(ownerCheck >= 0 && firstAudit > ownerCheck, "no fact attempt audit may precede owner verification");
+  assert.doesNotMatch(body.slice(0, firstAudit), /insert into public\.template_copilot_v2_audit_events/i);
+  assert.doesNotMatch(body, /insert into public\.template_copilot_v2_audit_events/i, "the public function cannot bypass the redaction helper");
+  assert.match(body, /exception when others then[\s\S]+if owner_verified then[\s\S]+audit_template_copilot_v2_fact_attempt/i);
+  assert.match(helper, /jsonb_build_object\('schemaVersion',2,'attempt',safe_outcome\)/i);
+  assert.doesNotMatch(helper, /canonical|p_reason|evidence|ledger|sidecar|originalWording|notApplicableReason/i);
+  assert.match(factDeltaSql, /revoke all on function private\.audit_template_copilot_v2_fact_attempt\(uuid,uuid,text,text,text,text,bigint,bigint,text\) from public, anon, authenticated, service_role/i);
 });

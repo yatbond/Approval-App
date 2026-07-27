@@ -16,27 +16,18 @@ import {
   requireTemplateCopilotV2,
   type TemplateCopilotV2Flag,
 } from "./template-copilot-v2-feature.ts";
+import {
+  templateCopilotCommittedValueSchemas,
+  templateCopilotFactIds,
+  type TemplateCopilotFactId,
+} from "./template-copilot-v2-canonical-values.ts";
+export {
+  normalizeTemplateCopilotCommittedValue,
+  templateCopilotCommittedValueSchemas,
+  templateCopilotFactIds,
+} from "./template-copilot-v2-canonical-values.ts";
+export type { TemplateCopilotFactId } from "./template-copilot-v2-canonical-values.ts";
 
-export const templateCopilotFactIds = [
-  "workflow.name",
-  "workflow.purpose",
-  "workflow.scope",
-  "request.initiator_policy",
-  "request.fields",
-  "attachments.requirements",
-  "workflow.stages",
-  "workflow.conditions",
-  "workflow.rejection_policy",
-  "collaboration.policy",
-  "timing.rules",
-  "visibility.policy",
-  "notifications.rules",
-  "governance.owner",
-  "governance.policies",
-  "governance.retention",
-] as const;
-
-export type TemplateCopilotFactId = (typeof templateCopilotFactIds)[number];
 export const templateCopilotFactStatuses = [
   "candidate",
   "committed",
@@ -109,9 +100,24 @@ const confirmationSchema = z
   .object({
     actorId: z.string().uuid(),
     confirmedAt: z.string().datetime({ offset: true }),
-    operation: z.enum(["human_confirm", "human_resolve_conflict", "human_mark_not_applicable"]),
+    operation: z.enum(["human_confirm", "human_replace", "human_resolve_conflict", "human_mark_not_applicable"]),
   })
   .strict();
+
+/** Invalidated facts are never discarded.  They remain a bounded, readable
+ * correction trail until a human re-confirms the now-dependent decision. */
+const staleFactSchema = z.object({
+  invalidatedBy: z.enum(templateCopilotFactIds),
+  invalidatedAt: z.string().datetime({ offset: true }),
+  status: z.enum(["candidate", "committed", "unknown", "not_applicable", "conflicting"]),
+  canonicalValue: boundedJsonValueSchema.optional(),
+  originalWording: z.string().trim().min(1).max(8_000).optional(),
+  provenance: z.array(provenanceSchema).max(12),
+  confirmation: confirmationSchema.optional(),
+  notApplicableReason: z.string().trim().min(1).max(1_000).optional(),
+  conflictValues: z.array(boundedJsonValueSchema).min(2).max(4).optional(),
+  conflictEvidence: z.array(z.object({ canonicalValue: boundedJsonValueSchema, provenance: z.array(provenanceSchema).min(1).max(12) }).strict()).min(2).max(4).optional(),
+}).strict();
 
 export const templateCopilotFactEntrySchema = z
   .object({
@@ -128,6 +134,7 @@ export const templateCopilotFactEntrySchema = z
     notApplicableReason: z.string().trim().min(1).max(1_000).optional(),
     conflictValues: z.array(boundedJsonValueSchema).min(2).max(4).optional(),
     conflictEvidence: z.array(z.object({ canonicalValue: boundedJsonValueSchema, provenance: z.array(provenanceSchema).min(1).max(12) }).strict()).min(2).max(4).optional(),
+    staleHistory: z.array(staleFactSchema).max(12).default([]),
   })
   .strict()
   .superRefine((entry, context) => {
@@ -188,39 +195,6 @@ const definitions = [
 export const templateCopilotFactDefinitions: Readonly<Record<TemplateCopilotFactId, FactDefinition>> = Object.freeze(
   Object.fromEntries(definitions.map(([id, appliesWhen, blockingLevel, dependsOn]) => [id, Object.freeze({ id, appliesWhen, blockingLevel, dependsOn: Object.freeze([...dependsOn]) })])) as Record<TemplateCopilotFactId, FactDefinition>,
 );
-
-const boundedTextValue = z.string().trim().min(1).max(8_000);
-const boundedLabel = z.string().trim().min(1).max(200);
-const participantSchema = z.object({ mode: z.enum(["fixed_email", "directory_position", "request_field", "requester", "unassigned_at_template"]), value: boundedLabel.optional() }).strict();
-const fieldSchema = z.object({ label: boundedLabel, type: z.enum(["text", "long_text", "number", "date", "currency", "email", "select", "radio", "checkbox", "table"]), required: z.boolean(), options: z.array(boundedLabel).max(100).default([]) }).strict();
-const attachmentSchema = z.object({ label: boundedLabel, required: z.boolean(), formats: z.array(z.enum(["text", "pdf", "image", "excel_csv"])).max(4).default([]), stage: boundedLabel.optional() }).strict();
-const stageSchema = z.object({ label: boundedLabel, kind: z.enum(["approval", "review", "for_information", "submission"]), participant: participantSchema, sequence: z.number().int().min(1).max(100) }).strict();
-const conditionSchema = z.object({ field: boundedLabel, operator: z.enum(["=", "!=", ">", ">=", "<", "<=", "contains"]), value: z.union([boundedTextValue, z.number().finite()]), matchingRoute: boundedLabel, otherwiseRoute: boundedLabel }).strict();
-const policySchema = z.object({ description: boundedTextValue, rules: z.array(boundedTextValue).max(50).default([]) }).strict();
-
-/** Candidate values are deliberately text only until a human supplies one of
- * the field-specific canonical forms below. This prevents legacy prose or a
- * model-shaped object from masquerading as executable configuration. */
-/** The Step 3 extractor may propose only a fully valid value for this known
- * fact. The same strict schema guards a human-confirmed committed value. */
-export const templateCopilotCommittedValueSchemas: Readonly<Record<TemplateCopilotFactId, z.ZodType>> = {
-  "workflow.name": boundedLabel,
-  "workflow.purpose": boundedTextValue,
-  "workflow.scope": policySchema,
-  "request.initiator_policy": z.object({ mode: z.enum(["any_employee", "directory_role", "requester_selected"]), description: boundedTextValue }).strict(),
-  "request.fields": z.array(fieldSchema).min(1).max(100),
-  "attachments.requirements": z.array(attachmentSchema).max(50),
-  "workflow.stages": z.array(stageSchema).min(1).max(100),
-  "workflow.conditions": z.array(conditionSchema).max(50),
-  "workflow.rejection_policy": z.object({ action: z.enum(["return_for_correction", "close", "route_to_stage"]), route: boundedLabel.optional() }).strict(),
-  "collaboration.policy": policySchema,
-  "timing.rules": z.object({ defaultDueHours: z.number().int().min(1).max(8760).optional(), escalation: policySchema.optional() }).strict(),
-  "visibility.policy": policySchema,
-  "notifications.rules": z.array(z.object({ event: boundedLabel, recipients: z.array(boundedLabel).min(1).max(50), channel: z.enum(["in_app", "email"]) }).strict()).max(100),
-  "governance.owner": boundedLabel,
-  "governance.policies": z.array(boundedTextValue).max(50),
-  "governance.retention": z.object({ period: boundedLabel, rationale: boundedTextValue.optional() }).strict(),
-};
 
 const atomicDecisionAnswerSchema = z.string().trim().min(1).superRefine((value, context) => {
   if (templateCopilotUnicodeCodePointCount(value) > 8_000) {
@@ -413,6 +387,7 @@ const valueCommandSchema = z.object({ canonicalValue: boundedJsonValueSchema, or
 export const templateCopilotV2FactTransitionSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("record_candidate"), payload: valueCommandSchema }).strict(),
   z.object({ operation: z.literal("human_commit"), payload: valueCommandSchema }).strict(),
+  z.object({ operation: z.literal("human_replace"), payload: valueCommandSchema }).strict(),
   z.object({ operation: z.literal("resolve_conflict"), payload: valueCommandSchema }).strict(),
   z.object({ operation: z.literal("mark_unknown") }).strict(),
   z.object({ operation: z.literal("mark_not_applicable"), reason: z.string().trim().min(1).max(1_000) }).strict(),
@@ -430,7 +405,16 @@ export function applyTemplateCopilotV2FactTransition({ ledger, factId, transitio
     const command = templateCopilotV2FactTransitionSchema.parse(transition);
     const current = parsed.facts[factId];
     const entry = normalizeTransitionEntry(parsed, factId, current, command, actorId, confirmedAt);
-    return templateCopilotV2LedgerSchema.parse({ ...parsed, facts: { ...parsed.facts, [factId]: entry } });
+    const facts = { ...parsed.facts, [factId]: entry };
+    // A persisted value is only meaningful relative to its declared inputs.
+    // Replacing an input deterministically reopens every direct and transitive
+    // dependent fact, so no downstream decision can become an orphan.
+    if (!sameFactEntry(current, entry)) {
+      for (const dependentId of templateCopilotV2DependentFacts(factId)) {
+        facts[dependentId] = invalidateFact(parsed.facts[dependentId], dependentId, factId, confirmedAt, parsed.questionLibraryVersion);
+      }
+    }
+    return templateCopilotV2LedgerSchema.parse({ ...parsed, facts });
   } catch (error) {
     // The generic transition shape permits JSON values; field-specific parsing
     // below deliberately narrows those into a user-correctable transition.
@@ -441,6 +425,22 @@ export function applyTemplateCopilotV2FactTransition({ ledger, factId, transitio
 
 export class TemplateCopilotFactTransitionError extends Error {
   constructor(message: string) { super(message); this.name = "TemplateCopilotFactTransitionError"; }
+}
+
+/** Stable transitive closure of facts whose meaning depends on this fact. */
+export function templateCopilotV2DependentFacts(factId: TemplateCopilotFactId): readonly TemplateCopilotFactId[] {
+  const dependent = new Set<TemplateCopilotFactId>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const candidate of templateCopilotFactIds) {
+      if (!dependent.has(candidate) && templateCopilotFactDefinitions[candidate].dependsOn.some((input) => input === factId || dependent.has(input))) {
+        dependent.add(candidate);
+        changed = true;
+      }
+    }
+  }
+  return templateCopilotFactIds.filter((candidate) => dependent.has(candidate));
 }
 
 /** V2 answer limits are Unicode code points after trimming, matching
@@ -549,12 +549,41 @@ export function approveLegacyTemplateCopilotUpgrade({ legacyInput, preview, prev
 
 function emptyFact(id: TemplateCopilotFactId, questionLibraryVersion: string): TemplateCopilotFactEntry {
   const definition = templateCopilotFactDefinitions[id];
-  return { status: "unresolved", provenance: [], questionLibraryVersion, applicabilityCode: definition.appliesWhen, blockingLevel: definition.blockingLevel, dependsOn: [...definition.dependsOn] };
+  return { status: "unresolved", provenance: [], staleHistory: [], questionLibraryVersion, applicabilityCode: definition.appliesWhen, blockingLevel: definition.blockingLevel, dependsOn: [...definition.dependsOn] };
+}
+
+function invalidateFact(current: TemplateCopilotFactEntry, id: TemplateCopilotFactId, invalidatedBy: TemplateCopilotFactId, invalidatedAt: string, questionLibraryVersion: string): TemplateCopilotFactEntry {
+  const next = emptyFact(id, questionLibraryVersion);
+  if (current.status === "unresolved") return { ...next, staleHistory: current.staleHistory };
+  const snapshot = {
+    invalidatedBy,
+    invalidatedAt: z.string().datetime({ offset: true }).parse(invalidatedAt),
+    status: current.status,
+    ...(current.canonicalValue === undefined ? {} : { canonicalValue: current.canonicalValue }),
+    ...(current.originalWording ? { originalWording: current.originalWording } : {}),
+    provenance: current.provenance,
+    ...(current.confirmation ? { confirmation: current.confirmation } : {}),
+    ...(current.notApplicableReason ? { notApplicableReason: current.notApplicableReason } : {}),
+    ...(current.conflictValues ? { conflictValues: current.conflictValues } : {}),
+    ...(current.conflictEvidence ? { conflictEvidence: current.conflictEvidence } : {}),
+  };
+  return templateCopilotFactEntrySchema.parse({ ...next, staleHistory: [...current.staleHistory, snapshot].slice(-12) });
 }
 
 function normalizeTransitionEntry(ledger: TemplateCopilotV2Ledger, factId: TemplateCopilotFactId, current: TemplateCopilotFactEntry, transition: V2FactTransition, actorId: string, confirmedAt: string): TemplateCopilotFactEntry {
   const definition = templateCopilotFactDefinitions[factId];
-  const build = (status: TemplateCopilotFactStatus, extra: Partial<TemplateCopilotFactEntry> = {}) => templateCopilotFactEntrySchema.parse({ ...emptyFact(factId, ledger.questionLibraryVersion), ...extra, status, applicabilityCode: definition.appliesWhen, blockingLevel: definition.blockingLevel, dependsOn: [...definition.dependsOn] });
+  // A correction must never erase prior correction evidence. Direct replaces
+  // and conflict resolutions also retain the superseded value as a bounded
+  // self-invalidated history entry; dependent invalidation uses the same
+  // shape below.
+  const preserveHistory = (includeCurrent: boolean) => includeCurrent && current.status !== "unresolved"
+    ? [...current.staleHistory, { invalidatedBy: factId, invalidatedAt: z.string().datetime({ offset: true }).parse(confirmedAt), status: current.status, ...(current.canonicalValue === undefined ? {} : { canonicalValue: current.canonicalValue }), ...(current.originalWording ? { originalWording: current.originalWording } : {}), provenance: current.provenance, ...(current.confirmation ? { confirmation: current.confirmation } : {}), ...(current.notApplicableReason ? { notApplicableReason: current.notApplicableReason } : {}), ...(current.conflictValues ? { conflictValues: current.conflictValues } : {}), ...(current.conflictEvidence ? { conflictEvidence: current.conflictEvidence } : {}) }].slice(-12)
+    : current.staleHistory;
+  const build = (status: TemplateCopilotFactStatus, extra: Partial<TemplateCopilotFactEntry> = {}) => templateCopilotFactEntrySchema.parse({ ...emptyFact(factId, ledger.questionLibraryVersion), staleHistory: extra.staleHistory ?? preserveHistory(false), ...extra, status, applicabilityCode: definition.appliesWhen, blockingLevel: definition.blockingLevel, dependsOn: [...definition.dependsOn] });
+  const normalizedHumanPayload = (payload: Extract<V2FactTransition, { payload: unknown }>["payload"]) => ({
+    ...payload,
+    canonicalValue: templateCopilotCommittedValueSchemas[factId].parse(payload.canonicalValue) as z.infer<typeof boundedJsonValueSchema>,
+  });
   const protectedState = ["committed", "not_applicable", "conflicting"].includes(current.status);
   if (transition.operation === "record_candidate") {
     if (protectedState) throw new TemplateCopilotFactTransitionError("A candidate cannot overwrite a committed, N/A, or conflicting fact.");
@@ -582,26 +611,34 @@ function normalizeTransitionEntry(ledger: TemplateCopilotV2Ledger, factId: Templ
     return build("candidate", incoming);
   }
   if (transition.operation === "mark_unknown") {
-    if (protectedState) throw new TemplateCopilotFactTransitionError("Unknown cannot overwrite a committed, N/A, or conflicting fact.");
-    return build("unknown");
+    if (current.status === "conflicting") throw new TemplateCopilotFactTransitionError("Resolve the conflict before marking this fact unknown.");
+    return build("unknown", { staleHistory: preserveHistory(true) });
   }
   if (transition.operation === "mark_not_applicable") {
-    if (protectedState || definition.appliesWhen === "always") throw new TemplateCopilotFactTransitionError("This fact cannot be marked not applicable without an explicit resolution and coded applicability.");
-    return build("not_applicable", { notApplicableReason: transition.reason, confirmation: { actorId: z.string().uuid().parse(actorId), confirmedAt: z.string().datetime({ offset: true }).parse(confirmedAt), operation: "human_mark_not_applicable" } });
+    if (current.status === "conflicting" || definition.appliesWhen === "always") throw new TemplateCopilotFactTransitionError("This fact cannot be marked not applicable without an explicit resolution and coded applicability.");
+    return build("not_applicable", { staleHistory: preserveHistory(true), notApplicableReason: transition.reason, confirmation: { actorId: z.string().uuid().parse(actorId), confirmedAt: z.string().datetime({ offset: true }).parse(confirmedAt), operation: "human_mark_not_applicable" } });
   }
   if (transition.operation === "human_commit") {
     if (protectedState) throw new TemplateCopilotFactTransitionError("Human commit cannot overwrite a committed, N/A, or conflicting fact.");
-    return build("committed", { ...transition.payload, confirmation: { actorId: z.string().uuid().parse(actorId), confirmedAt: z.string().datetime({ offset: true }).parse(confirmedAt), operation: "human_confirm" } });
+    return build("committed", { ...normalizedHumanPayload(transition.payload), staleHistory: preserveHistory(true), confirmation: { actorId: z.string().uuid().parse(actorId), confirmedAt: z.string().datetime({ offset: true }).parse(confirmedAt), operation: "human_confirm" } });
+  }
+  if (transition.operation === "human_replace") {
+    if (current.status === "conflicting") throw new TemplateCopilotFactTransitionError("Resolve the conflict before replacing this fact.");
+    return build("committed", { ...normalizedHumanPayload(transition.payload), staleHistory: preserveHistory(true), confirmation: { actorId: z.string().uuid().parse(actorId), confirmedAt: z.string().datetime({ offset: true }).parse(confirmedAt), operation: "human_replace" } });
   }
   if (current.status !== "conflicting") throw new TemplateCopilotFactTransitionError("Conflict resolution requires an existing conflict.");
-  return build("committed", { ...transition.payload, confirmation: { actorId: z.string().uuid().parse(actorId), confirmedAt: z.string().datetime({ offset: true }).parse(confirmedAt), operation: "human_resolve_conflict" } });
+  return build("committed", { ...normalizedHumanPayload(transition.payload), staleHistory: preserveHistory(true), confirmation: { actorId: z.string().uuid().parse(actorId), confirmedAt: z.string().datetime({ offset: true }).parse(confirmedAt), operation: "human_resolve_conflict" } });
 }
 
 function sameIds(left: readonly string[], right: readonly string[]) { return left.length === right.length && left.every((id, index) => id === right[index]); }
 function sameCanonicalValue(left: unknown, right: unknown) { return stableHash(left) === stableHash(right); }
+function sameFactEntry(left: TemplateCopilotFactEntry, right: TemplateCopilotFactEntry) {
+  return left.status === right.status && sameCanonicalValue(left.canonicalValue, right.canonicalValue)
+    && left.notApplicableReason === right.notApplicableReason;
+}
 function mergeProvenance(left: TemplateCopilotFactEntry["provenance"], right: TemplateCopilotFactEntry["provenance"]) {
   const result = [...left];
   for (const item of right) if (!result.some((existing) => stableHash(existing) === stableHash(item))) result.push(item);
   return result.slice(0, 12);
 }
-function stableHash(value: unknown) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
+function stableHash(value: unknown) { return createHash("sha256").update(JSON.stringify(value) ?? "undefined").digest("hex"); }

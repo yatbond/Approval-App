@@ -29,6 +29,7 @@
     "test:e2e:template-copilot-cross-user": "node scripts/test-template-copilot-cross-user.mjs",
     "test:e2e:template-copilot-qualification": "node scripts/test-template-copilot-qualification.mjs",
     "test:e2e:template-copilot-v2-step4": "node scripts/test-template-copilot-v2-step4-browser.mjs",
+    "test:e2e:template-copilot-v2-step5": "node scripts/test-template-copilot-v2-step5-browser.mjs",
     "test:template-copilot-v2-extraction-qualification": "node scripts/test-template-copilot-v2-extraction-qualification.mjs",
     "test:template-copilot-v2-step3-qualification": "node scripts/test-template-copilot-v2-step3-qualification.mjs",
     "test:openrouter:copilot-model": "node scripts/test-openrouter-copilot-model.mjs",

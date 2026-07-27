@@ -2,19 +2,19 @@ import { createHash, randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ApprovalRuntimeProfile } from "./approval-runtime.ts";
 import {
-  applyTemplateCopilotV2FactTransition,
   applyTemplateCopilotV2AtomicDecision,
   approveLegacyTemplateCopilotUpgrade,
   createTemplateCopilotV2Ledger,
+  normalizeTemplateCopilotCommittedValue,
   previewLegacyTemplateCopilotUpgrade,
   templateCopilotV2LedgerSchema,
+  templateCopilotV2FactTransitionSchema,
   templateCopilotStoredLedgerSchema,
   TemplateCopilotFactTransitionError,
   type TemplateCopilotFactId,
   type V2FactTransition,
 } from "./template-copilot-facts.ts";
-import { getTemplateCopilotReadiness } from "./template-copilot-readiness.ts";
-import { isTemplateCopilotV2Step4Enabled, requireTemplateCopilotV2, type TemplateCopilotV2Flag } from "./template-copilot-v2-feature.ts";
+import { isTemplateCopilotV2Step4Enabled, isTemplateCopilotV2Step5EditingEnabled, requireTemplateCopilotV2, type TemplateCopilotV2Flag } from "./template-copilot-v2-feature.ts";
 import { getTemplateCopilotQuestionLibrary, getTemplateCopilotV2InterviewState, getTemplateCopilotV2SpecialReview, reopenTemplateCopilotV2Decision, type TemplateCopilotAtomicAnswerInput } from "./template-copilot-question-library.ts";
 import { orderTemplateCopilotMessages } from "./template-copilot-history.ts";
 import {
@@ -26,6 +26,7 @@ import {
   type TemplateCopilotV2Candidate,
 } from "./template-copilot-v2-candidates.ts";
 import { getTemplateCopilotV2CommittedAcknowledgement } from "./template-copilot-v2-step4.ts";
+import { projectTemplateCopilotV2AuthoritativeLedger } from "./template-copilot-v2-authoritative-projection.ts";
 
 export function templateCopilotV2CommandHash(command: unknown) {
   return createHash("sha256").update(JSON.stringify(sortJson(command))).digest("hex");
@@ -61,10 +62,9 @@ export async function createTemplateCopilotV2Session({ service, actor, clientMes
   return { ...withV2InterviewState(result), assistantMessage };
 }
 
-/** Loads the owner-scoped authoritative row, derives actor/time server-side,
- * computes one typed fact transition, then asks the locked RPC to apply that
- * exact revision. A concurrent change can only return stale_revision; it can
- * never be overwritten by this pre-computed transition. */
+/** Sends the smallest possible map-edit command.  PostgreSQL locks the current
+ * ledger and independently derives the target, confirmation, provenance,
+ * stale history, dependency closure, and returned authoritative ledger. */
 export async function applyTemplateCopilotV2Mutation({
   session, service, actor, sessionId, expectedRevision, idempotencyKey, transition, factId, flag,
 }: {
@@ -72,21 +72,30 @@ export async function applyTemplateCopilotV2Mutation({
   expectedRevision: number; idempotencyKey: string; factId: TemplateCopilotFactId; transition: V2FactTransition; flag?: TemplateCopilotV2Flag;
 }) {
   requireTemplateCopilotV2(flag);
-  const commandHash = templateCopilotV2CommandHash({ operation: transition.operation, sessionId, expectedRevision, factId, transition });
-  const replay = await loadV2Receipt(session, sessionId, idempotencyKey, commandHash);
-  if (replay) return withV2InterviewState(replay);
-  const stored = await loadV2StoredSession(session, sessionId);
-  if (!stored || stored.ledger.schemaVersion !== 2) return { outcome: "not_found" };
-  const confirmedAt = new Date().toISOString();
-  const nextLedger = applyTemplateCopilotV2FactTransition({ ledger: stored.ledger, factId, transition, actorId: actor.id, confirmedAt, flag });
-  const interview = getTemplateCopilotV2InterviewState(nextLedger);
-  const readiness = getTemplateCopilotReadiness(nextLedger, { compilerValid: false, publishedRevisionMatches: false, inapplicableFactIds: interview.inapplicableFactIds });
-  const { data, error } = await service.rpc("mutate_template_copilot_v2_fact", {
+  // Kept in the public service signature for API compatibility.  Fact edits
+  // intentionally do not use it: receipt/owner/current-ledger checks belong
+  // to the locked database RPC, not a preflight client query.
+  void session;
+  const command = templateCopilotV2FactTransitionSchema.parse(transition);
+  const canonicalValue = "payload" in command
+    ? normalizeTemplateCopilotCommittedValue(factId, command.payload.canonicalValue)
+    : null;
+  const reason = command.operation === "mark_not_applicable" ? command.reason : null;
+  // Provenance and original wording are intentionally not part of this hash:
+  // map edits cannot choose either persisted field.  The database derives both
+  // from the locked owner, operation, and idempotency key.
+  const commandHash = templateCopilotV2CommandHash({ operation: command.operation, sessionId, expectedRevision, factId, canonicalValue, reason });
+  const { data, error } = await service.rpc("mutate_template_copilot_v2_fact_delta", {
     p_actor_id: actor.id, p_session_id: sessionId, p_expected_revision: expectedRevision,
-    p_idempotency_key: idempotencyKey, p_command_hash: commandHash, p_operation: transition.operation,
-    p_fact_id: factId, p_fact_entry: nextLedger.facts[factId], p_readiness: readiness,
+    p_idempotency_key: idempotencyKey, p_command_hash: commandHash, p_operation: command.operation,
+    // No client-produced ledger, entry, dependency closure, confirmation,
+    // history, sidecar, readiness, provenance, or timestamp crosses this boundary.
+    p_fact_id: factId,
+    p_canonical_value: canonicalValue,
+    p_reason: reason,
   });
   if (error) throw error;
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("The fact mutation returned an invalid response.");
   const result = data as Record<string, unknown>;
   return withV2InterviewState(result);
 }
@@ -756,5 +765,6 @@ async function loadV2Receipt(session: SupabaseClient, sessionId: string, idempot
 function withV2InterviewState(result: Record<string, unknown>) {
   if (!result.ledger) return result;
   const ledger = templateCopilotV2LedgerSchema.parse(result.ledger);
-  return { ...result, interview: getTemplateCopilotV2InterviewState(ledger), specialReview: getTemplateCopilotV2SpecialReview(ledger), step4Enabled: isTemplateCopilotV2Step4Enabled() };
+  const interview = getTemplateCopilotV2InterviewState(ledger);
+  return { ...result, interview, specialReview: getTemplateCopilotV2SpecialReview(ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled() };
 }

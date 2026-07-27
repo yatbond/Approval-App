@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyTemplateCopilotV2OperationError, createTemplateCopilotV2Ledger, TemplateCopilotFactTransitionError } from "./template-copilot-facts.ts";
+import { applyTemplateCopilotV2FactTransition, classifyTemplateCopilotV2OperationError, createTemplateCopilotV2Ledger } from "./template-copilot-facts.ts";
 import { applyTemplateCopilotV2AtomicAnswer, applyTemplateCopilotV2Mutation, applyTemplateCopilotV2SpecialDecision, approveTemplateCopilotV1Upgrade, createTemplateCopilotV2Session, reconcileTemplateCopilotV2SpecialDecision, templateCopilotV2CommandHash } from "./template-copilot-v2-server-data.ts";
+import { createPendingTemplateCopilotV2MapCommand, parsePendingTemplateCopilotV2MapCommand, templateCopilotV2PendingMapCommandBody } from "./template-copilot-v2-map-command.ts";
 
 const enabled = { enabled: true };
 const actor = { id: "33333333-3333-4333-8333-333333333333", email: "owner@example.com", fullName: "Owner", isAdmin: false };
@@ -32,10 +33,11 @@ function specialService({ ledger, revision = 1, preflightOutcome = "missing", on
   };
 }
 
-test("server mutation derives confirmation and returns the RPC's authoritative replay unchanged", async () => {
+test("server mutation sends only the typed command and returns the RPC's authoritative replay unchanged", async () => {
   const ledger = createTemplateCopilotV2Ledger(scope, enabled);
   let rpcArgs;
-  const service = { rpc: async (_name, args) => { rpcArgs = args; return { data: { outcome: "replayed", revision: 1, ledger }, error: null }; } };
+  let rpcName;
+  const service = { rpc: async (name, args) => { rpcName = name; rpcArgs = args; return { data: { outcome: "replayed", revision: 1, ledger }, error: null }; } };
   const result = await applyTemplateCopilotV2Mutation({
     session: ownerSession(ledger), service, actor, sessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     expectedRevision: 1, idempotencyKey: "v2-test:replay", factId: "workflow.name", flag: enabled,
@@ -43,10 +45,22 @@ test("server mutation derives confirmation and returns the RPC's authoritative r
   });
   assert.equal(result.outcome, "replayed");
   assert.equal(result.ledger, ledger);
+  assert.equal(rpcName, "mutate_template_copilot_v2_fact_delta");
   assert.equal(rpcArgs.p_actor_id, actor.id);
-  assert.equal(rpcArgs.p_fact_entry.confirmation.actorId, actor.id);
-  assert.match(rpcArgs.p_fact_entry.confirmation.confirmedAt, /^\d{4}-\d{2}-\d{2}T/);
-  assert.equal("confirmation" in rpcArgs, false);
+  assert.equal(rpcArgs.p_canonical_value, "Invoice approval");
+  assert.equal(rpcArgs.p_reason, null);
+  assert.equal("p_readiness" in rpcArgs, false, "readiness is recomputed from the authoritative returned ledger, never supplied to SQL");
+  for (const forbidden of ["p_ledger", "p_fact_entry", "p_invalidated_entries", "p_confirmation", "p_provenance", "p_stale_history", "p_extraction_evidence"]) assert.equal(forbidden in rpcArgs, false, `${forbidden} must be database-derived`);
+});
+
+test("generic map mutation defers sidecar protection to the locked database RPC", async () => {
+  const base = createTemplateCopilotV2Ledger(scope, enabled);
+  const ledger = { ...base, extractionEvidence: { ...base.extractionEvidence, candidates: [{ candidateId: "a".repeat(64), state: "open", factId: "workflow.name", value: "Invoice approval", originalWording: "Invoice approval", evidence: [{ path: "/", messageId: "m1", startCodePoint: 0, endCodePoint: 16, exactText: "Invoice approval" }], confidence: "high", ambiguity: "none" }] } };
+  let args;
+  const result = await applyTemplateCopilotV2Mutation({ session: ownerSession(ledger), service: { rpc: async (_name, input) => { args = input; return { data: { outcome: "invalid_transition", reason: "open_extraction_sidecar" }, error: null }; } }, actor, sessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", expectedRevision: 1, idempotencyKey: "map:open-evidence", factId: "workflow.name", flag: enabled, transition: { operation: "human_commit", payload: { canonicalValue: "Different", provenance: [{ kind: "human_editor", sourceId: "map", sourceMessageIds: [] }] } } });
+  assert.equal(result.outcome, "invalid_transition");
+  assert.equal(args.p_canonical_value, "Different");
+  assert.equal("p_fact_entry" in args, false);
 });
 
 test("v2 start and authoritative mutation responses include the deterministic pinned interview state", async () => {
@@ -141,24 +155,60 @@ test("canonical command hashes are key-order independent and bind payload change
   assert.notEqual(templateCopilotV2CommandHash({ operation: "human_commit", value: "A" }), templateCopilotV2CommandHash({ operation: "human_commit", value: "B" }));
 });
 
-test("post-success replays bypass protected transition evaluation and reject hash mismatch", async () => {
+test("fact mutation leaves replay and hash-conflict decisions to the locked database RPC", async () => {
   const ledger = createTemplateCopilotV2Ledger(scope, enabled);
   const sessionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-  const response = { revision: 9, ledger };
-  const replaySession = (hash) => ({ from(table) { assert.equal(table, "template_copilot_v2_operation_receipts"); return { select() { return { eq() { return { eq() { return { maybeSingle: async () => ({ data: { command_hash: hash, response }, error: null }) }; } }; } }; } }; } });
-  const service = { rpc: async () => { throw new Error("RPC must not run for a matching receipt"); } };
+  const calls = [];
+  const service = { rpc: async (_name, args) => { calls.push(args); return { data: { outcome: args.p_idempotency_key === "retry:mismatch" ? "idempotency_conflict" : "replayed", revision: 9, ledger }, error: null }; } };
   const cases = [
+    { operation: "record_candidate", payload: { canonicalValue: "Invoice approval", provenance: [{ kind: "message", sourceId: "m", sourceMessageIds: ["m"] }] } },
     { operation: "human_commit", payload: { canonicalValue: "Invoice approval", provenance: [{ kind: "message", sourceId: "m", sourceMessageIds: ["m"] }] } },
-    { operation: "mark_not_applicable", reason: "No attachments are used." },
+    { operation: "human_replace", payload: { canonicalValue: "Invoice approval", provenance: [{ kind: "message", sourceId: "m", sourceMessageIds: ["m"] }] } },
     { operation: "resolve_conflict", payload: { canonicalValue: "Invoice approval", provenance: [{ kind: "message", sourceId: "m", sourceMessageIds: ["m"] }] } },
+    { operation: "mark_unknown" },
+    { operation: "mark_not_applicable", reason: "No attachments are used." },
   ];
   for (const transition of cases) {
-    const hash = templateCopilotV2CommandHash({ operation: transition.operation, sessionId, expectedRevision: 8, factId: "workflow.name", transition });
-    const replay = await applyTemplateCopilotV2Mutation({ session: replaySession(hash), service, actor, sessionId, expectedRevision: 8, idempotencyKey: `retry:${transition.operation}`, factId: "workflow.name", transition, flag: enabled });
+    const replay = await applyTemplateCopilotV2Mutation({ session: ownerSession(ledger), service, actor, sessionId, expectedRevision: 8, idempotencyKey: `retry:${transition.operation}`, factId: "workflow.name", transition, flag: enabled });
     assert.equal(replay.outcome, "replayed");
   }
-  const mismatch = await applyTemplateCopilotV2Mutation({ session: replaySession("0".repeat(64)), service, actor, sessionId, expectedRevision: 8, idempotencyKey: "retry:mismatch", factId: "workflow.name", transition: cases[0], flag: enabled });
+  const mismatch = await applyTemplateCopilotV2Mutation({ session: ownerSession(ledger), service, actor, sessionId, expectedRevision: 8, idempotencyKey: "retry:mismatch", factId: "workflow.name", transition: cases[0], flag: enabled });
   assert.equal(mismatch.outcome, "idempotency_conflict");
+  assert.equal(calls.length, cases.length + 1);
+  assert.equal("p_ledger" in calls[0], false);
+  for (const [index, transition] of cases.entries()) {
+    assert.equal(calls[index].p_operation, transition.operation);
+    assert.equal(
+      calls[index].p_canonical_value,
+      "payload" in transition ? transition.payload.canonicalValue : null,
+      `${transition.operation} canonical-value forwarding`,
+    );
+    assert.equal(
+      calls[index].p_reason,
+      "reason" in transition ? transition.reason : null,
+      `${transition.operation} reason forwarding`,
+    );
+  }
+});
+
+test("fact mutation returns each database-audited terminal result without client retries", async () => {
+  const session = { from() { throw new Error("fact mutation must not preflight through the browser client"); } };
+  for (const outcome of ["applied", "stale_revision", "replayed", "invalid_command", "idempotency_conflict", "invalid_transition", "not_found"]) {
+    let calls = 0;
+    const result = await applyTemplateCopilotV2Mutation({
+      session,
+      service: { rpc: async () => { calls += 1; return { data: { outcome }, error: null }; } },
+      actor,
+      sessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      expectedRevision: 8,
+      idempotencyKey: `terminal:${outcome}`,
+      factId: "workflow.name",
+      transition: { operation: "human_replace", payload: { canonicalValue: "Invoice approval", provenance: [{ kind: "human_editor", sourceId: "ignored", sourceMessageIds: [] }] } },
+      flag: enabled,
+    });
+    assert.equal(result.outcome, outcome);
+    assert.equal(calls, 1, `${outcome} must be returned after exactly one locked RPC invocation`);
+  }
 });
 
 test("legacy-upgrade replay is resolved before the now-v2 session is inspected", async () => {
@@ -171,16 +221,12 @@ test("legacy-upgrade replay is resolved before the now-v2 session is inspected",
   assert.equal(result.outcome, "replayed");
 });
 
-test("stored-ledger and RPC response parser failures remain distinct from an invalid transition", async () => {
+test("fact mutation delegates corrupt-state and domain-transition rejection to SQL while preserving RPC response parsing", async () => {
   const ledger = createTemplateCopilotV2Ledger(scope, enabled);
   const corruptStoredLedger = { ...ledger, facts: { ...ledger.facts, "workflow.name": { ...ledger.facts["workflow.name"], status: "candidate", canonicalValue: { untrusted: true }, provenance: [{ kind: "message", sourceId: "message:bad", sourceMessageIds: ["message:bad"] }] } } };
-  const command = { session: ownerSession(corruptStoredLedger), service: { rpc: async () => { throw new Error("must not call RPC for corrupt storage"); } }, actor, sessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", expectedRevision: 1, idempotencyKey: "parser:stored", factId: "workflow.name", flag: enabled, transition: { operation: "record_candidate", payload: { canonicalValue: "Invoice approval", provenance: [{ kind: "message", sourceId: "message:one", sourceMessageIds: ["message:one"] }] } } };
-  let storedLedgerError;
-  await assert.rejects(() => applyTemplateCopilotV2Mutation(command), (error) => {
-    storedLedgerError = error;
-    return /Canonical value does not match/.test(error.message);
-  });
-  assert.equal(classifyTemplateCopilotV2OperationError(storedLedgerError, "unavailable").status, 503);
+  const command = { session: ownerSession(corruptStoredLedger), service: { rpc: async () => ({ data: { outcome: "invalid_transition" }, error: null }) }, actor, sessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", expectedRevision: 1, idempotencyKey: "parser:stored", factId: "workflow.name", flag: enabled, transition: { operation: "record_candidate", payload: { canonicalValue: "Invoice approval", provenance: [{ kind: "message", sourceId: "message:one", sourceMessageIds: ["message:one"] }] } } };
+  const corruptState = await applyTemplateCopilotV2Mutation(command);
+  assert.equal(corruptState.outcome, "invalid_transition");
 
   let rpcResponseError;
   await assert.rejects(() => applyTemplateCopilotV2Mutation({
@@ -193,16 +239,104 @@ test("stored-ledger and RPC response parser failures remain distinct from an inv
   });
   assert.equal(classifyTemplateCopilotV2OperationError(rpcResponseError, "unavailable").status, 503);
 
-  let transitionError;
-  await assert.rejects(() => applyTemplateCopilotV2Mutation({
+  const transitionResult = await applyTemplateCopilotV2Mutation({
     ...command,
     session: ownerSession(ledger), idempotencyKey: "domain:transition",
     transition: { operation: "mark_not_applicable", reason: "Not needed" },
-  }), (error) => {
-    transitionError = error;
-    return error instanceof TemplateCopilotFactTransitionError;
   });
-  assert.equal(classifyTemplateCopilotV2OperationError(transitionError, "unavailable").status, 409);
+  assert.equal(transitionResult.outcome, "invalid_transition");
+});
+
+test("candidate commit lost response remount replays the exact server command hash and key", async () => {
+  const sessionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const candidate = applyTemplateCopilotV2FactTransition({
+    ledger: createTemplateCopilotV2Ledger(scope, enabled),
+    factId: "workflow.name",
+    actorId: actor.id,
+    confirmedAt: "2026-07-27T08:00:00.000Z",
+    flag: enabled,
+    transition: {
+      operation: "record_candidate",
+      payload: {
+        canonicalValue: "Invoice approval",
+        provenance: [{ kind: "message", sourceId: "message:candidate", sourceMessageIds: ["message:candidate"] }],
+      },
+    },
+  });
+  const committed = applyTemplateCopilotV2FactTransition({
+    ledger: candidate,
+    factId: "workflow.name",
+    actorId: actor.id,
+    confirmedAt: "2026-07-27T08:01:00.000Z",
+    flag: enabled,
+    transition: {
+      operation: "human_commit",
+      payload: {
+        canonicalValue: "Invoice approval",
+        provenance: [{ kind: "human_editor", sourceId: "map:map-edit:lost", sourceMessageIds: [] }],
+      },
+    },
+  });
+  const pending = createPendingTemplateCopilotV2MapCommand({
+    sessionId,
+    expectedRevision: 7,
+    idempotencyKey: "map-edit:lost",
+    factId: "workflow.name",
+    factStatus: "candidate",
+    intent: { action: "save", canonicalValue: "Invoice approval" },
+  });
+  const stored = JSON.stringify(pending);
+  const firstBody = templateCopilotV2PendingMapCommandBody(pending);
+  const rpcArgs = [];
+  let invocation = 0;
+  const service = {
+    rpc: async (_name, args) => {
+      rpcArgs.push(structuredClone(args));
+      invocation += 1;
+      return {
+        data: {
+          outcome: invocation === 1 ? "applied" : "replayed",
+          revision: 8,
+          status: "interviewing",
+          ledger: committed,
+        },
+        error: null,
+      };
+    },
+  };
+
+  // The first result is intentionally ignored, simulating a committed server
+  // mutation whose HTTP response never reached the browser.
+  await applyTemplateCopilotV2Mutation({
+    session: ownerSession(candidate, 7),
+    service,
+    actor,
+    sessionId,
+    expectedRevision: firstBody.expectedRevision,
+    idempotencyKey: firstBody.idempotencyKey,
+    factId: firstBody.factId,
+    transition: firstBody.transition,
+    flag: enabled,
+  });
+  const remounted = parsePendingTemplateCopilotV2MapCommand(JSON.parse(stored));
+  assert.ok(remounted);
+  const retryBody = templateCopilotV2PendingMapCommandBody(remounted);
+  const replay = await applyTemplateCopilotV2Mutation({
+    session: ownerSession(committed, 8),
+    service,
+    actor,
+    sessionId,
+    expectedRevision: retryBody.expectedRevision,
+    idempotencyKey: retryBody.idempotencyKey,
+    factId: retryBody.factId,
+    transition: retryBody.transition,
+    flag: enabled,
+  });
+  assert.equal(replay.outcome, "replayed");
+  assert.equal(rpcArgs[0].p_operation, "human_commit");
+  assert.equal(rpcArgs[1].p_operation, "human_commit");
+  assert.equal(rpcArgs[0].p_idempotency_key, "map-edit:lost");
+  assert.deepEqual(rpcArgs[1], rpcArgs[0]);
 });
 
 test("special service applies defer and eligible N/A as one exact server-derived ledger delta", async () => {
