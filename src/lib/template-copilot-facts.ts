@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { templateCopilotUnicodeCodePointCount } from "./template-copilot-unicode.ts";
+export { templateCopilotUnicodeCodePointCount } from "./template-copilot-unicode.ts";
 import {
   templateCopilotLocaleSchema,
   type TemplateCopilotLocale,
@@ -218,6 +220,70 @@ const committedValueSchemas: Readonly<Record<TemplateCopilotFactId, z.ZodType>> 
   "governance.retention": z.object({ period: boundedLabel, rationale: boundedTextValue.optional() }).strict(),
 };
 
+const atomicDecisionAnswerSchema = z.string().trim().min(1).superRefine((value, context) => {
+  if (templateCopilotUnicodeCodePointCount(value) > 8_000) {
+    context.addIssue({ code: "custom", message: "Answer exceeds 8000 Unicode characters." });
+  }
+});
+const atomicDecisionReasonSchema = z.string().trim().min(1).superRefine((value, context) => {
+  if (templateCopilotUnicodeCodePointCount(value) > 500) {
+    context.addIssue({ code: "custom", message: "Reason exceeds 500 Unicode characters." });
+  }
+});
+const atomicDecisionDisplaySchema = z.string().trim().min(1).superRefine((value, context) => {
+  if (templateCopilotUnicodeCodePointCount(value) > 500) {
+    context.addIssue({ code: "custom", message: "Display exceeds 500 Unicode characters." });
+  }
+});
+const atomicDecisionOptionIdSchema = z.string().regex(/^[a-z][a-z0-9_-]{1,63}$/);
+/** Canonical persisted timestamp contract shared by the TypeScript ledger and
+ * the locked PostgreSQL mutation functions. Persistable years are 0001-9999,
+ * seconds and a timezone are mandatory, offsets are bounded, and PostgreSQL's
+ * microsecond precision is enforced instead of silently normalizing a more
+ * precise value. */
+export const templateCopilotV2AnsweredAtPattern =
+  /^(([0-9][0-9][2468][048]|[0-9][0-9][13579][26]|[0-9][0-9]0[48]|([02468][48]|[2468]0)00|[13579][26]00)-02-29|([0-9]{3}[1-9]|[0-9]{2}[1-9][0-9]|[0-9][1-9][0-9]{2}|[1-9][0-9]{3})-((0[13578]|1[02])-(0[1-9]|[12][0-9]|3[01])|(0[469]|11)-(0[1-9]|[12][0-9]|30)|(02)-(0[1-9]|1[0-9]|2[0-8])))T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]{1,6})?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$/;
+export const templateCopilotV2AnsweredAtSchema = z.string()
+  .datetime({ offset: true })
+  .regex(templateCopilotV2AnsweredAtPattern);
+const atomicDecisionCommonShape = {
+  display: atomicDecisionDisplaySchema,
+  provenance: z.array(provenanceSchema).min(1).max(12),
+  answeredAt: templateCopilotV2AnsweredAtSchema,
+} as const;
+const atomicDecisionSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("text"),
+    answer: atomicDecisionAnswerSchema,
+    ...atomicDecisionCommonShape,
+  }).strict(),
+  z.object({
+    kind: z.literal("choice"),
+    answer: atomicDecisionOptionIdSchema,
+    optionId: atomicDecisionOptionIdSchema,
+    ...atomicDecisionCommonShape,
+  }).strict(),
+  z.object({
+    kind: z.literal("unknown"),
+    answer: z.literal("unknown"),
+    ...atomicDecisionCommonShape,
+  }).strict(),
+  z.object({
+    kind: z.literal("not_applicable"),
+    answer: z.literal("not_applicable"),
+    reason: atomicDecisionReasonSchema,
+    ...atomicDecisionCommonShape,
+  }).strict(),
+]).superRefine((value, context) => {
+  if (value.kind === "choice" && value.answer !== value.optionId) {
+    context.addIssue({
+      code: "custom",
+      path: ["answer"],
+      message: "A choice answer must exactly match its option ID.",
+    });
+  }
+});
+
 const v2BaseSchema = z.object({
   schemaVersion: z.literal(2),
   locale: templateCopilotLocaleSchema.default("en"),
@@ -226,6 +292,7 @@ const v2BaseSchema = z.object({
   departmentId: z.string().uuid(),
   departmentName: z.string().trim().min(1).max(200),
   questionLibraryVersion: z.string().trim().min(1).max(64),
+  atomicDecisions: z.record(z.string().regex(/^decision\.[a-z][a-z0-9_.-]{2,95}$/), atomicDecisionSchema).superRefine((value, context) => { if (Object.keys(value).length > 400) context.addIssue({ code: "custom", message: "Too many atomic decisions." }); }).default({}),
   facts: z.record(z.enum(templateCopilotFactIds), templateCopilotFactEntrySchema),
   requirementDocumentExtracts: z.array(z.object({
     id: z.string().trim().min(1).max(120),
@@ -276,7 +343,7 @@ export function createTemplateCopilotV2Ledger({
 }, flag?: TemplateCopilotV2Flag): TemplateCopilotV2Ledger {
   requireTemplateCopilotV2(flag);
   return templateCopilotV2LedgerSchema.parse({
-    schemaVersion: 2, locale, businessUnitId, businessName, departmentId, departmentName, questionLibraryVersion,
+    schemaVersion: 2, locale, businessUnitId, businessName, departmentId, departmentName, questionLibraryVersion, atomicDecisions: {},
     facts: Object.fromEntries(templateCopilotFactIds.map((id) => [id, emptyFact(id, questionLibraryVersion)])),
     requirementDocumentExtracts: [],
   });
@@ -314,6 +381,49 @@ export function applyTemplateCopilotV2FactTransition({ ledger, factId, transitio
 
 export class TemplateCopilotFactTransitionError extends Error {
   constructor(message: string) { super(message); this.name = "TemplateCopilotFactTransitionError"; }
+}
+
+/** V2 answer limits are Unicode code points after trimming, matching
+ * PostgreSQL `length(text)`. Never use JavaScript UTF-16 `.length` here. */
+export function templateCopilotV2CanonicalAnswer(input: string) {
+  const text = z.string().parse(input).trim();
+  if (templateCopilotUnicodeCodePointCount(text) < 1 || templateCopilotUnicodeCodePointCount(text) > 8_000) throw new TemplateCopilotFactTransitionError("The answer must be between 1 and 8000 characters.");
+  return text;
+}
+
+/** Keeps the full canonical text for compilation/review while bounding the
+ * human-facing ledger summary without splitting a Unicode code point. */
+export function templateCopilotV2AtomicDisplayPreview(input: string) {
+  const text = templateCopilotV2CanonicalAnswer(input);
+  const codePoints = Array.from(text);
+  if (codePoints.length <= 500) return text;
+  return `${codePoints.slice(0, 499).join("")}…`;
+}
+
+/** Atomic interview answers are retained separately from broad fact candidates.
+ * The controller/reducer can assemble a reviewable candidate later without
+ * treating each incremental answer as a competing candidate overwrite. */
+export function applyTemplateCopilotV2AtomicDecision({ ledger, decisionId, answer, provenance, answeredAt, flag }: {
+  ledger: TemplateCopilotV2Ledger; decisionId: string; answer: { kind: "text"; text: string } | { kind: "choice"; optionId: string; display: string } | string; provenance: TemplateCopilotFactEntry["provenance"]; answeredAt: string; flag?: TemplateCopilotV2Flag;
+}): TemplateCopilotV2Ledger {
+  requireTemplateCopilotV2(flag);
+  // Stored-ledger parsing remains outside this wrapper: a corrupt persisted
+  // row is a dependency failure. Everything constructed for this command is
+  // user-correctable and must not be retried as a 503.
+  const parsed = templateCopilotV2LedgerSchema.parse(ledger);
+  try {
+    const id = z.string().regex(/^decision\.[a-z][a-z0-9_.-]{2,95}$/).parse(decisionId);
+    if (parsed.atomicDecisions[id]) throw new TemplateCopilotFactTransitionError("This atomic decision was already answered.");
+    const normalized = typeof answer === "string"
+      ? { kind: "text" as const, answer: templateCopilotV2CanonicalAnswer(answer), display: templateCopilotV2AtomicDisplayPreview(answer) }
+      : answer.kind === "text"
+      ? { kind: "text" as const, answer: templateCopilotV2CanonicalAnswer(answer.text), display: templateCopilotV2AtomicDisplayPreview(answer.text) }
+      : { kind: "choice" as const, optionId: z.string().regex(/^[a-z][a-z0-9_-]{1,63}$/).parse(answer.optionId), answer: z.string().regex(/^[a-z][a-z0-9_-]{1,63}$/).parse(answer.optionId), display: z.string().trim().min(1).max(500).parse(answer.display) };
+    return templateCopilotV2LedgerSchema.parse({ ...parsed, atomicDecisions: { ...parsed.atomicDecisions, [id]: { ...normalized, provenance, answeredAt: templateCopilotV2AnsweredAtSchema.parse(answeredAt) } } });
+  } catch (error) {
+    if (error instanceof z.ZodError) throw new TemplateCopilotFactTransitionError("The answer is invalid. Please correct it and try again.");
+    throw error;
+  }
 }
 
 export function classifyTemplateCopilotV2OperationError(error: unknown, unavailableMessage: string) {

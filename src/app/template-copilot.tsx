@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { Bot, FileText, FileUp, Save, Send, Sparkles } from "lucide-react";
 import type { BusinessUnit, WorkflowTemplate } from "@/lib/types";
 import { workflowTemplateFromDefinition } from "@/lib/template-authoring-definition";
@@ -14,24 +14,75 @@ import {
   templateCopilotStartSchema,
   type TemplateCopilotLedger,
 } from "@/lib/template-copilot-ledger";
+import type { TemplateCopilotV2Ledger } from "@/lib/template-copilot-facts";
+import { templateCopilotUnicodeCodePointCount } from "@/lib/template-copilot-unicode";
+import type { TemplateCopilotV2InterviewState, TemplateCopilotV2SpecialReviewItem } from "@/lib/template-copilot-question-library";
+import { applyTemplateCopilotV2Reconciliation, canReplaceTemplateCopilotV2Transcript, canRestoreTemplateCopilotV2Draft, createTemplateCopilotClientChatMessage, createTemplateCopilotV2LifecycleFence, discoverTemplateCopilotV2Recovery, executeTemplateCopilotStart, mergeTemplateCopilotClientChatMessages, nextTemplateCopilotV2PendingCommand, nextTemplateCopilotV2PendingSpecialCommand, parseTemplateCopilotClientChatMessages, parseTemplateCopilotV2PendingSpecialCommand, releaseTemplateCopilotV2ClientAfterRollback, resolveTemplateCopilotV2ExplicitConflict, resolveTemplateCopilotV2Failure, resolveTemplateCopilotV2SpecialReconciliation, selectNewerTemplateCopilotV2Snapshot, selectTemplateCopilotStartIntent, templateCopilotV2FailureNeedsReconcile, templateCopilotV2InterviewMutationBlocked, type TemplateCopilotClientChatMessage, type TemplateCopilotStartSchemaVersion, type TemplateCopilotV2LifecycleLease, type TemplateCopilotV2PendingCommand, type TemplateCopilotV2PendingSpecialCommand, type TemplateCopilotV2PendingStart, type TemplateCopilotV2SpecialCommand } from "@/lib/template-copilot-v2-client-command";
+import { getTemplateCopilotAnswerLimit, getTemplateCopilotComposerRenderContract, getTemplateCopilotV2InputMode } from "@/lib/template-copilot-v2-ui-contract";
+import { templateCopilotApiErrorCode, templateCopilotApiErrorFromResponse, templateCopilotApiErrorStatus } from "@/lib/template-copilot-api-error";
 import {
   templateCopilotLocales,
   type TemplateCopilotLocale,
 } from "@/lib/template-copilot-plan";
 import { TemplateCopilotHistoryPanel } from "./template-copilot-history-panel";
 
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-};
+type ChatMessage = TemplateCopilotClientChatMessage;
 
-type CopilotState = {
+const pendingTemplateCopilotV2StartStorageKey = "approval-template-copilot-v2-pending-start";
+function loadPendingTemplateCopilotV2Start(): TemplateCopilotV2PendingStart | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(pendingTemplateCopilotV2StartStorageKey) || "null") as Partial<TemplateCopilotV2PendingStart> | null;
+    if (!value) return null;
+    const parsed = templateCopilotStartSchema.safeParse({
+      businessUnitId: value.businessUnitId,
+      departmentName: value.departmentName,
+      locale: value.locale,
+      clientMessageId: value.idempotencyKey,
+      ...(value.initialRequirement !== undefined ? { initialRequirement: value.initialRequirement } : {}),
+    });
+    if (!parsed.success || !parsed.data.locale) return null;
+    return Object.freeze({
+      idempotencyKey: parsed.data.clientMessageId,
+      businessUnitId: parsed.data.businessUnitId,
+      departmentName: parsed.data.departmentName,
+      locale: parsed.data.locale,
+      ...(parsed.data.initialRequirement ? { initialRequirement: parsed.data.initialRequirement } : {}),
+    });
+  } catch { return null; }
+}
+function persistPendingTemplateCopilotV2Start(value: TemplateCopilotV2PendingStart | null) {
+  if (typeof window === "undefined") return;
+  try { if (value) window.sessionStorage.setItem(pendingTemplateCopilotV2StartStorageKey, JSON.stringify(value)); else window.sessionStorage.removeItem(pendingTemplateCopilotV2StartStorageKey); } catch { /* storage is a resilience aid, never authority */ }
+}
+
+const pendingTemplateCopilotV2SpecialStorageKey = "approval-template-copilot-v2-pending-special";
+function loadPendingTemplateCopilotV2Special(): TemplateCopilotV2PendingSpecialCommand | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return parseTemplateCopilotV2PendingSpecialCommand(JSON.parse(window.sessionStorage.getItem(pendingTemplateCopilotV2SpecialStorageKey) || "null"));
+  } catch { return null; }
+}
+function persistPendingTemplateCopilotV2Special(value: TemplateCopilotV2PendingSpecialCommand | null) {
+  if (typeof window === "undefined") return;
+  try { if (value) window.sessionStorage.setItem(pendingTemplateCopilotV2SpecialStorageKey, JSON.stringify(value)); else window.sessionStorage.removeItem(pendingTemplateCopilotV2SpecialStorageKey); } catch { /* best-effort recovery only */ }
+}
+
+type V1CopilotState = {
   sessionId: string;
   revision: number;
   status: "interviewing" | "ready" | "draft_created";
   ledger: TemplateCopilotLedger;
 };
+type V2CopilotState = Omit<V1CopilotState, "ledger"> & {
+  ledger: TemplateCopilotV2Ledger;
+  interview: TemplateCopilotV2InterviewState;
+  specialReview: readonly TemplateCopilotV2SpecialReviewItem[];
+};
+type CopilotState = V1CopilotState | V2CopilotState;
+function isV2State(state: CopilotState): state is V2CopilotState {
+  return state.ledger.schemaVersion === 2;
+}
 
 type DraftReviewState = {
   familyId: string;
@@ -39,6 +90,8 @@ type DraftReviewState = {
   revision: number;
   dossier: TemplateRequirementsDossierV1;
   definition: TemplateDefinitionV1;
+  sourceSessionId: string;
+  lifecycle: TemplateCopilotV2LifecycleLease | null;
 };
 
 export function TemplateCopilot({
@@ -61,30 +114,142 @@ export function TemplateCopilot({
   const [selectedBusinessUnitId, setBusinessUnitId] = useState("");
   const [selectedLocale, setSelectedLocale] =
     useState<TemplateCopilotLocale>("en");
+  const [pendingV2Start, setPendingV2Start] = useState<TemplateCopilotV2PendingStart | null>(null);
+  const startLocale = pendingV2Start?.locale || selectedLocale;
+  const startBusinessUnitId = pendingV2Start?.businessUnitId || selectedBusinessUnitId;
   const selectedBusiness =
     availableBusinesses.find(
-      (business) => business.id === selectedBusinessUnitId,
+      (business) => business.id === startBusinessUnitId,
     ) || availableBusinesses[0];
-  const businessUnitId = selectedBusiness?.id || "";
+  const businessUnitId = pendingV2Start?.businessUnitId || selectedBusiness?.id || "";
   const [selectedDepartmentName, setDepartmentName] = useState("");
   const departmentName =
-    selectedBusiness?.departments.includes(selectedDepartmentName)
+    pendingV2Start?.departmentName ||
+    (selectedBusiness?.departments.includes(selectedDepartmentName)
       ? selectedDepartmentName
-      : selectedBusiness?.departments[0] || "";
+      : selectedBusiness?.departments[0] || "");
   const [state, setState] = useState<CopilotState | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [notApplicableReason, setNotApplicableReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [pendingV2Command, setPendingV2Command] = useState<TemplateCopilotV2PendingCommand | null>(null);
+  const [pendingV2SpecialCommand, setPendingV2SpecialCommand] = useState<TemplateCopilotV2PendingSpecialCommand | null>(null);
   const [draftReview, setDraftReview] = useState<DraftReviewState | null>(null);
   const [reviewDirty, setReviewDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const locale = state?.ledger.locale || selectedLocale;
+  const resolvedV2CommandKeys = useRef(new Set<string>());
+  const activeV2CommandRef = useRef<TemplateCopilotV2PendingCommand | null>(null);
+  const draftGenerationRef = useRef(0);
+  const v2CommandDraftGenerationRef = useRef(new Map<string, number>());
+  const v2SubmitInFlightRef = useRef(false);
+  const v2SpecialInFlightRef = useRef(false);
+  const v2StartInFlightRef = useRef(false);
+  // Do not inspect v2 start storage at mount.  A server-authoritative,
+  // read-only capability probe must select v2 before this ref/storage is read.
+  const pendingV2StartRef = useRef<TemplateCopilotV2PendingStart | null>(null);
+  const pendingV2SpecialRef = useRef<TemplateCopilotV2PendingSpecialCommand | null>(null);
+  const latestV2StateRef = useRef<V2CopilotState | null>(null);
+  const v2LifecycleEpochRef = useRef<ReturnType<typeof createTemplateCopilotV2LifecycleFence> | null>(null);
+  if (v2LifecycleEpochRef.current === null) {
+    v2LifecycleEpochRef.current = createTemplateCopilotV2LifecycleFence();
+  }
+  // This marker is set only after this client has actually loaded or created
+  // v2 state. Schema 1 can therefore release a rolled-back v2 interview
+  // without reading or mutating a clean legacy page.
+  const v2ClientResidueRef = useRef(false);
+
+  function captureV2LifecycleLease() {
+    return v2LifecycleEpochRef.current!.capture();
+  }
+
+  function commitV2ReactState<Value>(
+    lifecycle: TemplateCopilotV2LifecycleLease,
+    setter: Dispatch<SetStateAction<Value>>,
+    update: (current: Value) => Value,
+  ) {
+    return lifecycle.commit(() => {
+      // React may evaluate a functional updater after rollback. Recheck the
+      // same lease inside that deferred callback instead of relying only on
+      // the guard that scheduled it.
+      setter((current) => lifecycle.isCurrent() ? update(current) : current);
+    });
+  }
+
+  function installPendingV2Special(
+    lifecycle: TemplateCopilotV2LifecycleLease,
+    next: TemplateCopilotV2PendingSpecialCommand | null,
+  ) {
+    return lifecycle.commit(() => {
+      if (next) v2ClientResidueRef.current = true;
+      pendingV2SpecialRef.current = next;
+      setPendingV2SpecialCommand((current) => lifecycle.isCurrent() ? next : current);
+      persistPendingTemplateCopilotV2Special(next);
+    });
+  }
+
+  function installPendingV2Start(
+    lifecycle: TemplateCopilotV2LifecycleLease,
+    next: TemplateCopilotV2PendingStart | null,
+  ) {
+    return lifecycle.commit(() => {
+      if (next) v2ClientResidueRef.current = true;
+      pendingV2StartRef.current = next;
+      setPendingV2Start((current) => lifecycle.isCurrent() ? next : current);
+      persistPendingTemplateCopilotV2Start(next);
+    });
+  }
+
+  const releaseV2AfterRollbackFromEffect = useEffectEvent(releaseV2AfterRollback);
+  useEffect(() => {
+    let active = true;
+    const mountLifecycle = captureV2LifecycleLease();
+    // Restore v2-only commands only after the authenticated server capability
+    // probe selects v2. A v1 page never inspects either v2 storage key.
+    void discoverTemplateCopilotV2Recovery({
+      lifecycle: mountLifecycle,
+      discoverSchemaVersion: discoverTemplateCopilotStartSchemaVersion,
+      releaseLoadedV2AfterRollback: releaseV2AfterRollbackFromEffect,
+      loadPendingV2Start: () => pendingV2StartRef.current || loadPendingTemplateCopilotV2Start(),
+      loadPendingV2Special: () => pendingV2SpecialRef.current || loadPendingTemplateCopilotV2Special(),
+    })
+      .then((recovery) => {
+        if (
+          !active
+          || !mountLifecycle.isCurrent()
+          || !recovery
+          || recovery.schemaVersion !== 2
+          || v2StartInFlightRef.current
+        ) return;
+        if (recovery.pendingSpecial && !pendingV2SpecialRef.current) {
+          installPendingV2Special(mountLifecycle, recovery.pendingSpecial);
+        } else if (recovery.pendingStart && !pendingV2StartRef.current) {
+          installPendingV2Start(mountLifecycle, recovery.pendingStart);
+        }
+      })
+      .catch(() => {
+        // Capability discovery is retried by Start; no mutation has occurred.
+      });
+    return () => {
+      active = false;
+      // Teardown invalidates whichever operation currently owns this component,
+      // not only the mount probe. Durable pending storage is deliberately kept
+      // for authoritative recovery by a later mount.
+      v2LifecycleEpochRef.current?.invalidateCurrent();
+    };
+  }, []);
+  const locale = state?.ledger.locale || startLocale;
   const copy = templateCopilotCopy[locale];
+  const v2InputMode = state && isV2State(state) ? getTemplateCopilotV2InputMode(state.interview) : null;
+  const composer = state ? getTemplateCopilotComposerRenderContract({ schemaVersion: isV2State(state) ? 2 : 1, status: state.status, ...(isV2State(state) ? { interview: state.interview } : {}) }) : null;
+  const answerLimit = getTemplateCopilotAnswerLimit(state && isV2State(state) ? 2 : 1);
+  const v2ReplayPending = Boolean(state && isV2State(state) && templateCopilotV2InterviewMutationBlocked({ pendingAnswer: pendingV2Command, pendingSpecial: pendingV2SpecialCommand }));
+  const v2SpecialReview = state && isV2State(state) ? state.specialReview : [];
 
   const completed = useMemo(
     () =>
-      state
+      state && !isV2State(state)
         ? templateCopilotSectionIds.filter(
             (id) => state.ledger.sections[id].status !== "missing",
           ).length
@@ -92,45 +257,533 @@ export function TemplateCopilot({
     [state],
   );
 
+  function installV2State(
+    lifecycle: TemplateCopilotV2LifecycleLease,
+    next: V2CopilotState,
+  ) {
+    if (!lifecycle.isCurrent()) return null;
+    const selected = selectNewerTemplateCopilotV2Snapshot(latestV2StateRef.current, next);
+    const installed = lifecycle.commit(() => {
+      v2ClientResidueRef.current = true;
+      latestV2StateRef.current = selected;
+      setState((current) => {
+        if (!lifecycle.isCurrent()) return current;
+        return current && isV2State(current)
+          ? selectNewerTemplateCopilotV2Snapshot(current, selected)
+          : selected;
+      });
+    });
+    return installed ? selected : null;
+  }
+
   async function start() {
-    if (!businessUnitId || !departmentName) return;
-    const command = templateCopilotStartSchema.safeParse({
+    if (!businessUnitId || !departmentName || v2StartInFlightRef.current) return;
+    const validIntent = templateCopilotStartSchema.safeParse({
       businessUnitId,
       departmentName,
-      locale: selectedLocale,
-      clientMessageId: messageId("start"),
+      locale: startLocale,
+      // Validate the directory intent before creating either a v1 request key
+      // or a persisted v2 command.
+      clientMessageId: "start:validation",
     });
-    if (!command.success) {
+    if (!validIntent.success) {
       setError(
         copy.directoryLoadingError,
       );
       return;
     }
-    setBusy(true);
-    setError("");
+    // A clicked Start supersedes the mount-time capability probe. Give this
+    // user action a fresh epoch before its first mutation so a late mount HEAD
+    // response cannot roll back or restore over the interview being started.
+    v2LifecycleEpochRef.current?.invalidateCurrent();
+    const capabilityLifecycle = captureV2LifecycleLease();
+    let operationLifecycle = capabilityLifecycle;
+    if (!operationLifecycle.commit(() => {
+      v2StartInFlightRef.current = true;
+      setBusy((current) => operationLifecycle.isCurrent() ? true : current);
+      setError((current) => operationLifecycle.isCurrent() ? "" : current);
+    })) return;
+    let discoveredSchemaVersion: TemplateCopilotStartSchemaVersion | null = null;
     try {
-      const response = await api("/api/template-authoring/copilot/sessions", {
-        method: "POST",
-        body: JSON.stringify(command.data),
+      const recovery = await discoverTemplateCopilotV2Recovery({
+        lifecycle: capabilityLifecycle,
+        discoverSchemaVersion: discoverTemplateCopilotStartSchemaVersion,
+        releaseLoadedV2AfterRollback: releaseV2AfterRollback,
+        loadPendingV2Start: () => pendingV2StartRef.current || loadPendingTemplateCopilotV2Start(),
+        loadPendingV2Special: () => pendingV2SpecialRef.current || loadPendingTemplateCopilotV2Special(),
       });
-      const next = {
+      if (!recovery) return;
+      discoveredSchemaVersion = recovery.schemaVersion;
+      if (recovery.schemaVersion === 1) {
+        // Complete rollback cleanup releases stale locks, including this shared
+        // ref. Adopt the post-cleanup lifecycle and re-acquire only this
+        // current legacy Start operation before POST.
+        operationLifecycle = captureV2LifecycleLease();
+        if (!operationLifecycle.commit(() => {
+          v2StartInFlightRef.current = true;
+          setBusy((current) => operationLifecycle.isCurrent() ? true : current);
+        })) return;
+      } else if (!operationLifecycle.isCurrent()) {
+        return;
+      }
+      if (recovery.pendingSpecial) {
+        installPendingV2Special(operationLifecycle, recovery.pendingSpecial);
+        commitV2ReactState(operationLifecycle, setError, () => `${copy.temporaryAnswerError} ${copy.retrySameAnswer}`);
+        return;
+      }
+      if (recovery.pendingStart) installPendingV2Start(operationLifecycle, recovery.pendingStart);
+      const startIntent = selectTemplateCopilotStartIntent({
+        businessUnitId,
+        departmentName,
+        locale: startLocale,
+      }, recovery.pendingStart);
+      const started = await executeTemplateCopilotStart({
+        lifecycle: operationLifecycle,
+        schemaVersion: discoveredSchemaVersion,
+        intent: startIntent,
+        // Capability discovery has already restored the v2 command. The v1
+        // branch never invokes this callback.
+        loadPendingV2: () => pendingV2StartRef.current,
+        installPendingV2: (pending) => {
+          installPendingV2Start(operationLifecycle, pending);
+        },
+        createKey: () => messageId("start"),
+        request: async (request, expectedSchemaVersion) => {
+          const response = await startApi("/api/template-authoring/copilot/sessions", {
+            method: "POST",
+            headers: {
+              "X-Template-Copilot-Expected-Schema-Version": String(expectedSchemaVersion),
+            },
+            body: JSON.stringify(request),
+          });
+          if (!operationLifecycle.isCurrent()) return response;
+          const responseLedger = response.ledger as { schemaVersion?: unknown } | undefined;
+          const responseInterview = response.interview as TemplateCopilotV2InterviewState | undefined;
+          if (
+            expectedSchemaVersion === 2
+            && (
+              responseLedger?.schemaVersion !== 2
+              || !responseInterview
+              || responseInterview.state !== "question"
+              || !responseInterview.nextQuestion?.prompt
+            )
+          ) {
+            throw new Error(copy.startInterviewInvalid);
+          }
+          if (expectedSchemaVersion === 1 && responseLedger?.schemaVersion === 2) {
+            const versionChanged = new Error(copy.requestError) as Error & { status?: number };
+            versionChanged.status = 409;
+            throw versionChanged;
+          }
+          return response;
+        },
+      });
+      if (!started || !operationLifecycle.isCurrent()) return;
+      const response = started.response;
+      const responseLedger = response.ledger as { schemaVersion?: unknown } | undefined;
+      const responseInterview = response.interview as TemplateCopilotV2InterviewState | undefined;
+      const next = responseLedger?.schemaVersion === 2 ? {
         sessionId: String(response.sessionId),
         revision: Number(response.revision),
-        status: String(response.status) as CopilotState["status"],
-        ledger: response.ledger as TemplateCopilotLedger,
-      };
-      setState(next);
-      setMessages([
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: String(response.assistantMessage),
-        },
-      ]);
+        status: String(response.status) as V2CopilotState["status"],
+        ledger: response.ledger as TemplateCopilotV2Ledger,
+        interview: responseInterview as TemplateCopilotV2InterviewState,
+        specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [],
+      } satisfies V2CopilotState : {
+        sessionId: String(response.sessionId), revision: Number(response.revision),
+        status: String(response.status) as V1CopilotState["status"], ledger: response.ledger as TemplateCopilotLedger,
+      } satisfies V1CopilotState;
+      if (isV2State(next)) {
+        if (!installV2State(operationLifecycle, next)) return;
+      } else {
+        commitV2ReactState<CopilotState | null>(operationLifecycle, setState, () => next);
+      }
+      commitV2ReactState(operationLifecycle, setMessages, () => [
+          createTemplateCopilotClientChatMessage({
+            // V2 persists its initial prompt with the start command key.  Keeping
+            // the same client ID prevents an ambiguous start/reload from showing
+            // both an optimistic prompt and the durable prompt.
+            clientMessageId: started.clientMessageId,
+            role: "assistant",
+            content: String(response.assistantMessage || (isV2State(next) ? next.interview.nextQuestion?.prompt : "") || ""),
+          }),
+        ]);
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (!operationLifecycle.isCurrent()) return;
+      commitV2ReactState(operationLifecycle, setError, () =>
+        caught instanceof Error && caught.message === copy.startInterviewInvalid
+          ? copy.startInterviewInvalid
+          : discoveredSchemaVersion === 1
+            ? errorMessage(caught)
+            : copy.requestError,
+      );
     } finally {
-      setBusy(false);
+      operationLifecycle.commit(() => {
+        v2StartInFlightRef.current = false;
+        setBusy((current) => operationLifecycle.isCurrent() ? false : current);
+      });
+    }
+  }
+
+  async function reconcileV2(
+    lifecycle: TemplateCopilotV2LifecycleLease,
+    sessionId: string,
+    command: TemplateCopilotV2PendingCommand,
+    retainReplay = true,
+  ) {
+    if (!lifecycle.isCurrent()) return null;
+    const response = await api(`/api/template-authoring/copilot/sessions/${sessionId}?messageDirection=tail&messageLimit=100`, { method: "GET" });
+    if (!lifecycle.isCurrent()) return null;
+    const saved = response.session as { revision?: unknown; status?: unknown; ledger?: unknown; interview?: unknown; messages?: unknown };
+    if (!saved || (saved.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !saved.interview) throw new Error(copy.reloadInterviewError);
+    const serverState = {
+      sessionId,
+      revision: Number(saved.revision),
+      status: String(saved.status) as V2CopilotState["status"],
+      ledger: saved.ledger as TemplateCopilotV2Ledger,
+      interview: saved.interview as TemplateCopilotV2InterviewState,
+      specialReview: Array.isArray((saved as { specialReview?: unknown }).specialReview) ? (saved as { specialReview: TemplateCopilotV2SpecialReviewItem[] }).specialReview : [],
+    } satisfies V2CopilotState;
+    const authoritative = installV2State(lifecycle, serverState);
+    if (!authoritative || !lifecycle.isCurrent()) return null;
+    const authoritativeMessages = chatMessagesFromStored(saved.messages);
+    const ledger = authoritative.ledger;
+    const savedInterview = authoritative.interview;
+    const reconciliation = applyTemplateCopilotV2Reconciliation({ command, currentPending: pendingV2Command, resolvedCommandKeys: resolvedV2CommandKeys.current, ledger });
+    if (reconciliation.markResolved) {
+      lifecycle.commit(() => {
+        resolvedV2CommandKeys.current.add(command.idempotencyKey);
+        if (activeV2CommandRef.current?.idempotencyKey === command.idempotencyKey) activeV2CommandRef.current = null;
+        v2CommandDraftGenerationRef.current.delete(command.idempotencyKey);
+        setPendingV2Command((current) => lifecycle.isCurrent() && current?.idempotencyKey === command.idempotencyKey ? null : current);
+      });
+    } else if (reconciliation.outcome === "replay_required" && retainReplay) {
+      commitV2ReactState(lifecycle, setPendingV2Command, (current) => current === null || current.idempotencyKey === command.idempotencyKey ? command : current);
+    }
+    if (authoritativeMessages) {
+      if (canReplaceTemplateCopilotV2Transcript({ installedRevision: authoritative.revision, snapshotRevision: serverState.revision, outcome: reconciliation.outcome })) {
+        commitV2ReactState(lifecycle, setMessages, () => authoritativeMessages);
+      } else {
+        commitV2ReactState(lifecycle, setMessages, (current) => mergeChatMessages(current, authoritativeMessages));
+      }
+    }
+    if (reconciliation.outcome === "superseded" || reconciliation.outcome === "conflict") {
+      // This command is conclusively not the durable answer.  Do not leave a
+      // retryable-looking optimistic bubble beside the newer server transcript.
+      commitV2ReactState(lifecycle, setMessages, (current) => current.filter((message) => message.id !== command.idempotencyKey && message.id !== `${command.idempotencyKey}-assistant`));
+      commitV2ReactState(lifecycle, setError, () => reconciliation.outcome === "conflict" ? copy.concurrentChangeConflict : copy.concurrentChangeSuperseded);
+    }
+    return { outcome: reconciliation.outcome, questionId: savedInterview.nextQuestion?.questionId, primaryDecisionId: savedInterview.nextQuestion?.primaryDecisionId };
+  }
+
+  async function submitV2(
+    answer: TemplateCopilotV2PendingCommand["answer"],
+    onAccepted?: (command: TemplateCopilotV2PendingCommand, lifecycle: TemplateCopilotV2LifecycleLease) => void,
+  ) {
+    if (!state || !isV2State(state) || busy || pendingV2SpecialRef.current || v2SubmitInFlightRef.current) return false;
+    const lifecycle = captureV2LifecycleLease();
+    let command: TemplateCopilotV2PendingCommand;
+    try {
+      command = nextTemplateCopilotV2PendingCommand({ pending: pendingV2Command, questionId: state.interview.nextQuestion?.questionId || "", primaryDecisionId: state.interview.nextQuestion?.primaryDecisionId || "", revision: state.revision, answer, createKey: () => messageId("turn") });
+    } catch {
+      commitV2ReactState(lifecycle, setError, () => copy.retryPreviousRequired);
+      return false;
+    }
+    const isExactRetry = command === pendingV2Command;
+    if (!lifecycle.commit(() => {
+      v2SubmitInFlightRef.current = true;
+      if (!isExactRetry) {
+        activeV2CommandRef.current = command;
+        v2CommandDraftGenerationRef.current.set(command.idempotencyKey, draftGenerationRef.current);
+        setPendingV2Command((current) => lifecycle.isCurrent() ? command : current);
+      }
+      onAccepted?.(command, lifecycle);
+      setBusy((current) => lifecycle.isCurrent() ? true : current);
+      setError((current) => lifecycle.isCurrent() ? "" : current);
+    })) return false;
+    try {
+      const response = await api(`/api/template-authoring/copilot/sessions/${state.sessionId}/answers`, { method: "POST", body: JSON.stringify({ expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, answer: command.answer }) });
+      if (!lifecycle.isCurrent()) return false;
+      const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
+      if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) throw new Error(copy.invalidInterviewUpdate);
+      if (!installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [] })) return false;
+      lifecycle.commit(() => {
+        resolvedV2CommandKeys.current.add(command.idempotencyKey);
+        if (activeV2CommandRef.current?.idempotencyKey === command.idempotencyKey) activeV2CommandRef.current = null;
+        v2CommandDraftGenerationRef.current.delete(command.idempotencyKey);
+        setPendingV2Command((current) => lifecycle.isCurrent() && current?.idempotencyKey === command.idempotencyKey ? null : current);
+      });
+      const canonicalAssistantMessage = String(response.assistantMessage || interview.nextQuestion?.prompt || (interview.state === "complete" ? copy.interviewComplete : copy.interviewBlocked));
+      commitV2ReactState(lifecycle, setMessages, (current) => current.some((message) => message.id === `${command.idempotencyKey}-assistant`)
+        ? current
+        : [...current, createTemplateCopilotClientChatMessage({ clientMessageId: command.idempotencyKey, role: "assistant", content: canonicalAssistantMessage })]);
+    } catch (caught) {
+      if (!lifecycle.isCurrent()) return false;
+      const status = templateCopilotApiErrorStatus(caught);
+      if (status === 404 && templateCopilotApiErrorCode(caught) === "v2_unavailable") {
+        const rollback = releaseV2AfterRollback();
+        if (rollback.released) {
+          commitV2ReactState(rollback.lifecycle, setError, () => copy.v2RollbackNotice);
+        }
+        return false;
+      }
+      const failure = resolveTemplateCopilotV2Failure({ status, command, currentPending: pendingV2Command });
+      if (!failure.shouldReconcile) {
+        // A definite non-409 client error is known not to have committed.
+        // Never strand an invalid immutable payload; restore it for editing.
+        const ownsDraft = canRestoreTemplateCopilotV2Draft({ command, activeCommand: activeV2CommandRef.current, commandDraftGeneration: v2CommandDraftGenerationRef.current.get(command.idempotencyKey), currentDraftGeneration: draftGenerationRef.current });
+        lifecycle.commit(() => {
+          resolvedV2CommandKeys.current.add(command.idempotencyKey);
+          v2CommandDraftGenerationRef.current.delete(command.idempotencyKey);
+          setPendingV2Command((current) => lifecycle.isCurrent() && current?.idempotencyKey === command.idempotencyKey ? null : current);
+          if (failure.restoreText !== null && ownsDraft) {
+            activeV2CommandRef.current = null;
+            setDraft((current) => lifecycle.isCurrent() ? failure.restoreText! : current);
+          }
+          setMessages((current) => lifecycle.isCurrent()
+            ? current.filter((message) => message.id !== command.idempotencyKey && message.id !== `${command.idempotencyKey}-assistant`)
+            : current);
+          setError((current) => lifecycle.isCurrent() ? copy.validationAnswerError : current);
+        });
+        return false;
+      }
+      // The server may have committed just before a network/ambiguous response
+      // was lost. Keep this exact command; never apply it to a later question.
+      let recovered: { outcome: "committed" | "replay_required" | "already_committed" | "superseded" | "conflict"; questionId?: string; primaryDecisionId?: string } | null = null;
+      if (templateCopilotV2FailureNeedsReconcile(status)) {
+        try {
+          recovered = await reconcileV2(lifecycle, state.sessionId, command, status !== 409);
+        } catch {
+          if (!lifecycle.isCurrent()) return false;
+          // The exact immutable command remains retryable.
+        }
+      }
+      if (!lifecycle.isCurrent()) return false;
+      if (status === 409 && recovered?.outcome === "replay_required") {
+        const conflict = resolveTemplateCopilotV2ExplicitConflict({ command, currentPending: pendingV2Command, currentQuestionId: recovered.questionId, currentPrimaryDecisionId: recovered.primaryDecisionId });
+        const ownsDraft = canRestoreTemplateCopilotV2Draft({ command, activeCommand: activeV2CommandRef.current, commandDraftGeneration: v2CommandDraftGenerationRef.current.get(command.idempotencyKey), currentDraftGeneration: draftGenerationRef.current });
+        lifecycle.commit(() => {
+          resolvedV2CommandKeys.current.add(command.idempotencyKey);
+          if (activeV2CommandRef.current?.idempotencyKey === command.idempotencyKey) activeV2CommandRef.current = null;
+          v2CommandDraftGenerationRef.current.delete(command.idempotencyKey);
+          setPendingV2Command((current) => lifecycle.isCurrent() && current?.idempotencyKey === command.idempotencyKey ? null : current);
+          setMessages((current) => lifecycle.isCurrent()
+            ? current.filter((message) => message.id !== command.idempotencyKey && message.id !== `${command.idempotencyKey}-assistant`)
+            : current);
+          if (conflict.restoreText !== null && ownsDraft) {
+            setDraft((current) => lifecycle.isCurrent() ? conflict.restoreText! : current);
+          }
+          setError((current) => lifecycle.isCurrent() ? (conflict.canRebase ? copy.staleAnswerRebased : copy.staleAnswerNeedsReview) : current);
+        });
+        return false;
+      }
+      if (recovered?.outcome !== "committed" && recovered?.outcome !== "already_committed" && recovered?.outcome !== "superseded" && recovered?.outcome !== "conflict") {
+        commitV2ReactState(lifecycle, setError, () => `${copy.temporaryAnswerError} ${copy.retrySameAnswer}`);
+      }
+    } finally {
+      lifecycle.commit(() => {
+        v2SubmitInFlightRef.current = false;
+        setBusy((current) => lifecycle.isCurrent() ? false : current);
+      });
+    }
+    return lifecycle.isCurrent();
+  }
+
+  function releaseV2AfterRollback() {
+    // The same complete release is used by mount/Start capability rollback and
+    // explicit v2 endpoint rollback. Its loaded marker makes clean v1 a no-op.
+    let cleanupLifecycle = captureV2LifecycleLease();
+    const released = releaseTemplateCopilotV2ClientAfterRollback({
+      hasLoadedV2: () => v2ClientResidueRef.current,
+      advanceLifecycleEpoch: () => {
+        // releaseTemplateCopilotV2ClientAfterRollback guarantees that this is
+        // the first loaded-v2 cleanup action.
+        v2LifecycleEpochRef.current!.invalidateCurrent();
+        cleanupLifecycle = captureV2LifecycleLease();
+      },
+      markReleased: () => {
+        cleanupLifecycle.commit(() => {
+          v2ClientResidueRef.current = false;
+        });
+      },
+      clearPendingStart: () => installPendingV2Start(cleanupLifecycle, null),
+      clearPendingSpecial: () => installPendingV2Special(cleanupLifecycle, null),
+      clearPendingAnswer: () => {
+        cleanupLifecycle.commit(() => {
+          activeV2CommandRef.current = null;
+          setPendingV2Command((current) => cleanupLifecycle.isCurrent() ? null : current);
+        });
+      },
+      clearCommandTracking: () => {
+        cleanupLifecycle.commit(() => {
+          draftGenerationRef.current = 0;
+          v2CommandDraftGenerationRef.current.clear();
+          resolvedV2CommandKeys.current.clear();
+        });
+      },
+      clearInterviewAndMessages: () => {
+        cleanupLifecycle.commit(() => {
+          latestV2StateRef.current = null;
+          setState((current) => cleanupLifecycle.isCurrent() && current && isV2State(current) ? null : current);
+          setMessages((current) => cleanupLifecycle.isCurrent() ? [] : current);
+          setDraft((current) => cleanupLifecycle.isCurrent() ? "" : current);
+          setNotApplicableReason((current) => cleanupLifecycle.isCurrent() ? "" : current);
+          setDraftReview((current) => cleanupLifecycle.isCurrent() ? null : current);
+          setReviewDirty((current) => cleanupLifecycle.isCurrent() ? false : current);
+          setError((current) => cleanupLifecycle.isCurrent() ? "" : current);
+          if (fileRef.current) fileRef.current.value = "";
+        });
+      },
+      clearLocks: () => {
+        cleanupLifecycle.commit(() => {
+          v2SubmitInFlightRef.current = false;
+          v2SpecialInFlightRef.current = false;
+          v2StartInFlightRef.current = false;
+          setBusy((current) => cleanupLifecycle.isCurrent() ? false : current);
+        });
+      },
+    });
+    return { released, lifecycle: cleanupLifecycle } as const;
+  }
+
+  async function reconcileV2Special(
+    lifecycle: TemplateCopilotV2LifecycleLease,
+    sessionId: string,
+    command: TemplateCopilotV2PendingSpecialCommand,
+    transportStatus: number | null,
+  ) {
+    if (!lifecycle.isCurrent()) return null;
+    let outcome: "committed" | "missing" | "idempotency_conflict" | "not_found" | "v2_unavailable" | "unavailable" = "unavailable";
+    try {
+      const reconciled = await api(`/api/template-authoring/copilot/sessions/${sessionId}/special/reconcile`, { method: "POST", body: JSON.stringify({ expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, command: command.command }) });
+      if (!lifecycle.isCurrent()) return null;
+      outcome = ["committed", "missing", "idempotency_conflict", "not_found"].includes(String(reconciled.outcome)) ? String(reconciled.outcome) as typeof outcome : "unavailable";
+      if ((reconciled.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion === 2 && reconciled.interview) {
+        if (!installV2State(lifecycle, { sessionId, revision: Number(reconciled.revision), status: String(reconciled.status) as V2CopilotState["status"], ledger: reconciled.ledger as TemplateCopilotV2Ledger, interview: reconciled.interview as TemplateCopilotV2InterviewState, specialReview: Array.isArray(reconciled.specialReview) ? reconciled.specialReview as TemplateCopilotV2SpecialReviewItem[] : [] })) return null;
+      }
+      const reconciledMessages = chatMessagesFromStored(reconciled.messages);
+      if (reconciledMessages) {
+        commitV2ReactState(lifecycle, setMessages, (current) => mergeChatMessages(current, reconciledMessages));
+      }
+      if ((outcome as string) === "committed") {
+        try {
+          const snapshot = await api(`/api/template-authoring/copilot/sessions/${sessionId}?messageDirection=tail&messageLimit=100`, { method: "GET" });
+          if (!lifecycle.isCurrent()) return null;
+          const saved = snapshot.session as { revision?: unknown; status?: unknown; ledger?: unknown; interview?: unknown; specialReview?: unknown; messages?: unknown };
+          if ((saved?.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion === 2 && saved.interview) {
+            if (!installV2State(lifecycle, { sessionId, revision: Number(saved.revision), status: String(saved.status) as V2CopilotState["status"], ledger: saved.ledger as TemplateCopilotV2Ledger, interview: saved.interview as TemplateCopilotV2InterviewState, specialReview: Array.isArray(saved.specialReview) ? saved.specialReview as TemplateCopilotV2SpecialReviewItem[] : [] })) return null;
+            const authoritativeMessages = chatMessagesFromStored(saved.messages);
+            if (authoritativeMessages) {
+              commitV2ReactState(lifecycle, setMessages, (current) => mergeChatMessages(current, authoritativeMessages));
+            }
+          }
+        } catch {
+          if (!lifecycle.isCurrent()) return null;
+          // The exact receipt is terminal even if transcript refresh fails.
+        }
+      }
+    } catch (caught) {
+      if (!lifecycle.isCurrent()) return null;
+      // Only an explicit route/flag 404 proves that the v2 recovery contract
+      // has been rolled back. Network, timeout, and 5xx failures stay pending.
+      outcome = templateCopilotApiErrorStatus(caught) === 404
+        && templateCopilotApiErrorCode(caught) === "v2_unavailable"
+        ? "v2_unavailable"
+        : "unavailable";
+    }
+    if (!lifecycle.isCurrent()) return null;
+    const resolution = resolveTemplateCopilotV2SpecialReconciliation({ transportStatus, outcome, command, currentPending: pendingV2SpecialRef.current });
+    installPendingV2Special(lifecycle, resolution.pending);
+    if (resolution.result === "committed") commitV2ReactState(lifecycle, setError, () => "");
+    else if (resolution.result === "stale") commitV2ReactState(lifecycle, setError, () => copy.staleAnswerNeedsReview);
+    else if (resolution.result === "conflict") commitV2ReactState(lifecycle, setError, () => copy.concurrentChangeConflict);
+    else if (resolution.result === "not_found") commitV2ReactState(lifecycle, setError, () => copy.reloadInterviewError);
+    else if (resolution.result === "v2_unavailable") {
+      const rollback = releaseV2AfterRollback();
+      if (rollback.released) {
+        commitV2ReactState(rollback.lifecycle, setError, () => copy.v2RollbackNotice);
+      }
+    }
+    else commitV2ReactState(lifecycle, setError, () => `${copy.temporaryAnswerError} ${copy.retrySameAnswer}`);
+    return resolution;
+  }
+
+  async function submitV2Special(requested: TemplateCopilotV2SpecialCommand) {
+    if (!state || !isV2State(state) || busy || pendingV2Command || activeV2CommandRef.current || v2SubmitInFlightRef.current || v2SpecialInFlightRef.current) return;
+    const lifecycle = captureV2LifecycleLease();
+    let command: TemplateCopilotV2PendingSpecialCommand;
+    try {
+      command = nextTemplateCopilotV2PendingSpecialCommand({ pending: pendingV2SpecialRef.current, sessionId: state.sessionId, revision: state.revision, command: requested, createKey: () => messageId("special") });
+    } catch {
+      commitV2ReactState(lifecycle, setError, () => copy.retryPreviousRequired);
+      return;
+    }
+    if (!lifecycle.commit(() => {
+      v2SpecialInFlightRef.current = true;
+      if (command !== pendingV2SpecialRef.current) installPendingV2Special(lifecycle, command);
+      setBusy((current) => lifecycle.isCurrent() ? true : current);
+      setError((current) => lifecycle.isCurrent() ? "" : current);
+    })) return;
+    try {
+      const response = await api(`/api/template-authoring/copilot/sessions/${state.sessionId}/special`, { method: "POST", body: JSON.stringify({ expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, command: command.command }) });
+      if (!lifecycle.isCurrent()) return;
+      const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
+      if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) throw new Error(copy.invalidInterviewUpdate);
+      if (!installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [] })) return;
+      installPendingV2Special(lifecycle, pendingV2SpecialRef.current?.idempotencyKey === command.idempotencyKey ? null : pendingV2SpecialRef.current);
+      // These are confirmed, durable transcript rows.  A retry keeps the
+      // stable command/role IDs so an eventual authoritative history merge
+      // cannot duplicate either turn.
+      commitV2ReactState(lifecycle, setMessages, (current) => {
+        const authoritative = parseTemplateCopilotClientChatMessages(response.messages);
+        if (authoritative) return mergeTemplateCopilotClientChatMessages(current, authoritative);
+        const createdAt = new Date().toISOString();
+        const user = createTemplateCopilotClientChatMessage({ clientMessageId: command.idempotencyKey, role: "user", content: String(response.userMessage || ""), createdAt });
+        const assistant = createTemplateCopilotClientChatMessage({ clientMessageId: command.idempotencyKey, role: "assistant", content: String(response.assistantMessage || ""), createdAt });
+        return mergeTemplateCopilotClientChatMessages(current, [user, assistant]);
+      });
+      commitV2ReactState(lifecycle, setNotApplicableReason, () => "");
+    } catch (caught) {
+      if (!lifecycle.isCurrent()) return;
+      const status = templateCopilotApiErrorStatus(caught);
+      if (status === 404 && templateCopilotApiErrorCode(caught) === "v2_unavailable") {
+        const rollback = releaseV2AfterRollback();
+        if (rollback.released) {
+          commitV2ReactState(rollback.lifecycle, setError, () => copy.v2RollbackNotice);
+        }
+      } else if (status === 409 || status === null || status >= 500) {
+        await reconcileV2Special(lifecycle, state.sessionId, command, status);
+        if (!lifecycle.isCurrent()) return;
+      }
+      else {
+        installPendingV2Special(lifecycle, pendingV2SpecialRef.current?.idempotencyKey === command.idempotencyKey ? null : pendingV2SpecialRef.current);
+        commitV2ReactState(lifecycle, setError, () => copy.requestError);
+      }
+    } finally {
+      lifecycle.commit(() => {
+        v2SpecialInFlightRef.current = false;
+        setBusy((current) => lifecycle.isCurrent() ? false : current);
+      });
+    }
+  }
+
+  async function recoverStoredV2Special() {
+    const command = pendingV2SpecialRef.current;
+    if (!command || busy || v2SpecialInFlightRef.current) return;
+    const lifecycle = captureV2LifecycleLease();
+    if (!lifecycle.commit(() => {
+      v2SpecialInFlightRef.current = true;
+      setBusy((current) => lifecycle.isCurrent() ? true : current);
+      setError((current) => lifecycle.isCurrent() ? "" : current);
+    })) return;
+    try {
+      await reconcileV2Special(lifecycle, command.sessionId, command, null);
+      if (!lifecycle.isCurrent()) return;
+    } finally {
+      lifecycle.commit(() => {
+        v2SpecialInFlightRef.current = false;
+        setBusy((current) => lifecycle.isCurrent() ? false : current);
+      });
     }
   }
 
@@ -138,15 +791,37 @@ export function TemplateCopilot({
     const message = draft.trim();
     if (!state || !message || busy) return;
     const id = messageId("turn");
+    if (isV2State(state)) {
+      if (v2InputMode !== "answerable") return;
+      if (templateCopilotUnicodeCodePointCount(message) > 8_000) {
+        setError(copy.answerTooLong);
+        return;
+      }
+      if (state.interview.nextQuestion?.answerType === "choice") {
+        setError(copy.chooseListedOption);
+        return;
+      }
+      void submitV2({ kind: "text", text: message }, (command, lifecycle) => {
+        lifecycle.commit(() => {
+          draftGenerationRef.current += 1;
+        });
+        commitV2ReactState(lifecycle, setDraft, () => "");
+        commitV2ReactState(lifecycle, setMessages, (current) => current.some((item) => item.id === command.idempotencyKey)
+          ? current
+          : [...current, createTemplateCopilotClientChatMessage({ clientMessageId: command.idempotencyKey, role: "user", content: message })]);
+      });
+      return;
+    }
+    draftGenerationRef.current += 1;
     setDraft("");
     setMessages((current) => [
       ...current,
-      { id, role: "user", content: message },
+      createTemplateCopilotClientChatMessage({ clientMessageId: id, role: "user", content: message }),
     ]);
     setBusy(true);
     setError("");
     try {
-      const response = await api(
+      const response = await legacyApi(
         `/api/template-authoring/copilot/sessions/${state.sessionId}/messages`,
         {
           method: "POST",
@@ -169,13 +844,14 @@ export function TemplateCopilot({
       );
       setMessages((current) => [
         ...current,
-        {
-          id: `${id}-assistant`,
+        createTemplateCopilotClientChatMessage({
+          clientMessageId: id,
           role: "assistant",
           content: String(response.assistantMessage),
-        },
+        }),
       ]);
     } catch (caught) {
+      if (isV2State(state)) setDraft(message);
       setError(errorMessage(caught));
     } finally {
       setBusy(false);
@@ -183,7 +859,7 @@ export function TemplateCopilot({
   }
 
   async function upload(file: File) {
-    if (!state || busy) return;
+    if (!state || busy || isV2State(state)) return;
     const form = new FormData();
     form.set("file", file);
     form.set("expectedRevision", String(state.revision));
@@ -191,7 +867,7 @@ export function TemplateCopilot({
     setBusy(true);
     setError("");
     try {
-      const response = await api(
+      const response = await legacyApi(
         `/api/template-authoring/copilot/sessions/${state.sessionId}/documents`,
         { method: "POST", body: form },
       );
@@ -204,18 +880,22 @@ export function TemplateCopilot({
             }
           : current,
       );
+      const uploadMessageId = messageId("document-result");
+      const createdAt = new Date().toISOString();
       setMessages((current) => [
         ...current,
-        {
-          id: crypto.randomUUID(),
+        createTemplateCopilotClientChatMessage({
+          clientMessageId: uploadMessageId,
           role: "user",
           content: `Uploaded ${file.name}`,
-        },
-        {
-          id: crypto.randomUUID(),
+          createdAt,
+        }),
+        createTemplateCopilotClientChatMessage({
+          clientMessageId: uploadMessageId,
           role: "assistant",
           content: String(response.assistantMessage),
-        },
+          createdAt,
+        }),
       ]);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -227,77 +907,117 @@ export function TemplateCopilot({
 
   async function createDraft() {
     if (!state || state.status !== "ready" || busy) return;
-    setBusy(true);
-    setError("");
+    const sourceState = state;
+    const lifecycle = isV2State(sourceState) ? captureV2LifecycleLease() : null;
+    if (lifecycle) {
+      if (!lifecycle.commit(() => {
+        setBusy((current) => lifecycle.isCurrent() ? true : current);
+        setError((current) => lifecycle.isCurrent() ? "" : current);
+      })) return;
+    } else {
+      setBusy(true);
+      setError("");
+    }
     try {
-      const response = await api(
-        `/api/template-authoring/copilot/sessions/${state.sessionId}/create-draft`,
+      const response = await legacyApi(
+        `/api/template-authoring/copilot/sessions/${sourceState.sessionId}/create-draft`,
         {
           method: "POST",
           body: JSON.stringify({
-            expectedRevision: state.revision,
+            expectedRevision: sourceState.revision,
             idempotencyKey: messageId("create-draft"),
           }),
         },
       );
-      setDraftReview({
+      if (lifecycle && !lifecycle.isCurrent()) return;
+      const nextReview: DraftReviewState = {
         familyId: String(response.familyId),
         draftId: String(response.draftId),
         revision: Number(response.authoringRevision || 1),
         dossier: response.dossier as TemplateRequirementsDossierV1,
         definition: response.definition as TemplateDefinitionV1,
-      });
-      setReviewDirty(false);
-      setState((current) =>
-        current
-          ? {
+        sourceSessionId: sourceState.sessionId,
+        lifecycle,
+      };
+      const applySuccess = () => {
+        setDraftReview((current) => !lifecycle || lifecycle.isCurrent() ? nextReview : current);
+        setReviewDirty((current) => !lifecycle || lifecycle.isCurrent() ? false : current);
+        setState((current) =>
+          current?.sessionId === sourceState.sessionId
+          && (!lifecycle || (lifecycle.isCurrent() && isV2State(current)))
+            ? {
               ...current,
               revision: Number(response.revision),
               status: "draft_created",
             }
-          : current,
-      );
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content:
-            dossierReviewCopy[locale].reviewBeforeBuilder,
-        },
-      ]);
+            : current,
+        );
+        setMessages((current) => !lifecycle || lifecycle.isCurrent()
+          ? [
+              ...current,
+              createTemplateCopilotClientChatMessage({
+                clientMessageId: messageId("dossier-review"),
+                role: "assistant",
+                content:
+                  dossierReviewCopy[locale].reviewBeforeBuilder,
+              }),
+            ]
+          : current);
+      };
+      if (lifecycle) lifecycle.commit(applySuccess);
+      else applySuccess();
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (lifecycle) {
+        if (!lifecycle.isCurrent()) return;
+        commitV2ReactState(lifecycle, setError, () => errorMessage(caught));
+      } else {
+        setError(errorMessage(caught));
+      }
     } finally {
-      setBusy(false);
+      if (lifecycle) {
+        lifecycle.commit(() => {
+          setBusy((current) => lifecycle.isCurrent() ? false : current);
+        });
+      } else {
+        setBusy(false);
+      }
     }
   }
 
   async function saveDossierReview() {
     if (!draftReview || busy) return;
-    setBusy(true);
-    setError("");
+    const review = draftReview;
+    const lifecycle = review.lifecycle;
+    if (lifecycle) {
+      if (!lifecycle.commit(() => {
+        setBusy((current) => lifecycle.isCurrent() ? true : current);
+        setError((current) => lifecycle.isCurrent() ? "" : current);
+      })) return;
+    } else {
+      setBusy(true);
+      setError("");
+    }
     try {
       const definition: TemplateDefinitionV1 = {
-        ...draftReview.definition,
+        ...review.definition,
         template: {
-          ...draftReview.definition.template,
-          name: draftReview.dossier.title,
+          ...review.definition.template,
+          name: review.dossier.title,
         },
         generation: {
-          ...draftReview.definition.generation,
-          unresolvedQuestionIds: draftReview.dossier.openQuestions
+          ...review.definition.generation,
+          unresolvedQuestionIds: review.dossier.openQuestions
             .filter((question) => !question.answer?.trim())
             .map((question) => question.id),
         },
       };
-      const response = await api(
-        `/api/template-authoring/drafts/${draftReview.draftId}`,
+      const response = await legacyApi(
+        `/api/template-authoring/drafts/${review.draftId}`,
         {
           method: "PUT",
           body: JSON.stringify({
-            expectedRevision: draftReview.revision,
-            dossier: draftReview.dossier,
+            expectedRevision: review.revision,
+            dossier: review.dossier,
             definition,
             changeReason:
               "Human-reviewed requirements dossier updated before visual workflow editing.",
@@ -305,28 +1025,48 @@ export function TemplateCopilot({
           }),
         },
       );
-      setDraftReview((current) =>
-        current
+      if (lifecycle && !lifecycle.isCurrent()) return;
+      const applySuccess = () => {
+        setDraftReview((current) =>
+          current?.draftId === review.draftId
+          && current.sourceSessionId === review.sourceSessionId
+          && (!lifecycle || lifecycle.isCurrent())
           ? {
               ...current,
               revision: Number(response.revision),
               definition,
             }
           : current,
-      );
-      setReviewDirty(false);
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: dossierReviewCopy[locale].saved,
-        },
-      ]);
+        );
+        setReviewDirty((current) => !lifecycle || lifecycle.isCurrent() ? false : current);
+        setMessages((current) => !lifecycle || lifecycle.isCurrent()
+          ? [
+              ...current,
+              createTemplateCopilotClientChatMessage({
+                clientMessageId: messageId("dossier-review"),
+                role: "assistant",
+                content: dossierReviewCopy[locale].saved,
+              }),
+            ]
+          : current);
+      };
+      if (lifecycle) lifecycle.commit(applySuccess);
+      else applySuccess();
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (lifecycle) {
+        if (!lifecycle.isCurrent()) return;
+        commitV2ReactState(lifecycle, setError, () => errorMessage(caught));
+      } else {
+        setError(errorMessage(caught));
+      }
     } finally {
-      setBusy(false);
+      if (lifecycle) {
+        lifecycle.commit(() => {
+          setBusy((current) => lifecycle.isCurrent() ? false : current);
+        });
+      } else {
+        setBusy(false);
+      }
     }
   }
 
@@ -361,6 +1101,12 @@ export function TemplateCopilot({
             <p className="mt-2 text-xs leading-5 text-neutral-500">
               {copy.historyNotice}
             </p>
+            {pendingV2SpecialCommand && (
+              <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+                <p role="status">{copy.temporaryAnswerError} {copy.retrySameAnswer}</p>
+                <button type="button" disabled={busy} onClick={() => void recoverStoredV2Special()} className="mt-2 min-h-10 rounded-md border border-amber-500 px-3 text-sm disabled:opacity-50">{copy.retryPreviousAnswer}</button>
+              </div>
+            )}
             {!availableBusinesses.length && (
               <p role="status" className="mt-3 text-sm text-amber-700">
                 {copy.directoryLoading}
@@ -370,7 +1116,8 @@ export function TemplateCopilot({
               <label className="text-sm text-neutral-700">
                 {copy.language}
                 <select
-                  value={selectedLocale}
+                  value={startLocale}
+                  disabled={busy || Boolean(pendingV2SpecialCommand) || Boolean(pendingV2Start)}
                   onChange={(event) =>
                     setSelectedLocale(
                       event.target.value as TemplateCopilotLocale,
@@ -389,6 +1136,7 @@ export function TemplateCopilot({
                 {copy.business}
                 <select
                   value={businessUnitId}
+                  disabled={busy || Boolean(pendingV2SpecialCommand) || Boolean(pendingV2Start)}
                   onChange={(event) => {
                     const id = event.target.value;
                     const business = availableBusinesses.find(
@@ -410,6 +1158,7 @@ export function TemplateCopilot({
                 {copy.department}
                 <select
                   value={departmentName}
+                  disabled={busy || Boolean(pendingV2SpecialCommand) || Boolean(pendingV2Start)}
                   onChange={(event) => setDepartmentName(event.target.value)}
                   className="template-copilot-control mt-1 min-h-11 w-full rounded-md border border-[#d8d8d8] bg-white px-3"
                 >
@@ -424,7 +1173,7 @@ export function TemplateCopilot({
             <button
               type="button"
               onClick={start}
-              disabled={busy || !businessUnitId || !departmentName}
+              disabled={busy || Boolean(pendingV2SpecialCommand) || !businessUnitId || !departmentName}
               className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               <Sparkles aria-hidden="true" size={16} />
@@ -482,44 +1231,85 @@ export function TemplateCopilot({
         )}
         {state.status !== "draft_created" && (
           <div className="mt-3 flex gap-2">
+            {isV2State(state) && v2InputMode === "answerable" && state.interview.nextQuestion?.example && (
+              <p className="mb-2 w-full rounded-md bg-sky-50 p-2 text-xs text-sky-900 dark:bg-neutral-800 dark:text-white"><strong>{state.interview.nextQuestion.exampleLabel}:</strong> {state.interview.nextQuestion.example}</p>
+            )}
+            {isV2State(state) && v2InputMode === "answerable" && state.interview.nextQuestion?.helpConceptRef && (
+              <p id="copilot-current-question-help" className="mb-2 w-full text-xs text-neutral-600 dark:text-neutral-300" aria-label={state.interview.nextQuestion.helpLabel}>{state.interview.nextQuestion.helpLabel}: {state.interview.nextQuestion.helpBody}</p>
+            )}
+            {isV2State(state) && v2InputMode === "complete" ? (
+              <p className="w-full rounded-md bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">{copy.interviewComplete} {copy.interviewCompleteNextAction}</p>
+            ) : isV2State(state) && v2InputMode === "blocked" ? (
+              <p className="w-full rounded-md bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">{copy.interviewBlocked} {copy.interviewBlockedSupport}</p>
+            ) : isV2State(state) && composer?.showChoiceButtons && state.interview.nextQuestion?.options ? (
+              <div className="flex w-full flex-wrap gap-2">
+                <fieldset className="contents" aria-describedby="copilot-current-question-help">
+                  <legend className="sr-only">{state.interview.nextQuestion.prompt}</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {state.interview.nextQuestion.options.map((option) => <button key={option.optionId} type="button" disabled={busy || v2ReplayPending} onClick={() => void submitV2({ kind: "choice", optionId: option.optionId }, (command, lifecycle) => commitV2ReactState(lifecycle, setMessages, (current) => {
+                      const id = command.idempotencyKey;
+                      return current.some((message) => message.id === id) ? current : [...current, createTemplateCopilotClientChatMessage({ clientMessageId: id, role: "user", content: option.label })];
+                    }))} className="min-h-11 rounded-md border border-sky-400 bg-white px-3 text-sm text-sky-900 dark:bg-neutral-800 dark:text-white">{option.label}</button>)}
+                    {state.interview.nextQuestion.uncertainty.notSure && <button type="button" disabled={busy || v2ReplayPending} onClick={() => void submitV2Special({ operation: "defer" })} className="min-h-11 rounded-md border border-amber-500 px-3 text-sm text-amber-900 dark:text-amber-200">{copy.notSure}</button>}
+                    {state.interview.nextQuestion.uncertainty.notApplicable === "when_optional" && <><label className="sr-only" htmlFor="copilot-not-applicable-reason">{copy.notApplicableReason}</label><input id="copilot-not-applicable-reason" value={notApplicableReason} disabled={busy || v2ReplayPending} onChange={(event) => { if (templateCopilotUnicodeCodePointCount(event.target.value) <= 500) setNotApplicableReason(event.target.value); }} maxLength={1000} className="template-copilot-control min-h-11 rounded-md border border-neutral-400 bg-white px-3 text-sm dark:bg-neutral-800 dark:text-white" placeholder={copy.notApplicableReason} /><button type="button" disabled={busy || v2ReplayPending || !notApplicableReason.trim()} onClick={() => void submitV2Special({ operation: "not_applicable", reason: notApplicableReason.trim() })} className="min-h-11 rounded-md border border-neutral-400 px-3 text-sm text-neutral-700 dark:text-neutral-200">{copy.notApplicable}</button></>}
+                  </div>
+                </fieldset>
+              </div>
+            ) : composer?.showTextComposer ? <>
             <textarea
               value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(event) => {
+                draftGenerationRef.current += 1;
+                setDraft(event.target.value);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   void send();
                 }
               }}
-              disabled={busy || state.status === "ready"}
+              disabled={busy || v2ReplayPending || (!isV2State(state) && state.status === "ready")}
               aria-label={copy.answerLabel}
+              aria-describedby="template-copilot-answer-length"
+              maxLength={isV2State(state) ? 16_000 : answerLimit}
               rows={3}
               className="template-copilot-control min-h-20 flex-1 resize-y rounded-md border border-[#d8d8d8] bg-white p-3 text-sm"
               placeholder={
-                state.status === "ready"
+                !isV2State(state) && state.status === "ready"
                   ? copy.confirmed
                   : copy.answerPlaceholder
               }
             />
+            <p id="template-copilot-answer-length" className="self-end text-xs text-neutral-600 dark:text-neutral-300" aria-live="polite">{copy.answerLength.replace("{count}", String(isV2State(state) ? templateCopilotUnicodeCodePointCount(draft.trim()) : draft.length)).replace("{limit}", String(answerLimit))}</p>
             <button
               type="button"
               onClick={send}
-              disabled={busy || !draft.trim() || state.status === "ready"}
+              disabled={busy || v2ReplayPending || !draft.trim() || (!isV2State(state) && state.status === "ready")}
               aria-label={copy.send}
               className="min-h-11 self-end rounded-md bg-emerald-700 px-4 py-3 text-white disabled:opacity-50"
             >
               <Send aria-hidden="true" size={18} />
             </button>
+            {isV2State(state) && state.interview.nextQuestion?.uncertainty.notSure && <button type="button" disabled={busy || v2ReplayPending} onClick={() => void submitV2Special({ operation: "defer" })} className="min-h-11 self-end rounded-md border border-amber-500 px-3 text-sm text-amber-900 dark:text-amber-200">{copy.notSure}</button>}
+            {isV2State(state) && state.interview.nextQuestion?.uncertainty.notApplicable === "when_optional" && <><label className="sr-only" htmlFor="copilot-not-applicable-reason-text">{copy.notApplicableReason}</label><input id="copilot-not-applicable-reason-text" value={notApplicableReason} disabled={busy || v2ReplayPending} onChange={(event) => { if (templateCopilotUnicodeCodePointCount(event.target.value) <= 500) setNotApplicableReason(event.target.value); }} maxLength={1000} className="template-copilot-control min-h-11 self-end rounded-md border border-neutral-400 bg-white px-3 text-sm dark:bg-neutral-800 dark:text-white" placeholder={copy.notApplicableReason} /><button type="button" disabled={busy || v2ReplayPending || !notApplicableReason.trim()} onClick={() => void submitV2Special({ operation: "not_applicable", reason: notApplicableReason.trim() })} className="min-h-11 self-end rounded-md border border-neutral-400 px-3 text-sm text-neutral-700 dark:text-neutral-200">{copy.notApplicable}</button></>}
+            </> : null}
           </div>
         )}
+        {pendingV2Command && !pendingV2SpecialCommand && isV2State(state) && v2InputMode === "answerable" && (
+          <button type="button" onClick={() => void submitV2(pendingV2Command.answer)} disabled={busy} className="mt-2 min-h-11 rounded-md border border-amber-500 px-3 text-sm text-amber-900 dark:text-amber-200">{copy.retryPreviousAnswer}</button>
+        )}
+        {pendingV2SpecialCommand && !pendingV2Command && isV2State(state) && <button type="button" onClick={() => void submitV2Special(pendingV2SpecialCommand.command)} disabled={busy} className="mt-2 min-h-11 rounded-md border border-amber-500 px-3 text-sm text-amber-900 dark:text-amber-200">{copy.retryPreviousAnswer}</button>}
+        {v2SpecialReview.length > 0 && <section className="mt-3 space-y-2 rounded-md border border-amber-300 p-3" aria-label={copy.reopen}>
+          {v2SpecialReview.map(({ decisionId, kind, reason, prompt }) => <div id={`copilot-special-${decisionId}`} key={decisionId} className="flex flex-wrap items-center gap-2 text-sm text-neutral-800 dark:text-neutral-100"><span className="min-w-48">{prompt}</span><span>{kind === "unknown" ? copy.notSure : `${copy.notApplicable}${reason ? `: ${reason}` : ""}`}</span><button type="button" disabled={busy || v2ReplayPending} onClick={() => void submitV2Special({ operation: "reopen", decisionId })} className="min-h-9 rounded-md border border-amber-500 px-2 text-sm text-amber-900 dark:text-amber-200">{copy.reopen}</button></div>)}
+        </section>}
         {error && <ErrorMessage message={error} />}
       </div>
       <aside className="rounded-md border border-[#e2e8e5] bg-white p-3">
         <h4 className="font-semibold text-neutral-900">
-          {copy.requirements} {completed}/{templateCopilotSectionIds.length}
+          {isV2State(state) ? copy.currentDecision : `${copy.requirements} ${completed}/${templateCopilotSectionIds.length}`}
         </h4>
         <ul className="mt-3 space-y-2 text-xs">
-          {templateCopilotSectionIds.map((id) => {
+          {!isV2State(state) && templateCopilotSectionIds.map((id) => {
             const section = state.ledger.sections[id];
             return (
               <li key={id} className="flex items-start gap-2">
@@ -545,7 +1335,9 @@ export function TemplateCopilot({
               </li>
             );
           })}
+          {isV2State(state) && <li className="text-neutral-700">{v2InputMode === "answerable" ? state.interview.nextQuestion?.prompt : v2InputMode === "complete" ? copy.interviewComplete : copy.interviewBlocked}</li>}
         </ul>
+        {!isV2State(state) && <>
         <input
           ref={fileRef}
           type="file"
@@ -565,6 +1357,7 @@ export function TemplateCopilot({
           <FileUp aria-hidden="true" size={16} />
           {copy.addFile}
         </button>
+        </>}
         {state.status === "ready" && (
           <button
             type="button"
@@ -576,12 +1369,13 @@ export function TemplateCopilot({
             {copy.generate}
           </button>
         )}
-        <p className="mt-3 text-xs leading-5 text-neutral-500">
+        {!isV2State(state) && <p className="mt-3 text-xs leading-5 text-neutral-500">
           {copy.fileBoundary}
-        </p>
+        </p>}
         <p className="mt-3 border-t border-[#e6e6e6] pt-3 text-xs leading-5 text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
           {copy.historyNotice}
         </p>
+        {isV2State(state) ? <p className="mt-2 text-xs leading-5 text-neutral-500 dark:text-neutral-400">{copy.recoveryTranscriptNotice}</p> : null}
       </aside>
     </section>
   );
@@ -1042,12 +1836,42 @@ const templateCopilotCopy: Record<
     answerPlaceholder: string;
     confirmed: string;
     send: string;
+    chooseListedOption: string;
+    notSure: string;
+    notApplicable: string;
+    notApplicableReason: string;
+    deferred: string;
+    reopened: string;
+    reopen: string;
+    previousAnswerSaved: string;
+    retrySameAnswer: string;
+    retryPreviousAnswer: string;
+    interviewComplete: string;
+    interviewCompleteNextAction: string;
+    interviewBlocked: string;
+    interviewBlockedSupport: string;
+    concurrentChangeSuperseded: string;
+    concurrentChangeConflict: string;
+    validationAnswerError: string;
+    answerLength: string;
+    currentDecision: string;
+    requestError: string;
+    startInterviewInvalid: string;
+    reloadInterviewError: string;
+    invalidInterviewUpdate: string;
+    retryPreviousRequired: string;
+    temporaryAnswerError: string;
+    staleAnswerRebased: string;
+    staleAnswerNeedsReview: string;
+    answerTooLong: string;
     requirements: string;
     addFile: string;
     generate: string;
     fileBoundary: string;
     draftCreated: string;
     historyNotice: string;
+    recoveryTranscriptNotice: string;
+    v2RollbackNotice: string;
   }
 > = {
   en: {
@@ -1071,6 +1895,34 @@ const templateCopilotCopy: Record<
       "Describe the requirement. Use Shift+Enter for a new line.",
     confirmed: "Requirements confirmed",
     send: "Send answer",
+    chooseListedOption: "Choose one of the listed options for this question.",
+    notSure: "Not sure",
+    notApplicable: "Not applicable",
+    notApplicableReason: "Why is this not applicable?",
+    deferred: "This decision is marked as not yet known. Reopen it to continue.",
+    reopened: "This decision and its dependent answers have been reopened.",
+    reopen: "Reopen this decision",
+    previousAnswerSaved: "Your previous answer was saved.",
+    retrySameAnswer: "Retry the same answer, or reload the latest interview.",
+    retryPreviousAnswer: "Retry previous answer",
+    interviewComplete: "All applicable decisions are complete.",
+    interviewCompleteNextAction: "Review the requirements before creating an editable draft.",
+    interviewBlocked: "This interview needs to be reloaded before it can continue.",
+    interviewBlockedSupport: "Reload the page or contact support if it remains blocked.",
+    concurrentChangeSuperseded: "Another person completed this step first. The latest interview has been loaded; review it before continuing.",
+    concurrentChangeConflict: "Another person completed this step with a different answer. The latest interview has been loaded; review the change before continuing.",
+    validationAnswerError: "That answer could not be accepted. Please correct it and try again.",
+    answerLength: "{count}/{limit} characters",
+    currentDecision: "Current decision",
+    requestError: "The Copilot request could not be completed. Please try again.",
+    startInterviewInvalid: "The Copilot could not start the first question. Please try again.",
+    reloadInterviewError: "The latest interview could not be reloaded. Please try again.",
+    invalidInterviewUpdate: "The Copilot returned an invalid interview update. Please reload and try again.",
+    retryPreviousRequired: "Finish or reload the previous answer before changing it.",
+    temporaryAnswerError: "The answer could not be confirmed yet.",
+    staleAnswerRebased: "The interview changed before this answer was saved. Please review and send the restored answer again.",
+    staleAnswerNeedsReview: "The interview changed before this answer was saved. Please review the latest question before continuing.",
+    answerTooLong: "Please keep this answer to 8,000 characters or fewer.",
     requirements: "Requirements",
     addFile: "Add requirements file",
     generate: "Generate editable draft",
@@ -1080,6 +1932,10 @@ const templateCopilotCopy: Record<
       "Editable draft created. Review it in Builder and Canvas, run validation and simulation, then send it for publication review.",
     historyNotice:
       "This conversation is saved with your account. You can reopen it later, and authorized IT administrators may review it to improve the Copilot.",
+    recoveryTranscriptNotice:
+      "During recovery, long conversations show the latest saved page. The full saved conversation is available in history to authorized reviewers.",
+    v2RollbackNotice:
+      "The newer Copilot interview is no longer enabled. Its pending recovery action was safely released; you can start a standard guided interview.",
   },
   "zh-Hant": {
     title: "流程範本助理",
@@ -1100,6 +1956,34 @@ const templateCopilotCopy: Record<
     answerPlaceholder: "請描述需求。按 Shift+Enter 換行。",
     confirmed: "需求已確認",
     send: "傳送答案",
+    chooseListedOption: "請從此問題列出的選項中選擇一項。",
+    notSure: "未能確定",
+    notApplicable: "不適用",
+    notApplicableReason: "為何不適用？",
+    deferred: "此決定已標記為未能確定。重新開啟後才可繼續。",
+    reopened: "此決定及其相關答案已重新開啟。",
+    reopen: "重新開啟此決定",
+    previousAnswerSaved: "你先前的答案已儲存。",
+    retrySameAnswer: "請重試相同答案，或重新載入最新訪談。",
+    retryPreviousAnswer: "重試先前答案",
+    interviewComplete: "所有適用的決定已完成。",
+    interviewCompleteNextAction: "建立可編輯草稿前，請先審閱需求。",
+    interviewBlocked: "此訪談需要重新載入後才能繼續。",
+    interviewBlockedSupport: "請重新載入頁面；如仍被阻擋，請聯絡支援人員。",
+    concurrentChangeSuperseded: "另一位使用者已先完成此步驟。已載入最新訪談，請先審閱後再繼續。",
+    concurrentChangeConflict: "另一位使用者以不同答案完成此步驟。已載入最新訪談，請先審閱更改後再繼續。",
+    validationAnswerError: "無法接受此答案。請更正後再試。",
+    answerLength: "{count}/{limit} 個字元",
+    currentDecision: "目前決定",
+    requestError: "無法完成流程助理的請求。請再試一次。",
+    startInterviewInvalid: "流程助理無法開始第一條問題。請再試一次。",
+    reloadInterviewError: "無法重新載入最新訪談。請再試一次。",
+    invalidInterviewUpdate: "流程助理返回了無效的訪談更新。請重新載入後再試。",
+    retryPreviousRequired: "請先完成或重新載入先前的答案，然後再更改。",
+    temporaryAnswerError: "暫時無法確認此答案。",
+    staleAnswerRebased: "儲存此答案前訪談已有更改。請審閱後再次傳送已還原的答案。",
+    staleAnswerNeedsReview: "儲存此答案前訪談已有更改。請先審閱最新問題再繼續。",
+    answerTooLong: "請將答案限制在 8,000 個字元以內。",
     requirements: "需求",
     addFile: "加入需求文件",
     generate: "建立可編輯草稿",
@@ -1109,6 +1993,10 @@ const templateCopilotCopy: Record<
       "可編輯草稿已建立。請在建構器及畫布中審核、執行驗證和模擬，然後提交發布審核。",
     historyNotice:
       "此對話會儲存在你的帳戶。你可日後重新開啟，而獲授權的資訊科技管理員可審閱記錄以改進流程助理。",
+    recoveryTranscriptNotice:
+      "復原期間，較長的對話會顯示最新已儲存頁面。獲授權審閱者可在記錄中查看完整對話。",
+    v2RollbackNotice:
+      "新版流程助理訪談現已停用。待復原的操作已安全解除；你可以開始標準引導式訪談。",
   },
   "zh-Hans": {
     title: "流程模板助手",
@@ -1129,6 +2017,34 @@ const templateCopilotCopy: Record<
     answerPlaceholder: "请描述需求。按 Shift+Enter 换行。",
     confirmed: "需求已确认",
     send: "发送答案",
+    chooseListedOption: "请从此问题列出的选项中选择一项。",
+    notSure: "暂不确定",
+    notApplicable: "不适用",
+    notApplicableReason: "为何不适用？",
+    deferred: "此决定已标记为暂不确定。重新打开后才可继续。",
+    reopened: "此决定及其相关答案已重新打开。",
+    reopen: "重新打开此决定",
+    previousAnswerSaved: "你之前的答案已保存。",
+    retrySameAnswer: "请重试相同答案，或重新加载最新访谈。",
+    retryPreviousAnswer: "重试之前的答案",
+    interviewComplete: "所有适用的决定已完成。",
+    interviewCompleteNextAction: "创建可编辑草稿前，请先审核需求。",
+    interviewBlocked: "此访谈需要重新加载后才能继续。",
+    interviewBlockedSupport: "请重新加载页面；如仍被阻挡，请联系支持人员。",
+    concurrentChangeSuperseded: "另一位用户已先完成此步骤。已加载最新访谈，请先审核后再继续。",
+    concurrentChangeConflict: "另一位用户以不同答案完成此步骤。已加载最新访谈，请先审核更改后再继续。",
+    validationAnswerError: "无法接受此答案。请更正后再试。",
+    answerLength: "{count}/{limit} 个字符",
+    currentDecision: "当前决定",
+    requestError: "无法完成流程助手的请求。请再试一次。",
+    startInterviewInvalid: "流程助手无法开始第一个问题。请再试一次。",
+    reloadInterviewError: "无法重新加载最新访谈。请再试一次。",
+    invalidInterviewUpdate: "流程助手返回了无效的访谈更新。请重新加载后再试。",
+    retryPreviousRequired: "请先完成或重新加载之前的答案，然后再更改。",
+    temporaryAnswerError: "暂时无法确认此答案。",
+    staleAnswerRebased: "保存此答案前访谈已有更改。请审核后再次发送已还原的答案。",
+    staleAnswerNeedsReview: "保存此答案前访谈已有更改。请先审核最新问题再继续。",
+    answerTooLong: "请将答案限制在 8,000 个字符以内。",
     requirements: "需求",
     addFile: "添加需求文件",
     generate: "创建可编辑草稿",
@@ -1138,10 +2054,14 @@ const templateCopilotCopy: Record<
       "可编辑草稿已创建。请在构建器和画布中审核、运行验证和模拟，然后提交发布审核。",
     historyNotice:
       "此对话会保存在你的账户。你可日后重新打开，而获授权的信息技术管理员可审阅记录以改进流程助手。",
+    recoveryTranscriptNotice:
+      "恢复期间，较长的对话会显示最新已保存页面。获授权审阅者可在记录中查看完整对话。",
+    v2RollbackNotice:
+      "新版流程助手访谈现已停用。待恢复的操作已安全解除；你可以开始标准引导式访谈。",
   },
 };
 
-async function api(path: string, init: RequestInit) {
+async function templateCopilotApiResponse(path: string, init: RequestInit) {
   const response = await fetch(path, {
     ...init,
     headers:
@@ -1153,15 +2073,71 @@ async function api(path: string, init: RequestInit) {
     string,
     unknown
   >;
+  return { response, payload };
+}
+
+async function discoverTemplateCopilotStartSchemaVersion(): Promise<TemplateCopilotStartSchemaVersion> {
+  const response = await fetch("/api/template-authoring/copilot/sessions", {
+    method: "HEAD",
+    cache: "no-store",
+  });
+  const declared = response.headers.get("X-Template-Copilot-Schema-Version");
+  if (!response.ok || (declared !== "1" && declared !== "2")) {
+    const error = new Error("The Template Copilot start mode could not be confirmed.") as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+  return declared === "2" ? 2 : 1;
+}
+
+/** V2 uses a bounded error surface because failures can be replayed or
+ * reconciled.  Keep this path separate from the established v1 UI contract. */
+async function api(path: string, init: RequestInit) {
+  const { response, payload } = await templateCopilotApiResponse(path, init);
   if (!response.ok) {
-    const error = payload.error as { message?: string } | undefined;
-    throw new Error(error?.message || "The Template Copilot request failed.");
+    throw templateCopilotApiErrorFromResponse(response.status, payload);
+  }
+  return payload;
+}
+
+/** Exact legacy error behavior for v1-only endpoints.  The old Copilot showed
+ * the route's safe message, rather than replacing it with a new v2 sentence. */
+async function legacyApi(path: string, init: RequestInit) {
+  const { response, payload } = await templateCopilotApiResponse(path, init);
+  if (!response.ok) {
+    const error = payload.error as { message?: unknown } | undefined;
+    throw new Error(typeof error?.message === "string" ? error.message : "The Template Copilot request failed.");
+  }
+  return payload;
+}
+
+/** The POST repeats the server-owned schema header so a rollout race between
+ * the read-only capability probe and mutation still selects safe v1/v2 error
+ * handling without allowing a client write opt-in. */
+async function startApi(path: string, init: RequestInit) {
+  const { response, payload } = await templateCopilotApiResponse(path, init);
+  if (!response.ok) {
+    if (response.headers.get("X-Template-Copilot-Schema-Version") === "1") {
+      const error = payload.error as { message?: unknown } | undefined;
+      const legacyError = new Error(typeof error?.message === "string" ? error.message : "The Template Copilot request failed.") as Error & { status?: number };
+      legacyError.status = response.status;
+      throw legacyError;
+    }
+    throw templateCopilotApiErrorFromResponse(response.status, payload);
   }
   return payload;
 }
 
 function messageId(prefix: string) {
   return `${prefix}:${crypto.randomUUID()}`;
+}
+
+function chatMessagesFromStored(input: unknown): ChatMessage[] | null {
+  return parseTemplateCopilotClientChatMessages(input);
+}
+
+function mergeChatMessages(current: ChatMessage[], authoritative: ChatMessage[]) {
+  return mergeTemplateCopilotClientChatMessages(current, authoritative);
 }
 
 function errorMessage(error: unknown) {

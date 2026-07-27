@@ -8,10 +8,16 @@ import {
 } from "./template-copilot-facts.ts";
 import {
   orderTemplateCopilotMessages,
+  templateCopilotSessionKeysetPlan,
   transcriptMessageFromStored,
   type TemplateCopilotSessionSummary,
   type TemplateCopilotTranscript,
 } from "./template-copilot-history.ts";
+import {
+  decodeTemplateCopilotSessionCursor,
+  encodeTemplateCopilotSessionCursor,
+  TemplateCopilotInvalidSessionCursorError,
+} from "./template-copilot-session-pagination.ts";
 
 export async function resolveTemplateCopilotScope({
   service,
@@ -78,11 +84,28 @@ export async function createTemplateCopilotSession({
 export async function loadTemplateCopilotSession({
   session,
   sessionId,
+  messageCursor,
+  messageLimit = 200,
+  messageDirection = "forward",
 }: {
   session: SupabaseClient;
   sessionId: string;
+  messageCursor?: { createdAt: string; id: string } | null;
+  messageLimit?: number;
+  messageDirection?: "forward" | "tail";
 }) {
-  const [{ data: copilotSession, error }, { data: messages, error: messagesError }] =
+  const boundedMessageLimit = Math.min(Math.max(Math.trunc(messageLimit), 1), 200);
+  let messagesQuery = session
+    .from("template_copilot_messages")
+    .select("id,client_message_id,role,content,structured_detail,created_at")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: messageDirection === "forward" })
+    .order("id", { ascending: messageDirection === "forward" })
+    .limit(boundedMessageLimit + 1);
+  if (messageCursor && messageDirection === "forward") {
+    messagesQuery = messagesQuery.or(`created_at.gt.${messageCursor.createdAt},and(created_at.eq.${messageCursor.createdAt},id.gt.${messageCursor.id})`);
+  }
+  const [{ data: copilotSession, error }, { data: messageRows, error: messagesError }] =
     await Promise.all([
       session
         .from("template_copilot_sessions")
@@ -91,23 +114,42 @@ export async function loadTemplateCopilotSession({
         )
         .eq("id", sessionId)
         .maybeSingle(),
-      session
-        .from("template_copilot_messages")
-        .select("id,client_message_id,role,content,structured_detail,created_at")
-        .eq("session_id", sessionId)
-        .order("created_at", { ascending: true })
-        .limit(200),
+      messagesQuery,
     ]);
   if (error) throw error;
   if (messagesError) throw messagesError;
   if (!copilotSession) return null;
+  const hasMore = (messageRows || []).length > boundedMessageLimit;
+  const pageRows = (messageRows || []).slice(0, boundedMessageLimit);
+  const orderedPageRows = orderTemplateCopilotMessages(pageRows);
+  const finalRow = pageRows.at(-1);
   return {
     ...copilotSession,
     // Read both ledgers without running v2 logic. A stored v1 session remains
     // a v1 session until an explicit, previewed upgrade is approved server-side.
     ledger: templateCopilotStoredLedgerSchema.parse(copilotSession.ledger),
-    messages: orderTemplateCopilotMessages(messages || []),
+    messages: orderedPageRows,
+    messagePage: {
+      limit: boundedMessageLimit,
+      hasMore: messageDirection === "forward" && hasMore,
+      nextCursor: messageDirection === "forward" && hasMore && finalRow ? encodeTemplateCopilotMessageCursor({ createdAt: finalRow.created_at, id: finalRow.id }) : null,
+    },
   };
+}
+
+export function decodeTemplateCopilotMessageCursor(value: string | null) {
+  if (!value || value.length > 200) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as { createdAt?: unknown; id?: unknown };
+    if (typeof parsed.createdAt !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(parsed.createdAt) || Number.isNaN(Date.parse(parsed.createdAt)) || typeof parsed.id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parsed.id)) return null;
+    return { createdAt: parsed.createdAt, id: parsed.id };
+  } catch {
+    return null;
+  }
+}
+
+function encodeTemplateCopilotMessageCursor(cursor: { createdAt: string; id: string }) {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
 }
 
 export async function listTemplateCopilotSessions({
@@ -123,24 +165,52 @@ export async function listTemplateCopilotSessions({
   view: "mine" | "review";
   limit: number;
 }): Promise<TemplateCopilotSessionSummary[]> {
+  const page = await listTemplateCopilotSessionPage({ session, service, actor, view, limit });
+  return page.sessions;
+}
+
+export async function listTemplateCopilotSessionPage({
+  session,
+  service,
+  actor,
+  view,
+  limit,
+  cursor,
+}: {
+  session: SupabaseClient;
+  service: SupabaseClient;
+  actor: ApprovalRuntimeProfile;
+  view: "mine" | "review";
+  limit: number;
+  cursor?: string;
+}): Promise<{ sessions: TemplateCopilotSessionSummary[]; page: { limit: number; hasMore: boolean; nextCursor: string | null } }> {
+  const decodedCursor = decodeTemplateCopilotSessionCursor(cursor);
+  if (cursor && !decodedCursor) throw new TemplateCopilotInvalidSessionCursorError();
+  const pagePlan = templateCopilotSessionKeysetPlan({
+    view,
+    actorId: actor.id,
+    cursor: decodedCursor,
+  });
   let builder = session
     .from("template_copilot_sessions")
     .select(
       "id,owner_id,family_id,draft_id,status,revision,ledger,model,created_at,updated_at",
     )
-    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false })
     .order("id", { ascending: false })
-    .limit(limit);
-  if (view === "mine") {
-    builder = builder.eq("owner_id", actor.id);
+    .limit(limit + 1);
+  if (pagePlan.ownerId) {
+    builder = builder.eq("owner_id", pagePlan.ownerId);
   }
+  if (pagePlan.after) builder = builder.or(pagePlan.after);
   const { data, error } = await builder;
   if (error) throw error;
   const rows = data || [];
+  const pageRows = rows.slice(0, limit);
 
   const ownerIds =
     view === "review"
-      ? Array.from(new Set(rows.map((row) => row.owner_id)))
+      ? Array.from(new Set(pageRows.map((row) => row.owner_id)))
       : [];
   const { data: profiles, error: profilesError } = ownerIds.length
     ? await service
@@ -153,7 +223,7 @@ export async function listTemplateCopilotSessions({
     (profiles || []).map((profile) => [profile.id, profile]),
   );
 
-  return rows.map((row) => {
+  const sessions = pageRows.map((row) => {
     const ledger = templateCopilotStoredLedgerSchema.parse(row.ledger);
     const profile = profilesById.get(row.owner_id);
     return {
@@ -178,6 +248,8 @@ export async function listTemplateCopilotSessions({
         : {}),
     };
   });
+  const tail = pageRows.at(-1);
+  return { sessions, page: { limit, hasMore: rows.length > limit, nextCursor: rows.length > limit && tail ? encodeTemplateCopilotSessionCursor({ createdAt: tail.created_at, id: tail.id }) : null } };
 }
 
 export function templateCopilotTranscriptFromStored(
@@ -197,6 +269,7 @@ export function templateCopilotTranscriptFromStored(
     createdAt: stored.created_at,
     updatedAt: stored.updated_at,
     messages: stored.messages.map(transcriptMessageFromStored),
+    messagePage: stored.messagePage,
   };
 }
 

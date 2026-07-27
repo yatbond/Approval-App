@@ -94,6 +94,12 @@ export const templateAuthoringOpenApi = {
             maximum: 50,
             default: 20,
           }),
+          queryParameter("cursor", {
+            type: "string",
+            maxLength: 512,
+            description:
+              "Opaque, tamper-resistant keyset cursor. Use only the nextCursor value returned in page metadata.",
+          }),
         ],
       }),
       post: operation("startTemplateCopilotSession", "Start a governed requirements interview", {

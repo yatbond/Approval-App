@@ -14,13 +14,14 @@ export type TemplateCopilotReadiness = Readonly<{
   gaps: readonly TemplateCopilotReadinessGap[];
 }>;
 
-export function getTemplateCopilotReadiness(ledger: TemplateCopilotV2Ledger, options: { compilerValid?: boolean; publishedRevisionMatches?: boolean } = {}): TemplateCopilotReadiness {
+export function getTemplateCopilotReadiness(ledger: TemplateCopilotV2Ledger, options: { compilerValid?: boolean; publishedRevisionMatches?: boolean; inapplicableFactIds?: readonly TemplateCopilotFactId[] } = {}): TemplateCopilotReadiness {
   const gaps: TemplateCopilotReadinessGap[] = [];
+  const inapplicable = new Set(options.inapplicableFactIds || []);
   for (const factId of templateCopilotFactIds) {
     const fact = ledger.facts[factId];
     const definition = templateCopilotFactDefinitions[factId];
-    if (fact.status === "not_applicable") continue;
-    const dependencyGaps = definition.dependsOn.filter((dependency) => ledger.facts[dependency].status !== "committed" && ledger.facts[dependency].status !== "not_applicable");
+    if (fact.status === "not_applicable" || inapplicable.has(factId)) continue;
+    const dependencyGaps = definition.dependsOn.filter((dependency) => !inapplicable.has(dependency) && ledger.facts[dependency].status !== "committed" && ledger.facts[dependency].status !== "not_applicable");
     if (dependencyGaps.length) {
       gaps.push({ factId, code: "dependency_unresolved", blockingLevel: level(definition.blockingLevel), dependsOn: dependencyGaps });
     }

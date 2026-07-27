@@ -25,13 +25,29 @@ import {
 import {
   advanceTemplateCopilotSession,
   createTemplateCopilotSession,
-  listTemplateCopilotSessions,
+  listTemplateCopilotSessionPage,
   resolveTemplateCopilotScope,
 } from "@/lib/template-copilot-server-data";
 import { templateCopilotSessionListQuerySchema } from "@/lib/template-copilot-history";
+import { TemplateCopilotInvalidSessionCursorError } from "@/lib/template-copilot-session-pagination";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
 import { isTemplateCopilotV2Enabled } from "@/lib/template-copilot-v2-feature";
 import { createTemplateCopilotV2Session } from "@/lib/template-copilot-v2-server-data";
+
+/** Read-only, authenticated capability probe.  The browser uses this before a
+ * start mutation so a legacy v1 start never enters the v2 replay/storage state
+ * machine. */
+export async function HEAD(request: NextRequest) {
+  const resolved = await createApprovalServerContext(request);
+  if (!resolved.ok) return withTemplateCopilotStartSchemaVersion(approvalError(resolved));
+  const { cookieSource, correlationId } = resolved.context;
+  return withTemplateCopilotStartSchemaVersion(approvalJson(
+    cookieSource,
+    correlationId,
+    {},
+    200,
+  ));
+}
 
 export async function GET(request: NextRequest) {
   const resolved = await createApprovalServerContext(request);
@@ -41,6 +57,7 @@ export async function GET(request: NextRequest) {
   const parsed = templateCopilotSessionListQuerySchema.safeParse({
     view: request.nextUrl.searchParams.get("view") || undefined,
     limit: request.nextUrl.searchParams.get("limit") || undefined,
+    cursor: request.nextUrl.searchParams.get("cursor") || undefined,
   });
   if (!parsed.success) {
     return approvalJson(
@@ -70,20 +87,22 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const sessions = await listTemplateCopilotSessions({
+    const result = await listTemplateCopilotSessionPage({
       session,
       service,
       actor,
       view: parsed.data.view,
       limit: parsed.data.limit,
+      cursor: parsed.data.cursor,
     });
     safeApprovalLog("template_copilot_session_list_read", correlationId, {
       view: parsed.data.view,
-      resultCount: sessions.length,
+      resultCount: result.sessions.length,
     });
     return approvalJson(cookieSource, correlationId, {
       view: parsed.data.view,
-      sessions,
+      sessions: result.sessions,
+      page: result.page,
     });
   } catch (error) {
     safeApprovalLog("template_copilot_session_list_failed", correlationId, {
@@ -94,28 +113,43 @@ export async function GET(request: NextRequest) {
       correlationId,
       {
         error: {
-          code: "dependency_unavailable",
-          message: "Copilot history is temporarily unavailable.",
+          code: error instanceof TemplateCopilotInvalidSessionCursorError ? "invalid_request" : "dependency_unavailable",
+          message: error instanceof TemplateCopilotInvalidSessionCursorError ? "The Copilot history cursor is invalid." : "Copilot history is temporarily unavailable.",
         },
       },
-      503,
+      error instanceof TemplateCopilotInvalidSessionCursorError ? 400 : 503,
     );
   }
 }
 
 export async function POST(request: NextRequest) {
   const resolved = await createApprovalServerContext(request);
-  if (!resolved.ok) return approvalError(resolved);
+  if (!resolved.ok) return withTemplateCopilotStartSchemaVersion(approvalError(resolved));
   const { service, actor, cookieSource, correlationId } = resolved.context;
+  const expectedSchemaVersion = request.headers.get("X-Template-Copilot-Expected-Schema-Version");
+  const currentSchemaVersion = isTemplateCopilotV2Enabled() ? "2" : "1";
+  if (expectedSchemaVersion && expectedSchemaVersion !== currentSchemaVersion) {
+    return withTemplateCopilotStartSchemaVersion(approvalJson(
+      cookieSource,
+      correlationId,
+      {
+        error: {
+          code: "schema_version_changed",
+          message: "The Copilot rollout changed. Please start again.",
+        },
+      },
+      409,
+    ));
+  }
   const body = await readBoundedJson(request, 32_000);
   const parsed = body.ok ? templateCopilotStartSchema.safeParse(body.value) : null;
   if (!parsed?.success) {
-    return approvalJson(
+    return withTemplateCopilotStartSchemaVersion(approvalJson(
       cookieSource,
       correlationId,
       { error: { code: "invalid_request", message: "The Copilot session request is invalid." } },
       400,
-    );
+    ));
   }
 
   try {
@@ -125,24 +159,24 @@ export async function POST(request: NextRequest) {
       departmentName: parsed.data.departmentName,
     });
     if (!scope) {
-      return approvalJson(
+      return withTemplateCopilotStartSchemaVersion(approvalJson(
         cookieSource,
         correlationId,
         { error: { code: "invalid_scope", message: "The selected business or department is unavailable." } },
         422,
-      );
+      ));
     }
     const locale =
       parsed.data.locale ||
       detectTemplateCopilotLocale(parsed.data.initialRequirement || "");
     if (isTemplateCopilotV2Enabled()) {
       if (parsed.data.initialRequirement) {
-        return approvalJson(
+        return withTemplateCopilotStartSchemaVersion(approvalJson(
           cookieSource,
           correlationId,
           { error: { code: "v2_initial_requirement_not_available", message: "Describe-everything intake is not enabled in this Copilot v2 foundation release." } },
           422,
-        );
+        ));
       }
       const result = await createTemplateCopilotV2Session({
         service,
@@ -150,12 +184,12 @@ export async function POST(request: NextRequest) {
         clientMessageId: parsed.data.clientMessageId,
         scope: { ...scope, locale },
       });
-      return templateAuthoringRpcResponse({
+      return withTemplateCopilotStartSchemaVersion(templateAuthoringRpcResponse({
         cookieSource,
         correlationId,
         result,
         appliedStatus: 201,
-      });
+      }));
     }
     const ledger = createTemplateCopilotLedger({ ...scope, locale });
     const assistantMessage = initialAssistantMessage({
@@ -217,12 +251,12 @@ export async function POST(request: NextRequest) {
     safeApprovalLog("template_copilot_session_created", correlationId, {
       outcome: String(result.outcome || "unknown"),
     });
-    return templateAuthoringRpcResponse({
+    return withTemplateCopilotStartSchemaVersion(templateAuthoringRpcResponse({
       cookieSource,
       correlationId,
       result: { ...result, assistantMessage: responseAssistantMessage },
       appliedStatus: 201,
-    });
+    }));
   } catch (error) {
     safeApprovalLog("template_copilot_session_create_failed", correlationId, {
       errorName: error instanceof Error ? error.name : "unknown",
@@ -233,13 +267,21 @@ export async function POST(request: NextRequest) {
           }
         : {}),
     });
-    return approvalJson(
+    return withTemplateCopilotStartSchemaVersion(approvalJson(
       cookieSource,
       correlationId,
       { error: { code: "dependency_unavailable", message: "The Copilot session could not be started." } },
       503,
-    );
+    ));
   }
+}
+
+/** The server feature flag is authoritative.  Returning it even for an error
+ * lets the embedded client preserve the old v1 error wording without a client
+ * supplied version switch or a second potentially mutating start request. */
+function withTemplateCopilotStartSchemaVersion(response: Response) {
+  response.headers.set("X-Template-Copilot-Schema-Version", isTemplateCopilotV2Enabled() ? "2" : "1");
+  return response;
 }
 
 function initialAssistantMessage({

@@ -63,6 +63,63 @@ version, mappings, and unresolved IDs. Approval is itself a revisioned,
 idempotent server mutation. A changed source or preview hash is rejected rather
 than converted.
 
+## Copilot v2 Step 2: deterministic atomic interview controller
+
+Each v2 ledger pins `questionLibraryVersion`; Step 2 resolves that version only
+from a server-owned, immutable question library. The current `v2.0` library
+contains several stable questions for a workflow fact when the fact needs
+several decisions. For example, workflow scope asks what is included and then
+what is excluded; a stage asks for the step, how its person is chosen, and only
+then the appropriate email, role, or request-field detail. An answer is one
+bounded atomic decision, never a broad fact overwrite. The deterministic
+assembler produces a review-only, provenance-preserving broad-fact candidate;
+it cannot mark that fact committed or create an executable workflow.
+
+Primary prompts use ordinary language and ask one thing only. Examples are
+separate labelled metadata, so they are helpful without being recorded as
+evidence. The library separately asks whether a route changes, which request
+detail decides it, how it is compared, the value, the matching action, and the
+non-matching action. It likewise separates response time, reminder time, and
+what happens after no response; notification event, recipient, and channel;
+and the owning department, reviewer, and policy/rule.
+
+The controller is pure and deterministic: it validates the pinned library,
+rejects duplicate IDs/priorities, unknown references, self-dependencies, and
+cycles, then selects the applicable pending atomic decision using its unique
+priority. It returns its rationale and stable blocked/complete gaps alongside
+the next localized prompt. Locale changes prompt text only; the chosen question
+and ordering come solely from the ledger and pinned library version. Refreshing
+a v2 session recomputes the same controller state from its persisted ledger.
+
+Applicability has three states: applicable, pending, and proven inapplicable.
+An unanswered deciding question is pending, never N/A. A question is excluded
+only after its deciding answer proves it does not apply; no fresh session can
+hide notifications because visibility or another earlier answer is unresolved.
+The answer endpoint accepts only a revision, retry key, and answer text. It
+loads the authoritative session, derives the single next decision itself, and
+appends exactly that decision through a service-role-only locked RPC. The RPC
+rejects any accompanying change to broad facts, scope, extracts, or earlier
+atomic answers. Stale revisions and retry-key/hash mismatches are rejected;
+matching retries return the original persisted result before a newer interview
+state is read.
+
+The Step 2 migration `20260727190000_template_copilot_v2_atomic_decisions.sql`
+adds that append-only decision RPC. Rollback is feature-flag-first: set
+`TEMPLATE_COPILOT_V2=false` to stop new v2 sessions while preserving existing
+pinned v2 records and receipts. Do not delete the migration or audit evidence;
+a later reviewed migration is required for any data-retention change.
+
+Choice questions expose server-owned option IDs (for example `yes`, `no`,
+`fixed_email`, and `directory_role`) and store the canonical option ID with a
+safe translated display value. Free prose is rejected for a choice; it cannot
+accidentally mean “no” and hide a later question. Repeating fields,
+attachments, stages, conditions, and notifications use bounded server-created
+instance IDs and explicit “another?” decisions. The caps are 20, 20, 20, 10,
+and 20 respectively. On an uncertain network result, the browser preserves the
+exact retry key, revision, question ID, and answer, reconciles the authoritative
+session on stale/ambiguous results, and will not apply that answer to a new
+question.
+
 - A deterministic ten-section ledger decides which question is next.
 - Critical sections cannot be completed as unknown.
 - Only an explicit confirmation moves a session to `ready`.
@@ -150,3 +207,15 @@ Model failures do not advance the ledger or create a draft.
 - Authenticated route/static secret-boundary tests.
 - Accessible labels, live region, keyboard send, error alert, and touch targets.
 - End-to-end generation must create an editable authoring draft only.
+
+## Deferred and not-applicable decisions
+
+The ordinary answer endpoint accepts only a text answer or a declared choice.
+`Not sure`, `Not applicable`, and reopening a prior special decision use the
+separate revisioned special-decision endpoint. It is locked, idempotent, and
+audited; it records an immutable transcript turn while changing only the
+current ledger projection. A deferred answer blocks readiness and draft
+creation. N/A is available only where the pinned question explicitly permits
+it and requires a bounded reason. Reopening removes the server-computed reverse
+closure of both prerequisite and applicability dependencies, so answers from a
+former branch cannot survive a correction.

@@ -201,7 +201,10 @@ test("the embedded Copilot waits for an authoritative UUID business scope", asyn
   assert.match(client, /Loading the authenticated business directory/);
   assert.match(client, /authenticated business directory is still loading/);
   assert.match(client, /\|\| availableBusinesses\[0\]/);
-  assert.doesNotMatch(client, /useEffect/);
+  const effectBodies = [...client.matchAll(/useEffect\(\(\) => \{([\s\S]*?)\n  \}, \[[^\]]*\]\);/g)].map((match) => match[1]);
+  for (const effectBody of effectBodies) {
+    assert.doesNotMatch(effectBody, /setBusinessUnitId|setDepartmentName|availableBusinesses/, "effects must not synthesize or overwrite the authenticated business scope");
+  }
 });
 
 test("direct Z.AI support uses the standard international API and validates JSON locally", async () => {
@@ -345,7 +348,9 @@ test("Copilot history exposes owner-only and Admin review product surfaces", asy
   );
 
   assert.match(listRoute, /parsed\.data\.view === "review" && !actor\.isAdmin/);
-  assert.match(serverData, /builder = builder\.eq\("owner_id", actor\.id\)/);
+  assert.match(serverData, /pagePlan\.ownerId/);
+  assert.match(serverData, /\.order\("created_at", \{ ascending: false \}\)/);
+  assert.match(serverData, /service\s+\.from\("profiles"\)\s+\.select\("id,email,full_name"\)/);
   assert.match(employeeHistory, /view=mine&limit=20/);
   const clientApi = await readFile(
     new URL("./template-copilot-client.ts", import.meta.url),

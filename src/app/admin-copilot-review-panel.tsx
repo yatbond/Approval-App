@@ -6,6 +6,8 @@ import type {
   TemplateCopilotSessionSummary,
   TemplateCopilotTranscript,
 } from "@/lib/template-copilot-history";
+import { compareTemplateCopilotTimestamps } from "@/lib/template-copilot-history";
+import { mergeTemplateCopilotSessionSummaries } from "@/lib/template-copilot-history";
 import { fetchTemplateCopilotApi } from "@/lib/template-copilot-client";
 import {
   CopilotTranscript,
@@ -15,6 +17,7 @@ import {
 export function AdminCopilotReviewPanel() {
   const [sessions, setSessions] =
     useState<TemplateCopilotSessionSummary[] | null>(null);
+  const [sessionPage, setSessionPage] = useState<{ hasMore: boolean; nextCursor: string | null } | null>(null);
   const [selected, setSelected] =
     useState<TemplateCopilotTranscript | null>(null);
   const [query, setQuery] = useState("");
@@ -35,18 +38,19 @@ export function AdminCopilotReviewPanel() {
     );
   }, [query, sessions]);
 
-  async function loadSessions() {
+  async function loadSessions(cursor?: string) {
     setBusy(true);
     setError("");
     try {
       const payload = await fetchTemplateCopilotApi<{
-        sessions: TemplateCopilotSessionSummary[];
+        sessions: TemplateCopilotSessionSummary[]; page?: { hasMore?: boolean; nextCursor?: string | null };
       }>(
-        "/api/template-authoring/copilot/sessions?view=review&limit=50",
+        `/api/template-authoring/copilot/sessions?view=review&limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
       );
-      setSessions(payload.sessions || []);
-    } catch (caught) {
-      setError(errorMessage(caught));
+      setSessions((current) => cursor ? mergeTemplateCopilotSessionSummaries(current || [], payload.sessions || []) : (payload.sessions || []));
+      setSessionPage({ hasMore: Boolean(payload.page?.hasMore), nextCursor: payload.page?.nextCursor || null });
+    } catch {
+      setError("Saved conversations are temporarily unavailable. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -59,7 +63,7 @@ export function AdminCopilotReviewPanel() {
       const payload = await fetchTemplateCopilotApi<{
         session: TemplateCopilotTranscript;
       }>(
-        `/api/template-authoring/copilot/sessions/${sessionId}`,
+        `/api/template-authoring/copilot/sessions/${sessionId}?messageLimit=100`,
       );
       const transcript = payload.session;
       const summary = sessions?.find((session) => session.id === sessionId);
@@ -67,11 +71,25 @@ export function AdminCopilotReviewPanel() {
         ...transcript,
         ...(summary?.owner ? { owner: summary.owner } : {}),
       });
-    } catch (caught) {
-      setError(errorMessage(caught));
+    } catch {
+      setError("Saved conversations are temporarily unavailable. Please try again.");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function loadMoreTranscript() {
+    if (!selected?.messagePage.hasMore || !selected.messagePage.nextCursor) return;
+    setBusy(true); setError("");
+    try {
+      const selectedId = selected.id;
+      const cursor = selected.messagePage.nextCursor;
+      if (!cursor) return;
+      const payload = await fetchTemplateCopilotApi<{ session: TemplateCopilotTranscript }>(`/api/template-authoring/copilot/sessions/${selectedId}?messageLimit=100&messageCursor=${encodeURIComponent(cursor)}`);
+      setSelected((current) => current && current.id === payload.session.id ? { ...payload.session, ...(current.owner ? { owner: current.owner } : {}), messages: mergeMessages(current.messages, payload.session.messages) } : current);
+    } catch {
+      setError("Saved conversations are temporarily unavailable. Please try again.");
+    } finally { setBusy(false); }
   }
 
   return (
@@ -158,6 +176,7 @@ export function AdminCopilotReviewPanel() {
                 </span>
               </button>
             ))}
+            {sessionPage?.hasMore && sessionPage.nextCursor ? <button type="button" disabled={busy} onClick={() => void loadSessions(sessionPage.nextCursor || undefined)} className="w-full min-h-10 rounded-md border border-[#d2d2d2] px-3 text-sm text-neutral-800 dark:border-neutral-700 dark:text-neutral-100">Load more conversations</button> : null}
             {!filtered.length ? (
               <p className="rounded-md border border-dashed border-[#d2d2d2] p-3 text-xs text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
                 No Copilot sessions match this search.
@@ -185,6 +204,7 @@ export function AdminCopilotReviewPanel() {
               emptyLabel="No messages were saved for this session."
               locale="en-HK"
             />
+            {selected.messagePage.hasMore ? <button type="button" onClick={() => void loadMoreTranscript()} disabled={busy} className="mt-3 inline-flex min-h-10 rounded-md border border-[#d2d2d2] px-3 text-sm disabled:opacity-50 dark:border-neutral-700">Load more messages</button> : null}
           </div>
         </div>
       ) : null}
@@ -209,6 +229,8 @@ function statusLabel(status: TemplateCopilotSessionSummary["status"]) {
   }[status];
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Something went wrong.";
+function mergeMessages(current: TemplateCopilotTranscript["messages"], incoming: TemplateCopilotTranscript["messages"]) {
+  const byId = new Map(current.map((message) => [message.id, message]));
+  for (const message of incoming) byId.set(message.id, message);
+  return [...byId.values()].sort((left, right) => compareTemplateCopilotTimestamps(left.createdAt, right.createdAt) || (left.clientMessageId === right.clientMessageId && left.role !== right.role ? (left.role === "user" ? -1 : 1) : left.id.localeCompare(right.id)));
 }

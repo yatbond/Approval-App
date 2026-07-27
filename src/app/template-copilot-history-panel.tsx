@@ -6,6 +6,8 @@ import type {
   TemplateCopilotSessionSummary,
   TemplateCopilotTranscript,
 } from "@/lib/template-copilot-history";
+import { compareTemplateCopilotTimestamps } from "@/lib/template-copilot-history";
+import { mergeTemplateCopilotSessionSummaries } from "@/lib/template-copilot-history";
 import type { TemplateCopilotLocale } from "@/lib/template-copilot-plan";
 import { fetchTemplateCopilotApi } from "@/lib/template-copilot-client";
 import {
@@ -24,24 +26,26 @@ export function TemplateCopilotHistoryPanel({
   const [open, setOpen] = useState(false);
   const [sessions, setSessions] =
     useState<TemplateCopilotSessionSummary[] | null>(null);
+  const [sessionPage, setSessionPage] = useState<{ hasMore: boolean; nextCursor: string | null } | null>(null);
   const [selected, setSelected] =
     useState<TemplateCopilotTranscript | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function loadHistory() {
+  async function loadHistory(cursor?: string) {
     setOpen(true);
     setBusy(true);
     setError("");
     try {
       const payload = await fetchTemplateCopilotApi<{
-        sessions: TemplateCopilotSessionSummary[];
+        sessions: TemplateCopilotSessionSummary[]; page?: { hasMore?: boolean; nextCursor?: string | null };
       }>(
-        "/api/template-authoring/copilot/sessions?view=mine&limit=20",
+        `/api/template-authoring/copilot/sessions?view=mine&limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
       );
-      setSessions(payload.sessions || []);
-    } catch (caught) {
-      setError(errorMessage(caught));
+      setSessions((current) => cursor ? mergeTemplateCopilotSessionSummaries(current || [], payload.sessions || []) : (payload.sessions || []));
+      setSessionPage({ hasMore: Boolean(payload.page?.hasMore), nextCursor: payload.page?.nextCursor || null });
+    } catch {
+      setError(copy.unavailable);
     } finally {
       setBusy(false);
     }
@@ -54,11 +58,30 @@ export function TemplateCopilotHistoryPanel({
       const payload = await fetchTemplateCopilotApi<{
         session: TemplateCopilotTranscript;
       }>(
-        `/api/template-authoring/copilot/sessions/${sessionId}`,
+        `/api/template-authoring/copilot/sessions/${sessionId}?messageLimit=100`,
       );
       setSelected(payload.session);
-    } catch (caught) {
-      setError(errorMessage(caught));
+    } catch {
+      setError(copy.unavailable);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadMoreTranscript() {
+    if (!selected?.messagePage.hasMore || !selected.messagePage.nextCursor) return;
+    setBusy(true);
+    setError("");
+    try {
+      const payload = await fetchTemplateCopilotApi<{ session: TemplateCopilotTranscript }>(
+        `/api/template-authoring/copilot/sessions/${selected.id}?messageLimit=${selected.messagePage.limit}&messageCursor=${encodeURIComponent(selected.messagePage.nextCursor)}`,
+      );
+      setSelected((current) => current && current.id === payload.session.id ? {
+        ...payload.session,
+        messages: mergeTranscriptMessages(current.messages, payload.session.messages),
+      } : current);
+    } catch {
+      setError(copy.unavailable);
     } finally {
       setBusy(false);
     }
@@ -148,6 +171,7 @@ export function TemplateCopilotHistoryPanel({
                   {copy.none}
                 </p>
               ) : null}
+              {sessionPage?.hasMore && sessionPage.nextCursor ? <button type="button" disabled={busy} onClick={() => void loadHistory(sessionPage.nextCursor || undefined)} className="w-full min-h-10 rounded-md border border-[#d2d2d2] px-3 text-sm text-neutral-800 dark:border-neutral-700 dark:text-neutral-100">{copy.loadMoreSessions}</button> : null}
             </div>
           </div>
           <div>
@@ -168,6 +192,11 @@ export function TemplateCopilotHistoryPanel({
                   emptyLabel={copy.emptyTranscript}
                   locale={formattingLocale}
                 />
+                {selected.messagePage.hasMore ? (
+                  <button type="button" disabled={busy} onClick={() => void loadMoreTranscript()} className="mt-3 inline-flex min-h-10 items-center rounded-md border border-[#d2d2d2] px-3 text-sm text-neutral-800 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-100">
+                    {copy.loadMoreMessages}
+                  </button>
+                ) : null}
               </>
             ) : (
               <p className="rounded-md border border-dashed border-[#d2d2d2] p-5 text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
@@ -204,6 +233,9 @@ const historyCopy: Record<
     you: string;
     copilot: string;
     emptyTranscript: string;
+    loadMoreSessions: string;
+    loadMoreMessages: string;
+    unavailable: string;
     status: Record<TemplateCopilotSessionSummary["status"], string>;
   }
 > = {
@@ -221,6 +253,9 @@ const historyCopy: Record<
     you: "You",
     copilot: "Copilot",
     emptyTranscript: "No messages were saved for this session.",
+    loadMoreSessions: "Load more conversations",
+    loadMoreMessages: "Load more messages",
+    unavailable: "Saved conversations are temporarily unavailable. Please try again.",
     status: {
       interviewing: "Interview in progress",
       ready: "Requirements confirmed",
@@ -242,6 +277,9 @@ const historyCopy: Record<
     you: "你",
     copilot: "流程助理",
     emptyTranscript: "此對話沒有已儲存訊息。",
+    loadMoreSessions: "載入更多對話",
+    loadMoreMessages: "載入更多訊息",
+    unavailable: "暫時無法載入已儲存的對話，請再試一次。",
     status: {
       interviewing: "訪談進行中",
       ready: "需求已確認",
@@ -263,6 +301,9 @@ const historyCopy: Record<
     you: "你",
     copilot: "流程助手",
     emptyTranscript: "此对话没有已保存消息。",
+    loadMoreSessions: "加载更多对话",
+    loadMoreMessages: "加载更多消息",
+    unavailable: "暂时无法加载已保存的对话，请再试一次。",
     status: {
       interviewing: "访谈进行中",
       ready: "需求已确认",
@@ -272,6 +313,16 @@ const historyCopy: Record<
   },
 };
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Something went wrong.";
+function mergeTranscriptMessages(
+  current: TemplateCopilotTranscript["messages"],
+  incoming: TemplateCopilotTranscript["messages"],
+) {
+  const byId = new Map(current.map((message) => [message.id, message]));
+  for (const message of incoming) byId.set(message.id, message);
+  return [...byId.values()].sort((left, right) => {
+    const timeOrder = compareTemplateCopilotTimestamps(left.createdAt, right.createdAt);
+    if (timeOrder !== 0) return timeOrder;
+    if (left.clientMessageId === right.clientMessageId && left.role !== right.role) return left.role === "user" ? -1 : 1;
+    return left.id.localeCompare(right.id);
+  });
 }
