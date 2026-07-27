@@ -1,11 +1,12 @@
 import { compareTemplateCopilotTimestamps } from "./template-copilot-history.ts";
 import { templateCopilotUnicodeCodePointCount } from "./template-copilot-unicode.ts";
+import { getTemplateCopilotPreferredQuestionLibraryVersion } from "./template-copilot-v2-step8-rollout.ts";
 
 export type TemplateCopilotV2ClientAnswer = Readonly<{ kind: "text"; text: string } | { kind: "choice"; optionId: string }>;
 export type TemplateCopilotV2PendingCommand = Readonly<{ idempotencyKey: string; expectedRevision: number; answer: TemplateCopilotV2ClientAnswer; questionId: string; primaryDecisionId: string }>;
 export type TemplateCopilotV2SpecialCommand = Readonly<{ operation: "defer" } | { operation: "not_applicable"; reason: string } | { operation: "reopen"; decisionId: string }>;
 export type TemplateCopilotV2PendingSpecialCommand = Readonly<{ sessionId: string; idempotencyKey: string; expectedRevision: number; command: TemplateCopilotV2SpecialCommand }>;
-export type TemplateCopilotV2QuestionLibraryVersion = "v2.0" | "v2.1";
+export type TemplateCopilotV2QuestionLibraryVersion = "v2.0" | "v2.1" | "v2.2";
 export type TemplateCopilotV2PendingStart = Readonly<{ idempotencyKey: string; businessUnitId: string; departmentName: string; locale: "en" | "zh-Hant" | "zh-Hans"; questionLibraryVersion: TemplateCopilotV2QuestionLibraryVersion; initialRequirement?: string }>;
 export type TemplateCopilotClientChatMessage = Readonly<{
   id: string;
@@ -115,7 +116,11 @@ export function parseTemplateCopilotV2PendingStart(value: unknown): TemplateCopi
     businessUnitId: candidate.businessUnitId,
     departmentName: candidate.departmentName,
     locale: candidate.locale as TemplateCopilotV2PendingStart["locale"],
-    questionLibraryVersion: candidate.questionLibraryVersion === "v2.1" ? "v2.1" : "v2.0",
+    questionLibraryVersion: candidate.questionLibraryVersion === "v2.2"
+      ? "v2.2"
+      : candidate.questionLibraryVersion === "v2.1"
+        ? "v2.1"
+        : "v2.0",
     ...(candidate.initialRequirement?.trim() ? { initialRequirement: candidate.initialRequirement } : {}),
   });
 }
@@ -123,7 +128,7 @@ export function parseTemplateCopilotV2PendingStart(value: unknown): TemplateCopi
 /** A start is also an immutable command.  Retaining its complete intent means
  * a lost 201 is retried with exactly the same durable key; changing scope or
  * language is an explicit new command, never an accidental replay. */
-export function nextTemplateCopilotV2PendingStart({ pending, businessUnitId, departmentName, locale, questionLibraryVersion = "v2.1", initialRequirement, createKey }: {
+export function nextTemplateCopilotV2PendingStart({ pending, businessUnitId, departmentName, locale, questionLibraryVersion = getTemplateCopilotPreferredQuestionLibraryVersion(), initialRequirement, createKey }: {
   pending: TemplateCopilotV2PendingStart | null; businessUnitId: string; departmentName: string; locale: TemplateCopilotV2PendingStart["locale"]; questionLibraryVersion?: TemplateCopilotV2QuestionLibraryVersion; initialRequirement?: string; createKey: () => string;
 }) {
   const normalized = { businessUnitId, departmentName, locale, questionLibraryVersion, ...(initialRequirement ? { initialRequirement } : {}) };

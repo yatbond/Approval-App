@@ -53,7 +53,7 @@ function sameTemplateCopilotV2CanonicalValue(left: unknown, right: unknown) {
 export async function createTemplateCopilotV2Session({ service, actor, clientMessageId, scope, questionLibraryVersion = "v2.0", flag }: {
   service: SupabaseClient; actor: ApprovalRuntimeProfile; clientMessageId: string;
   scope: { businessUnitId: string; businessName: string; departmentId: string; departmentName: string; locale: "en" | "zh-Hant" | "zh-Hans" };
-  questionLibraryVersion?: "v2.0" | "v2.1";
+  questionLibraryVersion?: "v2.0" | "v2.1" | "v2.2";
   flag?: TemplateCopilotV2Flag;
 }) {
   requireTemplateCopilotV2(flag);

@@ -55,6 +55,33 @@ test("provider evidence tree accepts natural initiator, attachment, English, Tra
   }
 });
 
+test("mixed English, Traditional Chinese, and Simplified Chinese evidence remains exact and canonical", () => {
+  const message = "流程叫 Supplier Payment，员工必须附上 invoice PDF。";
+  const result = adaptTemplateCopilotV2ProviderCandidates({
+    output: {
+      candidates: [
+        candidate({ factId: "workflow.name", valueType: "text", value: "Supplier Payment", evidence: "Supplier Payment" }),
+        candidate({
+          factId: "attachments.requirements",
+          valueType: "attachments",
+          value: [{ label: "invoice", required: true, formats: ["pdf"] }],
+          evidence: [{ label: "invoice", required: "必须", formats: ["PDF"] }],
+        }),
+      ],
+    },
+    message,
+    messageId: "mixed-scripts",
+  });
+  assert.equal(result.rejected.length, 0);
+  assert.deepEqual(result.candidates.map((item) => item.factId), ["attachments.requirements", "workflow.name"]);
+  const attachment = result.candidates.find((item) => item.factId === "attachments.requirements");
+  assert.deepEqual(attachment.value, [{ label: "invoice", required: true, formats: ["pdf"] }]);
+  assert.deepEqual(attachment.evidence.map((item) => item.exactText).sort(), ["PDF", "invoice", "必须"].sort());
+  for (const item of result.candidates.flatMap((candidateItem) => candidateItem.evidence)) {
+    assert.equal(Array.from(message).slice(item.startCodePoint, item.endCodePoint).join(""), item.exactText);
+  }
+});
+
 test("provider adapter preserves source order while using fact-aware attachment and policy equality", () => {
   const formatsMessage = "Invoice is required as PDF and image.";
   const formats = adaptTemplateCopilotV2ProviderCandidates({ output: { candidates: [candidate({ factId: "attachments.requirements", valueType: "attachments", value: [{ label: "Invoice", required: true, formats: ["pdf", "image"] }], evidence: [{ label: "Invoice", required: "required", formats: ["PDF", "image"] }] })] }, message: formatsMessage, messageId: "m1" });

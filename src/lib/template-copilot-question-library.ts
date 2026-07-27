@@ -5,7 +5,15 @@ import {
   type TemplateCopilotFactId,
   type TemplateCopilotV2Ledger,
 } from "./template-copilot-facts.ts";
+import {
+  getTemplateCopilotConceptLibrary,
+  resolveTemplateCopilotConcept,
+  templateCopilotConceptLibraryVersionForQuestionLibrary,
+  templateCopilotReviewedContentFingerprint,
+  type TemplateCopilotResolvedConcept,
+} from "./template-copilot-concepts.ts";
 import { getTemplateCopilotV2Step4Interaction, type TemplateCopilotV2Step4Interaction } from "./template-copilot-v2-step4.ts";
+import { templateCopilotV2Step8QuestionContentReview } from "./template-copilot-v2-step8-review.ts";
 
 const questionIdSchema = z.string().regex(/^v2\.[a-z][a-z0-9_.-]{2,95}$/);
 const libraryVersionSchema = z.string().regex(/^v2\.\d+$/);
@@ -13,6 +21,23 @@ const localeTextSchema = z.object({
   en: z.string().trim().min(1).max(1_000),
   "zh-Hant": z.string().trim().min(1).max(1_000),
   "zh-Hans": z.string().trim().min(1).max(1_000),
+}).strict();
+const questionLocaleReviewSchema = z.object({
+  status: z.enum(["pending", "approved", "rejected"]),
+  reviewerType: z.literal("human"),
+  reviewer: z.string().trim().min(3).max(160),
+  reviewedAt: z.string().datetime({ offset: true }).optional(),
+  evidenceRef: z.string().trim().min(3).max(240).optional(),
+}).strict();
+const questionContentReviewSchema = z.object({
+  scope: z.literal("all_localized_question_content"),
+  questionCount: z.number().int().min(1).max(400),
+  contentFingerprint: z.string().regex(/^fnv1a64:[0-9a-f]{16}$/),
+  locales: z.object({
+    en: questionLocaleReviewSchema,
+    "zh-Hant": questionLocaleReviewSchema,
+    "zh-Hans": questionLocaleReviewSchema,
+  }).strict(),
 }).strict();
 
 const applicabilitySchema = z.discriminatedUnion("kind", [
@@ -62,6 +87,8 @@ export const templateCopilotQuestionSchema = z.object({
 
 export const templateCopilotQuestionLibrarySchema = z.object({
   version: libraryVersionSchema,
+  conceptLibraryVersion: z.string().regex(/^concepts\.v\d+\.\d+$/).optional(),
+  contentReview: questionContentReviewSchema.optional(),
   questions: z.array(templateCopilotQuestionSchema).min(templateCopilotFactIds.length).max(400),
 }).strict();
 
@@ -327,15 +354,128 @@ const v2QuestionLibrary = freezeQuestionLibrary(validateTemplateCopilotQuestionL
 
 // Step 4 changes interaction affordances, not question semantics. Existing
 // v2.0 sessions remain pinned to their original library and therefore retain
-// their old controls during a rollback; fresh sessions explicitly pin v2.1.
+// their old controls during a rollback; Step 4 sessions explicitly pinned v2.1.
 const v21QuestionLibrary = freezeQuestionLibrary(validateTemplateCopilotQuestionLibrary({
   version: "v2.1",
   questions: v2QuestionLibrary.questions,
 }));
 
+export function templateCopilotQuestionContentFingerprint(questions: readonly TemplateCopilotQuestion[]) {
+  return templateCopilotReviewedContentFingerprint(questions.map((question) => ({
+    questionId: question.questionId,
+    targetFactId: question.targetFactId,
+    prompt: question.prompt,
+    personResolverPromptVariants: question.personResolverPromptVariants?.variants,
+    example: question.example,
+    help: question.help.body,
+    options: question.answer.options?.map((option) => ({ optionId: option.optionId, label: option.label })),
+  })));
+}
+
+function v22Localized(en: string, zhHant: string, zhHans: string) {
+  return { en, "zh-Hant": zhHant, "zh-Hans": zhHans };
+}
+
+function v22Presentation(question: TemplateCopilotQuestion): TemplateCopilotQuestion {
+  const next = structuredClone(question);
+  const decisionId = next.primaryDecision.decisionId;
+
+  for (const option of next.answer.options || []) {
+    if (option.optionId === "directory_role") {
+      option.label = v22Localized(
+        "A job role from the staff directory",
+        "員工目錄中的職位",
+        "员工目录中的职位",
+      );
+    }
+  }
+
+  if (decisionId === "decision.workflow.conditions.needed") {
+    next.prompt = v22Localized(
+      "Should some requests use different approval steps?",
+      "某些申請是否需要使用不同的審批步驟？",
+      "某些申请是否需要使用不同的审批步骤？",
+    );
+  } else if (decisionId === "decision.workflow.conditions.field") {
+    next.prompt = v22Localized(
+      "Which request detail decides which approval steps to use?",
+      "哪一項申請資料決定應使用哪些審批步驟？",
+      "哪一项申请信息决定应使用哪些审批步骤？",
+    );
+  } else if (decisionId === "decision.workflow.conditions.value") {
+    next.prompt = v22Localized(
+      "What value should make the request use those different approval steps?",
+      "甚麼數值會令申請使用那些不同的審批步驟？",
+      "什么数值会让申请使用那些不同的审批步骤？",
+    );
+  } else if (/^decision\.workflow\.conditions\.add_another_\d{2}$/.test(decisionId)) {
+    next.prompt = v22Localized(
+      "Do you need another rule for different approval steps?",
+      "是否需要另一項規則來決定不同的審批步驟？",
+      "是否需要另一项规则来决定不同的审批步骤？",
+    );
+  } else if (/^decision\.workflow\.conditions\.condition_\d{2}_field$/.test(decisionId)) {
+    next.prompt = v22Localized(
+      "Which request detail should this rule check?",
+      "這項規則應檢查哪一項申請資料？",
+      "这项规则应检查哪一项申请信息？",
+    );
+  } else if (/^decision\.workflow\.conditions\.condition_\d{2}_value$/.test(decisionId)) {
+    next.prompt = v22Localized(
+      "What value should make this rule apply?",
+      "甚麼數值會令這項規則適用？",
+      "什么数值会让这项规则适用？",
+    );
+  }
+
+  if (next.targetFactId === "attachments.requirements") {
+    if (decisionId === "decision.attachments.requirements.needed") {
+      next.prompt = v22Localized(
+        "Does every request need a file or an in-app form?",
+        "每個申請是否都需要檔案或應用程式內表格？",
+        "每个申请是否都需要文件或应用内表单？",
+      );
+    } else if (decisionId === "decision.attachments.requirements.first_file") {
+      next.prompt = v22Localized(
+        "What is one file or in-app form the requester must provide?",
+        "申請人必須提供的其中一份檔案或應用程式內表格是甚麼？",
+        "申请人必须提供的其中一份文件或应用内表单是什么？",
+      );
+    } else if (/\.file_\d{2}$/.test(decisionId)) {
+      next.prompt = v22Localized(
+        "What is another required file or in-app form?",
+        "另一份必須提供的檔案或應用程式內表格是甚麼？",
+        "另一份必须提供的文件或应用内表单是什么？",
+      );
+    } else if (/\.add_another_\d{2}$/.test(decisionId)) {
+      next.prompt = v22Localized(
+        "Do you need another required file or in-app form?",
+        "是否還需要另一份必須提供的檔案或應用程式內表格？",
+        "是否还需要另一份必须提供的文件或应用内表单？",
+      );
+    }
+  }
+  return next;
+}
+
+const v22Questions = v2QuestionLibrary.questions.map(v22Presentation);
+
+// Step 8 is a review candidate. It pins exact content and the concept/help
+// version, but remains unavailable for new sessions until accountable human
+// reviewers approve every locale and the separate rollout gate enables it.
+const v22QuestionLibrary = freezeQuestionLibrary(validateTemplateCopilotQuestionLibrary({
+  version: "v2.2",
+  conceptLibraryVersion: "concepts.v1.0",
+  contentReview: {
+    ...templateCopilotV2Step8QuestionContentReview,
+  },
+  questions: v22Questions,
+}));
+
 const libraryByVersion: Readonly<Record<string, TemplateCopilotQuestionLibrary>> = Object.freeze({
   "v2.0": v2QuestionLibrary,
   "v2.1": v21QuestionLibrary,
+  "v2.2": v22QuestionLibrary,
 });
 
 export function getTemplateCopilotQuestionLibrary(version: string): TemplateCopilotQuestionLibrary {
@@ -348,6 +488,31 @@ export function validateTemplateCopilotQuestionLibrary(input: unknown): Template
   const parsed = templateCopilotQuestionLibrarySchema.safeParse(input);
   if (!parsed.success) throw new TemplateCopilotQuestionLibraryError("The Copilot question library has an invalid shape.");
   const questions = parsed.data.questions;
+  const expectedConceptLibraryVersion = templateCopilotConceptLibraryVersionForQuestionLibrary(parsed.data.version);
+  if (parsed.data.conceptLibraryVersion !== expectedConceptLibraryVersion && (parsed.data.conceptLibraryVersion || expectedConceptLibraryVersion)) {
+    throw new TemplateCopilotQuestionLibraryError(`Question library ${parsed.data.version} does not pin its required concept library.`);
+  }
+  const knownConceptIds = expectedConceptLibraryVersion
+    ? new Set(getTemplateCopilotConceptLibrary(expectedConceptLibraryVersion).entries.map((entry) => entry.conceptId))
+    : null;
+  if (expectedConceptLibraryVersion) {
+    const review = parsed.data.contentReview;
+    if (!review
+      || review.questionCount !== questions.length
+      || review.contentFingerprint !== templateCopilotQuestionContentFingerprint(questions)) {
+      throw new TemplateCopilotQuestionLibraryError(`Question library ${parsed.data.version} is not bound to its exact localized content.`);
+    }
+    for (const [locale, localeReview] of Object.entries(review.locales)) {
+      if (localeReview.status === "approved"
+        && (!localeReview.reviewedAt
+          || !localeReview.evidenceRef
+          || /\b(?:ai|model|system|automated|pending|unassigned)\b/iu.test(localeReview.reviewer))) {
+        throw new TemplateCopilotQuestionLibraryError(`Question library ${parsed.data.version} has invalid human-review evidence for ${locale}.`);
+      }
+    }
+  } else if (parsed.data.contentReview) {
+    throw new TemplateCopilotQuestionLibraryError(`Legacy question library ${parsed.data.version} cannot claim the Step 8 content review.`);
+  }
   const seenQuestionIds = new Set<string>();
   const seenDecisionIds = new Set<string>();
   const seenPriorities = new Set<number>();
@@ -358,7 +523,9 @@ export function validateTemplateCopilotQuestionLibrary(input: unknown): Template
     if (seenPriorities.has(question.priority)) throw new TemplateCopilotQuestionLibraryError(`Duplicate question priority: ${question.priority}.`);
     if (question.primaryDecision.factId !== question.targetFactId) throw new TemplateCopilotQuestionLibraryError(`Primary decision for ${question.questionId} must target its one declared fact.`);
     if (question.answer.schemaRef !== `v2.fact.${question.targetFactId}.v1`) throw new TemplateCopilotQuestionLibraryError(`Question ${question.questionId} has a schema reference that does not match its target fact.`);
-    if (question.help.conceptRef !== `copilot.${question.targetFactId}`) throw new TemplateCopilotQuestionLibraryError(`Question ${question.questionId} has an unknown help reference.`);
+    if (question.help.conceptRef !== `copilot.${question.targetFactId}` || (knownConceptIds && !knownConceptIds.has(question.help.conceptRef))) {
+      throw new TemplateCopilotQuestionLibraryError(`Question ${question.questionId} has an unknown help reference.`);
+    }
     const options = question.answer.options;
     if (question.answer.type === "choice" && (!options || options.length === 0)) throw new TemplateCopilotQuestionLibraryError(`Choice question ${question.questionId} must declare options.`);
     if (question.answer.type !== "choice" && options) throw new TemplateCopilotQuestionLibraryError(`Non-choice question ${question.questionId} cannot declare options.`);
@@ -416,7 +583,12 @@ export function validateTemplateCopilotQuestionLibrary(input: unknown): Template
     }
   }
   detectQuestionCycles(questions);
-  return { version: parsed.data.version, questions: [...questions].sort(compareQuestions) };
+  return {
+    version: parsed.data.version,
+    ...(parsed.data.conceptLibraryVersion ? { conceptLibraryVersion: parsed.data.conceptLibraryVersion } : {}),
+    ...(parsed.data.contentReview ? { contentReview: parsed.data.contentReview } : {}),
+    questions: [...questions].sort(compareQuestions),
+  };
 }
 
 export type TemplateCopilotV2InterviewGap = Readonly<{
@@ -426,6 +598,7 @@ export type TemplateCopilotV2InterviewGap = Readonly<{
 }>;
 export type TemplateCopilotV2InterviewState = Readonly<{
   libraryVersion: string;
+  conceptLibraryVersion?: string;
   state: "question" | "blocked" | "complete";
   nextQuestion?: Readonly<{
     questionId: string;
@@ -437,6 +610,20 @@ export type TemplateCopilotV2InterviewState = Readonly<{
     helpConceptRef: string;
     helpLabel: string;
     helpBody: string;
+    helpDetail?: Readonly<{
+      conceptId: string;
+      conceptVersion: string;
+      libraryVersion: string;
+      requestedLocale: "en" | "zh-Hant" | "zh-Hans";
+      displayedLocale: "en" | "zh-Hant" | "zh-Hans";
+      plainLabel: string;
+      explanation: string;
+      questionTip: string;
+      example: string;
+      workflowEffect: string;
+      controls: TemplateCopilotResolvedConcept["controls"];
+      fallback?: TemplateCopilotResolvedConcept["fallback"];
+    }>;
     uncertainty: Readonly<{ notSure: true; notApplicable: "never" | "when_optional" }>;
     interaction?: TemplateCopilotV2Step4Interaction;
     exampleLabel?: string;
@@ -526,8 +713,16 @@ export function getTemplateCopilotV2InterviewState(ledgerInput: TemplateCopilotV
       answerType: selected.answer.type,
       locale: ledger.locale,
     });
+    const resolvedConcept = library.conceptLibraryVersion
+      ? resolveTemplateCopilotConcept({
+          libraryVersion: library.conceptLibraryVersion,
+          conceptId: selected.help.conceptRef,
+          locale: ledger.locale,
+        })
+      : null;
     return Object.freeze({
       libraryVersion: library.version,
+      ...(library.conceptLibraryVersion ? { conceptLibraryVersion: library.conceptLibraryVersion } : {}),
       state: "question",
       nextQuestion: Object.freeze({
         questionId: selected.questionId,
@@ -539,6 +734,22 @@ export function getTemplateCopilotV2InterviewState(ledgerInput: TemplateCopilotV
         helpConceptRef: selected.help.conceptRef,
         helpLabel: ledger.locale === "zh-Hant" ? "說明" : ledger.locale === "zh-Hans" ? "说明" : "Help",
         helpBody: selected.help.body[ledger.locale],
+        ...(resolvedConcept ? {
+          helpDetail: Object.freeze({
+            conceptId: resolvedConcept.conceptId,
+            conceptVersion: resolvedConcept.conceptVersion,
+            libraryVersion: resolvedConcept.libraryVersion,
+            requestedLocale: resolvedConcept.requestedLocale,
+            displayedLocale: resolvedConcept.displayedLocale,
+            plainLabel: resolvedConcept.content.plainLabel,
+            explanation: resolvedConcept.content.explanation,
+            questionTip: selected.help.body[ledger.locale],
+            example: resolvedConcept.content.example,
+            workflowEffect: resolvedConcept.content.workflowEffect,
+            controls: resolvedConcept.controls,
+            ...(resolvedConcept.fallback ? { fallback: resolvedConcept.fallback } : {}),
+          }),
+        } : {}),
         uncertainty: selected.uncertainty,
         ...(interaction ? { interaction } : {}),
         ...(selected.example ? { exampleLabel: ledger.locale === "zh-Hant" ? "例子" : ledger.locale === "zh-Hans" ? "示例" : "Example", example: selected.example[ledger.locale] } : {}),
@@ -555,16 +766,16 @@ export function getTemplateCopilotV2InterviewState(ledgerInput: TemplateCopilotV
   // we enter the explicit review/reopen state.
   if (deferred.length) {
     const first = deferred.sort(compareQuestions)[0];
-    return Object.freeze({ libraryVersion: library.version, state: "blocked", rationale: Object.freeze({ code: "pending_facts_wait_for_prerequisites", priorityPolicy: "unique_priority" }), inapplicableFactIds: Object.freeze(inapplicableFactIds), gaps: Object.freeze([{ factId: first.targetFactId, code: "pending_fact" as const }]) });
+    return Object.freeze({ libraryVersion: library.version, ...(library.conceptLibraryVersion ? { conceptLibraryVersion: library.conceptLibraryVersion } : {}), state: "blocked", rationale: Object.freeze({ code: "pending_facts_wait_for_prerequisites", priorityPolicy: "unique_priority" }), inapplicableFactIds: Object.freeze(inapplicableFactIds), gaps: Object.freeze([{ factId: first.targetFactId, code: "pending_fact" as const }]) });
   }
   if (pending.length === 0) {
-    return Object.freeze({ libraryVersion: library.version, state: "complete", rationale: Object.freeze({ code: "all_applicable_facts_terminal", priorityPolicy: "unique_priority" }), inapplicableFactIds: Object.freeze(inapplicableFactIds), gaps: Object.freeze([]) });
+    return Object.freeze({ libraryVersion: library.version, ...(library.conceptLibraryVersion ? { conceptLibraryVersion: library.conceptLibraryVersion } : {}), state: "complete", rationale: Object.freeze({ code: "all_applicable_facts_terminal", priorityPolicy: "unique_priority" }), inapplicableFactIds: Object.freeze(inapplicableFactIds), gaps: Object.freeze([]) });
   }
   const gaps = pending.sort(compareQuestions).map((question) => {
     const dependsOn = question.prerequisiteDecisionIds.filter((decisionId) => !ledger.atomicDecisions[decisionId] || ledger.atomicDecisions[decisionId]?.kind === "unknown").map((decisionId) => library.questions.find((candidate) => candidate.primaryDecision.decisionId === decisionId)?.targetFactId).filter(Boolean) as TemplateCopilotFactId[];
     return dependsOn.length ? { factId: question.targetFactId, code: "prerequisite_pending" as const, dependsOn: Object.freeze(dependsOn) } : { factId: question.targetFactId, code: "pending_fact" as const };
   });
-  return Object.freeze({ libraryVersion: library.version, state: "blocked", rationale: Object.freeze({ code: "pending_facts_wait_for_prerequisites", priorityPolicy: "unique_priority" }), inapplicableFactIds: Object.freeze(inapplicableFactIds), gaps: Object.freeze(gaps) });
+  return Object.freeze({ libraryVersion: library.version, ...(library.conceptLibraryVersion ? { conceptLibraryVersion: library.conceptLibraryVersion } : {}), state: "blocked", rationale: Object.freeze({ code: "pending_facts_wait_for_prerequisites", priorityPolicy: "unique_priority" }), inapplicableFactIds: Object.freeze(inapplicableFactIds), gaps: Object.freeze(gaps) });
 }
 
 type Applicability = "applicable" | "pending" | "inapplicable";

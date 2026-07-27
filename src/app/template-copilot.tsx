@@ -37,6 +37,8 @@ import { createPendingTemplateCopilotV2MapCommand, parsePendingTemplateCopilotV2
 import { templateCopilotV2AuthoringModes, templateCopilotV2ModeCopy, type TemplateCopilotV2AuthoringMode, type TemplateCopilotV2ModeState } from "@/lib/template-copilot-v2-mode-contract";
 import { nextTemplateCopilotV2PendingModeCommand, parseTemplateCopilotV2PendingModeCommand, templateCopilotDocumentIdentity, templateCopilotV2PendingModeCommandFailureDisposition, templateCopilotV2PendingModeCommandRequest, type TemplateCopilotV2PendingModeCommand } from "@/lib/template-copilot-v2-mode-command";
 import { getTemplateCopilotTranscriptPresentation, getTemplateCopilotV2ModeUiContract, shouldSubmitTemplateCopilotComposerKey, templateCopilotV2ModeUiCopy } from "@/lib/template-copilot-v2-mode-ui";
+import { TemplateCopilotConceptHelp } from "./template-copilot-concept-help";
+import { getTemplateCopilotPreferredQuestionLibraryVersion } from "@/lib/template-copilot-v2-step8-rollout";
 
 type ChatMessage = TemplateCopilotClientChatMessage;
 
@@ -586,7 +588,7 @@ export function TemplateCopilot({
       businessUnitId,
       departmentName,
       locale: startLocale,
-      questionLibraryVersion: "v2.1",
+      questionLibraryVersion: getTemplateCopilotPreferredQuestionLibraryVersion(),
       // Validate the directory intent before creating either a v1 request key
       // or a persisted v2 command.
       clientMessageId: "start:validation",
@@ -641,7 +643,7 @@ export function TemplateCopilot({
         businessUnitId,
         departmentName,
         locale: startLocale,
-        questionLibraryVersion: "v2.1",
+        questionLibraryVersion: getTemplateCopilotPreferredQuestionLibraryVersion(),
       }, recovery.pendingStart);
       const started = await executeTemplateCopilotStart({
         lifecycle: operationLifecycle,
@@ -1862,7 +1864,11 @@ export function TemplateCopilot({
               </div>
             )}
             {!broadMode && isV2State(state) && v2InputMode === "answerable" && state.interview.nextQuestion?.helpConceptRef && (
-              v2Interaction ? <div className="mb-2 w-full"><button type="button" aria-expanded={questionHelpVisible} aria-controls="copilot-current-question-help" onClick={() => setQuestionHelpVisible((current) => !current)} className="min-h-11 rounded-md border border-neutral-500 px-3 text-sm text-neutral-800 dark:text-neutral-100">{v2Interaction.labels.whyAsking}</button>{questionHelpVisible && <p id="copilot-current-question-help" className="mt-2 text-xs text-neutral-700 dark:text-neutral-200">{state.interview.nextQuestion.helpBody}</p>}</div> : <p id="copilot-current-question-help" className="mb-2 w-full text-xs text-neutral-600 dark:text-neutral-300" aria-label={state.interview.nextQuestion.helpLabel}>{state.interview.nextQuestion.helpLabel}: {state.interview.nextQuestion.helpBody}</p>
+              state.interview.nextQuestion.helpDetail
+                ? <TemplateCopilotConceptHelp detail={state.interview.nextQuestion.helpDetail} open={questionHelpVisible} onToggle={() => setQuestionHelpVisible((current) => !current)} />
+                : v2Interaction
+                  ? <div className="mb-2 w-full"><button type="button" aria-expanded={questionHelpVisible} aria-controls="copilot-current-question-help" onClick={() => setQuestionHelpVisible((current) => !current)} className="min-h-11 rounded-md border border-neutral-500 px-3 text-sm text-neutral-800 dark:text-neutral-100">{v2Interaction.labels.whyAsking}</button>{questionHelpVisible && <p id="copilot-current-question-help" className="mt-2 text-xs text-neutral-700 dark:text-neutral-200">{state.interview.nextQuestion.helpBody}</p>}</div>
+                  : <p id="copilot-current-question-help" className="mb-2 w-full text-xs text-neutral-600 dark:text-neutral-300" aria-label={state.interview.nextQuestion.helpLabel}>{state.interview.nextQuestion.helpLabel}: {state.interview.nextQuestion.helpBody}</p>
             )}
             {activeModeDisabled ? null : !broadMode && isV2State(state) && v2InputMode === "complete" ? (
               <p className="w-full rounded-md bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">{copy.interviewComplete} {copy.interviewCompleteNextAction}</p>

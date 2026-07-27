@@ -14,6 +14,7 @@ import { getTemplateCopilotV2ModeFlags, getTemplateCopilotV2StructuredEditorFlag
 import { getTemplateCopilotV2InterviewState, getTemplateCopilotV2SpecialReview } from "@/lib/template-copilot-question-library";
 import { projectTemplateCopilotV2AuthoritativeLedger } from "@/lib/template-copilot-v2-authoritative-projection";
 import { loadTemplateCopilotV2AuthoringModeState } from "@/lib/template-copilot-v2-server-data";
+import { logTemplateCopilotHelpFallback } from "@/lib/template-authoring-http";
 
 export async function GET(
   request: NextRequest,
@@ -45,6 +46,7 @@ export async function GET(
     if (result.ledger.schemaVersion === 2 && isTemplateCopilotV2Enabled()) {
       const ledger = result.ledger;
       const interview = getTemplateCopilotV2InterviewState(ledger);
+      logTemplateCopilotHelpFallback(correlationId, interview);
       const modeState = await loadTemplateCopilotV2AuthoringModeState(service, result.id);
       sessionPayload = { ...transcript, interview, specialReview: getTemplateCopilotV2SpecialReview(ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled(), modeFlags: getTemplateCopilotV2ModeFlags(), structuredEditorFlags: getTemplateCopilotV2StructuredEditorFlags(), modeState };
     }

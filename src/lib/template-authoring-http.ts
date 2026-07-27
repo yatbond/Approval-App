@@ -1,5 +1,18 @@
 import type { NextResponse } from "next/server";
-import { approvalJson } from "./approval-server.ts";
+import { approvalJson, safeApprovalLog } from "./approval-server.ts";
+import { getTemplateCopilotHelpFallbackTelemetry } from "./template-copilot-concepts.ts";
+
+export function logTemplateCopilotHelpFallback(
+  correlationId: string,
+  value: unknown,
+) {
+  const fields = getTemplateCopilotHelpFallbackTelemetry(value);
+  if (!fields) return false;
+  safeApprovalLog("template_copilot_help_fallback", correlationId, {
+    ...fields,
+  });
+  return true;
+}
 
 export function templateAuthoringRpcResponse({
   cookieSource,
@@ -12,6 +25,7 @@ export function templateAuthoringRpcResponse({
   result: Record<string, unknown>;
   appliedStatus?: number;
 }) {
+  logTemplateCopilotHelpFallback(correlationId, result);
   const outcome = String(result.outcome || "");
   if (outcome === "applied" || outcome === "replayed") {
     return approvalJson(

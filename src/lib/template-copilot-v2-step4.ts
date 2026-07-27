@@ -41,7 +41,7 @@ export function getTemplateCopilotV2Step4Interaction({
   answerType: string;
   locale: Locale;
 }): TemplateCopilotV2Step4Interaction | null {
-  if (libraryVersion !== "v2.1") return null;
+  if (libraryVersion !== "v2.1" && libraryVersion !== "v2.2") return null;
   const variants: Record<string, readonly [string, string, string]> = {
     "v2.workflow.name.name": ["Supplier payment request", "供應商付款申請", "供应商付款申请"],
     "v2.workflow.purpose.purpose": ["Approve supplier payments before Finance pays them.", "在財務付款前審批供應商付款。", "在财务付款前审批供应商付款。"],

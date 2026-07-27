@@ -422,6 +422,111 @@ compiler-equivalence, accessibility, authenticated mutation, replay, and
 stale-tab qualifications. Rollback is flag-first and never converts a stored
 structure into prose.
 
+## Step 8 language-review candidate
+
+`questionLibraryVersion: v2.2` is the immutable Step 8 candidate and pins
+`conceptLibraryVersion: concepts.v1.0`. The candidate is **Pending human
+review** in English, Hong Kong Traditional Chinese, and Simplified Chinese.
+Status: Pending human review.
+v2.1 remains the preferred version for new sessions while that status is
+pending.
+No generic role, model, automated test, or this document is accepted as human
+approval evidence. Until named accountable reviewers approve the exact
+candidate, `v2.1` remains the preferred version for new sessions and the server
+rejects an attempted `v2.2` start.
+
+The pending baseline is:
+
+| Locale | Concept review | Question review | Enabled for new `v2.2` sessions |
+| --- | --- | --- | --- |
+| English | Pending; reviewer unassigned | Pending; reviewer unassigned | No |
+| Hong Kong Traditional Chinese | Pending; reviewer unassigned | Pending; reviewer unassigned | No |
+| Simplified Chinese | Pending; reviewer unassigned | Pending; reviewer unassigned | No |
+
+The concept candidate covers all 16 pilot fact topics. Every stable concept ID
+and entry version has an internal technical name, a language-independent
+semantic contract, a plain label, a short explanation, an example, and an
+explicit statement of what the setting changes. Attachment help covers both
+files and in-app forms. Stage help covers ordered steps and independent steps
+that may occur at the same time. The 316 guided questions retain their
+language-independent question IDs, decision IDs, applicability, answer schemas,
+and canonical option IDs. The `v2.2` presentation copy replaces terms such as
+“directory role” and “different route” with plain descriptions while leaving
+`v2.0` and `v2.1` byte-for-byte unchanged.
+
+The exact candidate fingerprints are:
+
+- concept content: `fnv1a64:18974b8087ddb5a4`
+- localized question content: `fnv1a64:561391552a3ba191`
+
+Changing any candidate label, prompt, option, example, explanation, tip, or
+workflow-effect statement invalidates its recorded fingerprint. Runtime model
+translation is never permitted.
+
+### Required accountable human review
+
+Generate the UTF-8 Excel-compatible review package with:
+
+`npm run review:template-copilot-v2-step8`
+
+The output is
+`docs/template-authoring/step-8-language-review.csv`. It contains 1,176 review
+rows: every one of the 16 concepts and 316 questions in each of the three
+locales, plus all 180 localized resolver-specific prompts that replace the
+general prompt after a user selects fixed email, staff-directory role, or
+request-field email. Reviewers must inspect meaning, natural language,
+terminology, examples, option labels, every visible prompt variant, and
+consistency with the language-independent semantic fields. Each locale needs:
+
+1. a named accountable reviewer with authority for that language and business
+   workflow terminology;
+2. an explicit approve or reject decision covering every row for the exact
+   fingerprint;
+3. an RFC 3339 review time and durable corporate evidence reference, such as a
+   controlled ticket or signed review record; and
+4. corrections returned as a new candidate followed by a regenerated
+   fingerprint and a complete renewed review.
+
+After approval evidence is received, copy the named evidence into the pinned
+concept and question review manifests, enable only the approved locales in the
+Step 8 rollout contract, rerun all deterministic checks, and run the
+authenticated Preview qualification. A locale becomes production-ready only
+when the rollout switch, all concept approvals, and the complete question
+approval are true together. Missing, pending, rejected, model-reviewed,
+unnamed, untimestamped, or evidence-free content fails closed.
+
+The native **What does this mean?** button opens a touch- and
+keyboard-accessible region containing the plain explanation, question-specific
+tip, example, and workflow effect. It uses `aria-expanded`, `aria-controls`, a
+labelled region, minimum touch sizing, visible focus, CJK-safe wrapping, and no
+hover-only interaction. The Admin page truthfully shows the candidate
+fingerprints, pending locale status, enabled state, and any later named review
+evidence.
+
+If an enabled locale later loses approved content, the resolver may show only
+the next approved locale in the pinned fallback order. It displays an explicit
+notice and emits the bounded `template_copilot_help_fallback` telemetry event
+with the concept ID, pinned library version, reason, requested locale, and
+displayed locale. If no approved fallback exists, employees see an explicit
+help-unavailable message; the app does not invent or translate content.
+
+Question selection, applicability, readiness, stored answers, fact values, and
+compilation remain language-independent. Deterministic tests compare all three
+locales, mixed-script evidence, missing/unreviewed fallback, human-review
+gating, jargon removal, form and simultaneous-stage semantics, and actual
+pseudo-localized/long-CJK component layout. After real approval and an isolated
+Preview deployment, run:
+
+`npm run test:e2e:template-copilot-v2-step8`
+
+That gate starts a genuine `v2.2` interview in all three approved locales,
+checks the exact pins and absence of fallback, opens and closes help by
+keyboard, renders stress content inside the real help component, scans light
+and dark modes with axe, and checks mobile touch sizing and overflow. Promotion
+is not authorized by this runbook. Rollback selects `v2.1` for new sessions;
+the server must retain `v2.2` and `concepts.v1.0` for any sessions already
+created after approval. Step 8 requires no database migration.
+
 ## Operations
 
 Required server variables:
@@ -496,9 +601,10 @@ former branch cannot survive a correction.
 
 ## Copilot v2 Step 4: guided answer aids without hidden answers
 
-New v2 sessions pin `questionLibraryVersion: v2.1`. The version adds only a
-deterministic interaction contract; it does not alter a question ID, decision
-ID, validation rule, or mutation endpoint. Existing `v2.0` sessions retain
+Step 4 introduced `questionLibraryVersion: v2.1`; current Step 8 sessions pin
+`v2.2`, which inherits the same deterministic interaction contract. Neither
+version alters a question ID, decision ID, validation rule, or mutation
+endpoint. Existing `v2.0` sessions retain
 their previous controls, so disabling the v2 rollout continues to render the
 plain typed v1 flow without deleting v2 ledgers or prior answers.
 
@@ -513,7 +619,7 @@ after a later reopen/re-answer reads that same-command transcript only after
 the locked owner check confirms replay; it never reconstructs an acknowledgement
 from a newer ledger value.
 
-For applicable v2.1 questions, the controller may return optional suggestions,
+For applicable v2.1 and v2.2 questions, the controller may return optional suggestions,
 an alternate example, a `Why are you asking?` help disclosure, and localized
 labels in English, Traditional Chinese, and Simplified Chinese. Suggestions
 only populate the editable local draft. Examples are visibly marked **Example

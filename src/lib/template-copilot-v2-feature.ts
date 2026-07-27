@@ -36,7 +36,7 @@ export function isTemplateCopilotV2Enabled(
 }
 
 /** Step 4 is independently kill-switchable. It is server-derived capability
- * metadata, never a browser-controlled flag, so an existing v2.1 ledger can
+ * metadata, never a browser-controlled flag, so an existing v2.1/v2.2 ledger can
  * remain readable while the enhanced controls are withdrawn. */
 export function isTemplateCopilotV2Step4Enabled(
   env?: TemplateCopilotV2Step4Environment,
