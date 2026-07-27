@@ -23,12 +23,17 @@ const candidateText = z.string().trim().min(1).superRefine((value, context) => {
   }
 });
 const messageId = z.string().trim().min(1).max(128);
+// Describe-everything accepts a bounded 80k-code-point source.  Candidate
+// wording remains deliberately small, but its exact quote may legitimately
+// occur near the end of that durable source, so evidence coordinates must use
+// the same bound rather than an unrelated 8k UI-era limit.
+export const templateCopilotV2MaximumSourceCodePoints = 80_000;
 const evidenceRule = z.enum(["exact", "nfkc_trim_collapse", "nfkc_trim_collapse_whitespace", "enum_lexical", "approval_word_to_kind", "ordinal_to_sequence", "array_position_to_sequence", "boolean_lexical", "named_attachment_is_required", "duration_hours"]);
 export const templateCopilotV2LeafEvidenceSchema = z.object({
   path: z.string().max(256).regex(/^(?:\/$|(?:\/(?:[A-Za-z0-9_.-]|~[01])+)+$)/),
   messageId,
-  startCodePoint: z.number().int().min(0).max(8_000),
-  endCodePoint: z.number().int().min(1).max(8_000),
+  startCodePoint: z.number().int().min(0).max(templateCopilotV2MaximumSourceCodePoints),
+  endCodePoint: z.number().int().min(1).max(templateCopilotV2MaximumSourceCodePoints),
   exactText: candidateText,
   normalizationRule: evidenceRule.optional(),
 }).strict();

@@ -3,6 +3,7 @@ import {
   approvalError,
   approvalJson,
   createApprovalServerContext,
+  safeApprovalLog,
 } from "@/lib/approval-server";
 import { readBoundedFormData } from "@/lib/bounded-request";
 import {
@@ -19,7 +20,10 @@ import {
   loadTemplateCopilotSession,
 } from "@/lib/template-copilot-server-data";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
-import { isTemplateCopilotV2Enabled } from "@/lib/template-copilot-v2-feature";
+import { isTemplateCopilotV2Enabled, isTemplateCopilotV2ModeEnabled } from "@/lib/template-copilot-v2-feature";
+import { bindTemplateCopilotV2DocumentIdentity, runTemplateCopilotV2DescribeCommand } from "@/lib/template-copilot-v2-describe-command";
+import { templateCopilotV2DescribeResponseDisposition } from "@/lib/template-copilot-v2-describe-response";
+import { extractTemplateCopilotV2Candidates, TemplateCopilotModelError } from "@/lib/template-copilot-ai";
 
 export async function POST(
   request: NextRequest,
@@ -77,15 +81,53 @@ export async function POST(
         404,
       );
     }
-    if (current.ledger.schemaVersion !== 1) {
+    if (current.ledger.schemaVersion === 2 && !isTemplateCopilotV2Enabled()) {
       return approvalJson(
         cookieSource,
         correlationId,
-        { error: { code: "v2_session_read_only", message: "This v2 Copilot session must use its dedicated v2 document path." } },
-        409,
+        { error: { code: "v2_unavailable", message: "The Copilot v2 document endpoint is unavailable." } },
+        404,
       );
     }
-    if (isTemplateCopilotV2Enabled()) {
+    if (current.ledger.schemaVersion === 2 && isTemplateCopilotV2Enabled()) {
+      if (!isTemplateCopilotV2ModeEnabled("describe_everything")) {
+        return approvalJson(
+          cookieSource,
+          correlationId,
+          { error: { code: "mode_unavailable", message: "Describe-everything document intake is temporarily unavailable." } },
+          404,
+        );
+      }
+      // `safe.extract.text` is the exact bounded source supplied to the
+      // model and inserted by the durable command preparer before evidence
+      // offsets are created. The finalizer records only the safe metadata in
+      // audit detail and preserves candidates as review-only.
+      const document = bindTemplateCopilotV2DocumentIdentity({
+        sessionId,
+        idempotencyKey: clientMessageId,
+        document: safe.extract,
+      });
+      const result = await runTemplateCopilotV2DescribeCommand({
+        session, service, actor, sessionId, expectedRevision, idempotencyKey: clientMessageId,
+        mode: "describe_everything",
+        sourceText: document.text, document,
+        extractCandidates: extractTemplateCopilotV2Candidates,
+        fallbackReason: (error) => error instanceof TemplateCopilotModelError
+          ? error.reasonCode
+          : "provider_error",
+      });
+      if (result.outcome === "guided_fallback") {
+        safeApprovalLog("template_copilot_v2_document_fallback", correlationId, {
+          reason: typeof result.detail === "object" && result.detail && "fallbackReason" in result.detail
+            ? String(result.detail.fallbackReason).slice(0, 64)
+            : "provider_error",
+        });
+      }
+      const terminal = templateCopilotV2DescribeResponseDisposition(result);
+      if (terminal) return approvalJson(cookieSource, correlationId, terminal.body, terminal.status);
+      return templateAuthoringRpcResponse({ cookieSource, correlationId, result });
+    }
+    if (current.ledger.schemaVersion !== 1 || isTemplateCopilotV2Enabled()) {
       return approvalJson(
         cookieSource,
         correlationId,

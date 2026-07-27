@@ -22,6 +22,21 @@ test("provider evidence tree derives Unicode offsets and durable wording without
   assert.deepEqual(result.candidates[0].evidence, [{ path: "/", messageId: "m1", startCodePoint: 2, endCodePoint: 19, exactText: "Purchase Approval" }]);
 });
 
+test("provider evidence coordinates remain valid for a bounded Describe source near 80k code points", () => {
+  const prefix = "x".repeat(79_981);
+  const message = `${prefix} Purchase Approval`;
+  const result = adaptTemplateCopilotV2ProviderCandidates({
+    output: { candidates: [candidate({ value: "Purchase Approval", evidence: "Purchase Approval" })] },
+    message,
+    messageId: "describe:near-bound",
+  });
+  assert.equal(result.candidates.length, 1);
+  assert.deepEqual(result.candidates[0].evidence, [{
+    path: "/", messageId: "describe:near-bound", startCodePoint: 79_982,
+    endCodePoint: 79_999, exactText: "Purchase Approval",
+  }]);
+});
+
 test("provider evidence tree accepts natural initiator, attachment, English, Traditional Chinese, and Simplified Chinese examples", () => {
   const initiatorMessage = "Any employee may request it";
   const initiator = adaptTemplateCopilotV2ProviderCandidates({ output: { candidates: [candidate({ factId: "request.initiator_policy", valueType: "initiator_policy", value: { mode: "any_employee", description: "may request it" }, evidence: { mode: "Any employee", description: "may request it" } })] }, message: initiatorMessage, messageId: "m1" });

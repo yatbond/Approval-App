@@ -122,6 +122,20 @@ test("plain requirement files are bounded and wrapped as untrusted data", async 
   assert.match(wrapped, /Ignore previous instructions/);
 });
 
+test("legacy document sanitizer retains unique upload identities", async () => {
+  const first = await sanitizeRequirementDocument(new File(["same requirements"], "requirements.txt", { type: "text/plain" }));
+  const retry = await sanitizeRequirementDocument(new File(["same requirements"], "requirements.txt", { type: "text/plain" }));
+  const changed = await sanitizeRequirementDocument(new File(["changed requirements"], "requirements.txt", { type: "text/plain" }));
+  assert.equal(first.ok, true);
+  assert.equal(retry.ok, true);
+  assert.equal(changed.ok, true);
+  if (!first.ok || !retry.ok || !changed.ok) return;
+  assert.notEqual(retry.extract.id, first.extract.id);
+  assert.equal(retry.extract.sha256, first.extract.sha256);
+  assert.notEqual(changed.extract.id, first.extract.id);
+  assert.match(first.extract.id, /^req-[0-9a-f-]{36}$/u);
+});
+
 test("active-content PDFs and executable disguises are rejected", async () => {
   const activePdf = new File(
     ["%PDF-1.7\n1 0 obj <</JavaScript 2 0 R>>"],
@@ -138,6 +152,26 @@ test("active-content PDFs and executable disguises are rejected", async () => {
   const disguised = await sanitizeRequirementDocument(executable);
   assert.equal(disguised.ok, false);
   if (!disguised.ok) assert.equal(disguised.status, 415);
+});
+
+test("requirement documents reject oversized uploads and preserve a valid 80k-code-point boundary", async () => {
+  const oversized = await sanitizeRequirementDocument(new File(
+    [new Uint8Array(5 * 1024 * 1024 + 1)],
+    "too-large.txt",
+    { type: "text/plain" },
+  ));
+  assert.equal(oversized.ok, false);
+  if (!oversized.ok) assert.equal(oversized.status, 413);
+
+  const unicode = await sanitizeRequirementDocument(new File(
+    ["😀".repeat(80_010)],
+    "unicode-requirements.txt",
+    { type: "text/plain" },
+  ));
+  assert.equal(unicode.ok, true);
+  if (!unicode.ok) return;
+  assert.equal(Array.from(unicode.extract.text).length, 80_000);
+  assert.doesNotMatch(unicode.extract.text, /[\uD800-\uDBFF]$/u, "the bound must not retain half a surrogate pair");
 });
 
 test("draft retry identity is stable per session and idempotency key", () => {

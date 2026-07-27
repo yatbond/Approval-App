@@ -49,6 +49,20 @@ export class TemplateCopilotModelError extends Error {
   }
 }
 
+/** Keep Describe's fallback boundary independent of provider configuration
+ * internals. This is intentionally narrow: legacy v1 flows may still present
+ * configuration diagnostics, while v2's durable command lifecycle converts
+ * this one failure family into its persisted Guided outcome. */
+export function classifyTemplateCopilotV2ProviderFailure(error: unknown) {
+  if (error instanceof TemplateCopilotConfigurationError) {
+    return new TemplateCopilotModelError(
+      "The Copilot model is temporarily unavailable.",
+      { reasonCode: "provider_configuration" },
+    );
+  }
+  return error;
+}
+
 type TemplateCopilotAiConfiguration = {
   client: OpenAI;
   model: string;
@@ -380,7 +394,16 @@ export async function extractTemplateCopilotV2Candidates({
   message: string;
   messageId: string;
 }) {
-  const configured = aiConfiguration();
+  // v2 Describe has a durable Guided fallback.  Treat a missing or malformed
+  // provider configuration exactly like an unavailable provider so callers
+  // never need to distinguish a deployment fault from a transient outage (or
+  // accidentally leave a Describe command half-complete before its fallback).
+  let configured: TemplateCopilotAiConfiguration;
+  try {
+    configured = aiConfiguration();
+  } catch (error) {
+    throw classifyTemplateCopilotV2ProviderFailure(error);
+  }
   const output = await requestStructuredOutput({
     configured,
     schema: templateCopilotV2ProviderCandidateOutputSchema,

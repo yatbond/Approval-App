@@ -21,7 +21,7 @@ test("Step 4 choice selection is accessible and requires a separate Continue bef
   assert.match(source, /\{v2Interaction\.labels\.continue\}/);
   assert.match(source, /min-h-11/);
   assert.match(source, /aria-expanded=\{questionHelpVisible\}/);
-  assert.match(source, /maxLength=\{answerLimit\}/);
+  assert.match(source, /maxLength=\{isV2State\(state\) \? composerLimit \* 2 : composerLimit\}/);
 });
 
 test("Step 4 stacks its full-width blocks and keeps browser coverage for keyboard, mobile, and themes", () => {

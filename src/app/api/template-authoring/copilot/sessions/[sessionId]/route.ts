@@ -10,9 +10,10 @@ import {
   decodeTemplateCopilotMessageCursor,
   templateCopilotTranscriptFromStored,
 } from "@/lib/template-copilot-server-data";
-import { isTemplateCopilotV2Enabled, isTemplateCopilotV2Step4Enabled, isTemplateCopilotV2Step5EditingEnabled } from "@/lib/template-copilot-v2-feature";
+import { getTemplateCopilotV2ModeFlags, isTemplateCopilotV2Enabled, isTemplateCopilotV2Step4Enabled, isTemplateCopilotV2Step5EditingEnabled } from "@/lib/template-copilot-v2-feature";
 import { getTemplateCopilotV2InterviewState, getTemplateCopilotV2SpecialReview } from "@/lib/template-copilot-question-library";
 import { projectTemplateCopilotV2AuthoritativeLedger } from "@/lib/template-copilot-v2-authoritative-projection";
+import { loadTemplateCopilotV2AuthoringModeState } from "@/lib/template-copilot-v2-server-data";
 
 export async function GET(
   request: NextRequest,
@@ -20,7 +21,7 @@ export async function GET(
 ) {
   const resolved = await createApprovalServerContext(request);
   if (!resolved.ok) return approvalError(resolved);
-  const { session, actor, cookieSource, correlationId } = resolved.context;
+  const { session, service, actor, cookieSource, correlationId } = resolved.context;
   const { sessionId } = await context.params;
   const cursorValue = request.nextUrl.searchParams.get("messageCursor");
   const messageCursor = decodeTemplateCopilotMessageCursor(cursorValue);
@@ -40,9 +41,13 @@ export async function GET(
       );
     }
     const transcript = templateCopilotTranscriptFromStored(result);
-    const sessionPayload = result.ledger.schemaVersion === 2 && isTemplateCopilotV2Enabled()
-      ? (() => { const interview = getTemplateCopilotV2InterviewState(result.ledger); return { ...transcript, interview, specialReview: getTemplateCopilotV2SpecialReview(result.ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(result.ledger, { inapplicableFactIds: interview.inapplicableFactIds }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled() }; })()
-      : transcript;
+    let sessionPayload: typeof transcript | Record<string, unknown> = transcript;
+    if (result.ledger.schemaVersion === 2 && isTemplateCopilotV2Enabled()) {
+      const ledger = result.ledger;
+      const interview = getTemplateCopilotV2InterviewState(ledger);
+      const modeState = await loadTemplateCopilotV2AuthoringModeState(service, result.id);
+      sessionPayload = { ...transcript, interview, specialReview: getTemplateCopilotV2SpecialReview(ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled(), modeFlags: getTemplateCopilotV2ModeFlags(), modeState };
+    }
     safeApprovalLog("template_copilot_session_read", correlationId, {
       viewer: result.owner_id === actor.id ? "owner" : "admin",
       status: result.status,

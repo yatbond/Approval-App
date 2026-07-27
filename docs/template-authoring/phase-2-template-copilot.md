@@ -308,6 +308,42 @@ records.
 
 ## Requirements files
 
+## Copilot v2 Step 6: interchangeable authoring modes
+
+Step 6 adds three server-gated entry methods to the existing v2 ledger: **Guide
+me step by step**, **Let me describe everything**, and **Start from a similar
+template**. All three use the same fact ledger, candidate review, readiness,
+validation, and compiler. Switching mode never creates a second interview and
+does not clear committed facts, open conflicts, or unresolved requirements.
+
+`TEMPLATE_COPILOT_V2_GUIDED`, `TEMPLATE_COPILOT_V2_DESCRIBE_EVERYTHING`, and
+`TEMPLATE_COPILOT_V2_SIMILAR_TEMPLATE` are separate default-off server-only
+flags. Disable a mode to stop new actions in that mode; existing sessions and
+their frozen source snapshot remain readable. Guided gaps are the safe fallback
+for a disabled or unavailable model-based describe action. Because every broad
+intake returns to deterministic gaps, the Guided flag also gates creation of
+new v2 interviews and new `/answers` mutations. Turning it off does not hide or
+delete an existing interview.
+
+Describe-everything accepts one bounded narrative (80,000 Unicode code points)
+and reuses the source-backed extraction contract. Model output is candidate-only
+and malformed/provider-failed output changes nothing; the response supplies the
+same deterministic next guided question instead.
+
+Similar-template selection is RLS-authorized on the server. The selected
+published template version is copied into a version-identified, SHA-256-bound
+snapshot before any candidates are projected. Later source edits, archival, or
+deletion cannot change that snapshot. Imported values are reviewable candidates
+with the source-version identity; they never auto-commit. The first follow-up
+asks what differs, then the normal controller supplies stable unresolved gaps.
+
+The migration `20260728113000_template_copilot_v2_authoring_modes.sql` stores
+mode/snapshot state privately and locks it with the same session revision and
+idempotency receipt as ledger writes. It grants no browser table access. Do not
+enable a Step 6 flag until its migration and focused race/authorization tests
+have passed. Rollback is flag-first and does not delete v2 facts, candidates,
+conflicts, receipts, or snapshots.
+
 The first release accepts text, Markdown, and PDF up to 5 MB, with at most five
 files per interview.
 

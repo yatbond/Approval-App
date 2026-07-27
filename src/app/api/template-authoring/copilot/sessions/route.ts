@@ -31,7 +31,7 @@ import {
 import { templateCopilotSessionListQuerySchema } from "@/lib/template-copilot-history";
 import { TemplateCopilotInvalidSessionCursorError } from "@/lib/template-copilot-session-pagination";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
-import { isTemplateCopilotV2Enabled } from "@/lib/template-copilot-v2-feature";
+import { isTemplateCopilotV2Enabled, isTemplateCopilotV2ModeEnabled } from "@/lib/template-copilot-v2-feature";
 import { createTemplateCopilotV2Session } from "@/lib/template-copilot-v2-server-data";
 
 /** Read-only, authenticated capability probe.  The browser uses this before a
@@ -170,6 +170,14 @@ export async function POST(request: NextRequest) {
       parsed.data.locale ||
       detectTemplateCopilotLocale(parsed.data.initialRequirement || "");
     if (isTemplateCopilotV2Enabled()) {
+      if (!isTemplateCopilotV2ModeEnabled("guided")) {
+        return withTemplateCopilotStartSchemaVersion(approvalJson(
+          cookieSource,
+          correlationId,
+          { error: { code: "mode_unavailable", message: "New Guided Copilot interviews are temporarily unavailable." } },
+          404,
+        ));
+      }
       if (parsed.data.initialRequirement) {
         return withTemplateCopilotStartSchemaVersion(approvalJson(
           cookieSource,

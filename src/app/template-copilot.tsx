@@ -34,8 +34,30 @@ import { TemplateCopilotHistoryPanel } from "./template-copilot-history-panel";
 import type { TemplateCopilotV2AuthoritativeProjection } from "@/lib/template-copilot-v2-authoritative-projection";
 import { TemplateCopilotV2AuthoritativeMap, type TemplateCopilotV2MapTransition } from "./template-copilot-v2-authoritative-map";
 import { createPendingTemplateCopilotV2MapCommand, parsePendingTemplateCopilotV2MapCommand, templateCopilotV2PendingMapCommandBody, type PendingTemplateCopilotV2MapCommand } from "@/lib/template-copilot-v2-map-command";
+import { templateCopilotV2AuthoringModes, templateCopilotV2ModeCopy, type TemplateCopilotV2AuthoringMode, type TemplateCopilotV2ModeState } from "@/lib/template-copilot-v2-mode-contract";
+import { nextTemplateCopilotV2PendingModeCommand, parseTemplateCopilotV2PendingModeCommand, templateCopilotDocumentIdentity, templateCopilotV2PendingModeCommandFailureDisposition, templateCopilotV2PendingModeCommandRequest, type TemplateCopilotV2PendingModeCommand } from "@/lib/template-copilot-v2-mode-command";
+import { getTemplateCopilotTranscriptPresentation, getTemplateCopilotV2ModeUiContract, shouldSubmitTemplateCopilotComposerKey, templateCopilotV2ModeUiCopy } from "@/lib/template-copilot-v2-mode-ui";
 
 type ChatMessage = TemplateCopilotClientChatMessage;
+
+function TemplateCopilotTranscriptContent({
+  content,
+  locale,
+}: {
+  content: string;
+  locale: TemplateCopilotLocale;
+}) {
+  const presentation = getTemplateCopilotTranscriptPresentation(content);
+  if (!presentation.collapsed) return <p className="whitespace-pre-wrap">{content}</p>;
+  const copy = templateCopilotV2ModeUiCopy(locale);
+  return <div>
+    <p className="whitespace-pre-wrap">{presentation.preview}</p>
+    <details className="mt-2" aria-live="off">
+      <summary className="min-h-11 cursor-pointer content-center underline underline-offset-2">{copy.showFullMessage} ({presentation.count.toLocaleString(locale)})</summary>
+      <p className="mt-2 whitespace-pre-wrap break-words">{content}</p>
+    </details>
+  </div>;
+}
 
 const pendingTemplateCopilotV2MapEditStorageKey = "approval-template-copilot-v2-pending-map-edit";
 function loadPendingTemplateCopilotV2MapEdit(): PendingTemplateCopilotV2MapCommand | null {
@@ -71,6 +93,18 @@ function persistPendingTemplateCopilotV2Special(value: TemplateCopilotV2PendingS
   try { if (value) window.sessionStorage.setItem(pendingTemplateCopilotV2SpecialStorageKey, JSON.stringify(value)); else window.sessionStorage.removeItem(pendingTemplateCopilotV2SpecialStorageKey); } catch { /* best-effort recovery only */ }
 }
 
+const pendingTemplateCopilotV2ModeStorageKey = "approval-template-copilot-v2-pending-mode";
+function loadPendingTemplateCopilotV2Mode(): TemplateCopilotV2PendingModeCommand | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return parseTemplateCopilotV2PendingModeCommand(JSON.parse(window.sessionStorage.getItem(pendingTemplateCopilotV2ModeStorageKey) || "null"));
+  } catch { return null; }
+}
+function persistPendingTemplateCopilotV2Mode(value: TemplateCopilotV2PendingModeCommand | null) {
+  if (typeof window === "undefined") return;
+  try { if (value) window.sessionStorage.setItem(pendingTemplateCopilotV2ModeStorageKey, JSON.stringify(value)); else window.sessionStorage.removeItem(pendingTemplateCopilotV2ModeStorageKey); } catch { /* recovery aid only; the server receipt remains authoritative */ }
+}
+
 type V1CopilotState = {
   sessionId: string;
   revision: number;
@@ -84,6 +118,8 @@ type V2CopilotState = Omit<V1CopilotState, "ledger"> & {
   step4Enabled?: boolean;
   step5EditingEnabled?: boolean;
   projection?: TemplateCopilotV2AuthoritativeProjection;
+  modeState?: TemplateCopilotV2ModeState;
+  modeFlags?: { guided: boolean; describeEverything: boolean; similarTemplate: boolean };
 };
 type CopilotState = V1CopilotState | V2CopilotState;
 function isV2State(state: CopilotState): state is V2CopilotState {
@@ -218,9 +254,12 @@ export function TemplateCopilot({
   const [extractionRationale, setExtractionRationale] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [similarTemplates, setSimilarTemplates] = useState<Array<{ versionId: string; versionNumber: number; templateKey: string; name: string }>>([]);
+  const [selectedSimilarVersionId, setSelectedSimilarVersionId] = useState("");
   const [pendingV2Command, setPendingV2Command] = useState<TemplateCopilotV2PendingCommand | null>(null);
   const [pendingV2SpecialCommand, setPendingV2SpecialCommand] = useState<TemplateCopilotV2PendingSpecialCommand | null>(null);
   const [pendingMapEdit, setPendingMapEdit] = useState<PendingTemplateCopilotV2MapCommand | null>(null);
+  const [pendingModeCommand, setPendingModeCommand] = useState<TemplateCopilotV2PendingModeCommand | null>(null);
   const [draftReview, setDraftReview] = useState<DraftReviewState | null>(null);
   const [reviewDirty, setReviewDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -238,6 +277,7 @@ export function TemplateCopilot({
   const pendingV2StartRef = useRef<TemplateCopilotV2PendingStart | null>(null);
   const pendingV2SpecialRef = useRef<TemplateCopilotV2PendingSpecialCommand | null>(null);
   const pendingMapEditRef = useRef<PendingTemplateCopilotV2MapCommand | null>(null);
+  const pendingModeCommandRef = useRef<TemplateCopilotV2PendingModeCommand | null>(null);
   const latestV2StateRef = useRef<V2CopilotState | null>(null);
   const v2LifecycleEpochRef = useRef<ReturnType<typeof createTemplateCopilotV2LifecycleFence> | null>(null);
   if (v2LifecycleEpochRef.current === null) {
@@ -295,6 +335,18 @@ export function TemplateCopilot({
     persistPendingTemplateCopilotV2MapEdit(next);
   }
 
+  function installPendingModeCommand(
+    lifecycle: TemplateCopilotV2LifecycleLease,
+    next: TemplateCopilotV2PendingModeCommand | null,
+  ) {
+    return lifecycle.commit(() => {
+      if (next) v2ClientResidueRef.current = true;
+      pendingModeCommandRef.current = next;
+      setPendingModeCommand((current) => lifecycle.isCurrent() ? next : current);
+      persistPendingTemplateCopilotV2Mode(next);
+    });
+  }
+
   const releaseV2AfterRollbackFromEffect = useEffectEvent(releaseV2AfterRollback);
   useEffect(() => { installPendingMapEdit(loadPendingTemplateCopilotV2MapEdit()); }, []);
   useEffect(() => {
@@ -317,6 +369,10 @@ export function TemplateCopilot({
           || recovery.schemaVersion !== 2
           || v2StartInFlightRef.current
         ) return;
+        const storedModeCommand = loadPendingTemplateCopilotV2Mode();
+        if (storedModeCommand && !pendingModeCommandRef.current) {
+          installPendingModeCommand(mountLifecycle, storedModeCommand);
+        }
         if (recovery.pendingSpecial && !pendingV2SpecialRef.current) {
           installPendingV2Special(mountLifecycle, recovery.pendingSpecial);
         } else if (recovery.pendingStart && !pendingV2StartRef.current) {
@@ -343,7 +399,23 @@ export function TemplateCopilot({
   const extractionReviewCopy = templateCopilotV2ReviewPanelCopy(locale);
   const composer = state ? getTemplateCopilotComposerRenderContract({ schemaVersion: isV2State(state) ? 2 : 1, status: state.status, ...(isV2State(state) ? { interview: state.interview } : {}) }) : null;
   const answerLimit = getTemplateCopilotAnswerLimit(state && isV2State(state) ? 2 : 1);
-  const v2ReplayPending = Boolean(state && isV2State(state) && templateCopilotV2InterviewMutationBlocked({ pendingAnswer: pendingV2Command, pendingSpecial: pendingV2SpecialCommand }));
+  const activeV2Mode = state && isV2State(state) ? state.modeState?.mode || "guided" : null;
+  const v2ModeContract = state && isV2State(state)
+    ? getTemplateCopilotV2ModeUiContract({
+        mode: activeV2Mode || "guided",
+        flags: state.modeFlags,
+        hasSourceSnapshot: Boolean(state.modeState?.sourceSnapshot),
+      })
+    : null;
+  const broadMode = v2ModeContract?.broadMode === true;
+  const activeModeDisabled = Boolean(activeV2Mode && !v2ModeContract?.availableModes.includes(activeV2Mode));
+  const composerLimit = v2ModeContract?.composerLimit || answerLimit;
+  const modeUiCopy = templateCopilotV2ModeUiCopy(locale);
+  const broadModeKind = state && isV2State(state) && broadMode ? state.modeState?.mode : undefined;
+  const broadComposerLabel = broadModeKind === "similar_template" ? modeUiCopy.similarLabel : modeUiCopy.describeLabel;
+  const broadComposerPlaceholder = broadModeKind === "similar_template" ? modeUiCopy.similarPlaceholder : modeUiCopy.describePlaceholder;
+  const broadComposerExample = broadModeKind === "similar_template" ? modeUiCopy.similarExample : modeUiCopy.describeExample;
+  const v2ReplayPending = Boolean(state && isV2State(state) && (templateCopilotV2InterviewMutationBlocked({ pendingAnswer: pendingV2Command, pendingSpecial: pendingV2SpecialCommand }) || pendingModeCommand?.sessionId === state.sessionId));
   const v2SpecialReview = state && isV2State(state) ? state.specialReview : [];
   const v2StoredInteraction = state && isV2State(state) ? state.interview.nextQuestion?.interaction : undefined;
   const step4Render = getTemplateCopilotV2Step4RenderContract({ schemaVersion: state && isV2State(state) ? 2 : 1, hasInteraction: Boolean(v2StoredInteraction), enabled: Boolean(state && isV2State(state) && state.step4Enabled) });
@@ -381,7 +453,12 @@ export function TemplateCopilot({
     next: V2CopilotState,
   ) {
     if (!lifecycle.isCurrent()) return null;
-    const selected = selectNewerTemplateCopilotV2Snapshot(latestV2StateRef.current, next);
+    const candidate = {
+      ...next,
+      modeFlags: next.modeFlags || latestV2StateRef.current?.modeFlags,
+      modeState: next.modeState || latestV2StateRef.current?.modeState,
+    } satisfies V2CopilotState;
+    const selected = selectNewerTemplateCopilotV2Snapshot(latestV2StateRef.current, candidate);
     const installed = lifecycle.commit(() => {
       const priorQuestionId = latestV2StateRef.current?.interview.nextQuestion?.questionId;
       if (priorQuestionId !== selected.interview.nextQuestion?.questionId) {
@@ -391,6 +468,9 @@ export function TemplateCopilot({
       }
       v2ClientResidueRef.current = true;
       latestV2StateRef.current = selected;
+      if (selected.modeState?.sourceSnapshot) {
+        setSelectedSimilarVersionId(selected.modeState.sourceSnapshot.versionId);
+      }
       setState((current) => {
         if (!lifecycle.isCurrent()) return current;
         return current && isV2State(current)
@@ -573,6 +653,7 @@ export function TemplateCopilot({
         projection: response.projection as TemplateCopilotV2AuthoritativeProjection,
         step4Enabled: response.step4Enabled === true,
         step5EditingEnabled: response.step5EditingEnabled === true,
+        modeFlags: response.modeFlags as V2CopilotState["modeFlags"],
       } satisfies V2CopilotState : {
         sessionId: String(response.sessionId), revision: Number(response.revision),
         status: String(response.status) as V1CopilotState["status"], ledger: response.ledger as TemplateCopilotLedger,
@@ -689,7 +770,7 @@ export function TemplateCopilot({
     answer: TemplateCopilotV2PendingCommand["answer"],
     onAccepted?: (command: TemplateCopilotV2PendingCommand, lifecycle: TemplateCopilotV2LifecycleLease) => void,
   ) {
-    if (!state || !isV2State(state) || busy || pendingV2SpecialRef.current || v2SubmitInFlightRef.current) return false;
+    if (!state || !isV2State(state) || activeModeDisabled || busy || pendingV2SpecialRef.current || v2SubmitInFlightRef.current) return false;
     const lifecycle = captureV2LifecycleLease();
     let command: TemplateCopilotV2PendingCommand;
     try {
@@ -879,7 +960,10 @@ export function TemplateCopilot({
       clearPendingAnswer: () => {
         cleanupLifecycle.commit(() => {
           activeV2CommandRef.current = null;
+          pendingModeCommandRef.current = null;
           setPendingV2Command((current) => cleanupLifecycle.isCurrent() ? null : current);
+          setPendingModeCommand((current) => cleanupLifecycle.isCurrent() ? null : current);
+          persistPendingTemplateCopilotV2Mode(null);
         });
       },
       clearCommandTracking: () => {
@@ -977,7 +1061,7 @@ export function TemplateCopilot({
   }
 
   async function submitV2Special(requested: TemplateCopilotV2SpecialCommand) {
-    if (!state || !isV2State(state) || busy || pendingV2Command || activeV2CommandRef.current || v2SubmitInFlightRef.current || v2SpecialInFlightRef.current) return;
+    if (!state || !isV2State(state) || activeModeDisabled || busy || pendingV2Command || activeV2CommandRef.current || v2SubmitInFlightRef.current || v2SpecialInFlightRef.current) return;
     const lifecycle = captureV2LifecycleLease();
     let command: TemplateCopilotV2PendingSpecialCommand;
     try {
@@ -1055,11 +1139,139 @@ export function TemplateCopilot({
     }
   }
 
+  async function loadSimilarTemplates() {
+    if (!state || !isV2State(state) || busy) return;
+    try {
+      const response = await api(`/api/template-authoring/copilot/sessions/${state.sessionId}/modes`, { method: "GET" });
+      const versions = Array.isArray(response.versions) ? response.versions : [];
+      setSimilarTemplates(versions.filter((item): item is { versionId: string; versionNumber: number; templateKey: string; name: string } => Boolean(item) && typeof item === "object" && typeof (item as { versionId?: unknown }).versionId === "string" && typeof (item as { versionNumber?: unknown }).versionNumber === "number" && typeof (item as { name?: unknown }).name === "string"));
+    } catch (caught) { setError(errorMessage(caught)); }
+  }
+
+  async function switchV2Mode(mode: TemplateCopilotV2AuthoringMode, sourceVersionId?: string) {
+    if (!state || !isV2State(state) || busy) return;
+    try {
+      const lifecycle = captureV2LifecycleLease();
+      if (activeModeDisabled) installPendingModeCommand(lifecycle, null);
+      const pending = nextTemplateCopilotV2PendingModeCommand({
+        pending: !activeModeDisabled && pendingModeCommandRef.current?.sessionId === state.sessionId ? pendingModeCommandRef.current : null,
+        requested: {
+          sessionId: state.sessionId,
+          expectedRevision: state.revision,
+          idempotencyKey: messageId("mode"),
+          operation: { kind: "switch_mode", mode, ...(sourceVersionId ? { sourceVersionId } : {}) },
+        },
+      });
+      installPendingModeCommand(lifecycle, pending);
+      await executePendingModeCommand(pending);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
+  async function submitDescribeEverything(message: string, mode: "describe_everything" | "similar_template") {
+    if (!state || !isV2State(state) || activeModeDisabled || busy) return;
+    try {
+      const pending = nextTemplateCopilotV2PendingModeCommand({
+        pending: pendingModeCommandRef.current?.sessionId === state.sessionId ? pendingModeCommandRef.current : null,
+        requested: {
+          sessionId: state.sessionId,
+          expectedRevision: state.revision,
+          idempotencyKey: messageId(mode === "similar_template" ? "similar-differences" : "describe"),
+          operation: { kind: "describe", mode, message },
+        },
+      });
+      const lifecycle = captureV2LifecycleLease();
+      installPendingModeCommand(lifecycle, pending);
+      await executePendingModeCommand(pending);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
+  async function executePendingModeCommand(command: TemplateCopilotV2PendingModeCommand) {
+    if (!state || !isV2State(state) || busy || state.sessionId !== command.sessionId) return;
+    if (command.operation.kind === "document") {
+      fileRef.current?.click();
+      return;
+    }
+    const lifecycle = captureV2LifecycleLease();
+    if (!lifecycle.commit(() => { setBusy(true); setError(""); })) return;
+    try {
+      const request = templateCopilotV2PendingModeCommandRequest(command);
+      const response = await api(`/api/template-authoring/copilot/sessions/${command.sessionId}/${request.path}`, {
+        method: "POST",
+        body: JSON.stringify(request.body),
+      });
+      const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
+      if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) throw new Error(copy.invalidInterviewUpdate);
+      installV2State(lifecycle, {
+        sessionId: command.sessionId,
+        revision: Number(response.revision),
+        status: String(response.status) as V2CopilotState["status"],
+        ledger: response.ledger as TemplateCopilotV2Ledger,
+        interview,
+        specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [],
+        projection: response.projection as TemplateCopilotV2AuthoritativeProjection,
+        step4Enabled: response.step4Enabled === true,
+        step5EditingEnabled: response.step5EditingEnabled === true,
+        modeFlags: response.modeFlags as V2CopilotState["modeFlags"],
+        modeState: response.modeState as TemplateCopilotV2ModeState | undefined,
+      });
+      if (command.operation.kind === "describe") {
+        commitV2ReactState(lifecycle, setDraft, () => "");
+        const authoritative = parseTemplateCopilotClientChatMessages(response.messages);
+        if (authoritative) {
+          commitV2ReactState(lifecycle, setMessages, (current) => mergeTemplateCopilotClientChatMessages(current, authoritative));
+        }
+      } else {
+        const selectedSourceVersionId = command.operation.sourceVersionId || "";
+        commitV2ReactState(lifecycle, setSelectedSimilarVersionId, () => selectedSourceVersionId);
+      }
+      installPendingModeCommand(lifecycle, null);
+      if (response.fallback === "guided") {
+        commitV2ReactState(lifecycle, setError, () => String(response.message || templateCopilotV2ModeCopy(locale).fallback));
+      }
+    } catch (caught) {
+      if (!lifecycle.isCurrent()) return;
+      const status = templateCopilotApiErrorStatus(caught);
+      const errorCode = templateCopilotApiErrorCode(caught);
+      const disposition = templateCopilotV2PendingModeCommandFailureDisposition(status, errorCode);
+      if (status === 404 && errorCode === "v2_unavailable") {
+        const rollback = releaseV2AfterRollback();
+        if (rollback.released) commitV2ReactState(rollback.lifecycle, setError, () => copy.v2RollbackNotice);
+      } else if (disposition === "reload") {
+        try {
+          const recovered = await reloadV2ExtractionReviewState(lifecycle, command.sessionId);
+          if (recovered) {
+            installPendingModeCommand(lifecycle, null);
+            commitV2ReactState(lifecycle, setError, () => copy.concurrentChangeSuperseded);
+          }
+        } catch {
+          commitV2ReactState(lifecycle, setError, () => copy.reloadInterviewError);
+        }
+      } else if (disposition === "clear") {
+        installPendingModeCommand(lifecycle, null);
+        commitV2ReactState(lifecycle, setError, () => errorMessage(caught));
+      } else {
+        commitV2ReactState(lifecycle, setError, () => `${errorMessage(caught)} ${copy.retrySameAnswer}`);
+      }
+    }
+    finally { lifecycle.commit(() => setBusy((current) => lifecycle.isCurrent() ? false : current)); }
+  }
+
   async function send() {
     const message = draft.trim();
     if (!state || !message || busy) return;
+    if (isV2State(state) && activeModeDisabled) return;
     const id = messageId("turn");
     if (isV2State(state)) {
+      if (state.modeState?.mode === "describe_everything" || state.modeState?.mode === "similar_template") {
+        if (templateCopilotUnicodeCodePointCount(message) > 80_000) { setError(modeUiCopy.tooLong); return; }
+        void submitDescribeEverything(message, state.modeState.mode);
+        return;
+      }
+      if (activeModeDisabled) return;
       if (v2InputMode !== "answerable") return;
       if (templateCopilotUnicodeCodePointCount(message) > 8_000) {
         setError(copy.answerTooLong);
@@ -1131,48 +1343,134 @@ export function TemplateCopilot({
   }
 
   async function upload(file: File) {
-    if (!state || busy || isV2State(state)) return;
-    const form = new FormData();
-    form.set("file", file);
-    form.set("expectedRevision", String(state.revision));
-    form.set("clientMessageId", messageId("document"));
+    if (
+      !state
+      || busy
+      || (isV2State(state) && !v2ModeContract?.allowRequirementsDocument)
+    ) return;
+    const lifecycle = isV2State(state) ? captureV2LifecycleLease() : null;
     setBusy(true);
     setError("");
     try {
-      const response = await legacyApi(
+      let documentCommandId = messageId("document");
+      if (isV2State(state)) {
+        const documentIdentity = await templateCopilotDocumentIdentity(file);
+        const pending = nextTemplateCopilotV2PendingModeCommand({
+          pending: pendingModeCommandRef.current?.sessionId === state.sessionId ? pendingModeCommandRef.current : null,
+          requested: {
+            sessionId: state.sessionId,
+            expectedRevision: state.revision,
+            idempotencyKey: documentCommandId,
+            operation: { kind: "document", ...documentIdentity },
+          },
+        });
+        if (!lifecycle?.isCurrent()) return;
+        installPendingModeCommand(lifecycle, pending);
+        documentCommandId = pending.idempotencyKey;
+      }
+      const form = new FormData();
+      form.set("file", file);
+      form.set("expectedRevision", String(isV2State(state) && pendingModeCommandRef.current?.idempotencyKey === documentCommandId ? pendingModeCommandRef.current.expectedRevision : state.revision));
+      form.set("clientMessageId", documentCommandId);
+      const response = await (isV2State(state) ? api : legacyApi)(
         `/api/template-authoring/copilot/sessions/${state.sessionId}/documents`,
         { method: "POST", body: form },
       );
-      setState((current) =>
-        current
-          ? {
-              ...current,
-              revision: Number(response.revision),
-              ledger: response.ledger as TemplateCopilotLedger,
-            }
-          : current,
-      );
-      const uploadMessageId = messageId("document-result");
+      if (isV2State(state)) {
+        const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
+        if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview || !lifecycle) throw new Error(copy.invalidInterviewUpdate);
+        installV2State(lifecycle, {
+          sessionId: state.sessionId,
+          revision: Number(response.revision),
+          status: String(response.status) as V2CopilotState["status"],
+          ledger: response.ledger as TemplateCopilotV2Ledger,
+          interview,
+          specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [],
+          projection: response.projection as TemplateCopilotV2AuthoritativeProjection,
+          step4Enabled: response.step4Enabled === true,
+          step5EditingEnabled: response.step5EditingEnabled === true,
+          modeFlags: response.modeFlags as V2CopilotState["modeFlags"],
+          modeState: response.modeState as TemplateCopilotV2ModeState | undefined,
+        });
+        if (response.fallback === "guided" || response.outcome === "guided_fallback") {
+          commitV2ReactState(lifecycle, setError, () => String(response.message || templateCopilotV2ModeCopy(locale).fallback));
+        }
+        installPendingModeCommand(lifecycle, null);
+      } else {
+        setState((current) =>
+          current
+            ? {
+                ...current,
+                revision: Number(response.revision),
+                ledger: response.ledger as TemplateCopilotLedger,
+              }
+            : current,
+        );
+      }
+      const authoritative = isV2State(state)
+        ? parseTemplateCopilotClientChatMessages(response.messages)
+        : null;
       const createdAt = new Date().toISOString();
-      setMessages((current) => [
-        ...current,
-        createTemplateCopilotClientChatMessage({
-          clientMessageId: uploadMessageId,
-          role: "user",
-          content: `Uploaded ${file.name}`,
-          createdAt,
-        }),
-        createTemplateCopilotClientChatMessage({
-          clientMessageId: uploadMessageId,
-          role: "assistant",
-          content: String(response.assistantMessage),
-          createdAt,
-        }),
-      ]);
+      const uploadedMessages = authoritative || [
+          createTemplateCopilotClientChatMessage({
+            clientMessageId: documentCommandId,
+            role: "user",
+            content: `Uploaded ${file.name}`,
+            createdAt,
+          }),
+          createTemplateCopilotClientChatMessage({
+            clientMessageId: documentCommandId,
+            role: "assistant",
+            content: typeof response.assistantMessage === "string"
+              ? response.assistantMessage
+              : typeof response.message === "string"
+                ? response.message
+                : "",
+            createdAt,
+          }),
+        ].filter((message) => message.content);
+      if (lifecycle) {
+        commitV2ReactState(lifecycle, setMessages, (current) => mergeTemplateCopilotClientChatMessages(current, uploadedMessages));
+      } else {
+        setMessages((current) => mergeTemplateCopilotClientChatMessages(current, uploadedMessages));
+      }
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (!lifecycle || lifecycle.isCurrent()) {
+        const errorCode = templateCopilotApiErrorCode(caught);
+        const status = templateCopilotApiErrorStatus(caught);
+        const disposition = templateCopilotV2PendingModeCommandFailureDisposition(status, errorCode);
+        if (lifecycle && status === 404 && errorCode === "v2_unavailable") {
+          const rollback = releaseV2AfterRollback();
+          if (rollback.released) commitV2ReactState(rollback.lifecycle, setError, () => copy.v2RollbackNotice);
+          return;
+        }
+        if (lifecycle && disposition === "reload") {
+          try {
+            const recovered = await reloadV2ExtractionReviewState(lifecycle, state.sessionId);
+            if (recovered) {
+              installPendingModeCommand(lifecycle, null);
+              setError(copy.concurrentChangeSuperseded);
+            }
+          } catch {
+            setError(copy.reloadInterviewError);
+          }
+          return;
+        }
+        if (lifecycle && disposition === "clear") {
+          installPendingModeCommand(lifecycle, null);
+        }
+        if (errorCode === "too_many_documents") {
+          setError(modeUiCopy.documentLimit);
+          return;
+        }
+        const retryHelp = lifecycle && pendingModeCommandRef.current?.operation.kind === "document"
+          ? (locale === "zh-Hant" ? " 請重新選擇同一檔案，以安全檢查或重試。" : locale === "zh-Hans" ? " 请重新选择同一文件，以安全检查或重试。" : " Reselect the same file to safely check or retry.")
+          : "";
+        setError(`${errorMessage(caught)}${retryHelp}`);
+      }
     } finally {
-      setBusy(false);
+      if (lifecycle) lifecycle.commit(() => setBusy((current) => lifecycle.isCurrent() ? false : current));
+      else setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
@@ -1481,7 +1779,7 @@ export function TemplateCopilot({
               <p className="mb-1 text-xs font-semibold uppercase opacity-70">
                 {message.role === "assistant" ? copy.copilot : copy.you}
               </p>
-              <p className="whitespace-pre-wrap">{message.content}</p>
+              <TemplateCopilotTranscriptContent content={message.content} locale={locale} />
             </div>
           ))}
           {busy && (
@@ -1503,22 +1801,24 @@ export function TemplateCopilot({
         )}
         {state.status !== "draft_created" && (
           <div className="mt-3 space-y-3">
-            {isV2State(state) && v2InputMode === "answerable" && state.interview.nextQuestion && <h4 ref={v2QuestionHeadingRef} id="copilot-current-question" tabIndex={-1} className="w-full text-sm font-semibold text-neutral-900 dark:text-white">{state.interview.nextQuestion.prompt}</h4>}
-            {isV2State(state) && v2InputMode === "answerable" && v2VisibleExample && (
+            {broadMode && <><h4 id="copilot-current-question" className="w-full text-sm font-semibold text-neutral-900 dark:text-white">{broadComposerLabel}</h4><p id="copilot-broad-mode-example" className="w-full rounded-md border border-sky-300 bg-sky-50 p-3 text-xs text-sky-950 dark:border-sky-700 dark:bg-neutral-800 dark:text-white">{broadComposerExample}</p></>}
+            {!broadMode && isV2State(state) && v2InputMode === "answerable" && state.interview.nextQuestion && <h4 ref={v2QuestionHeadingRef} id="copilot-current-question" tabIndex={-1} className="w-full text-sm font-semibold text-neutral-900 dark:text-white">{state.interview.nextQuestion.prompt}</h4>}
+            {activeModeDisabled && <p className="w-full rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-neutral-800 dark:text-amber-100">{modeUiCopy.modeReadOnly}</p>}
+            {!broadMode && isV2State(state) && v2InputMode === "answerable" && v2VisibleExample && (
               <div className="mb-2 w-full rounded-md border border-sky-300 bg-sky-50 p-3 text-xs text-sky-950 dark:border-sky-700 dark:bg-neutral-800 dark:text-white">
                 <p className="font-semibold">{v2Interaction?.labels.exampleOnly || state.interview.nextQuestion?.exampleLabel}</p>
                 <p className="mt-1">{v2VisibleExample}</p>
                 {v2Interaction && v2Examples.length > 1 && <button type="button" onClick={() => setExampleIndex((current) => (current + 1) % v2Examples.length)} className="mt-2 min-h-11 rounded-md border border-sky-500 px-3 text-sm font-medium text-sky-950 dark:text-sky-100">{v2Interaction.labels.showAnotherExample}</button>}
               </div>
             )}
-            {isV2State(state) && v2InputMode === "answerable" && state.interview.nextQuestion?.helpConceptRef && (
+            {!broadMode && isV2State(state) && v2InputMode === "answerable" && state.interview.nextQuestion?.helpConceptRef && (
               v2Interaction ? <div className="mb-2 w-full"><button type="button" aria-expanded={questionHelpVisible} aria-controls="copilot-current-question-help" onClick={() => setQuestionHelpVisible((current) => !current)} className="min-h-11 rounded-md border border-neutral-500 px-3 text-sm text-neutral-800 dark:text-neutral-100">{v2Interaction.labels.whyAsking}</button>{questionHelpVisible && <p id="copilot-current-question-help" className="mt-2 text-xs text-neutral-700 dark:text-neutral-200">{state.interview.nextQuestion.helpBody}</p>}</div> : <p id="copilot-current-question-help" className="mb-2 w-full text-xs text-neutral-600 dark:text-neutral-300" aria-label={state.interview.nextQuestion.helpLabel}>{state.interview.nextQuestion.helpLabel}: {state.interview.nextQuestion.helpBody}</p>
             )}
-            {isV2State(state) && v2InputMode === "complete" ? (
+            {activeModeDisabled ? null : !broadMode && isV2State(state) && v2InputMode === "complete" ? (
               <p className="w-full rounded-md bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">{copy.interviewComplete} {copy.interviewCompleteNextAction}</p>
-            ) : isV2State(state) && v2InputMode === "blocked" ? (
+            ) : !broadMode && isV2State(state) && v2InputMode === "blocked" ? (
               <p className="w-full rounded-md bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">{copy.interviewBlocked} {copy.interviewBlockedSupport}</p>
-            ) : isV2State(state) && composer?.showChoiceButtons && !v2PlainTypedFallback && state.interview.nextQuestion?.options ? (
+            ) : !broadMode && isV2State(state) && composer?.showChoiceButtons && !v2PlainTypedFallback && state.interview.nextQuestion?.options ? (
               <div className="flex w-full flex-wrap gap-2">
                 <fieldset className="contents" aria-describedby={v2Interaction ? (questionHelpVisible ? "copilot-current-question-help" : undefined) : "copilot-current-question-help"}>
                   <legend className="sr-only">{state.interview.nextQuestion.prompt}</legend>
@@ -1543,8 +1843,8 @@ export function TemplateCopilot({
                   </div>
                 </fieldset>
               </div>
-            ) : (composer?.showTextComposer || v2PlainTypedFallback) ? <div className="flex w-full flex-wrap items-end gap-2">
-            {isV2State(state) && v2Interaction && <div className="flex w-full flex-wrap gap-2" aria-label={state.interview.nextQuestion?.prompt}>
+            ) : (broadMode || composer?.showTextComposer || v2PlainTypedFallback) ? <div className="flex w-full flex-wrap items-end gap-2">
+            {!broadMode && isV2State(state) && v2Interaction && <div className="flex w-full flex-wrap gap-2" aria-label={state.interview.nextQuestion?.prompt}>
               {v2Interaction.suggestions.map((suggestion) => <button key={suggestion.id} type="button" disabled={busy || v2ReplayPending} onClick={() => { draftGenerationRef.current += 1; setDraft(suggestion.text); }} className="min-h-11 rounded-md border border-sky-500 bg-white px-3 text-sm text-sky-950 dark:bg-neutral-800 dark:text-sky-100">{suggestion.text}</button>)}
               <button type="button" disabled={busy || v2ReplayPending} onClick={() => { draftGenerationRef.current += 1; setDraft(""); }} className="min-h-11 rounded-md border border-neutral-500 px-3 text-sm text-neutral-800 dark:text-neutral-100">{v2Interaction.labels.somethingElse}</button>
             </div>}
@@ -1552,28 +1852,31 @@ export function TemplateCopilot({
               ref={answerInputRef}
               value={draft}
               onChange={(event) => {
+                if (isV2State(state) && templateCopilotUnicodeCodePointCount(event.target.value) > composerLimit) return;
                 draftGenerationRef.current += 1;
                 setDraft(event.target.value);
               }}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (shouldSubmitTemplateCopilotComposerKey({ key: event.key, shiftKey: event.shiftKey, isComposing: event.nativeEvent.isComposing })) {
                   event.preventDefault();
                   void send();
                 }
               }}
               disabled={busy || v2ReplayPending || (!isV2State(state) && state.status === "ready")}
-              aria-label={copy.answerLabel}
-              aria-describedby={v2Interaction && questionHelpVisible ? "template-copilot-answer-length copilot-current-question-help" : "template-copilot-answer-length"}
-              maxLength={answerLimit}
+              aria-label={broadMode ? broadComposerLabel : copy.answerLabel}
+              aria-describedby={broadMode ? "template-copilot-answer-length copilot-broad-mode-example" : v2Interaction && questionHelpVisible ? "template-copilot-answer-length copilot-current-question-help" : "template-copilot-answer-length"}
+              maxLength={isV2State(state) ? composerLimit * 2 : composerLimit}
               rows={3}
               className="template-copilot-control min-h-20 flex-1 resize-y rounded-md border border-[#d8d8d8] bg-white p-3 text-sm"
               placeholder={
                 !isV2State(state) && state.status === "ready"
                   ? copy.confirmed
-                  : copy.answerPlaceholder
+                  : broadMode
+                    ? broadComposerPlaceholder
+                    : copy.answerPlaceholder
               }
             />
-            <p id="template-copilot-answer-length" className="self-end text-xs text-neutral-600 dark:text-neutral-300" aria-live="polite">{copy.answerLength.replace("{count}", String(isV2State(state) ? templateCopilotUnicodeCodePointCount(draft.trim()) : draft.length)).replace("{limit}", String(answerLimit))}</p>
+            <p id="template-copilot-answer-length" className="self-end text-xs text-neutral-600 dark:text-neutral-300" aria-live="polite">{copy.answerLength.replace("{count}", String(isV2State(state) ? templateCopilotUnicodeCodePointCount(draft.trim()) : draft.length)).replace("{limit}", String(composerLimit))}</p>
             <button
               type="button"
               onClick={send}
@@ -1583,18 +1886,19 @@ export function TemplateCopilot({
             >
               <Send aria-hidden="true" size={18} />
             </button>
-            {isV2State(state) && state.interview.nextQuestion?.uncertainty.notSure && <button type="button" disabled={busy || v2ReplayPending} onClick={() => void submitV2Special({ operation: "defer" })} className="min-h-11 self-end rounded-md border border-amber-500 px-3 text-sm text-amber-900 dark:text-amber-200">{copy.notSure}</button>}
-            {isV2State(state) && state.interview.nextQuestion?.uncertainty.notApplicable === "when_optional" && <><label className="sr-only" htmlFor="copilot-not-applicable-reason-text">{copy.notApplicableReason}</label><input id="copilot-not-applicable-reason-text" value={notApplicableReason} disabled={busy || v2ReplayPending} onChange={(event) => { if (templateCopilotUnicodeCodePointCount(event.target.value) <= 500) setNotApplicableReason(event.target.value); }} maxLength={1000} className="template-copilot-control min-h-11 self-end rounded-md border border-neutral-400 bg-white px-3 text-sm dark:bg-neutral-800 dark:text-white" placeholder={copy.notApplicableReason} /><button type="button" disabled={busy || v2ReplayPending || !notApplicableReason.trim()} onClick={() => void submitV2Special({ operation: "not_applicable", reason: notApplicableReason.trim() })} className="min-h-11 self-end rounded-md border border-neutral-400 px-3 text-sm text-neutral-700 dark:text-neutral-200">{copy.notApplicable}</button></>}
+            {!broadMode && isV2State(state) && state.interview.nextQuestion?.uncertainty.notSure && <button type="button" disabled={busy || v2ReplayPending} onClick={() => void submitV2Special({ operation: "defer" })} className="min-h-11 self-end rounded-md border border-amber-500 px-3 text-sm text-amber-900 dark:text-amber-200">{copy.notSure}</button>}
+            {!broadMode && isV2State(state) && state.interview.nextQuestion?.uncertainty.notApplicable === "when_optional" && <><label className="sr-only" htmlFor="copilot-not-applicable-reason-text">{copy.notApplicableReason}</label><input id="copilot-not-applicable-reason-text" value={notApplicableReason} disabled={busy || v2ReplayPending} onChange={(event) => { if (templateCopilotUnicodeCodePointCount(event.target.value) <= 500) setNotApplicableReason(event.target.value); }} maxLength={1000} className="template-copilot-control min-h-11 self-end rounded-md border border-neutral-400 bg-white px-3 text-sm dark:bg-neutral-800 dark:text-white" placeholder={copy.notApplicableReason} /><button type="button" disabled={busy || v2ReplayPending || !notApplicableReason.trim()} onClick={() => void submitV2Special({ operation: "not_applicable", reason: notApplicableReason.trim() })} className="min-h-11 self-end rounded-md border border-neutral-400 px-3 text-sm text-neutral-700 dark:text-neutral-200">{copy.notApplicable}</button></>}
             </div> : null}
           </div>
         )}
-        {pendingV2Command && !pendingV2SpecialCommand && isV2State(state) && v2InputMode === "answerable" && (
+        {pendingV2Command && !pendingV2SpecialCommand && isV2State(state) && !activeModeDisabled && v2InputMode === "answerable" && (
           <button type="button" onClick={() => void submitV2(pendingV2Command.answer)} disabled={busy} className="mt-2 min-h-11 rounded-md border border-amber-500 px-3 text-sm text-amber-900 dark:text-amber-200">{copy.retryPreviousAnswer}</button>
         )}
-        {pendingV2SpecialCommand && !pendingV2Command && isV2State(state) && <button type="button" onClick={() => void submitV2Special(pendingV2SpecialCommand.command)} disabled={busy} className="mt-2 min-h-11 rounded-md border border-amber-500 px-3 text-sm text-amber-900 dark:text-amber-200">{copy.retryPreviousAnswer}</button>}
+        {pendingV2SpecialCommand && !pendingV2Command && isV2State(state) && !activeModeDisabled && <button type="button" onClick={() => void submitV2Special(pendingV2SpecialCommand.command)} disabled={busy} className="mt-2 min-h-11 rounded-md border border-amber-500 px-3 text-sm text-amber-900 dark:text-amber-200">{copy.retryPreviousAnswer}</button>}
         {pendingMapEdit && isV2State(state) && pendingMapEdit.sessionId === state.sessionId && <button type="button" onClick={() => void executePendingMapCommand(pendingMapEdit)} disabled={busy} className="mt-2 min-h-11 rounded-md border border-amber-500 px-3 text-sm text-amber-900 dark:text-amber-200">{locale === "en" ? "Retry the saved map edit" : locale === "zh-Hant" ? "重試已儲存的地圖編輯" : "重试已保存的地图编辑"}</button>}
+        {pendingModeCommand && isV2State(state) && !activeModeDisabled && pendingModeCommand.sessionId === state.sessionId && <button type="button" onClick={() => pendingModeCommand.operation.kind === "document" ? fileRef.current?.click() : void executePendingModeCommand(pendingModeCommand)} disabled={busy} className="mt-2 min-h-11 rounded-md border border-amber-500 px-3 text-sm text-amber-900 dark:text-amber-200">{pendingModeCommand.operation.kind === "document" ? modeUiCopy.reselectDocument : locale === "en" ? "Check or retry the saved mode action" : locale === "zh-Hant" ? "檢查或重試已儲存的模式操作" : "检查或重试已保存的模式操作"}</button>}
         {v2SpecialReview.length > 0 && <section className="mt-3 space-y-2 rounded-md border border-amber-300 p-3" aria-label={copy.reopen}>
-          {v2SpecialReview.map(({ decisionId, kind, reason, prompt }) => <div id={`copilot-special-${decisionId}`} key={decisionId} className="flex flex-wrap items-center gap-2 text-sm text-neutral-800 dark:text-neutral-100"><span className="min-w-48">{prompt}</span><span>{kind === "unknown" ? copy.notSure : `${copy.notApplicable}${reason ? `: ${reason}` : ""}`}</span><button type="button" disabled={busy || v2ReplayPending} onClick={() => void submitV2Special({ operation: "reopen", decisionId })} className="min-h-9 rounded-md border border-amber-500 px-2 text-sm text-amber-900 dark:text-amber-200">{copy.reopen}</button></div>)}
+          {v2SpecialReview.map(({ decisionId, kind, reason, prompt }) => <div id={`copilot-special-${decisionId}`} key={decisionId} className="flex flex-wrap items-center gap-2 text-sm text-neutral-800 dark:text-neutral-100"><span className="min-w-48">{prompt}</span><span>{kind === "unknown" ? copy.notSure : `${copy.notApplicable}${reason ? `: ${reason}` : ""}`}</span><button type="button" disabled={activeModeDisabled || busy || v2ReplayPending} onClick={() => void submitV2Special({ operation: "reopen", decisionId })} className="min-h-9 rounded-md border border-amber-500 px-2 text-sm text-amber-900 dark:text-amber-200">{copy.reopen}</button></div>)}
         </section>}
         {error && <ErrorMessage message={error} />}
       </div>
@@ -1631,6 +1935,21 @@ export function TemplateCopilot({
           })}
           {isV2State(state) && <li className="text-neutral-700">{v2InputMode === "answerable" ? state.interview.nextQuestion?.prompt : v2InputMode === "complete" ? copy.interviewComplete : copy.interviewBlocked}</li>}
         </ul>
+        {isV2State(state) && (() => {
+          const modeCopy = templateCopilotV2ModeCopy(locale);
+          const selectedMode = state.modeState?.mode || "guided";
+          return <section className="mt-4 rounded-md border border-violet-200 bg-violet-50 p-3 text-sm dark:border-violet-900 dark:bg-neutral-900" aria-label={modeCopy.switch}>
+            <p className="font-medium">{modeCopy.switch}</p>
+            <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label={modeCopy.switch}>
+              {templateCopilotV2AuthoringModes.filter((mode) => mode !== "similar_template" && v2ModeContract?.availableModes.includes(mode)).map((mode) => <button key={mode} type="button" disabled={busy || (!activeModeDisabled && v2ReplayPending) || selectedMode === mode} onClick={() => void switchV2Mode(mode)} aria-pressed={selectedMode === mode} className="min-h-11 rounded border border-violet-400 px-3 text-left disabled:opacity-50">{mode === "guided" ? modeCopy.guide : modeCopy.describe}</button>)}
+            </div>
+            <div className="mt-2 flex flex-wrap items-end gap-2">
+              {v2ModeContract?.availableModes.includes("similar_template") && <><button type="button" disabled={busy || (!activeModeDisabled && v2ReplayPending)} onClick={() => void loadSimilarTemplates()} className="min-h-11 rounded border border-violet-400 px-3">{modeUiCopy.findSources}</button>{similarTemplates.length > 0 && <><label className="sr-only" htmlFor="copilot-similar-template">{modeCopy.source}</label><select id="copilot-similar-template" value={selectedSimilarVersionId} onChange={(event) => setSelectedSimilarVersionId(event.target.value)} disabled={busy || (!activeModeDisabled && v2ReplayPending)} className="min-h-11 max-w-full rounded border border-violet-400 bg-white px-2 dark:bg-neutral-800 dark:text-white"><option value="">{modeCopy.source}</option>{similarTemplates.map((source) => <option key={source.versionId} value={source.versionId}>{source.name} · v{source.versionNumber}</option>)}</select><button type="button" disabled={busy || (!activeModeDisabled && v2ReplayPending) || !selectedSimilarVersionId} onClick={() => void switchV2Mode("similar_template", selectedSimilarVersionId)} className="min-h-11 rounded bg-violet-700 px-3 text-white disabled:opacity-50">{modeUiCopy.useSource}</button></>}</>}
+            </div>
+            {v2ModeContract?.showSourceSnapshot && state.modeState?.sourceSnapshot && <p className="mt-2 text-xs" aria-label={modeUiCopy.sourceRetained}>{modeUiCopy.sourceRetained}: {state.modeState.sourceSnapshot.name} · v{state.modeState.sourceSnapshot.versionNumber}</p>}
+            {selectedMode === "similar_template" && <p className="mt-1 text-xs text-neutral-700 dark:text-neutral-200">{modeUiCopy.similarLabel}</p>}
+          </section>;
+        })()}
         {isV2State(state) && <div className="mt-4"><TemplateCopilotV2AuthoritativeMap ledger={state.ledger} projection={state.projection} editingEnabled={state.step5EditingEnabled === true} busy={busy} onTransition={saveAuthoritativeMapFact} /></div>}
         {isV2State(state) && extractionReview && extractionReview.candidates.length > 0 && (
           <section className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900 dark:bg-neutral-800 dark:text-sky-100" aria-label={extractionReviewCopy.candidateSectionAria}>
@@ -1665,8 +1984,9 @@ export function TemplateCopilot({
             <label className="mt-2 block text-xs">{locale === "zh-Hant" ? "處理原因（選填）" : locale === "zh-Hans" ? "处理原因（选填）" : "Reason (optional)"}<input value={extractionRationale} maxLength={1000} disabled={busy} onChange={(event) => setExtractionRationale(event.target.value)} className="template-copilot-control mt-1 min-h-11 w-full rounded-md border px-2 dark:bg-neutral-800" /></label>
           </section>
         )}
-        {!isV2State(state) && <>
+        {(!isV2State(state) || v2ModeContract?.allowRequirementsDocument) && <>
         <input
+          id="template-copilot-requirements-file"
           ref={fileRef}
           type="file"
           accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf"
@@ -1679,7 +1999,8 @@ export function TemplateCopilot({
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          disabled={busy}
+          disabled={busy || (v2ReplayPending && pendingModeCommand?.operation.kind !== "document")}
+          aria-controls="template-copilot-requirements-file"
           className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-[#d8d8d8] px-3 py-2 text-sm text-neutral-700 disabled:opacity-50"
         >
           <FileUp aria-hidden="true" size={16} />
@@ -1697,8 +2018,8 @@ export function TemplateCopilot({
             {copy.generate}
           </button>
         )}
-        {!isV2State(state) && <p className="mt-3 text-xs leading-5 text-neutral-500">
-          {copy.fileBoundary}
+        {(!isV2State(state) || v2ModeContract?.allowRequirementsDocument) && <p className="mt-3 text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+          {isV2State(state) ? `${modeUiCopy.describeFileOnly} ${copy.fileBoundary}` : copy.fileBoundary}
         </p>}
         <p className="mt-3 border-t border-[#e6e6e6] pt-3 text-xs leading-5 text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
           {copy.historyNotice}

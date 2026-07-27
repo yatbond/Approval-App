@@ -405,8 +405,8 @@ test("v2 routes/RPCs are flag-gated, locked, receipt-bound, and auditable", asyn
   assert.match(client, /async function recoverStoredV2Special/);
   assert.match(client, /onClick=\{\(\) => void recoverStoredV2Special\(\)\}/);
   assert.match(client, /disabled=\{busy \|\| Boolean\(pendingV2SpecialCommand\) \|\| !businessUnitId \|\| !departmentName\}/);
-  assert.match(client, /isV2State\(state\)\) return;/);
-  assert.match(client, /!isV2State\(state\) && <>/);
+  assert.match(client, /isV2State\(state\) && !v2ModeContract\?\.allowRequirementsDocument/);
+  assert.match(client, /!isV2State\(state\) \|\| v2ModeContract\?\.allowRequirementsDocument/);
   assert.doesNotMatch(client, /Retry previous answer<\/button>/);
   assert.match(client, /copy\.startInterviewInvalid/);
   assert.match(client, /copy\.invalidInterviewUpdate/);
@@ -481,17 +481,20 @@ test("Step 2 visible recovery and control copy is complete in all three supporte
   for (const key of keys) assert.equal((client.match(new RegExp(`\\b${key}:`, "g")) || []).length, 4, `${key} must have a type and all three locales`);
   assert.match(client, /\? copy\.currentDecision :/);
   assert.match(client, /getTemplateCopilotAnswerLimit/);
-  assert.match(client, /maxLength=\{answerLimit\}/);
+  assert.match(client, /maxLength=\{isV2State\(state\) \? composerLimit \* 2 : composerLimit\}/);
   assert.match(client, /template-copilot-answer-length/);
   assert.doesNotMatch(client, /\? "Current decision"/);
   assert.doesNotMatch(client, /The guided interview did not return|Could not reload the latest|returned an invalid update/);
 });
 
-test("v2 hides the v1-only document action and keeps typed API errors out of v2-visible recovery copy", async () => {
+test("v2 exposes only the governed Describe document action and keeps exact recovery metadata", async () => {
   const client = await readFile(new URL("../app/template-copilot.tsx", import.meta.url), "utf8");
-  assert.match(client, /async function upload\(file: File\) \{\s+if \(!state \|\| busy \|\| isV2State\(state\)\) return;/s);
-  assert.match(client, /\{!isV2State\(state\) && <>[\s\S]*?copy\.addFile[\s\S]*?<\/>\}/);
-  assert.match(client, /\{!isV2State\(state\) && <p[\s\S]*?copy\.fileBoundary/);
+  assert.match(client, /async function upload\(file: File\) \{\s+if \(\s*!state\s*\|\| busy\s*\|\| \(isV2State\(state\) && !v2ModeContract\?\.allowRequirementsDocument\)\s*\) return;/s);
+  assert.match(client, /\{\(!isV2State\(state\) \|\| v2ModeContract\?\.allowRequirementsDocument\) && <>[\s\S]*?copy\.addFile[\s\S]*?<\/>\}/);
+  assert.match(client, /templateCopilotDocumentIdentity\(file\)/);
+  assert.match(client, /operation: \{ kind: "document", \.\.\.documentIdentity \}/);
+  assert.match(client, /pendingModeCommandRef\.current\?\.operation\.kind === "document"/);
+  assert.match(client, /parseTemplateCopilotClientChatMessages\(response\.messages\)/);
   assert.match(client, /copy\.temporaryAnswerError.*copy\.retrySameAnswer/s);
 });
 

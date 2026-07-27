@@ -2,7 +2,7 @@ import { after, type NextRequest } from "next/server";
 import { z } from "zod";
 import { approvalError, approvalJson, createApprovalServerContext, safeApprovalLog } from "@/lib/approval-server";
 import { readBoundedJson } from "@/lib/bounded-request";
-import { isTemplateCopilotV2CandidateCreationEnabled, isTemplateCopilotV2Enabled, isTemplateCopilotV2ExtractionShadowEnabled } from "@/lib/template-copilot-v2-feature";
+import { isTemplateCopilotV2CandidateCreationEnabled, isTemplateCopilotV2Enabled, isTemplateCopilotV2ExtractionShadowEnabled, isTemplateCopilotV2ModeEnabled } from "@/lib/template-copilot-v2-feature";
 import { applyTemplateCopilotV2AtomicAnswer, processTemplateCopilotV2AnswerExtractionJob } from "@/lib/template-copilot-v2-server-data";
 import { templateCopilotUnicodeCodePointCount } from "@/lib/template-copilot-unicode";
 import { classifyTemplateCopilotV2OperationError } from "@/lib/template-copilot-facts";
@@ -26,6 +26,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
   if (!resolved.ok) return approvalError(resolved);
   const { session, service, actor, cookieSource, correlationId } = resolved.context;
   if (!isTemplateCopilotV2Enabled()) return approvalJson(cookieSource, correlationId, { error: { code: "v2_unavailable", message: "The Copilot v2 answer endpoint is unavailable." } }, 404);
+  if (!isTemplateCopilotV2ModeEnabled("guided")) return approvalJson(cookieSource, correlationId, { error: { code: "mode_unavailable", message: "Guided Copilot answers are temporarily unavailable." } }, 404);
   // 8,000 four-byte Unicode code points plus the strict command envelope.
   const body = await readBoundedJson(request, 64 * 1024);
   const parsed = body.ok ? answerSchema.safeParse(body.value) : null;

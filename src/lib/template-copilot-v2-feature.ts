@@ -11,6 +11,11 @@ type TemplateCopilotV2ExtractionEnvironment = Readonly<{
   TEMPLATE_COPILOT_V2_EXTRACTION_SHADOW?: string;
   TEMPLATE_COPILOT_V2_CANDIDATE_CREATION?: string;
 }>;
+type TemplateCopilotV2ModeEnvironment = Readonly<{
+  TEMPLATE_COPILOT_V2_GUIDED?: string;
+  TEMPLATE_COPILOT_V2_DESCRIBE_EVERYTHING?: string;
+  TEMPLATE_COPILOT_V2_SIMILAR_TEMPLATE?: string;
+}>;
 
 export function getTemplateCopilotV2Flag(
   env?: TemplateCopilotV2Environment,
@@ -77,4 +82,22 @@ export function isTemplateCopilotV2CandidateCreationEnabled(
   const selected = env || runtimeEnvironment;
   return selected.TEMPLATE_COPILOT_V2_EXTRACTION_SHADOW === "true"
     && selected.TEMPLATE_COPILOT_V2_CANDIDATE_CREATION === "true";
+}
+
+/** Step 6 mode switches are intentionally independent. Turning one off stops
+ * new actions in that mode but never makes an already-created session or its
+ * immutable source snapshot unreadable. Guided remains the conservative
+ * fallback when a describe/import mode is withdrawn or unavailable. */
+export function getTemplateCopilotV2ModeFlags(env?: TemplateCopilotV2ModeEnvironment) {
+  const selected = env || process.env as TemplateCopilotV2ModeEnvironment;
+  return Object.freeze({
+    guided: selected.TEMPLATE_COPILOT_V2_GUIDED === "true",
+    describeEverything: selected.TEMPLATE_COPILOT_V2_DESCRIBE_EVERYTHING === "true",
+    similarTemplate: selected.TEMPLATE_COPILOT_V2_SIMILAR_TEMPLATE === "true",
+  });
+}
+
+export function isTemplateCopilotV2ModeEnabled(mode: "guided" | "describe_everything" | "similar_template", env?: TemplateCopilotV2ModeEnvironment) {
+  const flags = getTemplateCopilotV2ModeFlags(env);
+  return mode === "guided" ? flags.guided : mode === "describe_everything" ? flags.describeEverything : flags.similarTemplate;
 }

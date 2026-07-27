@@ -14,7 +14,7 @@ import {
   type TemplateCopilotFactId,
   type V2FactTransition,
 } from "./template-copilot-facts.ts";
-import { isTemplateCopilotV2Step4Enabled, isTemplateCopilotV2Step5EditingEnabled, requireTemplateCopilotV2, type TemplateCopilotV2Flag } from "./template-copilot-v2-feature.ts";
+import { getTemplateCopilotV2ModeFlags, isTemplateCopilotV2Step4Enabled, isTemplateCopilotV2Step5EditingEnabled, requireTemplateCopilotV2, type TemplateCopilotV2Flag } from "./template-copilot-v2-feature.ts";
 import { getTemplateCopilotQuestionLibrary, getTemplateCopilotV2InterviewState, getTemplateCopilotV2SpecialReview, reopenTemplateCopilotV2Decision, type TemplateCopilotAtomicAnswerInput } from "./template-copilot-question-library.ts";
 import { orderTemplateCopilotMessages } from "./template-copilot-history.ts";
 import {
@@ -27,6 +27,11 @@ import {
 } from "./template-copilot-v2-candidates.ts";
 import { getTemplateCopilotV2CommittedAcknowledgement } from "./template-copilot-v2-step4.ts";
 import { projectTemplateCopilotV2AuthoritativeLedger } from "./template-copilot-v2-authoritative-projection.ts";
+import {
+  type TemplateCopilotV2AuthoringMode,
+  type TemplateCopilotV2ModeState,
+  type TemplateCopilotV2SourceSnapshot,
+} from "./template-copilot-v2-modes.ts";
 
 export function templateCopilotV2CommandHash(command: unknown) {
   return createHash("sha256").update(JSON.stringify(sortJson(command))).digest("hex");
@@ -238,6 +243,147 @@ export async function applyTemplateCopilotV2CandidateExtraction({
   });
   if (error) throw error;
   return { ...withV2InterviewState(data as Record<string, unknown>), extractionConflicts: projected.conflicts };
+}
+
+/** Step 6 keeps entry-mode state outside the executable ledger while every
+ * candidate still passes through the same candidate projection and locked
+ * ledger revision. The source snapshot is an immutable copy, never a live
+ * template lookup, so later edits or deletion cannot alter this session. */
+export async function switchTemplateCopilotV2AuthoringMode({
+  session, service, actor, sessionId, expectedRevision, idempotencyKey, mode, sourceSnapshot, flag,
+}: {
+  session: SupabaseClient; service: SupabaseClient; actor: Pick<ApprovalRuntimeProfile, "id">; sessionId: string;
+  expectedRevision: number; idempotencyKey: string; mode: TemplateCopilotV2AuthoringMode;
+  sourceSnapshot?: TemplateCopilotV2SourceSnapshot; flag?: TemplateCopilotV2Flag;
+}): Promise<Record<string, unknown>> {
+  requireTemplateCopilotV2(flag);
+  const stored = await loadV2StoredSession(session, sessionId, actor.id);
+  if (!stored || stored.ledger.schemaVersion !== 2) return { outcome: "not_found" };
+  const commandHash = templateCopilotV2CommandHash({ operation: "mode_switch", sessionId, expectedRevision, idempotencyKey, mode, sourceSnapshot: sourceSnapshot ? { versionId: sourceSnapshot.versionId, snapshotHash: sourceSnapshot.snapshotHash } : null });
+  const replay = await loadV2Receipt(session, sessionId, idempotencyKey, commandHash);
+  if (replay) {
+    if ((replay as { outcome?: unknown }).outcome === "idempotency_conflict") return withV2InterviewState(replay);
+    const current = await currentOwnerScopedV2Replay(session, sessionId, actor.id) as Record<string, unknown>;
+    const replayRecord = replay as Record<string, unknown>;
+    return { ...current, modeReceiptRevision: typeof replayRecord.revision === "number" ? replayRecord.revision : null };
+  }
+  const { data, error } = await service.rpc("switch_template_copilot_v2_mode", {
+    p_actor_id: actor.id, p_session_id: sessionId, p_expected_revision: expectedRevision,
+    p_idempotency_key: idempotencyKey, p_command_hash: commandHash, p_mode: mode,
+    p_source_snapshot: sourceSnapshot || null, p_ledger: stored.ledger,
+  });
+  if (error) throw error;
+  const result = data as Record<string, unknown>;
+  // A later Guided/Describe switch must retain (and immediately return) the
+  // immutable Similar source even though its current mode has changed.
+  const modeState = await loadTemplateCopilotV2AuthoringModeState(service, sessionId);
+  return { ...withV2InterviewState(result), modeReceiptRevision: typeof result.revision === "number" ? result.revision : null, modeState };
+}
+
+/** Similar-template import is one durable revision: its mode/snapshot and
+ * candidate projection either arrive together or neither does.  Do not compose
+ * the old mode and extraction RPCs in a route; a lost response between them
+ * would leave a session in the wrong entry state. */
+export async function importTemplateCopilotV2SimilarMode({
+  session, service, actor, sessionId, expectedRevision, idempotencyKey, sourceSnapshot, candidates, flag,
+}: {
+  session: SupabaseClient; service: SupabaseClient; actor: Pick<ApprovalRuntimeProfile, "id">; sessionId: string;
+  expectedRevision: number; idempotencyKey: string; sourceSnapshot: TemplateCopilotV2SourceSnapshot;
+  candidates: readonly TemplateCopilotV2Candidate[]; flag?: TemplateCopilotV2Flag;
+}) {
+  requireTemplateCopilotV2(flag);
+  const stored = await loadV2StoredSession(session, sessionId, actor.id);
+  if (!stored || stored.ledger.schemaVersion !== 2) return { outcome: "not_found" };
+  const evidenceHash = templateCopilotV2CandidateEvidenceHash(candidates);
+  const projected = projectTemplateCopilotV2Candidates({ ledger: stored.ledger, candidates });
+  const commandHash = templateCopilotV2CommandHash({
+    operation: "similar_template_import", sessionId, expectedRevision, idempotencyKey,
+    // The immutable source version is the command intent. Candidate mapping is
+    // implementation detail and may safely improve between deployments without
+    // breaking an exact response-lost replay.
+    source: { versionId: sourceSnapshot.versionId, snapshotHash: sourceSnapshot.snapshotHash },
+  });
+  const { data, error } = await service.rpc("import_template_copilot_v2_similar_mode", {
+    p_actor_id: actor.id, p_session_id: sessionId, p_expected_revision: expectedRevision,
+    p_idempotency_key: idempotencyKey, p_command_hash: commandHash, p_source_snapshot: sourceSnapshot,
+    p_ledger: projected.ledger, p_evidence_hash: evidenceHash,
+  });
+  if (error) throw error;
+  const result = data as Record<string, unknown>;
+  return { ...withV2InterviewState(result), extractionConflicts: projected.conflicts, modeState: Object.freeze({ mode: "similar_template", sourceSnapshot } satisfies TemplateCopilotV2ModeState) };
+}
+
+/** Reconciles a response-lost Similar import before the route re-reads its
+ * live source. The receipt hash is rebuilt from the immutable private snapshot,
+ * so deletion, deactivation, or later edits of the published source cannot
+ * turn an exact retry into a new command. */
+export async function replayTemplateCopilotV2SimilarModeIfCommitted({
+  session,
+  service,
+  actor,
+  sessionId,
+  expectedRevision,
+  idempotencyKey,
+  sourceVersionId,
+  flag,
+}: {
+  session: SupabaseClient;
+  service: SupabaseClient;
+  actor: Pick<ApprovalRuntimeProfile, "id">;
+  sessionId: string;
+  expectedRevision: number;
+  idempotencyKey: string;
+  sourceVersionId: string;
+  flag?: TemplateCopilotV2Flag;
+}): Promise<Record<string, unknown> | null> {
+  requireTemplateCopilotV2(flag);
+  const stored = await loadV2StoredSession(session, sessionId, actor.id);
+  if (!stored || stored.ledger.schemaVersion !== 2) return { outcome: "not_found" };
+  const { data: receipt, error } = await session
+    .from("template_copilot_v2_operation_receipts")
+    .select("command_hash")
+    .eq("session_id", sessionId)
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+  if (error) throw error;
+  if (!receipt) return null;
+  const modeState = await loadTemplateCopilotV2AuthoringModeState(service, sessionId);
+  const sourceSnapshot = modeState.sourceSnapshot;
+  if (!sourceSnapshot || sourceSnapshot.versionId !== sourceVersionId) {
+    return { outcome: "idempotency_conflict" };
+  }
+  const commandHash = templateCopilotV2CommandHash({
+    operation: "similar_template_import",
+    sessionId,
+    expectedRevision,
+    idempotencyKey,
+    source: { versionId: sourceSnapshot.versionId, snapshotHash: sourceSnapshot.snapshotHash },
+  });
+  if (receipt.command_hash !== commandHash) return { outcome: "idempotency_conflict" };
+  const replay = await currentOwnerScopedV2Replay(session, sessionId, actor.id);
+  return { ...replay, modeState };
+}
+
+export async function loadTemplateCopilotV2AuthoringModeState(service: SupabaseClient, sessionId: string): Promise<TemplateCopilotV2ModeState> {
+  const { data, error } = await service
+    .from("template_copilot_v2_authoring_modes")
+    .select("mode,source_snapshot")
+    .eq("session_id", sessionId)
+    .maybeSingle();
+  // Step 6 is independently gated and code can deploy before its migration.
+  // A missing optional companion table must keep pre-Step-6 v2 sessions
+  // readable; other errors remain real dependency failures.
+  if (error && ["42P01", "PGRST205"].includes((error as { code?: string }).code || "")) return Object.freeze({ mode: "guided" });
+  if (error) throw error;
+  if (!data || !["guided", "describe_everything", "similar_template"].includes(String(data.mode))) return Object.freeze({ mode: "guided" });
+  return Object.freeze({ mode: data.mode as TemplateCopilotV2AuthoringMode, ...(data.source_snapshot ? { sourceSnapshot: data.source_snapshot as TemplateCopilotV2SourceSnapshot } : {}) });
+}
+
+/** Proves session ownership before an endpoint enumerates any source data.
+ * This is intentionally separate from the mode companion table so old
+ * databases can still read v2 sessions with every Step-6 flag disabled. */
+export async function loadTemplateCopilotV2OwnedSession(session: SupabaseClient, sessionId: string, actorId: string) {
+  return loadV2StoredSession(session, sessionId, actorId);
 }
 
 type TemplateCopilotV2ExtractionJobDependencies = Readonly<{
@@ -766,5 +912,5 @@ function withV2InterviewState(result: Record<string, unknown>) {
   if (!result.ledger) return result;
   const ledger = templateCopilotV2LedgerSchema.parse(result.ledger);
   const interview = getTemplateCopilotV2InterviewState(ledger);
-  return { ...result, interview, specialReview: getTemplateCopilotV2SpecialReview(ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled() };
+  return { ...result, interview, specialReview: getTemplateCopilotV2SpecialReview(ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled(), modeFlags: getTemplateCopilotV2ModeFlags() };
 }
