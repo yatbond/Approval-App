@@ -127,7 +127,7 @@ export const templateCopilotFactEntrySchema = z
     dependsOn: z.array(z.enum(templateCopilotFactIds)).max(8),
     notApplicableReason: z.string().trim().min(1).max(1_000).optional(),
     conflictValues: z.array(boundedJsonValueSchema).min(2).max(4).optional(),
-    conflictEvidence: z.array(z.object({ canonicalValue: candidateValueSchema, provenance: z.array(provenanceSchema).min(1).max(12) }).strict()).min(2).max(4).optional(),
+    conflictEvidence: z.array(z.object({ canonicalValue: boundedJsonValueSchema, provenance: z.array(provenanceSchema).min(1).max(12) }).strict()).min(2).max(4).optional(),
   })
   .strict()
   .superRefine((entry, context) => {
@@ -201,7 +201,9 @@ const policySchema = z.object({ description: boundedTextValue, rules: z.array(bo
 /** Candidate values are deliberately text only until a human supplies one of
  * the field-specific canonical forms below. This prevents legacy prose or a
  * model-shaped object from masquerading as executable configuration. */
-const committedValueSchemas: Readonly<Record<TemplateCopilotFactId, z.ZodType>> = {
+/** The Step 3 extractor may propose only a fully valid value for this known
+ * fact. The same strict schema guards a human-confirmed committed value. */
+export const templateCopilotCommittedValueSchemas: Readonly<Record<TemplateCopilotFactId, z.ZodType>> = {
   "workflow.name": boundedLabel,
   "workflow.purpose": boundedTextValue,
   "workflow.scope": policySchema,
@@ -284,6 +286,63 @@ const atomicDecisionSchema = z.discriminatedUnion("kind", [
   }
 });
 
+/** Durable, bounded model evidence. This is distinct from executable facts:
+ * it keeps exact source coordinates for review while facts remain human-owned. */
+const extractionLeafEvidenceSchema = z.object({
+  // We use `/` for the whole scalar value. Nested values use RFC 6901
+  // escaping, so object keys containing `~` or `/` remain unambiguous.
+  path: z.string().max(256).regex(/^(?:\/$|(?:\/(?:[A-Za-z0-9_.-]|~[01])+)+$)/),
+  messageId: boundedId,
+  startCodePoint: z.number().int().min(0).max(8_000),
+  endCodePoint: z.number().int().min(1).max(8_000),
+  exactText: candidateValueSchema,
+  normalizationRule: z.enum(["exact", "nfkc_trim_collapse", "nfkc_trim_collapse_whitespace", "enum_lexical", "approval_word_to_kind", "ordinal_to_sequence", "array_position_to_sequence", "boolean_lexical", "named_attachment_is_required", "duration_hours"]).optional(),
+}).strict().superRefine((item, context) => {
+  if (item.endCodePoint <= item.startCodePoint) context.addIssue({ code: "custom", path: ["endCodePoint"], message: "Evidence span must not be empty." });
+});
+const extractionCandidateEvidenceSchema = z.object({
+  candidateId: z.string().regex(/^[0-9a-f]{64}$/),
+  state: z.enum(["open", "confirmed"]),
+  factId: z.enum(templateCopilotFactIds),
+  value: boundedJsonValueSchema,
+  originalWording: candidateValueSchema,
+  evidence: z.array(extractionLeafEvidenceSchema).min(1).max(200),
+  confidence: z.enum(["low", "medium", "high"]),
+  ambiguity: z.enum(["none", "possible", "ambiguous"]),
+  ambiguityNote: z.string().trim().max(500).optional(),
+}).strict();
+export const templateCopilotV2ExtractionEvidenceSchema = z.object({
+  candidates: z.array(extractionCandidateEvidenceSchema).max(64).default([]),
+  conflicts: z.array(z.object({
+    conflictId: z.string().regex(/^[0-9a-f]{64}$/),
+    factId: z.enum(templateCopilotFactIds),
+    state: z.enum(["open", "closed"]),
+    existing: z.object({
+      value: boundedJsonValueSchema,
+      provenance: z.array(provenanceSchema).max(12),
+      confirmation: confirmationSchema.optional(),
+      candidate: extractionCandidateEvidenceSchema.optional(),
+    }).strict(),
+    incoming: extractionCandidateEvidenceSchema,
+  }).strict()).max(64).default([]),
+  history: z.array(z.object({
+    historyId: z.string().regex(/^[0-9a-f]{64}$/),
+    kind: z.enum(["candidate_confirmed", "conflict_resolved"]),
+    factId: z.enum(templateCopilotFactIds),
+    candidateId: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+    conflictId: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+    before: z.object({ value: boundedJsonValueSchema.optional(), provenance: z.array(provenanceSchema).max(12), confirmation: confirmationSchema.optional() }).strict(),
+    existingCandidate: extractionCandidateEvidenceSchema.optional(),
+    incoming: extractionCandidateEvidenceSchema.optional(),
+    choice: z.enum(["confirm_candidate", "keep_existing", "commit_incoming", "commit_human_value"]),
+    humanValue: boundedJsonValueSchema.optional(),
+    rationale: z.string().trim().min(1).max(1_000).optional(),
+    actorId: z.string().uuid(), confirmedAt: z.string().datetime({ offset: true }),
+    beforeRevision: z.number().int().min(1), afterRevision: z.number().int().min(1),
+  }).strict()).max(128).default([]),
+}).strict().default({ candidates: [], conflicts: [], history: [] });
+export type TemplateCopilotV2ExtractionEvidence = z.infer<typeof templateCopilotV2ExtractionEvidenceSchema>;
+
 const v2BaseSchema = z.object({
   schemaVersion: z.literal(2),
   locale: templateCopilotLocaleSchema.default("en"),
@@ -294,6 +353,7 @@ const v2BaseSchema = z.object({
   questionLibraryVersion: z.string().trim().min(1).max(64),
   atomicDecisions: z.record(z.string().regex(/^decision\.[a-z][a-z0-9_.-]{2,95}$/), atomicDecisionSchema).superRefine((value, context) => { if (Object.keys(value).length > 400) context.addIssue({ code: "custom", message: "Too many atomic decisions." }); }).default({}),
   facts: z.record(z.enum(templateCopilotFactIds), templateCopilotFactEntrySchema),
+  extractionEvidence: templateCopilotV2ExtractionEvidenceSchema,
   requirementDocumentExtracts: z.array(z.object({
     id: z.string().trim().min(1).max(120),
     fileName: z.string().trim().min(1).max(300),
@@ -320,12 +380,12 @@ export const templateCopilotV2LedgerSchema = v2BaseSchema.superRefine((ledger, c
       context.addIssue({ code: "custom", path: ["facts", id, "status"], message: "An always-applicable fact cannot be marked not applicable." });
     }
     if (["candidate", "committed", "conflicting"].includes(entry.status) && entry.canonicalValue !== undefined) {
-      const schema = entry.status === "committed" ? committedValueSchemas[id] : candidateValueSchema;
+      const schema = templateCopilotCommittedValueSchemas[id];
       if (!schema.safeParse(entry.canonicalValue).success) {
         context.addIssue({ code: "custom", path: ["facts", id, "canonicalValue"], message: "Canonical value does not match this fact's safe schema." });
       }
     }
-    if (entry.status === "conflicting" && entry.conflictValues?.some((value) => !candidateValueSchema.safeParse(value).success)) {
+    if (entry.status === "conflicting" && entry.conflictValues?.some((value) => !templateCopilotCommittedValueSchemas[id].safeParse(value).success)) {
       context.addIssue({ code: "custom", path: ["facts", id, "conflictValues"], message: "Conflict alternatives must each be valid canonical values." });
     }
   }
@@ -343,7 +403,7 @@ export function createTemplateCopilotV2Ledger({
 }, flag?: TemplateCopilotV2Flag): TemplateCopilotV2Ledger {
   requireTemplateCopilotV2(flag);
   return templateCopilotV2LedgerSchema.parse({
-    schemaVersion: 2, locale, businessUnitId, businessName, departmentId, departmentName, questionLibraryVersion, atomicDecisions: {},
+    schemaVersion: 2, locale, businessUnitId, businessName, departmentId, departmentName, questionLibraryVersion, atomicDecisions: {}, extractionEvidence: { candidates: [], conflicts: [], history: [] },
     facts: Object.fromEntries(templateCopilotFactIds.map((id) => [id, emptyFact(id, questionLibraryVersion)])),
     requirementDocumentExtracts: [],
   });
@@ -454,7 +514,13 @@ export function previewLegacyTemplateCopilotUpgrade({ legacyInput, sessionId, so
   const legacy = templateCopilotLedgerSchema.parse(legacyInput);
   const mappings = templateCopilotSectionIds.filter((sectionId) => sectionId !== "confirmation").map((sectionId) => {
     const section = legacy.sections[sectionId];
-    return Object.freeze({ sectionId, summary: section.summary, sourceMessageIds: Object.freeze([...section.sourceMessageIds]), factIds: Object.freeze([...legacyMappings[sectionId]]), outcome: section.status === "answered" && section.summary ? "candidate" as const : "unresolved" as const });
+    // Legacy sections are broad prose. Preserve them only where that exact
+    // summary already satisfies the typed fact schema; never coerce prose
+    // into structured configuration just to make an upgrade appear complete.
+    const factIds = section.status === "answered" && section.summary
+      ? legacyMappings[sectionId].filter((factId) => templateCopilotCommittedValueSchemas[factId].safeParse(section.summary).success)
+      : [];
+    return Object.freeze({ sectionId, summary: section.summary, sourceMessageIds: Object.freeze([...section.sourceMessageIds]), factIds: Object.freeze(factIds), outcome: factIds.length > 0 ? "candidate" as const : "unresolved" as const });
   });
   const unresolvedFactIds = templateCopilotFactIds.filter((id) => !mappings.some((mapping) => mapping.outcome === "candidate" && mapping.factIds.includes(id)));
   const documentIdentity = [...legacy.requirementDocumentExtracts].map(({ id, fileName, sha256 }) => ({ id, fileName, sha256 })).sort((left, right) => `${left.id}:${left.sha256}`.localeCompare(`${right.id}:${right.sha256}`));
@@ -492,9 +558,9 @@ function normalizeTransitionEntry(ledger: TemplateCopilotV2Ledger, factId: Templ
   const protectedState = ["committed", "not_applicable", "conflicting"].includes(current.status);
   if (transition.operation === "record_candidate") {
     if (protectedState) throw new TemplateCopilotFactTransitionError("A candidate cannot overwrite a committed, N/A, or conflicting fact.");
-    const incoming = { ...transition.payload, canonicalValue: candidateValueSchema.parse(transition.payload.canonicalValue) };
+    const incoming = { ...transition.payload, canonicalValue: templateCopilotCommittedValueSchemas[factId].parse(transition.payload.canonicalValue) as z.infer<typeof boundedJsonValueSchema> };
     if (current.status === "candidate") {
-      const currentCanonicalValue = candidateValueSchema.parse(current.canonicalValue);
+      const currentCanonicalValue = templateCopilotCommittedValueSchemas[factId].parse(current.canonicalValue) as z.infer<typeof boundedJsonValueSchema>;
       if (sameCanonicalValue(currentCanonicalValue, incoming.canonicalValue)) {
         return build("candidate", {
           ...incoming,

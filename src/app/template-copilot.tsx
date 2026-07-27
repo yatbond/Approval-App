@@ -21,6 +21,12 @@ import { applyTemplateCopilotV2Reconciliation, canReplaceTemplateCopilotV2Transc
 import { getTemplateCopilotAnswerLimit, getTemplateCopilotComposerRenderContract, getTemplateCopilotV2InputMode } from "@/lib/template-copilot-v2-ui-contract";
 import { templateCopilotApiErrorCode, templateCopilotApiErrorFromResponse, templateCopilotApiErrorStatus } from "@/lib/template-copilot-api-error";
 import {
+  formatTemplateCopilotV2ReviewValue,
+  selectTemplateCopilotV2OpenExtractionReview,
+  templateCopilotV2ReviewFactLabel,
+  templateCopilotV2ReviewPanelCopy,
+} from "@/lib/template-copilot-v2-review-display";
+import {
   templateCopilotLocales,
   type TemplateCopilotLocale,
 } from "@/lib/template-copilot-plan";
@@ -84,6 +90,80 @@ function isV2State(state: CopilotState): state is V2CopilotState {
   return state.ledger.schemaVersion === 2;
 }
 
+type TemplateCopilotV2ExtractionCandidate = TemplateCopilotV2Ledger["extractionEvidence"]["candidates"][number];
+type TemplateCopilotV2ExtractionConflict = TemplateCopilotV2Ledger["extractionEvidence"]["conflicts"][number];
+
+function extractionEvidenceCopy(locale: TemplateCopilotLocale) {
+  return locale === "zh-Hant"
+    ? { details: "查看來源依據", evidence: "來源依據", completeValue: "完整值", field: "欄位", exactText: "原文", reference: "訊息／字元位置", rule: "轉換規則", codePoints: "字元", item: "項目" }
+    : locale === "zh-Hans"
+      ? { details: "查看来源依据", evidence: "来源依据", completeValue: "完整值", field: "字段", exactText: "原文", reference: "消息／字符位置", rule: "转换规则", codePoints: "字符", item: "项目" }
+      : { details: "View source evidence", evidence: "Source evidence", completeValue: "Complete value", field: "Field", exactText: "Exact text", reference: "Message / character range", rule: "Normalization rule", codePoints: "code points", item: "item" };
+}
+
+function extractionEvidencePathLabel(path: string, locale: TemplateCopilotLocale) {
+  const copy = extractionEvidenceCopy(locale);
+  if (path === "/") return copy.completeValue;
+  const readablePath = path.slice(1).split("/").map((segment) => {
+    const decoded = segment.replace(/~1/g, "/").replace(/~0/g, "~");
+    if (/^\d+$/u.test(decoded)) return `${copy.item} ${Number(decoded) + 1}`;
+    return decoded.replace(/([a-z])([A-Z])/gu, "$1 $2").replace(/[-_]/gu, " ");
+  }).join(" / ");
+  return `${copy.field}: ${readablePath}`;
+}
+
+function ExtractionEvidenceDisclosure({ candidate, locale }: {
+  candidate: TemplateCopilotV2ExtractionCandidate;
+  locale: TemplateCopilotLocale;
+}) {
+  const copy = extractionEvidenceCopy(locale);
+  return <details className="mt-2 rounded border border-sky-200 bg-white/70 px-2 py-1 text-xs text-sky-950 dark:border-sky-800 dark:bg-neutral-900/50 dark:text-sky-100">
+    <summary className="min-h-8 cursor-pointer content-center font-medium underline underline-offset-2">{copy.details} ({candidate.evidence.length})</summary>
+    <ul className="mt-1 space-y-2" aria-label={`${copy.evidence}: ${candidate.factId}`}>
+      {candidate.evidence.map((item, index) => <li key={`${item.path}:${item.messageId}:${item.startCodePoint}:${item.endCodePoint}:${index}`} className="rounded border border-sky-100 bg-sky-50/70 p-2 dark:border-sky-900 dark:bg-neutral-950/70">
+        <p><span className="font-medium">{extractionEvidencePathLabel(item.path, locale)}</span> <span className="font-mono text-[11px] text-sky-800 dark:text-sky-200">{item.path}</span></p>
+        <p className="mt-1"><span className="font-medium">{copy.exactText}:</span> <q className="break-words">{item.exactText}</q></p>
+        <p className="mt-1 break-all"><span className="font-medium">{copy.reference}:</span> {item.messageId} · {item.startCodePoint}–{item.endCodePoint} {copy.codePoints}</p>
+        {item.normalizationRule && <p className="mt-1"><span className="font-medium">{copy.rule}:</span> <span className="font-mono text-[11px]">{item.normalizationRule}</span></p>}
+      </li>)}
+    </ul>
+  </details>;
+}
+
+function ExtractionTypedValue({ factId, value, locale, variant }: {
+  factId: TemplateCopilotV2ExtractionCandidate["factId"];
+  value: unknown;
+  locale: TemplateCopilotLocale;
+  variant: "candidate" | "current" | "proposed";
+}) {
+  const copy = templateCopilotV2ReviewPanelCopy(locale);
+  const label = templateCopilotV2ReviewFactLabel(factId, locale);
+  return <div className="mt-2 rounded border border-sky-200 bg-white/70 p-2 text-sm text-sky-950 dark:border-sky-800 dark:bg-neutral-900/50 dark:text-sky-100" aria-label={`${copy[variant]}: ${label}`}>
+    <p className="font-medium">{copy[variant]} · {label}</p>
+    <p className="mt-1 break-words"><span className="font-medium">{copy.value}:</span> {formatTemplateCopilotV2ReviewValue(factId, value, locale)}</p>
+  </div>;
+}
+
+function extractionCandidateReviewBlockReason(ledger: TemplateCopilotV2Ledger, candidate: TemplateCopilotV2ExtractionCandidate, locale: TemplateCopilotLocale) {
+  if (candidate.ambiguity !== "none") return locale === "zh-Hant" ? "需要澄清後才能確認。" : locale === "zh-Hans" ? "需要澄清后才能确认。" : "Needs clarification before it can be confirmed.";
+  if (ledger.extractionEvidence.conflicts.some((conflict) => conflict.state === "open" && conflict.factId === candidate.factId)) return locale === "zh-Hant" ? "此資料正等待差異審閱，暫時不能確認。" : locale === "zh-Hans" ? "此信息正在等待差异审核，暂时不能确认。" : "This suggestion is held while a conflict is reviewed.";
+  if (ledger.facts[candidate.factId].status !== "candidate") return locale === "zh-Hant" ? "此建議已不是目前可確認的資料。" : locale === "zh-Hans" ? "此建议已不是当前可确认的信息。" : "This suggestion is no longer the current confirmable fact.";
+  return null;
+}
+
+function extractionExistingProvenanceSummary(conflict: TemplateCopilotV2ExtractionConflict, locale: TemplateCopilotLocale) {
+  if (conflict.existing.confirmation) return locale === "zh-Hant" ? "目前資料已由人員確認。" : locale === "zh-Hans" ? "当前信息已由人员确认。" : "The current information was confirmed by a person.";
+  if (conflict.existing.provenance.some((item) => item.kind === "human_editor")) return locale === "zh-Hant" ? "目前資料由人員輸入。" : locale === "zh-Hans" ? "当前信息由人员输入。" : "The current information was entered by a person.";
+  if (conflict.existing.provenance.some((item) => item.kind === "message")) return locale === "zh-Hant" ? "目前資料保留了先前的訊息來源。" : locale === "zh-Hans" ? "当前信息保留了先前的消息来源。" : "The current information retains earlier message provenance.";
+  return locale === "zh-Hant" ? "目前資料保留了既有來源紀錄。" : locale === "zh-Hans" ? "当前信息保留了现有来源记录。" : "The current information retains its recorded provenance.";
+}
+
+function stableExtractionRecoveryValue(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableExtractionRecoveryValue).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${stableExtractionRecoveryValue((value as Record<string, unknown>)[key])}`).join(",")}}`;
+  return JSON.stringify(value) || "undefined";
+}
+
 type DraftReviewState = {
   familyId: string;
   draftId: string;
@@ -132,6 +212,7 @@ export function TemplateCopilot({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [notApplicableReason, setNotApplicableReason] = useState("");
+  const [extractionRationale, setExtractionRationale] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [pendingV2Command, setPendingV2Command] = useState<TemplateCopilotV2PendingCommand | null>(null);
@@ -242,6 +323,10 @@ export function TemplateCopilot({
   const locale = state?.ledger.locale || startLocale;
   const copy = templateCopilotCopy[locale];
   const v2InputMode = state && isV2State(state) ? getTemplateCopilotV2InputMode(state.interview) : null;
+  const extractionReview = state && isV2State(state)
+    ? selectTemplateCopilotV2OpenExtractionReview(state.ledger.extractionEvidence)
+    : null;
+  const extractionReviewCopy = templateCopilotV2ReviewPanelCopy(locale);
   const composer = state ? getTemplateCopilotComposerRenderContract({ schemaVersion: isV2State(state) ? 2 : 1, status: state.status, ...(isV2State(state) ? { interview: state.interview } : {}) }) : null;
   const answerLimit = getTemplateCopilotAnswerLimit(state && isV2State(state) ? 2 : 1);
   const v2ReplayPending = Boolean(state && isV2State(state) && templateCopilotV2InterviewMutationBlocked({ pendingAnswer: pendingV2Command, pendingSpecial: pendingV2SpecialCommand }));
@@ -476,6 +561,25 @@ export function TemplateCopilot({
     return { outcome: reconciliation.outcome, questionId: savedInterview.nextQuestion?.questionId, primaryDecisionId: savedInterview.nextQuestion?.primaryDecisionId };
   }
 
+  /** Owner-scoped snapshot recovery for an extraction action whose mutation
+   * response was lost or ambiguous. It installs only an authoritative v2
+   * snapshot and is guarded by the same operation lease as the mutation. */
+  async function reloadV2ExtractionReviewState(lifecycle: TemplateCopilotV2LifecycleLease, sessionId: string) {
+    if (!lifecycle.isCurrent()) return null;
+    const response = await api(`/api/template-authoring/copilot/sessions/${sessionId}?messageDirection=tail&messageLimit=100`, { method: "GET" });
+    if (!lifecycle.isCurrent()) return null;
+    const saved = response.session as { revision?: unknown; status?: unknown; ledger?: unknown; interview?: unknown; specialReview?: unknown } | undefined;
+    if (!saved || (saved.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !saved.interview) throw new Error(copy.reloadInterviewError);
+    return installV2State(lifecycle, {
+      sessionId,
+      revision: Number(saved.revision),
+      status: String(saved.status) as V2CopilotState["status"],
+      ledger: saved.ledger as TemplateCopilotV2Ledger,
+      interview: saved.interview as TemplateCopilotV2InterviewState,
+      specialReview: Array.isArray(saved.specialReview) ? saved.specialReview as TemplateCopilotV2SpecialReviewItem[] : [],
+    });
+  }
+
   async function submitV2(
     answer: TemplateCopilotV2PendingCommand["answer"],
     onAccepted?: (command: TemplateCopilotV2PendingCommand, lifecycle: TemplateCopilotV2LifecycleLease) => void,
@@ -587,6 +691,65 @@ export function TemplateCopilot({
       });
     }
     return lifecycle.isCurrent();
+  }
+
+  async function confirmExtractionCandidate(candidateId: string) {
+    if (!state || !isV2State(state) || busy) return;
+    const attemptedCandidate = state.ledger.extractionEvidence.candidates.find((candidate) => candidate.candidateId === candidateId);
+    const factId = attemptedCandidate?.factId;
+    const attemptedValue = attemptedCandidate && stableExtractionRecoveryValue(attemptedCandidate.value);
+    const lifecycle = captureV2LifecycleLease();
+    if (!lifecycle.commit(() => { setBusy(true); setError(""); })) return;
+    try {
+      const response = await api(`/api/template-authoring/copilot/sessions/${state.sessionId}/extraction-candidates`, { method: "POST", body: JSON.stringify({ candidateId, expectedRevision: state.revision, idempotencyKey: messageId("extract-confirm") }) });
+      if (!lifecycle.isCurrent()) return;
+      const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
+      if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) throw new Error(copy.invalidInterviewUpdate);
+      installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [] });
+    } catch {
+      if (!lifecycle.isCurrent()) return;
+      try {
+        const recovered = await reloadV2ExtractionReviewState(lifecycle, state.sessionId);
+        if (!lifecycle.isCurrent()) return;
+        const candidate = recovered?.ledger.extractionEvidence.candidates.find((item) => item.candidateId === candidateId);
+        const confirmedByHistory = Boolean(factId && attemptedValue && recovered?.ledger.extractionEvidence.history.some((item) => item.kind === "candidate_confirmed" && item.candidateId === candidateId && item.factId === factId && item.incoming?.candidateId === candidateId && stableExtractionRecoveryValue(item.incoming.value) === attemptedValue && stableExtractionRecoveryValue(recovered.ledger.facts[factId].canonicalValue) === attemptedValue));
+        if (candidate?.state === "confirmed" || confirmedByHistory) return;
+        if (factId && recovered?.ledger.facts[factId].status === "committed") {
+          commitV2ReactState(lifecycle, setError, () => (locale === "zh-Hant" ? "另一個工作階段已更新此資料。請審閱目前資料後再處理此建議。" : locale === "zh-Hans" ? "另一个会话已更新此信息。请审核当前信息后再处理此建议。" : "Another session updated this fact. Review the current information before acting on this suggestion.") as string);
+          return;
+        }
+      } catch {
+        if (!lifecycle.isCurrent()) return;
+      }
+      if (!lifecycle.isCurrent()) return;
+      commitV2ReactState(lifecycle, setError, () => (locale === "zh-Hant" ? "未能確認此建議資料。請重新載入後再試。" : locale === "zh-Hans" ? "无法确认此建议信息。请重新加载后重试。" : "This suggestion could not be confirmed. Reload and try again.") as string);
+    } finally {
+      lifecycle.commit(() => setBusy((current) => lifecycle.isCurrent() ? false : current));
+    }
+  }
+  async function resolveExtractionConflict(conflictId: string, choice: "keep_existing" | "commit_incoming") {
+    if (!state || !isV2State(state) || busy) return;
+    const lifecycle = captureV2LifecycleLease();
+    if (!lifecycle.commit(() => { setBusy(true); setError(""); })) return;
+    try {
+      const response = await api(`/api/template-authoring/copilot/sessions/${state.sessionId}/extraction-conflicts`, { method: "POST", body: JSON.stringify({ conflictId, choice, rationale: extractionRationale.trim() || undefined, expectedRevision: state.revision, idempotencyKey: messageId("extract-resolve") }) });
+      if (!lifecycle.isCurrent()) return;
+      const interview = response.interview as TemplateCopilotV2InterviewState | undefined;
+      if ((response.ledger as { schemaVersion?: unknown } | undefined)?.schemaVersion !== 2 || !interview) throw new Error(copy.invalidInterviewUpdate);
+      installV2State(lifecycle, { sessionId: state.sessionId, revision: Number(response.revision), status: String(response.status) as V2CopilotState["status"], ledger: response.ledger as TemplateCopilotV2Ledger, interview, specialReview: Array.isArray(response.specialReview) ? response.specialReview as TemplateCopilotV2SpecialReviewItem[] : [] });
+    } catch {
+      if (!lifecycle.isCurrent()) return;
+      try {
+        const recovered = await reloadV2ExtractionReviewState(lifecycle, state.sessionId);
+        if (!lifecycle.isCurrent()) return;
+        if (recovered?.ledger.extractionEvidence.conflicts.some((item) => item.conflictId === conflictId && item.state === "closed")) return;
+      } catch {
+        if (!lifecycle.isCurrent()) return;
+      }
+      if (!lifecycle.isCurrent()) return;
+      commitV2ReactState(lifecycle, setError, () => (locale === "zh-Hant" ? "未能處理此差異。請重新載入後再試。" : locale === "zh-Hans" ? "无法处理此差异。请重新加载后重试。" : "This conflict could not be resolved. Reload and try again.") as string);
+    }
+    finally { lifecycle.commit(() => setBusy((current) => lifecycle.isCurrent() ? false : current)); }
   }
 
   function releaseV2AfterRollback() {
@@ -1337,6 +1500,39 @@ export function TemplateCopilot({
           })}
           {isV2State(state) && <li className="text-neutral-700">{v2InputMode === "answerable" ? state.interview.nextQuestion?.prompt : v2InputMode === "complete" ? copy.interviewComplete : copy.interviewBlocked}</li>}
         </ul>
+        {isV2State(state) && extractionReview && extractionReview.candidates.length > 0 && (
+          <section className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900 dark:bg-neutral-800 dark:text-sky-100" aria-label={extractionReviewCopy.candidateSectionAria}>
+            <p className="font-medium">{extractionReviewCopy.candidateHeading}</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {extractionReview.candidates.map((candidate) => {
+                const blockedReason = extractionCandidateReviewBlockReason(state.ledger, candidate, locale);
+                const factLabel = templateCopilotV2ReviewFactLabel(candidate.factId, locale);
+                return <li key={candidate.candidateId} className="min-h-11">
+                  <ExtractionTypedValue factId={candidate.factId} value={candidate.value} locale={locale} variant="candidate" />
+                  <p className="mt-1 text-xs"><span className="font-medium">{locale === "zh-Hant" ? "原文：" : locale === "zh-Hans" ? "原文：" : "Source wording: "}</span>{candidate.originalWording} <span>· {locale === "zh-Hant" ? "僅供參考，請先核對來源" : locale === "zh-Hans" ? "仅供参考，请先核对来源" : "Suggestion only — check the source"}</span></p>
+                  <ExtractionEvidenceDisclosure candidate={candidate} locale={locale} />
+                  {blockedReason ? <p className="mt-1 text-xs text-amber-800 dark:text-amber-200" aria-label={locale === "zh-Hant" ? `建議目前不可確認：${factLabel}` : locale === "zh-Hans" ? `建议目前不可确认：${factLabel}` : `Suggestion is currently not confirmable: ${factLabel}`}>{blockedReason}</p> : <button type="button" disabled={busy} onClick={() => void confirmExtractionCandidate(candidate.candidateId)} aria-label={`${extractionReviewCopy.confirm}: ${factLabel}`} className="mt-1 min-h-11 underline disabled:opacity-50">{extractionReviewCopy.confirm}</button>}
+                </li>;
+              })}
+            </ul>
+          </section>
+        )}
+        {isV2State(state) && extractionReview && extractionReview.conflicts.length > 0 && (
+          <section className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-neutral-800 dark:text-amber-100" aria-label={extractionReviewCopy.conflictSectionAria}>
+            <p className="font-medium">{extractionReviewCopy.conflictHeading}</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {extractionReview.conflicts.map((conflict) => {
+                const factLabel = templateCopilotV2ReviewFactLabel(conflict.factId, locale);
+                return <li key={conflict.conflictId} className="min-h-11">
+                  {conflict.existing.candidate ? <div className="mt-1"><ExtractionTypedValue factId={conflict.factId} value={conflict.existing.candidate.value} locale={locale} variant="current" /><p className="mt-1 text-xs">{locale === "zh-Hant" ? "原文：" : locale === "zh-Hans" ? "原文：" : "Source wording: "}{conflict.existing.candidate.originalWording}</p><ExtractionEvidenceDisclosure candidate={conflict.existing.candidate} locale={locale} /></div> : <div className="mt-1"><ExtractionTypedValue factId={conflict.factId} value={conflict.existing.value} locale={locale} variant="current" /><p className="mt-1 text-xs text-neutral-700 dark:text-neutral-200">{extractionExistingProvenanceSummary(conflict, locale)}</p></div>}
+                  <div className="mt-2"><ExtractionTypedValue factId={conflict.factId} value={conflict.incoming.value} locale={locale} variant="proposed" /><p className="mt-1 text-xs">{locale === "zh-Hant" ? "原文：" : locale === "zh-Hans" ? "原文：" : "Source wording: "}{conflict.incoming.originalWording}</p><ExtractionEvidenceDisclosure candidate={conflict.incoming} locale={locale} /></div>
+                  <div className="mt-1 flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={() => void resolveExtractionConflict(conflict.conflictId, "keep_existing")} aria-label={`${extractionReviewCopy.keepExisting}: ${factLabel}`} className="min-h-11 underline disabled:opacity-50">{extractionReviewCopy.keepExisting}</button><button type="button" disabled={busy} onClick={() => void resolveExtractionConflict(conflict.conflictId, "commit_incoming")} aria-label={`${extractionReviewCopy.useProposed}: ${factLabel}`} className="min-h-11 underline disabled:opacity-50">{extractionReviewCopy.useProposed}</button></div>
+                </li>;
+              })}
+            </ul>
+            <label className="mt-2 block text-xs">{locale === "zh-Hant" ? "處理原因（選填）" : locale === "zh-Hans" ? "处理原因（选填）" : "Reason (optional)"}<input value={extractionRationale} maxLength={1000} disabled={busy} onChange={(event) => setExtractionRationale(event.target.value)} className="template-copilot-control mt-1 min-h-11 w-full rounded-md border px-2 dark:bg-neutral-800" /></label>
+          </section>
+        )}
         {!isV2State(state) && <>
         <input
           ref={fileRef}

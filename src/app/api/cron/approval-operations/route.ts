@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSchedulerRunKey, isAuthorizedCronRequest } from "@/lib/cron-auth";
 import { runDurableApprovalOperations } from "@/lib/durable-workflow-operations";
+import { drainTemplateCopilotV2ExtractionJobs } from "@/lib/template-copilot-v2-extraction-drain";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -12,7 +13,11 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
   const runKey = getSchedulerRunKey(request);
   try {
-    const result = await runDurableApprovalOperations({ runKey });
+    const [approvalOperations, templateCopilotExtraction] = await Promise.all([
+      runDurableApprovalOperations({ runKey }),
+      drainTemplateCopilotV2ExtractionJobs(),
+    ]);
+    const result = { ...approvalOperations, templateCopilotExtraction };
     console.info(JSON.stringify({
       timestamp: new Date().toISOString(),
       level: "info",

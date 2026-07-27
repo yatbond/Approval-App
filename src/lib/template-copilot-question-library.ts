@@ -493,7 +493,16 @@ export function getTemplateCopilotV2InterviewState(ledgerInput: TemplateCopilotV
     const questions = library.questions.filter((question) => question.targetFactId === factId);
     return questions.length > 0 && questions.every((question) => applicability.get(question.questionId) === "inapplicable");
   });
-  const pending = library.questions.filter((question) => applicability.get(question.questionId) !== "inapplicable" && !ledger.atomicDecisions[question.primaryDecision.decisionId]);
+  // A cross-topic extraction candidate is only a review item. It cannot skip
+  // a question. A human-confirmed fact (or an explicitly human-confirmed N/A
+  // fact) can, because its confirmation is part of the authoritative ledger.
+  const pending = library.questions.filter((question) => {
+    const fact = ledger.facts[question.targetFactId];
+    const explicitlyResolved = fact.status === "committed" || fact.status === "not_applicable";
+    return applicability.get(question.questionId) !== "inapplicable"
+      && !ledger.atomicDecisions[question.primaryDecision.decisionId]
+      && !explicitlyResolved;
+  });
   const selectable = pending.filter((question) => applicability.get(question.questionId) === "applicable" && question.prerequisiteDecisionIds.every((decisionId) => {
     const decision = ledger.atomicDecisions[decisionId];
     return Boolean(decision && decision.kind !== "unknown");

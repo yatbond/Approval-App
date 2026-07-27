@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ApprovalRuntimeProfile } from "./approval-runtime.ts";
 import {
@@ -17,6 +17,14 @@ import { getTemplateCopilotReadiness } from "./template-copilot-readiness.ts";
 import { requireTemplateCopilotV2, type TemplateCopilotV2Flag } from "./template-copilot-v2-feature.ts";
 import { getTemplateCopilotQuestionLibrary, getTemplateCopilotV2InterviewState, getTemplateCopilotV2SpecialReview, reopenTemplateCopilotV2Decision, type TemplateCopilotAtomicAnswerInput } from "./template-copilot-question-library.ts";
 import { orderTemplateCopilotMessages } from "./template-copilot-history.ts";
+import {
+  projectTemplateCopilotV2Candidates,
+  resolveTemplateCopilotV2CommittedExtractionConflict as projectTemplateCopilotV2CommittedExtractionConflict,
+  confirmTemplateCopilotV2Candidate as projectTemplateCopilotV2CandidateConfirmation,
+  templateCopilotV2CandidateEvidenceHash,
+  templateCopilotV2CandidateOutputSchema,
+  type TemplateCopilotV2Candidate,
+} from "./template-copilot-v2-candidates.ts";
 
 export function templateCopilotV2CommandHash(command: unknown) {
   return createHash("sha256").update(JSON.stringify(sortJson(command))).digest("hex");
@@ -78,7 +86,7 @@ export async function applyTemplateCopilotV2Mutation({
   return withV2InterviewState(result);
 }
 
-export async function applyTemplateCopilotV2AtomicAnswer({ session, service, actor, sessionId, expectedRevision, idempotencyKey, answer, flag }: { session: SupabaseClient; service: SupabaseClient; actor: ApprovalRuntimeProfile; sessionId: string; expectedRevision: number; idempotencyKey: string; answer: TemplateCopilotAtomicAnswerInput | string; flag?: TemplateCopilotV2Flag }) {
+export async function applyTemplateCopilotV2AtomicAnswer({ session, service, actor, sessionId, expectedRevision, idempotencyKey, answer, enqueueExtractionJob = false, flag }: { session: SupabaseClient; service: SupabaseClient; actor: ApprovalRuntimeProfile; sessionId: string; expectedRevision: number; idempotencyKey: string; answer: TemplateCopilotAtomicAnswerInput | string; enqueueExtractionJob?: boolean; flag?: TemplateCopilotV2Flag }) {
   requireTemplateCopilotV2(flag);
   let input: TemplateCopilotAtomicAnswerInput = typeof answer === "string" ? { kind: "text", text: answer } : answer;
   // The caller cannot name a decision or a next question.  The receipt hash
@@ -86,6 +94,7 @@ export async function applyTemplateCopilotV2AtomicAnswer({ session, service, act
   // before we inspect a later version of the interview.
   const commandHash = templateCopilotV2CommandHash({ operation: "atomic_answer", sessionId, expectedRevision, idempotencyKey, answer: input });
   const replay = await loadV2Receipt(session, sessionId, idempotencyKey, commandHash);
+  if (replay && (replay as { outcome?: unknown }).outcome === "idempotency_conflict") return withV2InterviewState(replay);
   const stored = await loadV2StoredSession(session, sessionId);
   if (!stored || stored.ledger.schemaVersion !== 2) return { outcome: "not_found" };
   // Receipts deliberately retain only small replay metadata.  Ask the locked
@@ -93,11 +102,12 @@ export async function applyTemplateCopilotV2AtomicAnswer({ session, service, act
   // later answers completed the interview; do not rebuild an old transition.
   if (replay) {
     const replayMetadata = replay as { decisionId?: unknown; questionId?: unknown };
-    const { data, error } = await service.rpc("answer_template_copilot_v2_decision", {
+    const { data, error } = await service.rpc(enqueueExtractionJob ? "answer_template_copilot_v2_decision_with_extraction_job" : "answer_template_copilot_v2_decision", {
       p_actor_id: actor.id, p_session_id: sessionId, p_expected_revision: expectedRevision, p_idempotency_key: idempotencyKey, p_command_hash: commandHash,
       p_decision_id: typeof replayMetadata.decisionId === "string" ? replayMetadata.decisionId : "decision.replay.placeholder",
       p_ledger: stored.ledger, p_question_id: typeof replayMetadata.questionId === "string" ? replayMetadata.questionId : "v2.replay.placeholder",
       p_user_message: "", p_assistant_message: "", p_user_detail: {}, p_assistant_detail: {},
+      ...(enqueueExtractionJob ? { p_enqueue_extraction: true } : {}),
     });
     if (error) throw error;
     const result = withV2InterviewState(data as Record<string, unknown>);
@@ -122,13 +132,316 @@ export async function applyTemplateCopilotV2AtomicAnswer({ session, service, act
   const assistantMessage = atomicAssistantMessage(stored.ledger.locale, nextInterview);
   const selectedOption = input.kind === "choice" ? question.answer.options?.find((option) => option.optionId === input.optionId) : undefined;
   const userMessage = input.kind === "text" ? input.text : selectedOption?.label[stored.ledger.locale] || input.optionId;
-  const { data, error } = await service.rpc("answer_template_copilot_v2_decision", {
+  const { data, error } = await service.rpc(enqueueExtractionJob ? "answer_template_copilot_v2_decision_with_extraction_job" : "answer_template_copilot_v2_decision", {
     p_actor_id: actor.id, p_session_id: sessionId, p_expected_revision: expectedRevision, p_idempotency_key: idempotencyKey, p_command_hash: commandHash,
     p_decision_id: interview.nextQuestion.primaryDecisionId, p_ledger: nextLedger, p_question_id: interview.nextQuestion.questionId,
     p_user_message: userMessage, p_assistant_message: assistantMessage,
     p_user_detail: { schemaVersion: 2, questionId: interview.nextQuestion.questionId, decisionId: interview.nextQuestion.primaryDecisionId, answerKind: input.kind, ...(input.kind === "choice" ? { optionId: input.optionId } : {}), idempotencyKey, provenance: "human_editor" },
     p_assistant_detail: { schemaVersion: 2, decisionId: interview.nextQuestion.primaryDecisionId, status: nextInterview.state, ...(nextInterview.nextQuestion ? { nextQuestionId: nextInterview.nextQuestion.questionId } : {}) },
+    ...(enqueueExtractionJob ? { p_enqueue_extraction: true } : {}),
   });
+  if (error) throw error;
+  return withV2InterviewState(data as Record<string, unknown>);
+}
+
+/** Gated batch persistence for one broad answer. The model output has already
+ * been source-validated by the candidate module; this function still derives
+ * the next ledger from the owner-scoped row and uses a locked receipt RPC. */
+export async function applyTemplateCopilotV2CandidateExtraction({
+  session, service, actor, sessionId, expectedRevision, idempotencyKey, candidates, flag,
+}: {
+  session: SupabaseClient; service: SupabaseClient; actor: Pick<ApprovalRuntimeProfile, "id">; sessionId: string;
+  expectedRevision: number; idempotencyKey: string; candidates: readonly TemplateCopilotV2Candidate[]; flag?: TemplateCopilotV2Flag;
+}) {
+  requireTemplateCopilotV2(flag);
+  const evidenceHash = templateCopilotV2CandidateEvidenceHash(candidates);
+  const commandHash = templateCopilotV2CommandHash({ operation: "candidate_extraction", sessionId, expectedRevision, idempotencyKey, evidenceHash });
+  // Cron uses a service client for reads, so ownership is an explicit query
+  // predicate before receipt inspection rather than an implicit RLS side
+  // effect. The mutation RPC repeats the same owner check under its lock.
+  const stored = await loadV2StoredSession(session, sessionId, actor.id);
+  if (!stored || stored.ledger.schemaVersion !== 2) return { outcome: "not_found" };
+  const replay = await loadV2Receipt(session, sessionId, idempotencyKey, commandHash);
+  if (replay) {
+    if ((replay as { outcome?: unknown }).outcome === "idempotency_conflict") return withV2InterviewState(replay);
+    return currentOwnerScopedV2Replay(session, sessionId, actor.id);
+  }
+  const projected = projectTemplateCopilotV2Candidates({ ledger: stored.ledger, candidates });
+  const { data, error } = await service.rpc("apply_template_copilot_v2_extraction", {
+    p_actor_id: actor.id, p_session_id: sessionId, p_expected_revision: expectedRevision,
+    p_idempotency_key: idempotencyKey, p_command_hash: commandHash,
+    p_operation: "candidate_extraction", p_candidate_id: null, p_conflict_id: null, p_choice: null, p_rationale: null, p_human_value: null, p_ledger: projected.ledger, p_evidence_hash: evidenceHash,
+  });
+  if (error) throw error;
+  return { ...withV2InterviewState(data as Record<string, unknown>), extractionConflicts: projected.conflicts };
+}
+
+type TemplateCopilotV2ExtractionJobDependencies = Readonly<{
+  leaseToken?: string;
+  extractCandidates: (input: Readonly<{ message: string; messageId: string }>) => Promise<Readonly<{
+    candidates: readonly TemplateCopilotV2Candidate[];
+  }>>;
+  persistCandidates?: typeof applyTemplateCopilotV2CandidateExtraction;
+}>;
+
+function extractionJobRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function extractionJobInteger(value: unknown) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 1 ? number : null;
+}
+
+function extractionJobErrorCode(error: unknown) {
+  if (error instanceof Error && error.name === "TemplateCopilotConfigurationError") {
+    return "provider_configuration";
+  }
+  const reasonCode = error && typeof error === "object"
+    ? (error as { reasonCode?: unknown }).reasonCode
+    : undefined;
+  if (typeof reasonCode === "string" && /^[a-z][a-z0-9_]{0,63}$/.test(reasonCode)) {
+    return reasonCode;
+  }
+  return "provider_error";
+}
+
+async function callTemplateCopilotV2ExtractionJobRpc(
+  service: SupabaseClient,
+  name: string,
+  args: Record<string, unknown>,
+) {
+  const { data, error } = await service.rpc(name, args);
+  if (error) throw error;
+  return extractionJobRecord(data);
+}
+
+/**
+ * Runs one durable answer-bound extraction attempt. The answer RPC has already
+ * committed the manual answer and job atomically. A private candidate
+ * checkpoint makes retries deterministic, while the original answer revision
+ * remains the only revision at which candidates may be appended.
+ */
+export async function processTemplateCopilotV2AnswerExtractionJob({
+  session,
+  service,
+  actor,
+  sessionId,
+  answerClientMessageId,
+  jobId: requestedJobId,
+  dependencies,
+  flag,
+}: {
+  session: SupabaseClient;
+  service: SupabaseClient;
+  actor: Pick<ApprovalRuntimeProfile, "id">;
+  sessionId: string;
+  answerClientMessageId?: string;
+  jobId?: string;
+  dependencies: TemplateCopilotV2ExtractionJobDependencies;
+  flag?: TemplateCopilotV2Flag;
+}) {
+  requireTemplateCopilotV2(flag);
+  if (Boolean(answerClientMessageId) === Boolean(requestedJobId)) {
+    throw new Error("Exactly one extraction job locator is required.");
+  }
+  const leaseToken = dependencies.leaseToken || randomUUID();
+  const extractCandidates = dependencies.extractCandidates;
+  const persistCandidates = dependencies.persistCandidates || applyTemplateCopilotV2CandidateExtraction;
+  const claim = await callTemplateCopilotV2ExtractionJobRpc(
+    service,
+    "claim_template_copilot_v2_answer_extraction_job",
+    {
+      p_actor_id: actor.id,
+      p_session_id: sessionId,
+      p_answer_client_message_id: answerClientMessageId || null,
+      p_lease_token: leaseToken,
+      p_job_id: requestedJobId || null,
+    },
+  );
+  if (claim.outcome !== "claimed") return claim;
+
+  const jobId = typeof claim.jobId === "string" ? claim.jobId : "";
+  const claimedMessageId = typeof claim.answerMessageId === "string" ? claim.answerMessageId : "";
+  const answerMessage = typeof claim.answerMessage === "string" ? claim.answerMessage : "";
+  const answerRevision = extractionJobInteger(claim.answerRevision);
+  const currentRevision = extractionJobInteger(claim.currentRevision);
+  if (
+    !jobId
+    || (requestedJobId ? jobId !== requestedJobId : claimedMessageId !== answerClientMessageId)
+    || !claimedMessageId
+    || !answerMessage
+    || !answerRevision
+    || !currentRevision
+  ) {
+    throw new Error("The extraction job claim is malformed.");
+  }
+
+  const finish = (completionOutcome: "no_candidates" | "applied" | "replayed" | "superseded", completedRevision: number) =>
+    callTemplateCopilotV2ExtractionJobRpc(
+      service,
+      "finish_template_copilot_v2_answer_extraction_job",
+      {
+        p_actor_id: actor.id,
+        p_session_id: sessionId,
+        p_job_id: jobId,
+        p_lease_token: leaseToken,
+        p_completion_outcome: completionOutcome,
+        p_completed_revision: Math.max(answerRevision, completedRevision),
+      },
+    );
+  const fail = (retry: boolean, errorCode: string) =>
+    callTemplateCopilotV2ExtractionJobRpc(
+      service,
+      "fail_template_copilot_v2_answer_extraction_job",
+      {
+        p_actor_id: actor.id,
+        p_session_id: sessionId,
+        p_job_id: jobId,
+        p_lease_token: leaseToken,
+        p_retry: retry,
+        p_error_code: errorCode,
+      },
+    );
+
+  const checkpointInput = claim.candidatePayload;
+  if (checkpointInput == null && currentRevision !== answerRevision) {
+    const terminal = await finish("superseded", currentRevision);
+    return { ...terminal, candidateCount: 0 };
+  }
+
+  let candidates: readonly TemplateCopilotV2Candidate[];
+  if (checkpointInput != null) {
+    const parsed = templateCopilotV2CandidateOutputSchema.safeParse({ candidates: checkpointInput });
+    if (!parsed.success) {
+      const terminal = await fail(false, "checkpoint_invalid");
+      return { ...terminal, errorCode: "checkpoint_invalid" };
+    }
+    candidates = parsed.data.candidates;
+    const expectedHash = templateCopilotV2CandidateEvidenceHash(candidates);
+    if (claim.candidatePayloadHash !== expectedHash) {
+      const terminal = await fail(false, "checkpoint_hash_mismatch");
+      return { ...terminal, errorCode: "checkpoint_hash_mismatch" };
+    }
+  } else {
+    try {
+      const extracted = await extractCandidates({
+        message: answerMessage,
+        messageId: claimedMessageId,
+      });
+      candidates = templateCopilotV2CandidateOutputSchema.parse({
+        candidates: extracted.candidates,
+      }).candidates;
+    } catch (error) {
+      const errorCode = extractionJobErrorCode(error);
+      const terminal = await fail(errorCode !== "provider_configuration", errorCode);
+      return { ...terminal, errorCode };
+    }
+    const payloadHash = templateCopilotV2CandidateEvidenceHash(candidates);
+    const checkpoint = await callTemplateCopilotV2ExtractionJobRpc(
+      service,
+      "checkpoint_template_copilot_v2_answer_extraction_job",
+      {
+        p_actor_id: actor.id,
+        p_session_id: sessionId,
+        p_job_id: jobId,
+        p_lease_token: leaseToken,
+        p_candidate_payload: candidates,
+        p_candidate_payload_hash: payloadHash,
+      },
+    );
+    if (checkpoint.outcome !== "checkpointed") return checkpoint;
+  }
+
+  if (candidates.length === 0) {
+    const terminal = await finish("no_candidates", currentRevision);
+    return { ...terminal, candidateCount: 0 };
+  }
+
+  let persisted: Record<string, unknown>;
+  try {
+    persisted = extractionJobRecord(await persistCandidates({
+      session,
+      service,
+      actor,
+      sessionId,
+      expectedRevision: answerRevision,
+      idempotencyKey: `extract-job:${jobId}`,
+      candidates,
+      flag,
+    }));
+  } catch {
+    const terminal = await fail(true, "candidate_persistence_error");
+    return { ...terminal, errorCode: "candidate_persistence_error" };
+  }
+
+  const persistedRevision = extractionJobInteger(persisted.revision)
+    || extractionJobInteger(persisted.currentRevision)
+    || currentRevision;
+  if (persisted.outcome === "applied" || persisted.outcome === "replayed") {
+    const terminal = await finish(persisted.outcome, persistedRevision);
+    return { ...terminal, candidateCount: candidates.length };
+  }
+  if (persisted.outcome === "stale_revision") {
+    const terminal = await finish("superseded", persistedRevision);
+    return { ...terminal, candidateCount: candidates.length };
+  }
+
+  const errorCode = persisted.outcome === "idempotency_conflict"
+    ? "candidate_receipt_conflict"
+    : persisted.outcome === "invalid_transition"
+      ? "candidate_invalid_transition"
+      : persisted.outcome === "not_found"
+        ? "candidate_owner_state_unavailable"
+        : "candidate_persistence_unavailable";
+  const terminal = await fail(errorCode === "candidate_persistence_unavailable", errorCode);
+  return { ...terminal, errorCode };
+}
+
+export async function resolveTemplateCopilotV2CommittedExtractionConflict({
+  session, service, actor, sessionId, expectedRevision, idempotencyKey, conflictId, choice, rationale, humanValue, flag,
+}: {
+  session: SupabaseClient; service: SupabaseClient; actor: ApprovalRuntimeProfile; sessionId: string;
+  expectedRevision: number; idempotencyKey: string; conflictId: string; choice: "keep_existing" | "commit_incoming" | "commit_human_value"; rationale?: string; humanValue?: unknown; flag?: TemplateCopilotV2Flag;
+}) {
+  requireTemplateCopilotV2(flag);
+  const commandHash = templateCopilotV2CommandHash({ operation: "resolve_extraction_conflict", sessionId, expectedRevision, conflictId, choice, rationale, humanValue });
+  const replay = await loadV2Receipt(session, sessionId, idempotencyKey, commandHash);
+  if (replay) {
+    if ((replay as { outcome?: unknown }).outcome === "idempotency_conflict") return withV2InterviewState(replay);
+    return currentOwnerScopedV2Replay(session, sessionId);
+  }
+  const stored = await loadV2StoredSession(session, sessionId);
+  if (!stored || stored.ledger.schemaVersion !== 2) return { outcome: "not_found" };
+  const conflict = stored.ledger.extractionEvidence.conflicts.find((item) => item.conflictId === conflictId && item.state === "open");
+  if (!conflict) throw new TemplateCopilotFactTransitionError("The extraction conflict is no longer available.");
+  const projected = projectTemplateCopilotV2CommittedExtractionConflict({ ledger: stored.ledger, conflictId, resolution: choice, humanValue, rationale, actorId: actor.id, confirmedAt: new Date().toISOString(), beforeRevision: expectedRevision });
+  const resolvedHumanValue = choice === "commit_human_value" ? projected.extractionEvidence.history.at(-1)?.humanValue : undefined;
+  const { data, error } = await service.rpc("apply_template_copilot_v2_extraction", {
+    p_actor_id: actor.id, p_session_id: sessionId, p_expected_revision: expectedRevision,
+    p_idempotency_key: idempotencyKey, p_command_hash: commandHash,
+    p_operation: "resolve_extraction_conflict", p_candidate_id: null, p_conflict_id: conflictId, p_choice: choice, p_rationale: rationale ?? null, p_human_value: resolvedHumanValue ?? null, p_ledger: projected, p_evidence_hash: templateCopilotV2CandidateEvidenceHash({ conflictId, choice, rationale, resolvedHumanValue }),
+  });
+  if (error) throw error;
+  return withV2InterviewState(data as Record<string, unknown>);
+}
+
+export async function confirmTemplateCopilotV2Candidate({ session, service, actor, sessionId, expectedRevision, idempotencyKey, candidateId, flag }: {
+  session: SupabaseClient; service: SupabaseClient; actor: ApprovalRuntimeProfile; sessionId: string; expectedRevision: number; idempotencyKey: string; candidateId: string; flag?: TemplateCopilotV2Flag;
+}) {
+  requireTemplateCopilotV2(flag);
+  const commandHash = templateCopilotV2CommandHash({ operation: "candidate_confirmation", sessionId, expectedRevision, candidateId });
+  const replay = await loadV2Receipt(session, sessionId, idempotencyKey, commandHash);
+  if (replay) {
+    if ((replay as { outcome?: unknown }).outcome === "idempotency_conflict") return withV2InterviewState(replay);
+    return currentOwnerScopedV2Replay(session, sessionId);
+  }
+  const stored = await loadV2StoredSession(session, sessionId);
+  if (!stored || stored.ledger.schemaVersion !== 2) return { outcome: "not_found" };
+  const ledger = projectTemplateCopilotV2CandidateConfirmation({ ledger: stored.ledger, candidateId, actorId: actor.id, confirmedAt: new Date().toISOString(), beforeRevision: expectedRevision });
+  const { data, error } = await service.rpc("apply_template_copilot_v2_extraction", { p_actor_id: actor.id, p_session_id: sessionId, p_expected_revision: expectedRevision, p_idempotency_key: idempotencyKey, p_command_hash: commandHash, p_operation: "candidate_confirmation", p_candidate_id: candidateId, p_conflict_id: null, p_choice: null, p_rationale: null, p_human_value: null, p_ledger: ledger, p_evidence_hash: templateCopilotV2CandidateEvidenceHash({ candidateId }) });
   if (error) throw error;
   return withV2InterviewState(data as Record<string, unknown>);
 }
@@ -343,15 +656,26 @@ async function preflightTemplateCopilotV2SpecialDecision({ service, actorId, ses
   return result;
 }
 
-async function loadV2StoredSession(session: SupabaseClient, sessionId: string) {
-  const { data, error } = await session
+async function loadV2StoredSession(session: SupabaseClient, sessionId: string, ownerId?: string) {
+  let query = session
     .from("template_copilot_sessions")
     .select("id,owner_id,status,revision,ledger")
-    .eq("id", sessionId)
-    .maybeSingle();
+    .eq("id", sessionId);
+  if (ownerId) query = query.eq("owner_id", ownerId);
+  const { data, error } = await query.maybeSingle();
   if (error) throw error;
   if (!data) return null;
   return { ...data, ledger: templateCopilotStoredLedgerSchema.parse(data.ledger) };
+}
+
+/** A matching receipt proves the command already committed, but its response
+ * can be old. Re-read through the caller's owner-scoped client so a retry
+ * returns the current authoritative ledger/revision without exposing a row to
+ * a mismatched idempotency key. */
+async function currentOwnerScopedV2Replay(session: SupabaseClient, sessionId: string, ownerId?: string) {
+  const stored = await loadV2StoredSession(session, sessionId, ownerId);
+  if (!stored || stored.ledger.schemaVersion !== 2) return { outcome: "not_found" };
+  return withV2InterviewState({ outcome: "replayed", sessionId: stored.id, revision: stored.revision, status: stored.status, ledger: stored.ledger });
 }
 
 async function loadV2Receipt(session: SupabaseClient, sessionId: string, idempotencyKey: string, commandHash: string) {

@@ -196,9 +196,9 @@ test("dependencies and intrinsic conflicts remain visible in deterministic readi
   const dependencyReadiness = getTemplateCopilotReadiness(dependencyMissing, { compilerValid: true, publishedRevisionMatches: true });
   assert.ok(dependencyReadiness.gaps.some((gap) => gap.factId === "workflow.rejection_policy" && gap.code === "dependency_unresolved"));
   const conflict = applyTemplateCopilotV2FactTransition({
-    ledger: applyTemplateCopilotV2FactTransition({ ledger: createTemplateCopilotV2Ledger(scope, enabled), factId: "workflow.stages", actorId, confirmedAt, flag: enabled, transition: { operation: "record_candidate", payload: { canonicalValue: "Manager approval stage", provenance: [{ kind: "message", sourceId: "message:manager", sourceMessageIds: ["message:manager"] }] } } }),
+    ledger: applyTemplateCopilotV2FactTransition({ ledger: createTemplateCopilotV2Ledger(scope, enabled), factId: "workflow.stages", actorId, confirmedAt, flag: enabled, transition: { operation: "record_candidate", payload: { canonicalValue: [{ label: "Manager approval", kind: "approval", participant: { mode: "directory_position", value: "Manager" }, sequence: 1 }], provenance: [{ kind: "message", sourceId: "message:manager", sourceMessageIds: ["message:manager"] }] } } }),
     factId: "workflow.stages", actorId, confirmedAt, flag: enabled,
-    transition: { operation: "record_candidate", payload: { canonicalValue: "Director approval stage", provenance: [{ kind: "message", sourceId: "message:director", sourceMessageIds: ["message:director"] }] } },
+    transition: { operation: "record_candidate", payload: { canonicalValue: [{ label: "Director approval", kind: "approval", participant: { mode: "directory_position", value: "Director" }, sequence: 1 }], provenance: [{ kind: "message", sourceId: "message:director", sourceMessageIds: ["message:director"] }] } },
   });
   const readiness = getTemplateCopilotReadiness(conflict, { compilerValid: true, publishedRevisionMatches: true });
   assert.equal(readiness.draft, "blocked");
@@ -206,9 +206,9 @@ test("dependencies and intrinsic conflicts remain visible in deterministic readi
   assert.equal(getTemplateCopilotReadiness(complete).publication, "not_ready");
   assert.equal(getTemplateCopilotReadiness(complete, { compilerValid: true }).activation, "not_ready");
   const conditionsConflict = applyTemplateCopilotV2FactTransition({
-    ledger: applyTemplateCopilotV2FactTransition({ ledger: createTemplateCopilotV2Ledger(scope, enabled), factId: "workflow.conditions", actorId, confirmedAt, flag: enabled, transition: { operation: "record_candidate", payload: { canonicalValue: "Route by amount", provenance: [{ kind: "message", sourceId: "message:amount", sourceMessageIds: ["message:amount"] }] } } }),
+    ledger: applyTemplateCopilotV2FactTransition({ ledger: createTemplateCopilotV2Ledger(scope, enabled), factId: "workflow.conditions", actorId, confirmedAt, flag: enabled, transition: { operation: "record_candidate", payload: { canonicalValue: [{ field: "Amount", operator: ">", value: 50000, matchingRoute: "Director", otherwiseRoute: "Manager" }], provenance: [{ kind: "message", sourceId: "message:amount", sourceMessageIds: ["message:amount"] }] } } }),
     factId: "workflow.conditions", actorId, confirmedAt, flag: enabled,
-    transition: { operation: "record_candidate", payload: { canonicalValue: "Route by supplier", provenance: [{ kind: "message", sourceId: "message:supplier", sourceMessageIds: ["message:supplier"] }] } },
+    transition: { operation: "record_candidate", payload: { canonicalValue: [{ field: "Supplier", operator: "contains", value: "strategic", matchingRoute: "Director", otherwiseRoute: "Manager" }], provenance: [{ kind: "message", sourceId: "message:supplier", sourceMessageIds: ["message:supplier"] }] } },
   });
   const combined = templateCopilotV2LedgerSchema.parse({ ...conditionsConflict, facts: { ...conditionsConflict.facts, "workflow.stages": { ...conditionsConflict.facts["workflow.stages"], status: "unresolved", canonicalValue: undefined, originalWording: undefined, provenance: [], confirmation: undefined } } });
   const combinedReadiness = getTemplateCopilotReadiness(combined, { compilerValid: true, publishedRevisionMatches: true });
@@ -224,9 +224,13 @@ test("legacy preview is scope/revision/document/version bound and upgrade create
   const preview = previewLegacyTemplateCopilotUpgrade({ legacyInput: legacy, sessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sourceRevision: 7 });
   const changedRevision = previewLegacyTemplateCopilotUpgrade({ legacyInput: legacy, sessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sourceRevision: 8 });
   assert.notEqual(preview.previewHash, changedRevision.previewHash);
+  const identityMapping = preview.mappings.find((mapping) => mapping.sectionId === "identity_scope");
+  assert.deepEqual(identityMapping?.factIds, ["workflow.name", "workflow.purpose"]);
+  assert.ok(preview.unresolvedFactIds.includes("workflow.scope"));
   assert.throws(() => approveLegacyTemplateCopilotUpgrade({ legacyInput: legacy, preview, previewHash: "0".repeat(64), flag: enabled }));
   const upgraded = approveLegacyTemplateCopilotUpgrade({ legacyInput: legacy, preview, previewHash: preview.previewHash, flag: enabled });
   assert.equal(upgraded.facts["workflow.name"].status, "candidate");
+  assert.equal(upgraded.facts["workflow.scope"].status, "unresolved");
   assert.equal(Object.values(upgraded.facts).some((fact) => fact.status === "committed"), false);
 });
 

@@ -132,6 +132,121 @@ Sessions and messages are owner-scoped under RLS. Writes use service-only RPCs,
 revision checks, advisory locks, and client-message replay keys. Every model
 provider key stays server-side.
 
+## Copilot v2 Step 3: source-backed typed extraction review
+
+Step 3 has three independent, **server-only** rollout gates. They default to
+`false` in `.env.example` and must be enabled in this order:
+
+1. `TEMPLATE_COPILOT_V2=true` enables the governed v2 interview.
+2. `TEMPLATE_COPILOT_V2_EXTRACTION_SHADOW=true` permits bounded provider
+   extraction for observation and qualification. Shadow extraction alone cannot
+   write review candidates.
+3. `TEMPLATE_COPILOT_V2_CANDIDATE_CREATION=true` permits candidate creation,
+   but only while the shadow gate remains true and after the qualification
+   evidence has been reviewed.
+
+For an immediate candidate-write kill switch, set
+`TEMPLATE_COPILOT_V2_CANDIDATE_CREATION=false`; the manual v2 interview stays
+available, the scheduled consumer returns `disabled`, and durable queued jobs
+remain preserved for a reviewed resumption or repair. Set
+`TEMPLATE_COPILOT_V2_EXTRACTION_SHADOW=false` to stop provider extraction calls
+as well. Set `TEMPLATE_COPILOT_V2=false` to stop new v2 interviews. None of
+these variables is `NEXT_PUBLIC_*`, and browser state can never enable a server
+write path.
+
+In candidate-creation mode, a text answer, its canonical transcript messages,
+and an owner/session/message-bound extraction job are written by one locked
+database transaction. The private job references the existing user-message row
+instead of storing another copy of the raw answer. The HTTP response returns
+the already-authoritative manual answer without waiting for the provider. A
+bounded post-response worker claims the job with a lease, validates extraction,
+and checkpoints the complete candidate array plus a deterministic hash before
+attempting the candidate-ledger mutation. The post-response callback is only a
+latency optimization: the existing once-per-minute protected Vercel Cron route
+also invokes a service-only due-job consumer, so a terminated callback or lost
+client response cannot permanently strand pending work. The dequeue RPC uses
+`FOR UPDATE SKIP LOCKED`, leases only pending, due retry, or expired-processing
+rows, and returns only opaque job, owner, session, and lease identifiers. The
+owner-bound claim then resolves the private transcript; raw answers are never
+returned by dequeue or written to worker logs.
+
+Each scheduled invocation requests four jobs (the database hard cap is eight),
+uses at most two processors concurrently, starts no new work after a 25-second
+budget, and gives each job a 60-second recoverable lease. Provider retries are
+not eligible before `next_attempt_at`. An exact answer replay or a later cron
+invocation can resume a pending, retryable, failed, or expired-lease job.
+Repeated claims with the same lease and repeated candidate writes with the
+job-derived idempotency key are safe. A provider failure changes only retry
+metadata; a later session revision
+marks an uncommitted job superseded and can never be overwritten.
+The job table
+has RLS enabled, no browser policy, no direct service-role table rights, and
+service-only owner-checking RPCs.
+
+The provider is a quote labeler, never evidence authority. It may propose an
+allow-listed fact only with a complete, fact-typed value and a fact-specific
+quote tree that mirrors every primitive value leaf exactly. The provider never
+receives or returns JSON Pointer paths, message IDs, offsets, or normalization
+rules. The server alone walks the paired value/quote tree, derives durable JSON
+Pointer paths, message identity, Unicode code-point offsets, and any allowed
+normalization rule from the owner-scoped message. It then checks complete leaf
+coverage, typed value shape, fact/value-type coupling, fact-aware normalized
+equality, no overlapping claims, and bounded fields before a candidate can be
+persisted. Provider schema conformance does not bypass these server checks.
+
+Candidates are advisory. An ambiguous candidate has no confirmation action and
+requires human clarification. A candidate whose fact has changed or has an
+open conflict remains visible as evidence but cannot be confirmed. A candidate
+that differs from a committed value, or from an earlier uncommitted candidate,
+becomes a durable review conflict holding both alternatives and both evidence
+chains. Only an authenticated human may keep the existing value, accept the
+incoming typed value, or supply a separately validated human value; model
+confidence never commits a fact.
+
+Candidate IDs bind the fact, canonical typed value, and sorted full evidence
+chain. Durable candidates, conflicts, and resolution/confirmation history
+retain their immutable evidence snapshots. They are owner-scoped review data,
+not executable workflow authority. The database applies every candidate,
+confirmation, and conflict decision through a locked, revisioned,
+idempotent service-role RPC with append-only audit evidence.
+
+Run the keyless corpus with:
+
+```powershell
+npm run test:template-copilot-v2-step3-qualification
+```
+
+It uses only synthetic source fixtures and must never call a provider. Any live
+shadow/provider qualification must use synthetic data with
+`TEMPLATE_COPILOT_OPENROUTER_ZDR=true` (or an explicitly approved equivalent
+retention boundary), and must verify strict structured-output support for the
+selected model before corporate requirements are sent. A passing provider test
+does not authorize candidate creation by itself.
+
+Autonomous recovery additionally requires the existing production
+`/api/cron/approval-operations` schedule, a random `CRON_SECRET` of at least 16
+characters, and the server-only `SUPABASE_SERVICE_ROLE_KEY`. Vercel supplies
+the secret as a bearer authorization header. Missing or weak secrets fail
+closed before either scheduled worker runs. Do not expose either secret to the
+browser, and do not apply the Step 3 migration or configure these variables as
+part of a code-only review.
+
+Rollback is flag-first and preserves the v2 ledger, evidence, receipts,
+history, audits, and migrations. Do not delete or edit an applied migration to
+roll back Step 3; any future retention/deletion change needs its own reviewed
+migration with equivalent audit preservation.
+
+### OpenAPI scope
+
+`/api/template-authoring/openapi.json` currently documents the stable external
+authoring and v1 Copilot contract. The v2 answer, special-decision, fact,
+upgrade, extraction-candidate, and extraction-conflict routes are authenticated
+internal application endpoints with a coupled, evolving v2 lifecycle and are
+therefore intentionally excluded together. Publishing only the two Step 3
+review POST routes would misrepresent that contract; add them only with the
+complete v2 public surface, strict response/error schemas, and an explicit
+versioned integration commitment.
+
 ## Requirements files
 
 The first release accepts text, Markdown, and PDF up to 5 MB, with at most five

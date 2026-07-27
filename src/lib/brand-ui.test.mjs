@@ -126,7 +126,7 @@ test("gives every Copilot form control a dark gray surface and white text", () =
   );
   assert.equal(
     templateCopilotSource.match(/template-copilot-control/g)?.length,
-    13,
+    14,
   );
   assert.match(
     templateCopilotSource,

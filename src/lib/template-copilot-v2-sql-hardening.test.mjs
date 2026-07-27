@@ -19,6 +19,10 @@ const specialSql = await readFile(
   new URL("../../supabase/migrations/20260727210000_template_copilot_v2_special_decisions.sql", import.meta.url),
   "utf8",
 );
+const extractionSql = await readFile(
+  new URL("../../supabase/migrations/20260727230000_template_copilot_v2_extraction_evidence.sql", import.meta.url),
+  "utf8",
+);
 
 function extractPinnedGraph(sql) {
   const match = sql.match(/\$v2_dependency_graph\$(\{[\s\S]*\})\$v2_dependency_graph\$/);
@@ -77,8 +81,7 @@ function assertEveryJsonTextExtractionIsDominatedByAStringGate(sql, label) {
 }
 
 function extractFunctionBody(sql, functionName) {
-  const declaration = `create function ${functionName}`;
-  const declarationIndex = sql.indexOf(declaration);
+  const declarationIndex = sql.search(new RegExp(`create(?:\\s+or\\s+replace)?\\s+function\\s+${functionName.replaceAll(".", "\\.")}`));
   assert.ok(declarationIndex >= 0, `${functionName} declaration is missing`);
   const bodyStart = sql.indexOf("as $$", declarationIndex);
   assert.ok(bodyStart >= 0, `${functionName} body is missing`);
@@ -88,16 +91,40 @@ function extractFunctionBody(sql, functionName) {
 }
 
 test("both hardened migrations parse as PostgreSQL SQL and PL/pgSQL", async () => {
-  const [atomicAst, atomicPlPgSql, specialAst, specialPlPgSql] = await Promise.all([
+  const [atomicAst, atomicPlPgSql, specialAst, specialPlPgSql, extractionAst, extractionPlPgSql] = await Promise.all([
     parse(atomicSql),
     parsePlPgSQL(atomicSql),
     parse(specialSql),
     parsePlPgSQL(specialSql),
+    parse(extractionSql),
+    parsePlPgSQL(extractionSql),
   ]);
   assert.ok(atomicAst.stmts.length >= 6);
   assert.equal(atomicPlPgSql.plpgsql_funcs.length, 1);
   assert.ok(specialAst.stmts.length >= 14);
   assert.equal(specialPlPgSql.plpgsql_funcs.length, 4);
+  assert.ok(extractionAst.stmts.length >= 5);
+  // Step 3 deliberately has one private redacted-audit helper plus one public
+  // service-only mutation RPC. No additional public callable function may be
+  // added as part of the evidence persistence surface.
+  assert.equal(extractionPlPgSql.plpgsql_funcs.length, 2);
+  assert.equal((extractionSql.match(/create(?:\s+or\s+replace)?\s+function\s+public\./gi) || []).length, 1);
+  assert.match(extractionSql, /create(?:\s+or\s+replace)?\s+function\s+private\.audit_template_copilot_v2_extraction_attempt/i);
+  assert.match(extractionSql, /revoke all on function private\.audit_template_copilot_v2_extraction_attempt[\s\S]+from public, anon, authenticated/i);
+  assert.doesNotMatch(extractionSql, /grant execute on function public\.apply_template_copilot_v2_extraction[\s\S]+to authenticated/i);
+});
+
+test("extraction mutation remains owner-locked, bounded, replay-safe, and cannot replace a committed fact", () => {
+  const body = extractFunctionBody(extractionSql, "public.apply_template_copilot_v2_extraction");
+  assert.match(body, /pg_advisory_xact_lock/);
+  assert.match(body, /for update/);
+  assert.match(body, /s\.owner_id is distinct from p_actor_id/);
+  assert.match(body, /octet_length\(p_ledger::text\) > 12582912/);
+  assert.match(body, /template_copilot_v2_operation_receipts/);
+  assert.match(body, /s\.revision is distinct from p_expected_revision/);
+  assert.match(body, /old\.value->>'status' in \('committed','not_applicable'\)/);
+  assert.match(body, /p_operation = 'resolve_extraction_conflict'/);
+  assert.match(extractionSql, /revoke all on function public\.apply_template_copilot_v2_extraction[\s\S]+to service_role/);
 });
 
 test("the database dependency graph exactly matches all 316 pinned TypeScript decisions and both edge kinds", () => {
