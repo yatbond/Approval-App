@@ -33,7 +33,7 @@ import { TemplateCopilotInvalidSessionCursorError } from "@/lib/template-copilot
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
 import { isTemplateCopilotV2Enabled, isTemplateCopilotV2ModeEnabled } from "@/lib/template-copilot-v2-feature";
 import { createTemplateCopilotV2Session } from "@/lib/template-copilot-v2-server-data";
-import { isTemplateCopilotQuestionLocaleProductionReady } from "@/lib/template-copilot-v2-step8-review";
+import { isTemplateCopilotQuestionLibraryStartAllowed } from "@/lib/template-copilot-v2-step8-review";
 
 /** Read-only, authenticated capability probe.  The browser uses this before a
  * start mutation so a legacy v1 start never enters the v2 replay/storage state
@@ -187,14 +187,17 @@ export async function POST(request: NextRequest) {
           422,
         ));
       }
-      if (parsed.data.questionLibraryVersion === "v2.2" && !isTemplateCopilotQuestionLocaleProductionReady(locale)) {
+      if (
+        parsed.data.questionLibraryVersion
+        && !isTemplateCopilotQuestionLibraryStartAllowed(parsed.data.questionLibraryVersion, locale)
+      ) {
         return withTemplateCopilotStartSchemaVersion(approvalJson(
           cookieSource,
           correlationId,
           {
             error: {
               code: "question_library_locale_not_approved",
-              message: "The reviewed Copilot language update is not approved for the selected language. Start a new interview with the approved version.",
+              message: "The reviewed Copilot language update is not enabled for the selected language in this environment. Start a new interview with the enabled version.",
             },
           },
           422,

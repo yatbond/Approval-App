@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 import {
   nextTemplateCopilotV2PendingStart,
   parseTemplateCopilotV2PendingStart,
 } from "./template-copilot-v2-client-command.ts";
 import { templateCopilotStartSchema } from "./template-copilot-ledger.ts";
-import { evaluateTemplateCopilotV2Step8LocaleGate } from "./template-copilot-v2-step8-rollout.ts";
+import {
+  evaluateTemplateCopilotV2Step8LocaleGate,
+  resolveTemplateCopilotV2Step8QualificationDeployment,
+  resolveTemplateCopilotV2Step8QualificationMode,
+} from "./template-copilot-v2-step8-rollout.ts";
+import { isTemplateCopilotQuestionLibraryStartAllowed } from "./template-copilot-v2-step8-review.ts";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
@@ -23,6 +29,90 @@ test("new starts remain on v2.1 while Step 8 accessibility qualification is pend
   assert.equal(parseTemplateCopilotV2PendingStart({ ...current, questionLibraryVersion: undefined }).questionLibraryVersion, "v2.0");
   assert.equal(parseTemplateCopilotV2PendingStart({ ...current, questionLibraryVersion: "v2.1" }).questionLibraryVersion, "v2.1");
   assert.equal(templateCopilotStartSchema.safeParse({ ...scope, questionLibraryVersion: "v2.2", clientMessageId: "start:step8:test" }).success, true);
+});
+
+test("the Step 8 qualification switch is explicit, case-sensitive, and disabled by default", () => {
+  assert.equal(resolveTemplateCopilotV2Step8QualificationMode(undefined), false);
+  assert.equal(resolveTemplateCopilotV2Step8QualificationMode(""), false);
+  assert.equal(resolveTemplateCopilotV2Step8QualificationMode("false"), false);
+  assert.equal(resolveTemplateCopilotV2Step8QualificationMode("TRUE"), false);
+  assert.equal(resolveTemplateCopilotV2Step8QualificationMode("1"), false);
+  assert.equal(resolveTemplateCopilotV2Step8QualificationMode("true"), true);
+});
+
+test("qualification authority is Preview-only and every other deployment fails closed", () => {
+  for (const qualificationMode of [false, true]) {
+    for (const vercelEnvironment of [undefined, "", "development", "production", "Preview", "PREVIEW"]) {
+      assert.equal(resolveTemplateCopilotV2Step8QualificationDeployment({
+        qualificationMode,
+        vercelEnvironment,
+      }), false);
+    }
+  }
+  assert.equal(resolveTemplateCopilotV2Step8QualificationDeployment({
+    qualificationMode: true,
+    vercelEnvironment: "preview",
+  }), true);
+});
+
+test("v2.0 and v2.1 remain safe starts while v2.2 requires Production or isolated Preview authority", () => {
+  for (const locale of ["en", "zh-Hant", "zh-Hans"]) {
+    assert.equal(isTemplateCopilotQuestionLibraryStartAllowed("v2.0", locale), true);
+    assert.equal(isTemplateCopilotQuestionLibraryStartAllowed("v2.1", locale), true);
+    assert.equal(isTemplateCopilotQuestionLibraryStartAllowed("v2.2", locale), false);
+  }
+});
+
+test("the real environment-bound gate enables reviewed v2.2 only in Preview and never marks it Production-ready", () => {
+  const rolloutUrl = new URL("./template-copilot-v2-step8-rollout.ts", import.meta.url).href;
+  const reviewUrl = new URL("./template-copilot-v2-step8-review.ts", import.meta.url).href;
+  const script = `
+    import { getTemplateCopilotPreferredQuestionLibraryVersion } from ${JSON.stringify(rolloutUrl)};
+    import {
+      isTemplateCopilotQuestionLibraryStartAllowed,
+      isTemplateCopilotQuestionLocaleProductionReady,
+      isTemplateCopilotQuestionLocaleQualificationReady,
+    } from ${JSON.stringify(reviewUrl)};
+    const locales = ["en", "zh-Hant", "zh-Hans"];
+    console.log(JSON.stringify({
+      preferred: getTemplateCopilotPreferredQuestionLibraryVersion(),
+      locales: Object.fromEntries(locales.map((locale) => [locale, {
+        startAllowed: isTemplateCopilotQuestionLibraryStartAllowed("v2.2", locale),
+        qualificationReady: isTemplateCopilotQuestionLocaleQualificationReady(locale),
+        productionReady: isTemplateCopilotQuestionLocaleProductionReady(locale),
+      }])),
+    }));
+  `;
+  const run = (vercelEnvironment) => spawnSync(
+    process.execPath,
+    ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--experimental-strip-types", "--input-type=module", "-e", script],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        NEXT_PUBLIC_TEMPLATE_COPILOT_V2_STEP8_QUALIFICATION: "true",
+        VERCEL_ENV: vercelEnvironment,
+      },
+    },
+  );
+  const preview = run("preview");
+  assert.equal(preview.status, 0, preview.stderr);
+  const previewResult = JSON.parse(preview.stdout);
+  assert.equal(previewResult.preferred, "v2.2");
+  for (const locale of Object.values(previewResult.locales)) {
+    assert.equal(locale.startAllowed, true);
+    assert.equal(locale.qualificationReady, true);
+    assert.equal(locale.productionReady, false);
+  }
+  const production = run("production");
+  assert.equal(production.status, 0, production.stderr);
+  const productionResult = JSON.parse(production.stdout);
+  assert.equal(productionResult.preferred, "v2.2");
+  for (const locale of Object.values(productionResult.locales)) {
+    assert.equal(locale.startAllowed, false);
+    assert.equal(locale.qualificationReady, false);
+    assert.equal(locale.productionReady, false);
+  }
 });
 
 test("the locale gate requires rollout enablement, named human question evidence, and approved concept content together", () => {
@@ -87,7 +177,7 @@ test("Step 8 is wired through the real client, server contracts, Admin view, tel
   assert.ok((client.match(/getTemplateCopilotPreferredQuestionLibraryVersion\(\)/g) || []).length >= 2);
   assert.match(client, /<TemplateCopilotConceptHelp detail=\{state\.interview\.nextQuestion\.helpDetail\}/);
   assert.match(serverData, /questionLibraryVersion\?: "v2\.0" \| "v2\.1" \| "v2\.2"/);
-  assert.match(startRoute, /isTemplateCopilotQuestionLocaleProductionReady\(locale\)/);
+  assert.match(startRoute, /isTemplateCopilotQuestionLibraryStartAllowed\(parsed\.data\.questionLibraryVersion, locale\)/);
   assert.match(startRoute, /question_library_locale_not_approved/);
   assert.match(startRoute, /current browsers persist and send the rollout-selected pin/);
   assert.match(sessionRoute, /logTemplateCopilotHelpFallback\(correlationId, interview\)/);
@@ -105,6 +195,8 @@ test("Step 8 is wired through the real client, server contracts, Admin view, tel
   assert.match(adminPanel, /template_copilot_help_fallback/);
   assert.match(rollout, /preferredNewSessionVersion: "v2\.1"/);
   assert.match(rollout, /enabledCandidateLocales: Object\.freeze\(\[\]/);
+  assert.match(rollout, /NEXT_PUBLIC_TEMPLATE_COPILOT_V2_STEP8_QUALIFICATION/);
+  assert.match(rollout, /qualificationCandidateLocales: Object\.freeze\(\["en", "zh-Hant", "zh-Hans"\]/);
 });
 
 test("the Step 8 runtime library is static reviewed content with no model translation path", async () => {
@@ -122,6 +214,13 @@ test("the authenticated browser gate covers all locales, keyboard, CJK/mobile la
     read("../../package.json"),
   ]);
   assert.match(script, /for \(const locale of \["en", "zh-Hant", "zh-Hans"\]\)/);
+  assert.match(script, /database\.auth\.admin\.createUser/);
+  assert.match(script, /database\.auth\.admin\.deleteUser/);
+  assert.match(script, /email_confirm: true/);
+  assert.match(script, /await establishPreviewAccess\(browser\)/);
+  assert.match(script, /page\.goto\(previewUrl/);
+  assert.match(script, /deployment\?\.environment, "preview"/);
+  assert.match(script, /source\?\.revision, expectedRevision/);
   assert.match(script, /page\.keyboard\.press\("Enter"\)/);
   assert.match(script, /page\.keyboard\.press\("Space"\)/);
   assert.match(script, /new AxeBuilder\(\{ page \}\)\.analyze\(\)/);

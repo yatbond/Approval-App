@@ -1,7 +1,11 @@
-import { isTemplateCopilotConceptLocaleProductionReady } from "./template-copilot-concepts.ts";
+import {
+  getTemplateCopilotConceptReviewSummary,
+  isTemplateCopilotConceptLocaleProductionReady,
+} from "./template-copilot-concepts.ts";
 import {
   evaluateTemplateCopilotV2Step8LocaleGate,
   isTemplateCopilotV2Step8LocaleEnabled,
+  isTemplateCopilotV2Step8QualificationLocaleEnabled,
 } from "./template-copilot-v2-step8-rollout.ts";
 
 export const templateCopilotV2Step8QuestionContentReview = Object.freeze({
@@ -43,12 +47,33 @@ export function isTemplateCopilotQuestionLocaleProductionReady(
   });
 }
 
+export function isTemplateCopilotQuestionLocaleQualificationReady(
+  locale: "en" | "zh-Hant" | "zh-Hans",
+) {
+  const conceptReview = getTemplateCopilotConceptReviewSummary("concepts.v1.0");
+  return evaluateTemplateCopilotV2Step8LocaleGate({
+    rolloutEnabled: isTemplateCopilotV2Step8QualificationLocaleEnabled(locale),
+    questionReview: templateCopilotV2Step8QuestionContentReview.locales[locale],
+    conceptReady: conceptReview.locales[locale].approved === conceptReview.conceptCount,
+  });
+}
+
+export function isTemplateCopilotQuestionLibraryStartAllowed(
+  questionLibraryVersion: "v2.0" | "v2.1" | "v2.2",
+  locale: "en" | "zh-Hant" | "zh-Hans",
+) {
+  if (questionLibraryVersion !== "v2.2") return true;
+  return isTemplateCopilotQuestionLocaleProductionReady(locale)
+    || isTemplateCopilotQuestionLocaleQualificationReady(locale);
+}
+
 export function getTemplateCopilotQuestionReviewSummary() {
   const locales = Object.fromEntries(Object.entries(templateCopilotV2Step8QuestionContentReview.locales).map(([locale, review]) => [
     locale,
     Object.freeze({
       ...review,
       enabled: isTemplateCopilotV2Step8LocaleEnabled(locale as "en" | "zh-Hant" | "zh-Hans"),
+      qualificationEnabled: isTemplateCopilotV2Step8QualificationLocaleEnabled(locale as "en" | "zh-Hant" | "zh-Hans"),
       productionApproved: isTemplateCopilotQuestionLocaleProductionReady(locale as "en" | "zh-Hant" | "zh-Hans"),
     }),
   ])) as Record<"en" | "zh-Hant" | "zh-Hans", {
@@ -58,6 +83,7 @@ export function getTemplateCopilotQuestionReviewSummary() {
     reviewedAt?: string;
     evidenceRef?: string;
     enabled: boolean;
+    qualificationEnabled: boolean;
     productionApproved: boolean;
   }>;
   return Object.freeze({

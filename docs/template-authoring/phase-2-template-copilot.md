@@ -532,17 +532,29 @@ compilation remain language-independent. Deterministic tests compare all three
 locales, mixed-script evidence, missing/unreviewed fallback, human-review
 gating, jargon removal, form and simultaneous-stage semantics, and actual
 pseudo-localized/long-CJK component layout. After real approval and an isolated
-Preview deployment, run:
+Preview deployment, add the branch-scoped Preview build variable
+`NEXT_PUBLIC_TEMPLATE_COPILOT_V2_STEP8_QUALIFICATION=true` and run:
 
 `npm run test:e2e:template-copilot-v2-step8`
+
+Provide `E2E_PREVIEW_SHARE_URL` with the complete protected Preview share URL
+and `E2E_EXPECTED_GIT_REVISION` with the exact 40-character candidate commit.
+Provide either `E2E_USER_EMAIL` plus `E2E_USER_PASSWORD`, or
+`E2E_SUPABASE_URL` plus `E2E_SUPABASE_SERVICE_KEY` for a disposable user.
 
 That gate starts a genuine `v2.2` interview in all three approved locales,
 checks the exact pins and absence of fallback, opens and closes help by
 keyboard, renders stress content inside the real help component, scans light
-and dark modes with axe, and checks mobile touch sizing and overflow. Promotion
-is not authorized by this runbook. Rollback selects `v2.1` for new sessions;
-the server must retain `v2.2` and `concepts.v1.0` for any sessions already
-created after approval. Step 8 requires no database migration.
+and dark modes with axe, and checks mobile touch sizing and overflow. If
+explicit test-user credentials are absent, the gate creates a confirmed,
+non-admin participant with the supplied Preview test service key and removes
+that user on completion. The qualification variable is deliberately
+build-time, exact-value, Preview-only authority: it does not mark any locale
+Production-ready and must never be added to Production. Promotion is not
+authorized by this runbook. Rollback removes the branch-scoped qualification
+variable and selects `v2.1` for new sessions. The server must retain `v2.2` and `concepts.v1.0`
+for any sessions already created during qualification.
+Step 8 requires no database migration.
 
 ## Operations
 

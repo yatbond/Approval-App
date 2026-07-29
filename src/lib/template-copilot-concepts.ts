@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isTemplateCopilotV2Step8QualificationLocaleEnabled } from "./template-copilot-v2-step8-rollout.ts";
 
 export const templateCopilotConceptLocales = ["en", "zh-Hant", "zh-Hans"] as const;
 export type TemplateCopilotConceptLocale = (typeof templateCopilotConceptLocales)[number];
@@ -379,13 +380,22 @@ export function resolveTemplateCopilotConcept({
   const entry = library.entries.find((candidate) => candidate.conceptId === conceptId);
   const candidates = [locale, ...library.fallback.order[locale]] as TemplateCopilotConceptLocale[];
   for (const displayedLocale of candidates) {
-    if (!library.enabledLocales.includes(displayedLocale)) continue;
+    const displayedLocaleEnabled = library.enabledLocales.includes(displayedLocale)
+      || (
+        library.version === "concepts.v1.0"
+        && isTemplateCopilotV2Step8QualificationLocaleEnabled(displayedLocale)
+      );
+    if (!displayedLocaleEnabled) continue;
     const localized = entry?.content[displayedLocale];
     const review = entry?.review[displayedLocale];
     if (!localized || !review || !reviewIsApproved(review)) continue;
     const fallbackReason = displayedLocale === locale
       ? undefined
       : !library.enabledLocales.includes(locale)
+        && !(
+          library.version === "concepts.v1.0"
+          && isTemplateCopilotV2Step8QualificationLocaleEnabled(locale)
+        )
         ? "locale_disabled" as const
       : entry?.content[locale]
         ? "unreviewed_locale" as const
