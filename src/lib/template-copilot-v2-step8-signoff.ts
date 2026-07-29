@@ -47,12 +47,12 @@ const localeSignoffSchema = z.discriminatedUnion("decision", [
 
 export const templateCopilotV2Step8SignoffSchema = z.object({
   schemaVersion: z.literal(1),
-  candidateSourceRevision: z.literal("1ba6e8031d866b9d94a89863cc39303f9f935e61"),
+  candidateSourceRevision: z.literal("884c70e0cac38744eade26557b5c99b3c6696232"),
   questionLibraryVersion: z.literal("v2.2"),
   conceptLibraryVersion: z.literal("concepts.v1.0"),
   reviewPackageRows: z.literal(1176),
-  conceptContentFingerprint: z.literal("fnv1a64:18974b8087ddb5a4"),
-  questionContentFingerprint: z.literal("fnv1a64:561391552a3ba191"),
+  conceptContentFingerprint: z.literal("fnv1a64:4a149e693daab18d"),
+  questionContentFingerprint: z.literal("fnv1a64:df415823535ac40f"),
   locales: z.object({
     en: localeSignoffSchema,
     "zh-Hant": localeSignoffSchema,

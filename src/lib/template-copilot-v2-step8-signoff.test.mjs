@@ -9,12 +9,12 @@ import { validateTemplateCopilotV2Step8Signoff } from "./template-copilot-v2-ste
 
 const metadata = {
   schemaVersion: 1,
-  candidateSourceRevision: "1ba6e8031d866b9d94a89863cc39303f9f935e61",
+  candidateSourceRevision: "884c70e0cac38744eade26557b5c99b3c6696232",
   questionLibraryVersion: "v2.2",
   conceptLibraryVersion: "concepts.v1.0",
   reviewPackageRows: 1176,
-  conceptContentFingerprint: "fnv1a64:18974b8087ddb5a4",
-  questionContentFingerprint: "fnv1a64:561391552a3ba191",
+  conceptContentFingerprint: "fnv1a64:4a149e693daab18d",
+  questionContentFingerprint: "fnv1a64:df415823535ac40f",
 };
 
 const approved = (reviewerName, evidenceReference) => ({

@@ -29,6 +29,7 @@ The seven corrections applied to the pinned candidate are:
 
 The resulting content fingerprints are:
 
+- Immutable corrected candidate commit: `884c70e0cac38744eade26557b5c99b3c6696232`
 - Concept content: `fnv1a64:4a149e693daab18d`
 - Localized question content: `fnv1a64:df415823535ac40f`
 
