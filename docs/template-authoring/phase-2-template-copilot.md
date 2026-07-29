@@ -425,23 +425,23 @@ structure into prose.
 ## Step 8 language-review candidate
 
 `questionLibraryVersion: v2.2` is the immutable Step 8 candidate and pins
-`conceptLibraryVersion: concepts.v1.0`. The candidate is **Pending human
-review** in English, Hong Kong Traditional Chinese, and Simplified Chinese.
-Status: Pending human review.
-v2.1 remains the preferred version for new sessions while that status is
+`conceptLibraryVersion: concepts.v1.0`. ST completed the human language review
+for English, Hong Kong Traditional Chinese, and Simplified Chinese. The
+candidate remains rollout-disabled while accessibility qualification is
 pending.
+v2.1 remains the preferred version for new sessions until the reviewed
+candidate passes the authorized authenticated Preview accessibility gate.
 No generic role, model, automated test, or this document is accepted as human
-approval evidence. Until named accountable reviewers approve the exact
-candidate, `v2.1` remains the preferred version for new sessions and the server
-rejects an attempted `v2.2` start.
+approval evidence. The supplied ST workbook is the evidence for the completed
+language review; it is bound by its exact SHA-256 digest.
 
-The pending baseline is:
+**Human language review approved; accessibility qualification pending.**
 
 | Locale | Concept review | Question review | Enabled for new `v2.2` sessions |
 | --- | --- | --- | --- |
-| English | Pending; reviewer unassigned | Pending; reviewer unassigned | No |
-| Hong Kong Traditional Chinese | Pending; reviewer unassigned | Pending; reviewer unassigned | No |
-| Simplified Chinese | Pending; reviewer unassigned | Pending; reviewer unassigned | No |
+| English | Approved by ST | Approved by ST | No; Preview gate pending |
+| Hong Kong Traditional Chinese | Approved by ST | Approved by ST | No; Preview gate pending |
+| Simplified Chinese | Approved by ST | Approved by ST | No; Preview gate pending |
 
 The concept candidate covers all 16 pilot fact topics. Every stable concept ID
 and entry version has an internal technical name, a language-independent
@@ -456,8 +456,8 @@ and canonical option IDs. The `v2.2` presentation copy replaces terms such as
 
 The exact candidate fingerprints are:
 
-- concept content: `fnv1a64:18974b8087ddb5a4`
-- localized question content: `fnv1a64:561391552a3ba191`
+- concept content: `fnv1a64:4a149e693daab18d`
+- localized question content: `fnv1a64:df415823535ac40f`
 
 Changing any candidate label, prompt, option, example, explanation, tip, or
 workflow-effect statement invalidates its recorded fingerprint. Runtime model
@@ -496,8 +496,8 @@ Validate the completed sign-off with:
 
 `npm run review:validate-template-copilot-v2-step8`
 
-The validator binds all three decisions to candidate commit
-`1ba6e8031d866b9d94a89863cc39303f9f935e61`, the
+The validator binds all three decisions to the exact candidate commit recorded
+in the sign-off manifest, the
 1,176-row package, both exact content fingerprints, named reviewers,
 timestamps, evidence references, and an explicit attestation that every row
 for that locale was reviewed. It reports `PENDING` while decisions are
@@ -505,10 +505,9 @@ outstanding, `REJECTED` when any reviewer requires a revised candidate, and
 `APPROVED` only when all three pass. It fails closed on placeholders, missing
 evidence, false attestations, or candidate drift.
 
-After approval evidence is received, copy the named evidence into the pinned
-concept and question review manifests, enable only the approved locales in the
-Step 8 rollout contract, rerun all deterministic checks, and run the
-authenticated Preview qualification. A locale becomes production-ready only
+The ST evidence is now copied into the pinned concept and question review
+manifests. The candidate locales remain disabled until the authenticated
+Preview accessibility qualification passes. A locale becomes production-ready only
 when the rollout switch, all concept approvals, and the complete question
 approval are true together. Missing, pending, rejected, model-reviewed,
 unnamed, untimestamped, or evidence-free content fails closed.
@@ -518,8 +517,8 @@ keyboard-accessible region containing the plain explanation, question-specific
 tip, example, and workflow effect. It uses `aria-expanded`, `aria-controls`, a
 labelled region, minimum touch sizing, visible focus, CJK-safe wrapping, and no
 hover-only interaction. The Admin page truthfully shows the candidate
-fingerprints, pending locale status, enabled state, and any later named review
-evidence.
+fingerprints, approved language review, disabled rollout state, and named
+review evidence.
 
 If an enabled locale later loses approved content, the resolver may show only
 the next approved locale in the pinned fallback order. It displays an explicit

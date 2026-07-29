@@ -7,22 +7,28 @@ import {
 export const templateCopilotV2Step8QuestionContentReview = Object.freeze({
   scope: "all_localized_question_content" as const,
   questionCount: 316,
-  contentFingerprint: "fnv1a64:561391552a3ba191",
+  contentFingerprint: "fnv1a64:df415823535ac40f",
   locales: Object.freeze({
     en: Object.freeze({
-      status: "pending" as const,
+      status: "approved" as const,
       reviewerType: "human" as const,
-      reviewer: "Unassigned reviewer",
+      reviewer: "ST",
+      reviewedAt: "2026-07-29T22:49:07+08:00",
+      evidenceRef: "Co-Pilot Language/2026-07-28 step-8-language-reviewed by ST.xlsx#sha256=1d5dc68702e39470c3ff519d363ec46d235a3328e96d662df273d5611fd993ed",
     }),
     "zh-Hant": Object.freeze({
-      status: "pending" as const,
+      status: "approved" as const,
       reviewerType: "human" as const,
-      reviewer: "Unassigned reviewer",
+      reviewer: "ST",
+      reviewedAt: "2026-07-29T22:49:07+08:00",
+      evidenceRef: "Co-Pilot Language/2026-07-28 step-8-language-reviewed by ST.xlsx#sha256=1d5dc68702e39470c3ff519d363ec46d235a3328e96d662df273d5611fd993ed",
     }),
     "zh-Hans": Object.freeze({
-      status: "pending" as const,
+      status: "approved" as const,
       reviewerType: "human" as const,
-      reviewer: "Unassigned reviewer",
+      reviewer: "ST",
+      reviewedAt: "2026-07-29T22:49:07+08:00",
+      evidenceRef: "Co-Pilot Language/2026-07-28 step-8-language-reviewed by ST.xlsx#sha256=1d5dc68702e39470c3ff519d363ec46d235a3328e96d662df273d5611fd993ed",
     }),
   }),
 });

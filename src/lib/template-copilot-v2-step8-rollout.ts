@@ -2,7 +2,7 @@ export const templateCopilotV2Step8Rollout = Object.freeze({
   candidateQuestionLibraryVersion: "v2.2" as const,
   lastApprovedQuestionLibraryVersion: "v2.1" as const,
   preferredNewSessionVersion: "v2.1" as const,
-  status: "pending_human_review" as "pending_human_review" | "approved" | "rolled_back",
+  status: "approved_pending_accessibility" as "approved_pending_accessibility" | "approved" | "rolled_back",
   enabledCandidateLocales: Object.freeze([] as Array<"en" | "zh-Hant" | "zh-Hans">),
 });
 

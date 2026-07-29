@@ -25,7 +25,7 @@ const localeTextSchema = z.object({
 const questionLocaleReviewSchema = z.object({
   status: z.enum(["pending", "approved", "rejected"]),
   reviewerType: z.literal("human"),
-  reviewer: z.string().trim().min(3).max(160),
+  reviewer: z.string().trim().min(2).max(160),
   reviewedAt: z.string().datetime({ offset: true }).optional(),
   evidenceRef: z.string().trim().min(3).max(240).optional(),
 }).strict();
@@ -390,7 +390,13 @@ function v22Presentation(question: TemplateCopilotQuestion): TemplateCopilotQues
     }
   }
 
-  if (decisionId === "decision.workflow.conditions.needed") {
+  if (decisionId === "decision.workflow.stages.first_stage") {
+    next.prompt = v22Localized(
+      next.prompt.en,
+      "申請提交後的第一步是甚麼？",
+      "申请提交后的第一步是什么？",
+    );
+  } else if (decisionId === "decision.workflow.conditions.needed") {
     next.prompt = v22Localized(
       "Should some requests use different approval steps?",
       "某些申請是否需要使用不同的審批步驟？",
@@ -454,6 +460,14 @@ function v22Presentation(question: TemplateCopilotQuestion): TemplateCopilotQues
         "是否还需要另一份必须提供的文件或应用内表单？",
       );
     }
+  }
+
+  if (decisionId === "decision.timing.rules.overdue_action") {
+    next.help.body = v22Localized(
+      next.help.body.en,
+      "說明回覆期限過後如何處理，例如再次提醒、通知其經理，或交給後備處理人。",
+      "说明回复期限过后如何处理，例如再次提醒、通知其经理，或交给后备处理人。",
+    );
   }
   return next;
 }

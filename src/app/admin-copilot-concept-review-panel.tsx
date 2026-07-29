@@ -12,6 +12,9 @@ export function AdminCopilotConceptReviewPanel() {
   const summary = getTemplateCopilotConceptReviewSummary();
   const questionReview = getTemplateCopilotQuestionReviewSummary();
   const productionReady = summary.productionReady && Boolean(questionReview?.productionReady);
+  const languageReviewApproved = Object.values(summary.locales).every((review) => review.approved === review.total)
+    && Boolean(questionReview)
+    && Object.values(questionReview.locales).every((review) => review.status === "approved");
   return (
     <section className="rounded-md border border-[#e6e6e6] bg-white p-4 dark:border-neutral-700 dark:bg-neutral-950">
       <div className="flex items-start gap-2">
@@ -30,18 +33,22 @@ export function AdminCopilotConceptReviewPanel() {
           <p className="mt-1 break-all font-mono text-sm text-neutral-900 dark:text-white">{summary.version}</p>
         </div>
         <div className="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">Concept topics in review</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">Concept topics reviewed</p>
           <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-white">{summary.conceptCount}</p>
         </div>
         <div className="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">Guided questions in review</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">Guided questions reviewed</p>
           <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-white">{questionReview?.questionCount || 0}</p>
         </div>
         <div className="rounded-md border border-neutral-200 p-3 dark:border-neutral-700">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">Production review gate</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">Rollout and accessibility gate</p>
           <p className={`mt-1 inline-flex items-center gap-1 text-sm font-semibold ${productionReady ? "text-emerald-700 dark:text-emerald-300" : "text-amber-800 dark:text-amber-200"}`}>
             {productionReady ? <CheckCircle2 aria-hidden="true" size={16} /> : <ShieldAlert aria-hidden="true" size={16} />}
-            {productionReady ? "Passed" : "Pending human approval"}
+            {productionReady
+              ? "Passed"
+              : languageReviewApproved
+                ? "Language review approved; accessibility qualification pending"
+                : "Human language review pending"}
           </p>
         </div>
       </div>
@@ -83,7 +90,7 @@ export function AdminCopilotConceptReviewPanel() {
         <summary className="min-h-10 cursor-pointer content-center text-sm font-medium text-neutral-900 underline underline-offset-2 dark:text-white">
           Review concept IDs and semantic contracts
         </summary>
-        <ul className="mt-2 max-h-80 space-y-2 overflow-y-auto" aria-label="Copilot concepts awaiting review">
+        <ul className="mt-2 max-h-80 space-y-2 overflow-y-auto" aria-label="Reviewed Copilot concepts">
           {summary.entries.map((entry) => (
             <li key={entry.conceptId} className="min-w-0 rounded border border-neutral-200 p-2 text-xs dark:border-neutral-700">
               <p className="break-all font-mono text-neutral-900 dark:text-white">{entry.conceptId} · v{entry.version}</p>

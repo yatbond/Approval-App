@@ -10,7 +10,7 @@ import { evaluateTemplateCopilotV2Step8LocaleGate } from "./template-copilot-v2-
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("new starts remain on v2.1 while Step 8 review is pending without changing legacy recovery", () => {
+test("new starts remain on v2.1 while Step 8 accessibility qualification is pending without changing legacy recovery", () => {
   const createKey = () => "start:step8:test";
   const scope = {
     businessUnitId: "00000000-0000-4000-8000-000000000001",
@@ -97,8 +97,10 @@ test("Step 8 is wired through the real client, server contracts, Admin view, tel
   assert.match(http, /logTemplateCopilotHelpFallback\(correlationId, result\)/);
   assert.match(adminView, /<AdminCopilotConceptReviewPanel \/>/);
   assert.match(adminPanel, /Runtime AI translation is not used/);
-  assert.match(adminPanel, /Guided questions in review/);
-  assert.match(adminPanel, /Pending human approval/);
+  assert.match(adminPanel, /Concept topics reviewed/);
+  assert.match(adminPanel, /Guided questions reviewed/);
+  assert.match(adminPanel, /Language review approved; accessibility qualification pending/);
+  assert.doesNotMatch(adminPanel, /Pending human approval/);
   assert.match(adminPanel, /Question content:/);
   assert.match(adminPanel, /template_copilot_help_fallback/);
   assert.match(rollout, /preferredNewSessionVersion: "v2\.1"/);
@@ -139,7 +141,7 @@ test("the Phase 2 runbook documents pins, evidence, fallback, telemetry, qualifi
   assert.match(docs, /## Step 8 language-review candidate/);
   assert.match(docs, /questionLibraryVersion: v2\.2/);
   assert.match(docs, /conceptLibraryVersion: concepts\.v1\.0/);
-  assert.match(docs, /Pending human review/);
+  assert.match(docs, /Human language review approved; accessibility qualification pending/);
   assert.match(docs, /v2\.1 remains the preferred version for new sessions/);
   assert.match(docs, /template_copilot_help_fallback/);
   assert.match(docs, /Runtime model\s+translation is never permitted/);
@@ -156,8 +158,8 @@ test("the durable human-review package covers every concept and question in ever
   const lines = csv.replace(/^\uFEFF/, "").trimEnd().split(/\r?\n/);
   assert.equal(lines.length, 1177);
   assert.equal(lines.filter((line) => line.includes('"concepts.v1.0"')).length, 0);
-  assert.equal(lines.filter((line) => line.includes('"fnv1a64:18974b8087ddb5a4"')).length, 48);
-  assert.equal(lines.filter((line) => line.includes('"fnv1a64:561391552a3ba191"')).length, 1128);
+  assert.equal(lines.filter((line) => line.includes('"fnv1a64:4a149e693daab18d"')).length, 48);
+  assert.equal(lines.filter((line) => line.includes('"fnv1a64:df415823535ac40f"')).length, 1128);
   assert.equal(lines.filter((line) => /,"(?:en|zh-Hant|zh-Hans)",/.test(line)).length, 1176);
   assert.equal(lines.filter((line) => line.endsWith(',"","","","",""')).length, 1176);
   assert.equal(lines.filter((line) => line.startsWith('"question_prompt_variant",')).length, 180);

@@ -49,7 +49,7 @@ function approvedConceptLibrary() {
   return library;
 }
 
-test("the pinned concept candidate is complete and immutable but honestly pending in all three locales", () => {
+test("the pinned concept candidate records ST's complete review but remains rollout-disabled", () => {
   const library = getTemplateCopilotConceptLibrary("concepts.v1.0");
   const summary = getTemplateCopilotConceptReviewSummary();
   assert.equal(summary.version, library.version);
@@ -68,11 +68,11 @@ test("the pinned concept candidate is complete and immutable but honestly pendin
       assert.ok(Array.from(localized.explanation).length > 10, `${entry.conceptId}:${locale}:explanation`);
       assert.ok(localized.example.length > 3, `${entry.conceptId}:${locale}:example`);
       assert.ok(Array.from(localized.workflowEffect).length > 10, `${entry.conceptId}:${locale}:effect`);
-      assert.equal(review.status, "pending");
+      assert.equal(review.status, "approved");
       assert.equal(review.reviewerType, "human");
-      assert.equal(review.reviewer, "Unassigned reviewer");
-      assert.equal(review.reviewedAt, undefined);
-      assert.equal(review.evidenceRef, undefined);
+      assert.equal(review.reviewer, "ST");
+      assert.equal(review.reviewedAt, "2026-07-29T22:49:07+08:00");
+      assert.match(review.evidenceRef, /step-8-language-reviewed by ST\.xlsx#sha256=1d5dc687/u);
     }
   }
   assert.equal(Object.isFrozen(library), true);
@@ -165,7 +165,7 @@ test("an unavailable concept is visible and does not fabricate or translate help
   assert.equal(resolved.content.explanation, resolved.content.example);
 });
 
-test("v2.2 pins the pending candidate while v2.0 and v2.1 remain historically unchanged", () => {
+test("v2.2 pins the human-reviewed candidate while v2.0 and v2.1 remain historically unchanged", () => {
   const v20 = getTemplateCopilotQuestionLibrary("v2.0");
   const v21 = getTemplateCopilotQuestionLibrary("v2.1");
   const v22 = getTemplateCopilotQuestionLibrary("v2.2");
@@ -173,6 +173,9 @@ test("v2.2 pins the pending candidate while v2.0 and v2.1 remain historically un
   assert.equal(v21.conceptLibraryVersion, undefined);
   assert.equal(v22.conceptLibraryVersion, "concepts.v1.0");
   assert.equal(v22.contentReview.questionCount, 316);
+  assert.equal(v22.contentReview.locales.en.status, "approved");
+  assert.equal(v22.contentReview.locales["zh-Hant"].reviewer, "ST");
+  assert.equal(v22.contentReview.locales["zh-Hans"].reviewer, "ST");
   assert.equal(getTemplateCopilotQuestionReviewSummary().contentFingerprint, v22.contentReview.contentFingerprint);
   assert.equal(getTemplateCopilotQuestionReviewSummary().productionReady, false);
   assert.equal(isTemplateCopilotQuestionLocaleProductionReady("en"), false);
@@ -198,6 +201,34 @@ test("v2.2 pins the pending candidate while v2.0 and v2.1 remain historically un
   const contentDrift = structuredClone(v22);
   contentDrift.questions[0].prompt.en = "Changed after the recorded human review.";
   assert.throws(() => validateTemplateCopilotQuestionLibrary(contentDrift), /bound to its exact localized content/);
+});
+
+test("ST's seven reviewed corrections are exact and do not rewrite legacy question libraries", () => {
+  const concepts = getTemplateCopilotConceptLibrary("concepts.v1.0");
+  const policies = concepts.entries.find((entry) => entry.conceptId === "copilot.governance.policies");
+  assert.equal(policies.content.en.plainLabel, "company policies");
+  assert.equal(policies.content["zh-Hant"].plainLabel, "審閱責任及公司政策");
+  assert.equal(policies.content["zh-Hans"].plainLabel, "审核责任及公司政策");
+  for (const locale of templateCopilotConceptLocales) {
+    assert.equal(policies.review[locale].status, "approved");
+    assert.equal(policies.review[locale].reviewer, "ST");
+  }
+
+  const legacy = getTemplateCopilotQuestionLibrary("v2.1");
+  const reviewed = getTemplateCopilotQuestionLibrary("v2.2");
+  const legacyFirstStage = legacy.questions.find((question) => question.questionId === "v2.workflow.stages.first_stage");
+  const reviewedFirstStage = reviewed.questions.find((question) => question.questionId === "v2.workflow.stages.first_stage");
+  assert.equal(legacyFirstStage.prompt["zh-Hant"], "申請送出後的第一步是甚麼？");
+  assert.equal(legacyFirstStage.prompt["zh-Hans"], "申请送出后的第一步是什么？");
+  assert.equal(reviewedFirstStage.prompt["zh-Hant"], "申請提交後的第一步是甚麼？");
+  assert.equal(reviewedFirstStage.prompt["zh-Hans"], "申请提交后的第一步是什么？");
+
+  const legacyOverdue = legacy.questions.find((question) => question.questionId === "v2.timing.rules.overdue_action");
+  const reviewedOverdue = reviewed.questions.find((question) => question.questionId === "v2.timing.rules.overdue_action");
+  assert.match(legacyOverdue.help.body["zh-Hant"], /備用處理人/u);
+  assert.match(legacyOverdue.help.body["zh-Hans"], /备用处理人/u);
+  assert.match(reviewedOverdue.help.body["zh-Hant"], /後備處理人/u);
+  assert.match(reviewedOverdue.help.body["zh-Hans"], /后备处理人/u);
 });
 
 test("v2.2 primary questions use plain language and retain language-independent decision semantics", () => {

@@ -20,7 +20,7 @@ const localizedConceptContentSchema = z.object({
 const conceptReviewSchema = z.object({
   status: z.enum(["pending", "approved", "rejected"]),
   reviewerType: z.enum(["human", "system"]),
-  reviewer: z.string().trim().min(3).max(160),
+  reviewer: z.string().trim().min(2).max(160),
   reviewedAt: reviewedAtSchema.optional(),
   evidenceRef: z.string().trim().min(3).max(240).optional(),
 }).strict();
@@ -93,11 +93,13 @@ export class TemplateCopilotConceptLibraryError extends Error {
   }
 }
 
-function pendingReview() {
+function completedLanguageReview() {
   return {
-    status: "pending" as const,
+    status: "approved" as const,
     reviewerType: "human" as const,
-    reviewer: "Unassigned reviewer",
+    reviewer: "ST",
+    reviewedAt: "2026-07-29T22:49:07+08:00",
+    evidenceRef: "Co-Pilot Language/2026-07-28 step-8-language-reviewed by ST.xlsx#sha256=1d5dc68702e39470c3ff519d363ec46d235a3328e96d662df273d5611fd993ed",
   };
 }
 
@@ -128,9 +130,9 @@ function concept(
     semanticContract: [...semanticContract],
     content: localized,
     review: {
-      en: pendingReview(),
-      "zh-Hant": pendingReview(),
-      "zh-Hans": pendingReview(),
+      en: completedLanguageReview(),
+      "zh-Hant": completedLanguageReview(),
+      "zh-Hans": completedLanguageReview(),
     },
   };
 }
@@ -207,9 +209,9 @@ const conceptEntries = [
     ["流程负责部门", "这是负责确保流程正确，并决定何时需要修改的业务部门。", "供应商登记流程由采购部门负责。", "它列出须承担责任的业务部门，但不会自动把每项审批交给该部门。"],
   )),
   concept("copilot.governance.policies", "workflow_governance_policies", ["identifies.change_reviewer", "identifies.applicable_policies"], content(
-    ["Review responsibility and company rules", "This records who checks workflow changes and which company policies the workflow must follow.", "Finance Control reviews changes; the Purchasing Policy and HK$50,000 spending rule apply.", "It provides governance evidence and review requirements without replacing the approval stages."],
-    ["更改審閱責任及公司規則", "這項資料記錄由誰檢查流程更改，以及流程必須遵從哪些公司政策。", "由財務監控組審閱更改，並須遵從採購政策及 HK$50,000 開支規則。", "它提供管治及審閱依據，但不會取代流程內的審批步驟。"],
-    ["更改审核责任及公司规则", "这项信息记录由谁检查流程更改，以及流程必须遵守哪些公司政策。", "由财务监控组审核更改，并须遵守采购政策及 HK$50,000 支出规则。", "它提供治理及审核依据，但不会取代流程内的审批步骤。"],
+    ["company policies", "This records who checks workflow changes and which company policies the workflow must follow.", "Finance Control reviews changes; the Purchasing Policy and HK$50,000 spending rule apply.", "It provides governance evidence and review requirements without replacing the approval stages."],
+    ["審閱責任及公司政策", "這項資料記錄由誰檢查流程更改，以及流程必須遵從哪些公司政策。", "由財務監控組審閱更改，並須遵從採購政策及 HK$50,000 開支規則。", "它提供管治及審閱依據，但不會取代流程內的審批步驟。"],
+    ["审核责任及公司政策", "这项信息记录由谁检查流程更改，以及流程必须遵守哪些公司政策。", "由财务监控组审核更改，并须遵守采购政策及 HK$50,000 支出规则。", "它提供治理及审核依据，但不会取代流程内的审批步骤。"],
   )),
   concept("copilot.governance.retention", "workflow_record_retention", ["sets.retention_period", "covers.records_and_files"], content(
     ["How long records are kept", "This states how long completed requests, decisions, and attached files must remain available.", "Keep the request, approval history, and attachments for seven years.", "It controls the retention requirement used by records management and audit processes."],
@@ -302,7 +304,7 @@ export function validateTemplateCopilotConceptLibrary(
 
 const v1ConceptLibrary = deepFreeze(validateTemplateCopilotConceptLibrary({
   version: "concepts.v1.0",
-  contentReviewFingerprint: "fnv1a64:18974b8087ddb5a4",
+  contentReviewFingerprint: "fnv1a64:4a149e693daab18d",
   enabledLocales: [],
   entries: conceptEntries,
   fallback: {
