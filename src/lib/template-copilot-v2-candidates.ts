@@ -39,7 +39,9 @@ export const templateCopilotV2LeafEvidenceSchema = z.object({
 }).strict();
 
 type CandidateValueType = "text" | "policy" | "initiator_policy" | "fields" | "attachments" | "stages" | "conditions" | "rejection_policy" | "timing_rules" | "notifications" | "retention";
-const candidateValueTypes: Readonly<Record<TemplateCopilotFactId, CandidateValueType>> = {
+export const templateCopilotV2CandidateValueTypes: Readonly<
+  Record<TemplateCopilotFactId, CandidateValueType>
+> = {
   "workflow.name": "text", "workflow.purpose": "text", "workflow.scope": "policy",
   "request.initiator_policy": "initiator_policy", "request.fields": "fields", "attachments.requirements": "attachments",
   "workflow.stages": "stages", "workflow.conditions": "conditions", "workflow.rejection_policy": "rejection_policy",
@@ -64,7 +66,7 @@ function candidateVariant(factId: TemplateCopilotFactId, valueType: CandidateVal
 /** Provider-facing contract: a model must choose one known fact variant, with
  * that fact's literal type tag and fully typed value. Never expose `z.json()`
  * here: it would hide the fact/value coupling from JSON Schema providers. */
-export const templateCopilotV2CandidateVariants = templateCopilotFactIds.map((factId) => candidateVariant(factId, candidateValueTypes[factId])) as [ReturnType<typeof candidateVariant>, ...ReturnType<typeof candidateVariant>[]];
+export const templateCopilotV2CandidateVariants = templateCopilotFactIds.map((factId) => candidateVariant(factId, templateCopilotV2CandidateValueTypes[factId])) as [ReturnType<typeof candidateVariant>, ...ReturnType<typeof candidateVariant>[]];
 export const templateCopilotV2CandidateSchema = z.discriminatedUnion("factId", templateCopilotV2CandidateVariants);
 
 /** Minimal provider contract. Every evidence value is a quote leaf mirroring
@@ -100,7 +102,7 @@ function providerCandidateVariant(factId: TemplateCopilotFactId, valueType: Cand
     factId: z.literal(factId), valueType: z.literal(valueType), value: templateCopilotCommittedValueSchemas[factId], ...providerCandidateCommonShape, evidence: providerEvidenceTrees[factId],
   }).strict();
 }
-export const templateCopilotV2ProviderCandidateVariants = templateCopilotFactIds.map((factId) => providerCandidateVariant(factId, candidateValueTypes[factId])) as [ReturnType<typeof providerCandidateVariant>, ...ReturnType<typeof providerCandidateVariant>[]];
+export const templateCopilotV2ProviderCandidateVariants = templateCopilotFactIds.map((factId) => providerCandidateVariant(factId, templateCopilotV2CandidateValueTypes[factId])) as [ReturnType<typeof providerCandidateVariant>, ...ReturnType<typeof providerCandidateVariant>[]];
 export const templateCopilotV2ProviderCandidateSchema = z.discriminatedUnion("factId", templateCopilotV2ProviderCandidateVariants);
 export const templateCopilotV2ProviderCandidateOutputSchema = z.object({
   candidates: z.array(templateCopilotV2ProviderCandidateSchema).max(templateCopilotFactIds.length),
@@ -344,6 +346,35 @@ function deriveServerEvidenceRule(candidate: TemplateCopilotV2Candidate, path: s
   return null;
 }
 
+/** Shared server-side rule derivation for provider contract adapters. The
+ * provider supplies quotes and canonical values only; it cannot select a
+ * normalization rule or evidence coordinate. */
+export function deriveTemplateCopilotV2ServerEvidenceRule({
+  factId,
+  value,
+  path,
+  exactText,
+}: {
+  factId: TemplateCopilotFactId;
+  value: unknown;
+  path: string;
+  exactText: string;
+}) {
+  return deriveServerEvidenceRule(
+    {
+      factId,
+      valueType: templateCopilotV2CandidateValueTypes[factId],
+      value,
+      originalWording: exactText,
+      evidence: [],
+      confidence: "medium",
+      ambiguity: "none",
+    } as TemplateCopilotV2Candidate,
+    path,
+    exactText,
+  );
+}
+
 /** Converts the deliberately coordinate-free provider response into the full
  * durable evidence envelope. The only source is the known current message;
  * every offset and every non-exact rule is derived here, then the existing
@@ -438,7 +469,7 @@ function evidence(candidate: TemplateCopilotV2Candidate): TemplateCopilotV2Extra
 }
 function candidateFromEvidence(candidate: TemplateCopilotV2ExtractionEvidence["candidates"][number]): TemplateCopilotV2Candidate {
   return {
-    factId: candidate.factId, valueType: candidateValueTypes[candidate.factId], value: candidate.value,
+    factId: candidate.factId, valueType: templateCopilotV2CandidateValueTypes[candidate.factId], value: candidate.value,
     originalWording: candidate.originalWording, evidence: candidate.evidence, confidence: candidate.confidence,
     ambiguity: candidate.ambiguity, ...(candidate.ambiguityNote ? { ambiguityNote: candidate.ambiguityNote } : {}),
   };
@@ -616,8 +647,8 @@ export function templateCopilotV2CandidateEvidenceHash(value: unknown) {
  * qualification. Bump these when either the prompt contract or candidate
  * schema changes; qualification must never carry a look-alike literal. */
 export const templateCopilotV2ExtractionPromptVersion =
-  "template-copilot-v2-extraction-2026-07-30";
+  "template-copilot-v2-atomic-extraction-2026-07-30";
 export const templateCopilotV2ProviderCandidateSchemaVersion =
-  "template-copilot-v2-candidates-1";
+  "template-copilot-v2-atomic-candidates-2";
 export const templateCopilotV2DefaultOpenRouterModel =
   "qwen/qwen3.5-flash-02-23";

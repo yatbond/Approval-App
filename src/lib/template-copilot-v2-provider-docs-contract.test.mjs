@@ -8,12 +8,13 @@ test("Phase 2 provider documentation matches the quote-tree contract and server-
     readFile(new URL("./template-copilot-v2-candidates.ts", import.meta.url), "utf8"),
     readFile(new URL("./template-copilot-ai.ts", import.meta.url), "utf8"),
   ]);
-  assert.match(docs, /fact-specific\s+quote tree that mirrors every primitive value leaf/i);
-  assert.match(docs, /provider never\s+receives or returns JSON Pointer paths, message IDs, offsets, or normalization\s+rules/i);
-  assert.match(docs, /server alone.*derives durable JSON\s+Pointer paths, message identity, Unicode code-point offsets, and any allowed\s+normalization rule/is);
+  assert.match(docs, /Atomic provider\s+schema v2 returns up to 64 independent observations/i);
+  assert.match(docs, /quote\s+tree that mirrors each primitive value leaf/i);
+  assert.match(docs, /provider never\s+receives or returns JSON Pointer paths, message IDs,\s+offsets, or normalization\s+rules/i);
+  assert.match(docs, /server alone[\s\S]{0,300}derives durable JSON\s+Pointer paths, message identity,\s+Unicode code-point offsets, and any allowed normalization rule/i);
   assert.match(candidates, /Every evidence value is a quote leaf mirroring[\s\S]{0,40}typed value tree/i);
   assert.match(candidates, /The only source is the known current message;[\s\S]{0,60}every offset and every non-exact rule is derived here/i);
-  assert.match(ai, /Evidence is a quote tree that exactly mirrors value:[\s\S]{0,500}Do not emit JSON paths, message IDs, offsets, normalization rules, or original wording/);
+  assert.match(ai, /Each atom must represent exactly one scalar fact[\s\S]{0,900}Do not emit JSON paths, message IDs, offsets, normalization rules, or original wording/);
   assert.doesNotMatch(docs, /provider[^.]*leaf-evidence\s+record[^.]*JSON Pointer path[^.]*durable message ID/is);
   assert.doesNotMatch(ai, /provider[^.]*must (?:return|emit)[^.]*startCodePoint|provider[^.]*must (?:return|emit)[^.]*messageId/is);
 });

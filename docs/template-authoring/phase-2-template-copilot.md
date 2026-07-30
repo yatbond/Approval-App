@@ -183,16 +183,24 @@ The job table
 has RLS enabled, no browser policy, no direct service-role table rights, and
 service-only owner-checking RPCs.
 
-The provider is a quote labeler, never evidence authority. It may propose an
-allow-listed fact only with a complete, fact-typed value and a fact-specific
-quote tree that mirrors every primitive value leaf exactly. The provider never
-receives or returns JSON Pointer paths, message IDs, offsets, or normalization
-rules. The server alone walks the paired value/quote tree, derives durable JSON
-Pointer paths, message identity, Unicode code-point offsets, and any allowed
-normalization rule from the owner-scoped message. It then checks complete leaf
+The provider is a quote labeler, never evidence authority. Atomic provider
+schema v2 returns up to 64 independent observations: one scalar fact, policy
+component, request field, attachment, workflow stage, condition, rejection
+setting, timing item, notification, or governance item per atom. Every atom
+contains a smallest unique `sourceQuote`, a strict typed value, and a quote
+tree that mirrors each primitive value leaf. A malformed or untraceable atom
+is rejected locally, so it cannot discard valid atoms for other facts.
+
+The provider never receives or returns JSON Pointer paths, message IDs,
+offsets, or normalization rules. The server alone locates each unique source
+passage, walks the paired value/quote tree, assembles compatible atoms into a
+complete strict fact, and derives durable JSON Pointer paths, message identity,
+Unicode code-point offsets, and any allowed normalization rule from the
+owner-scoped message. It then checks required components, complete leaf
 coverage, typed value shape, fact/value-type coupling, fact-aware normalized
 equality, no overlapping claims, and bounded fields before a candidate can be
-persisted. Provider schema conformance does not bypass these server checks.
+persisted. Missing components remain unresolved; the server never supplies a
+model default. Provider schema conformance does not bypass these server checks.
 
 Candidates are advisory. An ambiguous candidate has no confirmation action and
 requires human clarification. A candidate whose fact has changed or has an

@@ -200,5 +200,5 @@ test("provider JSON Schema visibly exposes per-fact mirrored evidence trees with
   assert.equal(validate({ candidates: [candidate({ factId: "request.initiator_policy", valueType: "initiator_policy", value: { mode: "any_employee", description: "may request it" }, evidence: { mode: "Any employee", description: "may request it" } })] }), true, JSON.stringify(validate.errors));
   assert.equal(validate({ candidates: [candidate({ value: "Purchase Approval", evidence: [{ path: "/", exactText: "Purchase Approval" }] })] }), false, JSON.stringify(validate.errors));
   const ai = await readFile(new URL("./template-copilot-ai.ts", import.meta.url), "utf8");
-  assert.match(ai, /evidence: \{mode:'Any employee', description:'may request it'\}/);
+  assert.match(ai, /Each atom must represent exactly one scalar fact/);
 });
