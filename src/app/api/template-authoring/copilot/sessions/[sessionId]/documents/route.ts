@@ -111,6 +111,7 @@ export async function POST(
         session, service, actor, sessionId, expectedRevision, idempotencyKey: clientMessageId,
         mode: "describe_everything",
         sectionHint: "document",
+        documentQuarantine: safe.quarantine,
         sourceText: document.text, document,
         extractCandidates: extractTemplateCopilotV2Candidates,
         fallbackReason: (error) => error instanceof TemplateCopilotModelError

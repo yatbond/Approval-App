@@ -284,6 +284,51 @@ test("repeated common wording is safely resolved inside unique atomic passages",
   );
 });
 
+test("server-owned block scope resolves a quote repeated elsewhere in a document", () => {
+  const message =
+    "Purchase approval is an example.\nThe workflow name is Purchase approval.";
+  const sourceQuote = "Purchase approval";
+  const output = {
+    atoms: [
+      atom(
+        "text_fact",
+        "workflow.name",
+        "Purchase approval",
+        sourceQuote,
+        "Purchase approval",
+      ),
+    ],
+  };
+  const unscoped = adaptTemplateCopilotV2AtomicProviderCandidates({
+    message,
+    messageId: "atomic-repeated-document-wording",
+    output,
+  });
+  assert.equal(unscoped.candidates.length, 0);
+  assert.ok(
+    unscoped.rejected.some((item) =>
+      item.detail.endsWith(":ambiguous_quote"),
+    ),
+  );
+
+  const startCodeUnit = message.lastIndexOf(sourceQuote);
+  const scoped = adaptTemplateCopilotV2AtomicProviderCandidates({
+    message,
+    messageId: "atomic-scoped-document-wording",
+    output,
+    sourceScopes: [{
+      startCodeUnit,
+      endCodeUnit: message.length,
+    }],
+  });
+  assert.equal(scoped.rejected.length, 0);
+  assert.equal(scoped.candidates.length, 1);
+  assert.equal(
+    scoped.candidates[0].evidence[0].startCodePoint,
+    Array.from(message.slice(0, startCodeUnit)).length,
+  );
+});
+
 test("atomic evidence normalization is equivalent in Traditional and Simplified Chinese", () => {
   const cases = [
     {

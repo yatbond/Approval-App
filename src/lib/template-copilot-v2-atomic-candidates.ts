@@ -403,6 +403,10 @@ type ValidatedAtom = Readonly<{
   sourceEnd: number;
   leaves: readonly QuoteLeaf[];
 }>;
+export type TemplateCopilotV2AtomicSourceScope = Readonly<{
+  startCodeUnit: number;
+  endCodeUnit: number;
+}>;
 type Assembly = Readonly<{
   factId: TemplateCopilotFactId;
   value: unknown;
@@ -418,11 +422,13 @@ export function adaptTemplateCopilotV2AtomicProviderCandidates({
   message,
   messageId,
   allowedFactIds,
+  sourceScopes,
 }: {
   output: unknown;
   message: string;
   messageId: string;
   allowedFactIds?: readonly TemplateCopilotFactId[];
+  sourceScopes?: readonly TemplateCopilotV2AtomicSourceScope[];
 }): TemplateCopilotV2CandidateNormalization {
   const parsed = templateCopilotV2AtomicProviderOutputSchema.safeParse(output);
   if (!parsed.success) {
@@ -438,7 +444,22 @@ export function adaptTemplateCopilotV2AtomicProviderCandidates({
   const allowedFacts = allowedFactIds
     ? new Set<TemplateCopilotFactId>(allowedFactIds)
     : null;
-  const validAtoms = parsed.data.atoms.flatMap((supplied) => {
+  if (sourceScopes && sourceScopes.length !== parsed.data.atoms.length) {
+    return failure("model_schema_invalid", "source_scope_cardinality");
+  }
+  if (
+    sourceScopes?.some(
+      (scope) =>
+        !Number.isSafeInteger(scope.startCodeUnit) ||
+        !Number.isSafeInteger(scope.endCodeUnit) ||
+        scope.startCodeUnit < 0 ||
+        scope.endCodeUnit <= scope.startCodeUnit ||
+        scope.endCodeUnit > message.length,
+    )
+  ) {
+    return failure("model_schema_invalid", "source_scope_invalid");
+  }
+  const validAtoms = parsed.data.atoms.flatMap((supplied, index) => {
     if (allowedFacts && !allowedFacts.has(supplied.factId)) {
       rejected.push({
         code: "untraceable",
@@ -446,7 +467,7 @@ export function adaptTemplateCopilotV2AtomicProviderCandidates({
       });
       return [];
     }
-    const validated = validateAtom(supplied, message);
+    const validated = validateAtom(supplied, message, sourceScopes?.[index]);
     if ("rejection" in validated) {
       rejected.push(validated.rejection);
       return [];
@@ -481,10 +502,14 @@ export function adaptTemplateCopilotV2AtomicProviderCandidates({
 function validateAtom(
   atom: TemplateCopilotV2AtomicProvider,
   message: string,
+  sourceScope?: TemplateCopilotV2AtomicSourceScope,
 ):
   | Readonly<{ atom: ValidatedAtom }>
   | Readonly<{ rejection: TemplateCopilotV2CandidateRejection }> {
-  const passages = allOffsets(message, atom.sourceQuote);
+  const scopedMessage = sourceScope
+    ? message.slice(sourceScope.startCodeUnit, sourceScope.endCodeUnit)
+    : message;
+  const passages = allOffsets(scopedMessage, atom.sourceQuote);
   if (passages.length !== 1) {
     return reject(atom.factId, "ambiguous_quote");
   }
@@ -503,7 +528,8 @@ function validateAtom(
       positions.set(relativeLeaves.indexOf(leaf), offsets[index]),
     );
   }
-  const sourceStart = passages[0];
+  const sourceStart =
+    (sourceScope?.startCodeUnit || 0) + passages[0];
   const sourceEnd = sourceStart + atom.sourceQuote.length;
   const leaves = relativeLeaves.flatMap((leaf, index) => {
     const relativeStart = positions.get(index);

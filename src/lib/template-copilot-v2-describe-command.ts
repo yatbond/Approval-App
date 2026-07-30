@@ -16,6 +16,8 @@ import type {
   TemplateCopilotV2ExtractionSection,
 } from "./template-copilot-v2-extraction-context.ts";
 import type { TemplateCopilotV2FocusedRecoverySummary } from "./template-copilot-v2-focused-recovery.ts";
+import type { TemplateCopilotDocumentQuarantineSummary } from "./template-copilot-safety.ts";
+import type { TemplateCopilotV2DocumentBlockExtractionSummary } from "./template-copilot-v2-document-block-extraction.ts";
 
 export type TemplateCopilotV2BroadAuthoringMode = "describe_everything" | "similar_template";
 
@@ -78,11 +80,13 @@ export type TemplateCopilotV2DescribeCommandInput = Readonly<{
   mode: TemplateCopilotV2BroadAuthoringMode;
   sourceText: string;
   document?: TemplateCopilotV2DescribeDocument;
+  documentQuarantine?: TemplateCopilotDocumentQuarantineSummary;
   sectionHint?: TemplateCopilotV2ExtractionSection;
   extractCandidates: (input: TemplateCopilotV2CandidateExtractionInput) => Promise<Readonly<{
     candidates: readonly TemplateCopilotV2Candidate[];
     rejected?: readonly TemplateCopilotV2CandidateRejection[];
     recovery?: TemplateCopilotV2FocusedRecoverySummary | null;
+    documentBlocks?: TemplateCopilotV2DocumentBlockExtractionSummary | null;
   }>>;
   fallbackReason: (error: unknown) => string;
 }>;
@@ -156,7 +160,7 @@ async function attachPersistedDescribeMessages({ session, actor, sessionId, sour
   return { ...result, sourceMessageId, messages } as TemplateCopilotV2DescribeTerminal & { sourceMessageId: string; messages: readonly PersistedDescribeMessage[] };
 }
 
-function describeCommandHash({ sessionId, expectedRevision, idempotencyKey, mode, sourceText, document, sectionHint }: Omit<TemplateCopilotV2DescribeCommandInput, "session" | "service" | "actor" | "extractCandidates" | "fallbackReason">) {
+function describeCommandHash({ sessionId, expectedRevision, idempotencyKey, mode, sourceText, document, documentQuarantine, sectionHint }: Omit<TemplateCopilotV2DescribeCommandInput, "session" | "service" | "actor" | "extractCandidates" | "fallbackReason">) {
   const sourceKind = describeSourceKind({ mode, document });
   return templateCopilotV2CommandHash({
     operation: "broad_mode_extraction",
@@ -170,6 +174,7 @@ function describeCommandHash({ sessionId, expectedRevision, idempotencyKey, mode
     // payload.  The original source is private in its durable message row.
     sourceSha256: createHash("sha256").update(sourceText).digest("hex"),
     document: document ? { id: document.id, fileName: document.fileName, sha256: document.sha256 } : null,
+    documentQuarantine: documentQuarantine || null,
   });
 }
 
@@ -196,8 +201,8 @@ function decorate(result: Record<string, unknown>) {
   } as TemplateCopilotV2DescribeTerminal;
 }
 
-export async function prepareTemplateCopilotV2DescribeCommand({ service, actor, sessionId, expectedRevision, idempotencyKey, mode, sourceText, document }: Omit<TemplateCopilotV2DescribeCommandInput, "session" | "extractCandidates" | "fallbackReason">): Promise<TemplateCopilotV2DescribePreparation> {
-  const commandHash = describeCommandHash({ sessionId, expectedRevision, idempotencyKey, mode, sourceText, document });
+export async function prepareTemplateCopilotV2DescribeCommand({ service, actor, sessionId, expectedRevision, idempotencyKey, mode, sourceText, document, documentQuarantine, sectionHint }: Omit<TemplateCopilotV2DescribeCommandInput, "session" | "extractCandidates" | "fallbackReason">): Promise<TemplateCopilotV2DescribePreparation> {
+  const commandHash = describeCommandHash({ sessionId, expectedRevision, idempotencyKey, mode, sourceText, document, documentQuarantine, sectionHint });
   const sourceKind = describeSourceKind({ mode, document });
   const { data, error } = await service.rpc("prepare_template_copilot_v2_mode_command", {
     p_actor_id: actor.id,
@@ -319,6 +324,7 @@ export async function runTemplateCopilotV2DescribeCommand(input: TemplateCopilot
         sourceKind,
         sectionHint: input.sectionHint || (input.document ? "document" : "all"),
         ...(input.document ? { document: { id: input.document.id, fileName: input.document.fileName, sha256: input.document.sha256, safety: input.document.safety } } : {}),
+        ...(input.documentQuarantine ? { documentQuarantine: input.documentQuarantine } : {}),
         fallbackReason: input.fallbackReason(error),
         assistantMessage: describeAssistantMessage(prepared.ledger.locale, "fallback"),
       },
@@ -351,6 +357,10 @@ export async function runTemplateCopilotV2DescribeCommand(input: TemplateCopilot
       sourceKind,
       sectionHint: input.sectionHint || (input.document ? "document" : "all"),
       ...(input.document ? { document: { id: input.document.id, fileName: input.document.fileName, sha256: input.document.sha256, safety: input.document.safety } } : {}),
+      ...(input.documentQuarantine ? { documentQuarantine: input.documentQuarantine } : {}),
+      ...(extracted.documentBlocks ? {
+        documentBlockExtraction: extracted.documentBlocks,
+      } : {}),
       ...(noCandidateDelta ? {
         noCandidateReason,
       } : {}),

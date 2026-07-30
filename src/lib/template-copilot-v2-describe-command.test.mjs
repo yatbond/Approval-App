@@ -52,10 +52,10 @@ function serviceFor({ prepared, terminal }) {
   };
 }
 
-function command({ service, mode = "describe_everything", sourceText = "Purchase approval", document, sectionHint, extractCandidates, fallbackReason = (error) => error.reasonCode || "provider_error" }) {
+function command({ service, mode = "describe_everything", sourceText = "Purchase approval", document, documentQuarantine, sectionHint, extractCandidates, fallbackReason = (error) => error.reasonCode || "provider_error" }) {
   return runTemplateCopilotV2DescribeCommand({
     session: service, service, actor, sessionId, expectedRevision: 4,
-    idempotencyKey: "describe:durable:001", mode, sourceText, document, sectionHint,
+    idempotencyKey: "describe:durable:001", mode, sourceText, document, documentQuarantine, sectionHint,
     extractCandidates, fallbackReason,
   });
 }
@@ -201,12 +201,28 @@ test("v2 requirement documents retain safe provenance and evidence only after th
   });
   const result = await command({
     service, sourceText: document.text, document,
+    documentQuarantine: {
+      schemaVersion: 1,
+      inspectedBlockCount: 2,
+      retainedBlockCount: 1,
+      quarantinedBlockCount: 1,
+      reasonCounts: { instruction_override: 1 },
+    },
     extractCandidates: async ({ message, messageId, locale, section }) => {
       assert.equal(message, document.text);
       assert.equal(messageId, "mode-command:document");
       assert.equal(locale, "en");
       assert.equal(section, "document");
-      return { candidates: [sourceCandidate(messageId)] };
+      return {
+        candidates: [sourceCandidate(messageId)],
+        documentBlocks: {
+          attemptedBlockCount: 1,
+          completedBlockCount: 1,
+          failedBlockCount: 0,
+          retainedAtomCount: 1,
+          truncatedAtomCount: 0,
+        },
+      };
     },
   });
   assert.deepEqual(result.ledger.requirementDocumentExtracts, [document]);
@@ -214,6 +230,20 @@ test("v2 requirement documents retain safe provenance and evidence only after th
   assert.equal(result.ledger.extractionEvidence.candidates[0].evidence[0].messageId, "mode-command:document");
   assert.equal(result.messages[0].content, document.text, "the response exposes the exact durable evidence source, not a UI file-name substitute");
   assert.deepEqual(service.calls[1].args.p_detail.document, { id: document.id, fileName: document.fileName, sha256: document.sha256, safety: document.safety });
+  assert.deepEqual(service.calls[1].args.p_detail.documentQuarantine, {
+    schemaVersion: 1,
+    inspectedBlockCount: 2,
+    retainedBlockCount: 1,
+    quarantinedBlockCount: 1,
+    reasonCounts: { instruction_override: 1 },
+  });
+  assert.deepEqual(service.calls[1].args.p_detail.documentBlockExtraction, {
+    attemptedBlockCount: 1,
+    completedBlockCount: 1,
+    failedBlockCount: 0,
+    retainedAtomCount: 1,
+    truncatedAtomCount: 0,
+  });
   assert.equal(service.calls[1].args.p_detail.sectionHint, "document");
   assert.equal(JSON.stringify(service.calls[1].args.p_detail).includes(document.text), false, "raw document text never enters audit detail");
 });
@@ -250,6 +280,11 @@ test("Describe binds a focused section and ledger locale into extraction and rep
     },
   });
   assert.equal(service.calls[1].args.p_detail.sectionHint, "attachments");
+  assert.equal(
+    service.calls[0].args.p_command_hash,
+    service.calls[1].args.p_command_hash,
+    "preparation and finalization must bind the same focused section",
+  );
   assert.notEqual(
     service.calls[0].args.p_command_hash,
     "",

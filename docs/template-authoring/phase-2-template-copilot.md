@@ -213,6 +213,33 @@ outages are not retried, and neither `all` nor `document` extraction is
 multiplied. Durable audit detail records recovery attempt/success/failure
 counts only; it never records provider output, source text, or error text.
 
+Requirement documents are sanitized before the durable source message or any
+provider call is created. The sanitizer splits English, Traditional Chinese,
+and Simplified Chinese text into sentence-level units and quarantines only
+bounded instruction-override, secret-exfiltration, and role/tool-control
+patterns. Bounded rolling-window checks catch a control phrase split across
+several lines or sentence boundaries and quarantine only the trigger and
+target units, not an intervening business requirement. Ordinary workflow uses
+of words such as `override`, `policy`, or `system message` remain available.
+A legitimate neighbouring sentence therefore remains available
+(for example, `Require one quotation PDF.`) while an embedded instruction is
+absent from both the model input and candidate evidence. Instruction-only
+documents fail before provider extraction. The immutable SHA-256 remains the
+hash of the original uploaded bytes; the ledger and transcript retain the
+exact sanitized source used for evidence.
+
+Sanitized text is then divided without gaps into at most eight source-ordered
+blocks of at most 10,000 Unicode code points. At most three provider calls run
+concurrently. Successful block outputs survive failed sibling blocks, are
+fairly selected across successful blocks before the 64-atom cap, and are then
+reassembled in source order. Server-owned block spans disambiguate repeated
+wording before every candidate passes through the same global hostile-output
+normalizer, so cross-block and cross-fact evidence overlap is still rejected.
+If every block fails, the existing durable Guided
+fallback applies. Audit detail stores only quarantine reason counts and
+block/atom counts; it never stores quarantined text, provider output, or error
+text.
+
 The provider never receives or returns JSON Pointer paths, message IDs,
 offsets, or normalization rules. The server alone locates each unique source
 passage, walks the paired value/quote tree, assembles compatible atoms into a
