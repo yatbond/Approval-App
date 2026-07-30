@@ -315,6 +315,17 @@ html[data-theme="dark"] ::placeholder {
   color: #aaa4a5;
 }
 
+html[data-theme="dark"] .template-copilot-control {
+  border-color: #565052 !important;
+  background-color: #343031 !important;
+  color: #ffffff !important;
+  caret-color: #ffffff;
+}
+
+html[data-theme="dark"] .template-copilot-control::placeholder {
+  color: #cbc6c7;
+}
+
 input:disabled,
 select:disabled,
 textarea:disabled {

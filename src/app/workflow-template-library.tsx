@@ -11,7 +11,7 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   getWorkflowTemplateLibraryItems,
   type WorkflowTemplateLibrarySection,
@@ -49,6 +49,55 @@ export function WorkflowTemplateLibrary({
   const [expandedFamilyKey, setExpandedFamilyKey] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [versionComments, setVersionComments] = useState<Record<string, string>>({});
+  const [authoringActivationFamilyIds, setAuthoringActivationFamilyIds] =
+    useState<readonly string[]>([]);
+  const [canManageAuthoringPublishers, setCanManageAuthoringPublishers] =
+    useState(false);
+  const [activationFeatureAvailable, setActivationFeatureAvailable] =
+    useState(false);
+  const [publisherEmails, setPublisherEmails] = useState<
+    Record<string, string>
+  >({});
+  const [publisherMessages, setPublisherMessages] = useState<
+    Record<string, string>
+  >({});
+  const [publisherBusyFamilyIds, setPublisherBusyFamilyIds] = useState<
+    readonly string[]
+  >([]);
+  useEffect(() => {
+    let current = true;
+    void fetch("/api/template-authoring/context", {
+      credentials: "same-origin",
+      cache: "no-store",
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (current) {
+          setAuthoringActivationFamilyIds(
+            Array.isArray(payload?.actor?.activationFamilyIds)
+              ? payload.actor.activationFamilyIds.filter(
+                  (item: unknown): item is string =>
+                    typeof item === "string" && item.length > 0,
+                )
+              : [],
+          );
+          setCanManageAuthoringPublishers(
+            payload?.actor?.canManagePublishers === true,
+          );
+          setActivationFeatureAvailable(
+            payload?.actor?.activationFeatureAvailable === true,
+          );
+        }
+      })
+      .catch(() => {
+        if (current) setAuthoringActivationFamilyIds([]);
+        if (current) setCanManageAuthoringPublishers(false);
+        if (current) setActivationFeatureAvailable(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, []);
   const items = getWorkflowTemplateLibraryItems({
     workflowTemplates,
     selectedTemplateId,
@@ -70,6 +119,72 @@ export function WorkflowTemplateLibrary({
       versionComments[item.id] ?? item.versionComment,
     );
     setEditingNoteId(null);
+  }
+
+  async function setPublisherAccess(familyId: string, enabled: boolean) {
+    const publisherEmail = String(publisherEmails[familyId] || "")
+      .trim()
+      .toLowerCase();
+    if (!publisherEmail || !publisherEmail.includes("@")) {
+      setPublisherMessages((current) => ({
+        ...current,
+        [familyId]: "Enter the colleague’s exact directory email.",
+      }));
+      return;
+    }
+    setPublisherBusyFamilyIds((current) => [
+      ...new Set([...current, familyId]),
+    ]);
+    setPublisherMessages((current) => ({ ...current, [familyId]: "" }));
+    try {
+      const response = await fetch(
+        `/api/template-authoring/families/${encodeURIComponent(familyId)}/publishers`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            publisherEmail,
+            enabled,
+            idempotencyKey: `publisher:${crypto.randomUUID()}`,
+          }),
+        },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          payload?.error?.message || "Publisher access could not be updated.",
+        );
+      }
+      setPublisherMessages((current) => ({
+        ...current,
+        [familyId]: enabled
+          ? `${publisherEmail} can now activate this workflow.`
+          : `${publisherEmail} can no longer activate this workflow.`,
+      }));
+      if (
+        activationFeatureAvailable &&
+        publisherEmail === activeUserEmail.trim().toLowerCase()
+      ) {
+        setAuthoringActivationFamilyIds((current) =>
+          enabled
+            ? [...new Set([...current, familyId])]
+            : current.filter((item) => item !== familyId),
+        );
+      }
+    } catch (error) {
+      setPublisherMessages((current) => ({
+        ...current,
+        [familyId]:
+          error instanceof Error
+            ? error.message
+            : "Publisher access could not be updated.",
+      }));
+    } finally {
+      setPublisherBusyFamilyIds((current) =>
+        current.filter((item) => item !== familyId),
+      );
+    }
   }
 
   return (
@@ -154,6 +269,86 @@ export function WorkflowTemplateLibrary({
                   id={`workflow-family-${group.familyKey}`}
                   className="border-t border-[#e6e6e6] bg-[#f7f7f5] p-3 dark:border-neutral-700 dark:bg-neutral-900 sm:p-4"
                 >
+                  {section !== "archive" &&
+                    canManageAuthoringPublishers &&
+                    group.workflow.authoringFamilyId && (
+                      <section className="mb-3 rounded-md border border-[#d2d2d2] bg-white p-3 dark:border-neutral-700 dark:bg-neutral-950">
+                        <h4 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                          Activation publisher
+                        </h4>
+                        <p className="mt-1 text-xs text-neutral-500">
+                          IT can grant or revoke who may make an approved
+                          version active. Administrator access alone is not
+                          enough.
+                        </p>
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                          <label className="min-w-0 flex-1 text-xs font-medium text-neutral-700 dark:text-neutral-200">
+                            Colleague’s directory email
+                            <input
+                              type="email"
+                              value={
+                                publisherEmails[
+                                  group.workflow.authoringFamilyId
+                                ] || ""
+                              }
+                              onChange={(event) =>
+                                setPublisherEmails((current) => ({
+                                  ...current,
+                                  [group.workflow.authoringFamilyId!]:
+                                    event.target.value,
+                                }))
+                              }
+                              placeholder="name@company.com"
+                              className="mt-1 min-h-10 w-full rounded-md border border-[#d2d2d2] bg-white px-3 text-sm text-neutral-900 outline-none focus:border-[#f7941d] dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                            />
+                          </label>
+                          <div className="flex items-end gap-2">
+                            <button
+                              type="button"
+                              disabled={
+                                publisherBusyFamilyIds.includes(
+                                  group.workflow.authoringFamilyId,
+                                )
+                              }
+                              onClick={() =>
+                                void setPublisherAccess(
+                                  group.workflow.authoringFamilyId!,
+                                  true,
+                                )
+                              }
+                              className={actionButtonClassName}
+                            >
+                              Grant access
+                            </button>
+                            <button
+                              type="button"
+                              disabled={
+                                publisherBusyFamilyIds.includes(
+                                  group.workflow.authoringFamilyId,
+                                )
+                              }
+                              onClick={() =>
+                                void setPublisherAccess(
+                                  group.workflow.authoringFamilyId!,
+                                  false,
+                                )
+                              }
+                              className={actionButtonClassName}
+                            >
+                              Revoke
+                            </button>
+                          </div>
+                        </div>
+                        <p
+                          className="mt-2 text-xs text-neutral-600 dark:text-neutral-300"
+                          aria-live="polite"
+                        >
+                          {publisherMessages[
+                            group.workflow.authoringFamilyId
+                          ] || ""}
+                        </p>
+                      </section>
+                    )}
                   {group.active ? (
                     <WorkflowVersionPanel
                       heading="Active version"
@@ -168,6 +363,12 @@ export function WorkflowTemplateLibrary({
                       onDuplicateTemplate={onDuplicateTemplate}
                       onDeleteTemplate={onDeleteTemplate}
                       onActivateTemplateVersion={onActivateTemplateVersion}
+                      authoringActivationFamilyIds={
+                        authoringActivationFamilyIds
+                      }
+                      activationFeatureAvailable={
+                        activationFeatureAvailable
+                      }
                       onEditNote={setEditingNoteId}
                       onChangeNote={(id, value) =>
                         setVersionComments((comments) => ({ ...comments, [id]: value }))
@@ -194,6 +395,12 @@ export function WorkflowTemplateLibrary({
                         onDuplicateTemplate={onDuplicateTemplate}
                         onDeleteTemplate={onDeleteTemplate}
                         onActivateTemplateVersion={onActivateTemplateVersion}
+                        authoringActivationFamilyIds={
+                          authoringActivationFamilyIds
+                        }
+                        activationFeatureAvailable={
+                          activationFeatureAvailable
+                        }
                         onEditNote={setEditingNoteId}
                         onChangeNote={(id, value) =>
                           setVersionComments((comments) => ({ ...comments, [id]: value }))
@@ -238,6 +445,12 @@ export function WorkflowTemplateLibrary({
                                 onDuplicateTemplate={onDuplicateTemplate}
                                 onDeleteTemplate={onDeleteTemplate}
                                 onActivateTemplateVersion={onActivateTemplateVersion}
+                                authoringActivationFamilyIds={
+                                  authoringActivationFamilyIds
+                                }
+                                activationFeatureAvailable={
+                                  activationFeatureAvailable
+                                }
                                 onEditNote={setEditingNoteId}
                                 onChangeNote={(id, value) =>
                                   setVersionComments((comments) => ({ ...comments, [id]: value }))
@@ -310,6 +523,8 @@ type WorkflowVersionDetailsProps = {
   onDuplicateTemplate: (template: WorkflowTemplate) => void;
   onDeleteTemplate: (templateId: string) => void | Promise<void>;
   onActivateTemplateVersion: (templateId: string) => void;
+  authoringActivationFamilyIds: readonly string[];
+  activationFeatureAvailable: boolean;
   onEditNote: (templateId: string | null) => void;
   onChangeNote: (templateId: string, value: string) => void;
   onSaveNote: (item: WorkflowLibraryItem) => void;
@@ -325,6 +540,8 @@ function WorkflowVersionDetails({
   onDuplicateTemplate,
   onDeleteTemplate,
   onActivateTemplateVersion,
+  authoringActivationFamilyIds,
+  activationFeatureAvailable,
   onEditNote,
   onChangeNote,
   onSaveNote,
@@ -406,7 +623,14 @@ function WorkflowVersionDetails({
             <button
               type="button"
               onClick={() => onActivateTemplateVersion(item.id)}
-              disabled={!item.canActivate && !item.canComment}
+              disabled={
+                item.template.authoringFamilyId
+                  ? !activationFeatureAvailable ||
+                    !authoringActivationFamilyIds.includes(
+                      item.template.authoringFamilyId,
+                    )
+                  : !item.canActivate
+              }
               className={actionButtonClassName}
             >
               <CheckCircle2 size={14} /> Make active

@@ -500,6 +500,10 @@ export type WorkflowGraph = {
 export type WorkflowTemplate = {
   id: string;
   databaseVersionId?: string;
+  authoringFamilyId?: string;
+  authoringDraftId?: string;
+  authoringRevision?: number;
+  authoringDossier?: unknown;
   name: string;
   business: string;
   department: string;

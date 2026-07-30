@@ -51,6 +51,10 @@ test("workspace delegates delivery endpoints to the focused controller", () => {
     "src/app/use-workspace-email-delivery.ts",
     "utf8",
   );
+  const adminTabSource = readFileSync(
+    "src/app/workspace-admin-tab.tsx",
+    "utf8",
+  );
 
   assert.equal(actionControllerSource.includes("useWorkspaceEmailDelivery"), true);
   assert.equal(actionControllerSource.includes("/api/email/task-notifications"), false);
@@ -58,6 +62,11 @@ test("workspace delegates delivery endpoints to the focused controller", () => {
   assert.equal(controllerSource.includes("/api/email/task-notifications"), false);
   assert.equal(controllerSource.includes("/api/email/outbox"), true);
   assert.equal(controllerSource.includes("/api/email/test"), true);
+  assert.match(controllerSource, /if \(!canReadOutbox\) return/);
+  assert.match(
+    adminTabSource,
+    /canReadOutbox: core\.activeUser\.role === "superuser"/,
+  );
 });
 
 test("email test endpoint requires a verified signed-in user", () => {
