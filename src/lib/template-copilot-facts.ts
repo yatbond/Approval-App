@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { templateCopilotUnicodeCodePointCount } from "./template-copilot-unicode.ts";
+import {
+  templateCopilotMaximumSourceCodePoints,
+  templateCopilotUnicodeCodePointCount,
+} from "./template-copilot-unicode.ts";
 export { templateCopilotUnicodeCodePointCount } from "./template-copilot-unicode.ts";
 import {
   templateCopilotLocaleSchema,
@@ -267,8 +270,16 @@ const extractionLeafEvidenceSchema = z.object({
   // escaping, so object keys containing `~` or `/` remain unambiguous.
   path: z.string().max(256).regex(/^(?:\/$|(?:\/(?:[A-Za-z0-9_.-]|~[01])+)+$)/),
   messageId: boundedId,
-  startCodePoint: z.number().int().min(0).max(8_000),
-  endCodePoint: z.number().int().min(1).max(8_000),
+  startCodePoint: z
+    .number()
+    .int()
+    .min(0)
+    .max(templateCopilotMaximumSourceCodePoints),
+  endCodePoint: z
+    .number()
+    .int()
+    .min(1)
+    .max(templateCopilotMaximumSourceCodePoints),
   exactText: candidateValueSchema,
   normalizationRule: z.enum(["exact", "nfkc_trim_collapse", "nfkc_trim_collapse_whitespace", "enum_lexical", "approval_word_to_kind", "ordinal_to_sequence", "array_position_to_sequence", "boolean_lexical", "named_attachment_is_required", "duration_hours"]).optional(),
 }).strict().superRefine((item, context) => {
