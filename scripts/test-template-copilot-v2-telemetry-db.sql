@@ -3,6 +3,11 @@ begin;
 select set_config('app.telemetry_admin', gen_random_uuid()::text, true);
 select set_config('app.telemetry_other', gen_random_uuid()::text, true);
 select set_config('app.telemetry_event', gen_random_uuid()::text, true);
+select set_config(
+  'app.telemetry_occurred_at',
+  (clock_timestamp() - interval '1 second')::text,
+  true
+);
 
 insert into auth.users (
   id,
@@ -64,7 +69,7 @@ declare
 begin
   first_result := public.record_template_copilot_v2_telemetry(
     current_setting('app.telemetry_event')::uuid,
-    statement_timestamp(),
+    current_setting('app.telemetry_occurred_at')::timestamptz,
     'hmac-sha256:' || repeat('a', 64),
     'hmac-sha256:' || repeat('b', 64),
     'en',
@@ -79,7 +84,7 @@ begin
   );
   replay_result := public.record_template_copilot_v2_telemetry(
     current_setting('app.telemetry_event')::uuid,
-    statement_timestamp(),
+    current_setting('app.telemetry_occurred_at')::timestamptz,
     'hmac-sha256:' || repeat('a', 64),
     'hmac-sha256:' || repeat('b', 64),
     'en',
@@ -100,7 +105,7 @@ begin
   begin
     perform public.record_template_copilot_v2_telemetry(
       current_setting('app.telemetry_event')::uuid,
-      statement_timestamp(),
+      current_setting('app.telemetry_occurred_at')::timestamptz,
       'hmac-sha256:' || repeat('a', 64),
       'hmac-sha256:' || repeat('b', 64),
       'en',
