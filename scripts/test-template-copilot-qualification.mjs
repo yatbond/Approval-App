@@ -306,8 +306,12 @@ async function runScenario(context, item) {
     let revision = Number(start.body.revision);
     let ledger = start.body.ledger;
     const describeTurns = [];
+    const describeFailures = [];
     const sourceMessages = {};
     let replayCommand = null;
+    let replayOriginalOutcome = "";
+    result.describeTurns = describeTurns;
+    result.describeFailures = describeFailures;
     for (const [sectionId, message] of narratives) {
       const describeId = idempotencyId(
         `qual-describe-${item.id}-${sectionId}`,
@@ -339,24 +343,34 @@ async function runScenario(context, item) {
         cumulativeCandidateCount:
           describe.body?.ledger?.extractionEvidence?.candidates?.length || 0,
       });
-      if (
-        describe.status !== 200 ||
-        !["applied", "replayed"].includes(String(describe.body?.outcome))
-      ) {
+      if (describe.status !== 200) {
         throw new Error(
           `Describe ${sectionId} failed (${describe.status}): ${errorCode(describe.body)}`,
         );
       }
-      revision = Number(describe.body.revision);
-      ledger = describe.body.ledger;
+      const describeOutcome = String(describe.body?.outcome || "");
+      if (!["applied", "replayed"].includes(describeOutcome)) {
+        describeFailures.push({
+          sectionId,
+          status: describe.status,
+          outcome: describeOutcome || "missing",
+          errorCode: describe.body?.error?.code || "",
+          errorMessage: describe.body?.error?.message || "",
+        });
+      }
+      if (Number.isInteger(Number(describe.body?.revision))) {
+        revision = Number(describe.body.revision);
+      }
+      if (describe.body?.ledger) ledger = describe.body.ledger;
       replayCommand = {
         expectedRevision,
         idempotencyKey: describeId,
         mode: "describe_everything",
         message,
       };
+      replayOriginalOutcome = describeOutcome;
     }
-    result.describeTurns = describeTurns;
+    result.describeFailures = describeFailures;
     result.describe = {
       turnCount: describeTurns.length,
       totalDurationMs: describeTurns.reduce(
@@ -367,7 +381,7 @@ async function runScenario(context, item) {
       candidateCount:
         ledger?.extractionEvidence?.candidates?.length || 0,
     };
-    result.naturalLanguageIntakePassed = true;
+    result.naturalLanguageIntakePassed = describeFailures.length === 0;
     result.evidenceFidelity = scoreV2Extraction({
       item,
       sourceMessages,
@@ -388,6 +402,10 @@ async function runScenario(context, item) {
       ...summarizeCall(replay),
       outcome: replay.body?.outcome || "",
       sameRevision: Number(replay.body?.revision) === revision,
+      exactOutcome:
+        ["applied", "guided_fallback"].includes(replayOriginalOutcome)
+          ? replay.body?.outcome === "replayed"
+          : replay.body?.outcome === replayOriginalOutcome,
     };
 
     const persisted = await requestJson(
@@ -425,7 +443,7 @@ async function runScenario(context, item) {
       result.naturalLanguageIntakePassed &&
       result.evidenceFidelity.passed &&
       replay.status === 200 &&
-      replay.body?.outcome === "replayed" &&
+      result.replay.exactOutcome &&
       result.replay.sameRevision &&
       result.persistence.passed;
     return finishScenario(result, startedAt);
