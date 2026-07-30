@@ -9,6 +9,7 @@ import { BuildVersionIndicator } from "./build-version-indicator";
 import { InfoTip } from "./ui-hint";
 import { AdminCopilotReviewPanel } from "./admin-copilot-review-panel";
 import { AdminCopilotConceptReviewPanel } from "./admin-copilot-concept-review-panel";
+import { AdminCopilotTelemetryPanel } from "./admin-copilot-telemetry-panel";
 import {
   addBusiness,
   addDepartment,
@@ -339,6 +340,7 @@ export function AdminView({
         <OperationalHealthPanel />
         <AdminCopilotConceptReviewPanel />
         <AdminCopilotReviewPanel />
+        <AdminCopilotTelemetryPanel />
         <div className="rounded-md border border-[#e6e6e6] bg-white p-4">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold">Directory and effective roles</h2>

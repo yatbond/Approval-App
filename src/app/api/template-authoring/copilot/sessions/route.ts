@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import {
   approvalError,
   approvalJson,
@@ -20,6 +20,7 @@ import {
 } from "@/lib/template-copilot-plan";
 import {
   extractTemplateCopilotTurn,
+  getTemplateCopilotAiRoutingMetadata,
   TemplateCopilotModelError,
 } from "@/lib/template-copilot-ai";
 import {
@@ -34,6 +35,10 @@ import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
 import { isTemplateCopilotV2Enabled, isTemplateCopilotV2ModeEnabled } from "@/lib/template-copilot-v2-feature";
 import { createTemplateCopilotV2Session } from "@/lib/template-copilot-v2-server-data";
 import { isTemplateCopilotQuestionLibraryStartAllowed } from "@/lib/template-copilot-v2-step8-review";
+import {
+  isTemplateCopilotV2TelemetryEnabled,
+  recordTemplateCopilotV2TelemetryBestEffort,
+} from "@/lib/template-copilot-v2-telemetry-server";
 
 /** Read-only, authenticated capability probe.  The browser uses this before a
  * start mutation so a legacy v1 start never enters the v2 replay/storage state
@@ -212,6 +217,34 @@ export async function POST(request: NextRequest) {
         // commands; current browsers persist and send the rollout-selected pin.
         questionLibraryVersion: parsed.data.questionLibraryVersion || "v2.0",
       });
+      const resultRecord = result as Record<string, unknown>;
+      const telemetrySessionId =
+        typeof resultRecord.sessionId === "string" ? resultRecord.sessionId : "";
+      const telemetryRevision = positiveInteger(resultRecord.revision);
+      if (
+        telemetrySessionId &&
+        telemetryRevision &&
+        resultRecord.outcome === "applied"
+      ) {
+        const questionId = nextQuestionId(resultRecord);
+        after(() =>
+          recordTemplateCopilotV2TelemetryBestEffort({
+            service,
+            event: {
+              actorId: actor.id,
+              sessionId: telemetrySessionId,
+              deduplicationKey: parsed.data.clientMessageId,
+              locale,
+              mode: "guided",
+              eventType: "question_selected",
+              revision: telemetryRevision,
+              ...(questionId ? { questionId } : {}),
+              outcomeCode: "session_applied",
+              counts: { session_starts: 1 },
+            },
+          }),
+        );
+      }
       return withTemplateCopilotStartSchemaVersion(templateAuthoringRpcResponse({
         cookieSource,
         correlationId,
@@ -304,11 +337,58 @@ export async function POST(request: NextRequest) {
   }
 }
 
+function positiveInteger(value: unknown) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 1 ? number : null;
+}
+
+function nextQuestionId(result: Record<string, unknown>) {
+  const interview =
+    result.interview &&
+    typeof result.interview === "object" &&
+    !Array.isArray(result.interview)
+      ? (result.interview as Record<string, unknown>)
+      : {};
+  const nextQuestion =
+    interview.nextQuestion &&
+    typeof interview.nextQuestion === "object" &&
+    !Array.isArray(interview.nextQuestion)
+      ? (interview.nextQuestion as Record<string, unknown>)
+      : {};
+  return typeof nextQuestion.questionId === "string"
+    ? nextQuestion.questionId
+    : undefined;
+}
+
 /** The server feature flag is authoritative.  Returning it even for an error
  * lets the embedded client preserve the old v1 error wording without a client
  * supplied version switch or a second potentially mutating start request. */
 function withTemplateCopilotStartSchemaVersion(response: Response) {
+  let routing;
+  try {
+    routing = getTemplateCopilotAiRoutingMetadata();
+  } catch {
+    routing = null;
+  }
   response.headers.set("X-Template-Copilot-Schema-Version", isTemplateCopilotV2Enabled() ? "2" : "1");
+  response.headers.set(
+    "X-Template-Copilot-OpenRouter-ZDR",
+    routing?.providerCode === "openrouter" && routing.privacyMode === "zdr"
+      ? "required"
+      : "not-required",
+  );
+  response.headers.set(
+    "X-Template-Copilot-Provider",
+    routing?.providerCode || "unavailable",
+  );
+  response.headers.set(
+    "X-Template-Copilot-Model",
+    routing?.model || "unavailable",
+  );
+  response.headers.set(
+    "X-Template-Copilot-Telemetry",
+    isTemplateCopilotV2TelemetryEnabled() ? "enabled" : "disabled",
+  );
   return response;
 }
 

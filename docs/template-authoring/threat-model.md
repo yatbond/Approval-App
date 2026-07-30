@@ -51,6 +51,12 @@ authoring tables.
 | Excessive model cost or loops | Per-user quotas, bounded messages, bounded tool steps and timeouts |
 | Provider outage | Draft ledger persists independently; retry without losing confirmed answers |
 | Hallucinated capability | Machine capability matrix and coded definition validation |
+| Qualification telemetry becomes a shadow transcript or state store | One strict metadata-only schema rejects raw text and direct identifiers; real routes derive events server-side; compiler and readiness never read telemetry |
+| Telemetry is read by a non-Admin or retained indefinitely | The store is in the unexposed private schema with forced RLS and no table grants; the service-only list RPC independently verifies an active Admin and excludes expired rows; the scheduler physically purges rows after the pinned 30-day period |
+| A retry inflates telemetry or changes workflow authority | Only freshly applied commands emit events; event IDs are deterministically HMAC-bound to the session, event type, and command key; identical duplicate inserts are no-ops, conflicting replays are rejected, and telemetry is never an input to ledger, readiness, publication, or activation |
+| A pseudonym is reversed through a dictionary attack | Actor and session identifiers use a separate server-only HMAC secret of at least 32 characters; the Admin UI does not display the pseudonyms |
+| Model/provider privacy route drifts during pilot | The deterministic fixture proves only that privacy rejection leaves authoritative state unchanged and enters Guided fallback. The separately authorized live Preview gate pins OpenRouter in both invoking and deployed expectations, executes a live ZDR smoke, and verifies deployed provider, model, and ZDR capability headers from the production resolver; any mismatch triggers the pilot stop gate |
+| Pilot result is declared without representative evidence | Deterministic evaluator requires exactly nine pseudonymous participants, three per language, and both standardized and departmental tasks |
 
 ## Logging rules
 

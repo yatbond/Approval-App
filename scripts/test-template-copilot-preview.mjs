@@ -13,6 +13,12 @@ const suppliedEmail = process.env.E2E_USER_EMAIL?.trim() || "";
 const suppliedPassword = process.env.E2E_USER_PASSWORD?.trim() || "";
 const expectedModel =
   process.env.E2E_EXPECTED_COPILOT_MODEL?.trim() || "qwen/qwen3.5-35b-a3b";
+const expectedProvider =
+  process.env.E2E_EXPECTED_COPILOT_PROVIDER?.trim() || "";
+const requireZdr =
+  process.env.E2E_REQUIRE_COPILOT_ZDR?.trim().toLowerCase() === "true";
+const requireTelemetry =
+  process.env.E2E_REQUIRE_COPILOT_TELEMETRY?.trim().toLowerCase() === "true";
 const previewOrigin = new URL(previewShareUrl).origin;
 const runId = `${Date.now()}-${randomBytes(4).toString("hex")}`;
 const useSuppliedUser = Boolean(suppliedEmail && suppliedPassword);
@@ -33,11 +39,52 @@ if (!serviceRoleKey && !useSuppliedUser) {
 const database = createClient(supabaseUrl, databaseKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
+const serviceDatabase = serviceRoleKey
+  ? createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+  : null;
 
 let createdUserId = "";
+let telemetryAdminUserId = "";
+let telemetryBaselineEventIds = new Set();
 let browser;
 
 try {
+  if (requireTelemetry) {
+    assert(
+      serviceDatabase,
+      "Telemetry qualification requires E2E_SUPABASE_SERVICE_KEY.",
+    );
+    const telemetryAdminEmail =
+      `codex-template-telemetry-admin-${runId}@mailinator.com`;
+    const { data: telemetryAdmin, error: telemetryAdminError } =
+      await serviceDatabase.auth.admin.createUser({
+        email: telemetryAdminEmail,
+        password: `Telemetry-${randomBytes(18).toString("base64url")}!7z`,
+        email_confirm: true,
+        user_metadata: { full_name: "Codex Telemetry Admin" },
+      });
+    if (telemetryAdminError || !telemetryAdmin.user) {
+      throw new Error(
+        `Could not create the isolated telemetry Admin: ${telemetryAdminError?.message}`,
+      );
+    }
+    telemetryAdminUserId = telemetryAdmin.user.id;
+    await ensureProfile({
+      client: serviceDatabase,
+      userId: telemetryAdminUserId,
+      userEmail: telemetryAdminEmail,
+      fullName: "Codex Telemetry Admin",
+      role: "superuser",
+      isAdmin: true,
+    });
+    telemetryBaselineEventIds = await listTelemetryEventIds(
+      serviceDatabase,
+      telemetryAdminUserId,
+    );
+  }
+
   if (useSuppliedUser) {
     const { data: signedIn, error: signInError } =
       await database.auth.signInWithPassword({ email, password });
@@ -47,7 +94,7 @@ try {
     createdUserId = signedIn.user.id;
   } else {
     const { data: created, error: createError } =
-      await database.auth.admin.createUser({
+      await serviceDatabase.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
@@ -57,7 +104,14 @@ try {
       throw new Error(`Could not create the isolated test user: ${createError?.message}`);
     }
     createdUserId = created.user.id;
-    await ensureProfile(createdUserId, email);
+    await ensureProfile({
+      client: serviceDatabase,
+      userId: createdUserId,
+      userEmail: email,
+      fullName: "Codex Preview Tester",
+      role: "participant",
+      isAdmin: false,
+    });
   }
 
   browser = await launchBrowser();
@@ -112,6 +166,44 @@ try {
     authoringContext.body?.actor?.canPublish === false,
     "Test employee unexpectedly received publication authority.",
   );
+  const copilotCapabilities = await page.evaluate(async () => {
+    const response = await fetch("/api/template-authoring/copilot/sessions", {
+      method: "HEAD",
+      cache: "no-store",
+    });
+    return {
+      status: response.status,
+      zdr: response.headers.get("x-template-copilot-openrouter-zdr"),
+      provider: response.headers.get("x-template-copilot-provider"),
+      model: response.headers.get("x-template-copilot-model"),
+      telemetry: response.headers.get("x-template-copilot-telemetry"),
+    };
+  });
+  assert(copilotCapabilities.status === 200, "Copilot capability probe failed.");
+  if (requireZdr) {
+    assert(
+      expectedProvider === "openrouter",
+      "ZDR qualification requires E2E_EXPECTED_COPILOT_PROVIDER=openrouter.",
+    );
+    assert(
+      copilotCapabilities.provider === expectedProvider,
+      "The deployed Preview is not using the expected Copilot provider.",
+    );
+    assert(
+      copilotCapabilities.model === expectedModel,
+      "The deployed Preview is not using the expected Copilot model.",
+    );
+    assert(
+      copilotCapabilities.zdr === "required",
+      "The deployed Preview does not require the approved OpenRouter ZDR route.",
+    );
+  }
+  if (requireTelemetry) {
+    assert(
+      copilotCapabilities.telemetry === "enabled",
+      "The deployed Preview does not enable privacy-minimized Copilot telemetry.",
+    );
+  }
 
   await page.getByRole("link", { name: "Workflow", exact: true }).click();
   await page.getByText("Template Copilot", { exact: true }).waitFor({
@@ -152,6 +244,13 @@ try {
   );
   assert(startBody.outcome === "applied", "Copilot session creation was not applied.");
   assert(startBody.sessionId, "Copilot session did not return an identifier.");
+  if (requireTelemetry) {
+    await waitForAppliedSessionTelemetry({
+      client: serviceDatabase,
+      actorId: telemetryAdminUserId,
+      baselineEventIds: telemetryBaselineEventIds,
+    });
+  }
 
   const answer =
     "This is synthetic Preview data. Create a Purchase Requisition Approval workflow for employees requesting purchases. Procurement Operations owns the process. Use the selected business and department scope.";
@@ -213,15 +312,27 @@ try {
   console.log("authenticated_context=PASS");
   console.log("openrouter_turn=PASS");
   console.log("owner_scoped_persistence=PASS");
+  if (requireTelemetry) {
+    console.log("preview_route_telemetry_admin_read=PASS");
+  }
   console.log(`screenshot=${screenshotPath}`);
 } finally {
   if (browser) await browser.close();
   if (createdUserId && !useSuppliedUser) {
-    const { error } = await database.auth.admin.deleteUser(createdUserId);
+    const { error } = await serviceDatabase.auth.admin.deleteUser(createdUserId);
     if (error) {
       console.warn(`test_user_cleanup=FAILED (${error.message})`);
     } else {
       console.log("test_user_cleanup=PASS");
+    }
+  }
+  if (telemetryAdminUserId && serviceDatabase) {
+    const { error } =
+      await serviceDatabase.auth.admin.deleteUser(telemetryAdminUserId);
+    if (error) {
+      console.warn(`telemetry_admin_cleanup=FAILED (${error.message})`);
+    } else {
+      console.log("telemetry_admin_cleanup=PASS");
     }
   }
 }
@@ -232,10 +343,17 @@ function requiredEnvironment(name) {
   return value;
 }
 
-async function ensureProfile(userId, userEmail) {
+async function ensureProfile({
+  client,
+  userId,
+  userEmail,
+  fullName,
+  role,
+  isAdmin,
+}) {
   let profileExists = false;
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const { data, error } = await database
+    const { data, error } = await client
       .from("profiles")
       .select("id,is_active")
       .eq("id", userId)
@@ -251,15 +369,58 @@ async function ensureProfile(userId, userEmail) {
   const profile = {
     id: userId,
     email: userEmail,
-    full_name: "Codex Preview Tester",
-    role: "participant",
-    is_admin: false,
+    full_name: fullName,
+    role,
+    is_admin: isAdmin,
     is_active: true,
   };
   const { error } = profileExists
-    ? await database.from("profiles").update(profile).eq("id", userId)
-    : await database.from("profiles").insert(profile);
+    ? await client.from("profiles").update(profile).eq("id", userId)
+    : await client.from("profiles").insert(profile);
   if (error) throw error;
+}
+
+async function listTelemetryEventIds(client, actorId) {
+  const { data, error } = await client.rpc(
+    "list_template_copilot_v2_telemetry_for_admin",
+    {
+      p_actor_id: actorId,
+      p_limit: 200,
+      p_before: null,
+    },
+  );
+  if (error) throw error;
+  return new Set((Array.isArray(data) ? data : []).map((event) => event.event_id));
+}
+
+async function waitForAppliedSessionTelemetry({
+  client,
+  actorId,
+  baselineEventIds,
+}) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const { data, error } = await client.rpc(
+      "list_template_copilot_v2_telemetry_for_admin",
+      {
+        p_actor_id: actorId,
+        p_limit: 200,
+        p_before: null,
+      },
+    );
+    if (error) throw error;
+    const appliedEvent = (Array.isArray(data) ? data : []).find(
+      (event) =>
+        !baselineEventIds.has(event.event_id) &&
+        event.event_type === "question_selected" &&
+        event.outcome_code === "session_applied" &&
+        Number(event.counts?.session_starts) === 1,
+    );
+    if (appliedEvent) return;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(
+    "The authenticated Preview session route did not create an Admin-readable telemetry event.",
+  );
 }
 
 async function launchBrowser() {

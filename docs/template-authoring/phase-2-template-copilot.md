@@ -774,3 +774,62 @@ ambiguous writes therefore retain the existing exact-key retry/reconciliation
 behaviour and cannot create a false acknowledgement. Deferred and permitted
 N/A decisions remain visible in the server-derived special review/readiness
 state and final transcript playback.
+
+## Copilot v2 Step 10: deterministic multilingual qualification and pilot support
+
+The Step 10 release gate is defined in
+`template-copilot-v2-step10-qualification.ts` and executed by
+`npm run test:template-copilot-v2-step10`. It expands the prior 24-total
+browser scenarios into exactly 24 workflow archetypes × three languages ×
+three repetitions, or 216 pinned conversations.
+
+Every case uses the production question controller, evidence adapter,
+candidate review, ledger transitions, deterministic compiler, definition
+validator, and high/low route simulator. The gate compares localized inputs
+and equivalent behavior across languages, replays the entire matrix twice,
+exercises bounded failure fixtures, and keeps activation not ready without
+proof of the exact reviewed published revision. Unsupported native-form and
+conditional-plus-parallel combinations are separate fail-closed fixtures,
+not successful executable cases. Model/provider output is never release
+authority.
+
+Step 10 telemetry is a strict metadata-only contract. The deterministic matrix
+retains stable codes, HMAC pseudonyms, version pins, revisions, actual question
+IDs, outcome counts, timings, bounded synthetic provider-boundary metadata, and
+localized question/help/control contract checks. The production runtime uses
+the same minimized schema for real server-derived start, answer, readiness, and
+provider outcomes.
+
+Runtime telemetry is default-off behind
+`TEMPLATE_COPILOT_V2_TELEMETRY_ENABLED`. When enabled it requires the
+server-only `TEMPLATE_COPILOT_TELEMETRY_HMAC_SECRET`, writes through a narrow
+service-role RPC into `private.template_copilot_v2_telemetry_events`, and is
+automatically purged after 30 days by the authenticated operations scheduler.
+The table has forced RLS and no direct browser or service-role table grants.
+Admin reads pass both the route-level `actor.isAdmin` check and the database
+`private.is_active_approval_admin` check, and the read RPC excludes expired rows
+even when physical cleanup is temporarily unavailable. The Admin UI displays
+only structured operational metadata and never displays the stored pseudonyms.
+
+Both fixture and runtime schemas reject raw answers, messages, prompts,
+transcripts, documents, excerpts, names, and email-like values. Only freshly
+applied commands emit runtime events, and deterministic event IDs provide an
+additional duplicate boundary, so exact replays cannot inflate the evidence. The
+authoritative ledger and audit lifecycle remain the only workflow state.
+
+The deterministic gate does not prove a live ZDR route, authenticated Preview
+RLS/cross-user behavior, model suitability, keyboard behavior, or dark/light
+contrast. Those remain in the separately authorized Preview/browser gate. That
+gate now fails closed unless the deployed authenticated capability probe
+confirms the pinned OpenRouter provider/model, ZDR, and telemetry. It also
+includes the rollback-only telemetry RPC/retention proof, requires a real
+Preview session-start event to be readable through the active-Admin RPC, and
+runs the SQL RLS, database concurrency, cross-user, and three-locale light/dark
+keyboard-accessibility suites.
+
+The nine-person pilot protocol, launch targets, immediate stop criteria,
+rollback boundary, and privacy-safe 18-row observation template are documented
+in `step-10-qualification-and-pilot.md`. Automated pre-pilot qualification is
+green; the human pilot remains pending a separately authorized authenticated
+Preview, approved provider/privacy route, pilot roster, and IT access. No
+Production rollout is implied by the automated result.

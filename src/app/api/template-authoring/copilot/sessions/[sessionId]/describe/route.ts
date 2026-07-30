@@ -1,11 +1,17 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { approvalError, approvalJson, createApprovalServerContext, safeApprovalLog } from "@/lib/approval-server";
 import { readBoundedJson } from "@/lib/bounded-request";
 import { classifyTemplateCopilotV2OperationError } from "@/lib/template-copilot-facts";
 import { isTemplateCopilotV2Enabled, isTemplateCopilotV2ModeEnabled } from "@/lib/template-copilot-v2-feature";
 import { runTemplateCopilotV2DescribeCommand } from "@/lib/template-copilot-v2-describe-command";
 import { templateCopilotV2DescribeResponseDisposition } from "@/lib/template-copilot-v2-describe-response";
-import { extractTemplateCopilotV2Candidates, TemplateCopilotModelError } from "@/lib/template-copilot-ai";
+import {
+  extractTemplateCopilotV2Candidates,
+  getTemplateCopilotAiRoutingMetadata,
+  TemplateCopilotModelError,
+  type TemplateCopilotAiRoutingMetadata,
+} from "@/lib/template-copilot-ai";
+import { recordTemplateCopilotV2TelemetryBestEffort } from "@/lib/template-copilot-v2-telemetry-server";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
 import { z } from "zod";
 import { templateCopilotUnicodeCodePointCount } from "@/lib/template-copilot-unicode";
@@ -38,17 +44,71 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
   const { sessionId } = await context.params;
   if (!isTemplateCopilotV2ModeEnabled(parsed.data.mode)) return approvalJson(cookieSource, correlationId, { error: { code: "mode_unavailable", message: "This Copilot mode is temporarily unavailable." } }, 404);
   try {
+    const providerStartedAt = Date.now();
+    let providerInvoked = false;
+    let providerOutcome: "success" | "outage" | "timeout" | "malformed_output" | "privacy_route_rejected" = "success";
+    let providerRouting: TemplateCopilotAiRoutingMetadata | null = null;
+    try {
+      providerRouting = getTemplateCopilotAiRoutingMetadata();
+    } catch {
+      // The durable Describe command will persist the same configuration
+      // failure as Guided fallback. Do not invent provider metadata here.
+    }
     const result = await runTemplateCopilotV2DescribeCommand({
       session, service, actor, sessionId,
       expectedRevision: parsed.data.expectedRevision,
       idempotencyKey: parsed.data.idempotencyKey,
       mode: parsed.data.mode,
       sourceText: parsed.data.message,
-      extractCandidates: extractTemplateCopilotV2Candidates,
-      fallbackReason: (error) => error instanceof TemplateCopilotModelError
-        ? error.reasonCode
-        : "provider_error",
+      extractCandidates: async (input) => {
+        providerInvoked = true;
+        try {
+          return await extractTemplateCopilotV2Candidates(input);
+        } catch (error) {
+          providerOutcome = classifyProviderOutcome(error);
+          throw error;
+        }
+      },
+      fallbackReason: (error) => {
+        providerOutcome = classifyProviderOutcome(error);
+        return error instanceof TemplateCopilotModelError
+          ? error.reasonCode
+          : "provider_error";
+      },
     });
+    const telemetryRevision = positiveInteger(result.revision);
+    const telemetryLocale = resultLocale(result);
+    if (providerInvoked && telemetryRevision && telemetryLocale) {
+      after(() =>
+        recordTemplateCopilotV2TelemetryBestEffort({
+          service,
+          event: {
+            actorId: actor.id,
+            sessionId,
+            deduplicationKey: parsed.data.idempotencyKey,
+            locale: telemetryLocale,
+            mode: parsed.data.mode,
+            eventType: "provider_call_completed",
+            revision: telemetryRevision,
+            outcomeCode: `provider_${providerOutcome}`,
+            ...(providerRouting
+              ? {
+                  provider: {
+                    providerCode: providerRouting.providerCode,
+                    modelCode: safeModelCode(providerRouting.model),
+                    privacyMode: providerRouting.privacyMode,
+                    outcome: providerOutcome,
+                    latencyMs: Math.min(Date.now() - providerStartedAt, 300_000),
+                  },
+                }
+              : {}),
+            counts: {
+              guided_fallbacks: result.outcome === "guided_fallback" ? 1 : 0,
+            },
+          },
+        }),
+      );
+    }
     if (result.outcome === "guided_fallback") {
       safeApprovalLog("template_copilot_v2_describe_fallback", correlationId, {
         reason: typeof result.detail === "object" && result.detail && "fallbackReason" in result.detail
@@ -63,4 +123,42 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
     const failure = classifyTemplateCopilotV2OperationError(error, "The requirements description could not be processed.");
     return approvalJson(cookieSource, correlationId, { error: failure.error }, failure.status);
   }
+}
+
+function positiveInteger(value: unknown) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 1 ? number : null;
+}
+
+function resultLocale(result: Record<string, unknown>) {
+  const ledger =
+    result.ledger &&
+    typeof result.ledger === "object" &&
+    !Array.isArray(result.ledger)
+      ? (result.ledger as Record<string, unknown>)
+      : {};
+  return ledger.locale === "en" ||
+    ledger.locale === "zh-Hant" ||
+    ledger.locale === "zh-Hans"
+    ? ledger.locale
+    : null;
+}
+
+function classifyProviderOutcome(error: unknown) {
+  const reason =
+    error instanceof TemplateCopilotModelError
+      ? error.reasonCode
+      : error instanceof Error
+        ? error.name
+        : "provider_error";
+  if (/privacy|zdr/i.test(reason)) return "privacy_route_rejected" as const;
+  if (/timeout/i.test(reason)) return "timeout" as const;
+  if (/malformed|schema|json|output/i.test(reason)) {
+    return "malformed_output" as const;
+  }
+  return "outage" as const;
+}
+
+function safeModelCode(model: string) {
+  return model.toLowerCase().replaceAll("/", ":").replace(/[^a-z0-9_.:-]/g, "_");
 }

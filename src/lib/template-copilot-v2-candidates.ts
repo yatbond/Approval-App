@@ -612,3 +612,12 @@ export function confirmTemplateCopilotV2Candidate({ ledger: input, candidateId, 
 export function templateCopilotV2CandidateEvidenceHash(value: unknown) {
   return createHash("sha256").update(stableJson(value)).digest("hex");
 }
+/** Version pins shared by the production extraction request and deterministic
+ * qualification. Bump these when either the prompt contract or candidate
+ * schema changes; qualification must never carry a look-alike literal. */
+export const templateCopilotV2ExtractionPromptVersion =
+  "template-copilot-v2-extraction-2026-07-30";
+export const templateCopilotV2ProviderCandidateSchemaVersion =
+  "template-copilot-v2-candidates-1";
+export const templateCopilotV2DefaultOpenRouterModel =
+  "qwen/qwen3.5-flash-02-23";

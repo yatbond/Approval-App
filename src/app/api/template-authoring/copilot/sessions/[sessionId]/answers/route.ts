@@ -8,6 +8,7 @@ import { templateCopilotUnicodeCodePointCount } from "@/lib/template-copilot-uni
 import { classifyTemplateCopilotV2OperationError } from "@/lib/template-copilot-facts";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
 import { extractTemplateCopilotV2Candidates } from "@/lib/template-copilot-ai";
+import { recordTemplateCopilotV2TelemetryBestEffort } from "@/lib/template-copilot-v2-telemetry-server";
 
 // Provider work is hard-capped below this Route Handler's `after()` duration.
 export const maxDuration = 30;
@@ -46,6 +47,35 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
       answer: parsed.data.answer,
       enqueueExtractionJob: candidateCreationEnabled,
     });
+    const telemetryRevision = positiveInteger(result.revision);
+    const telemetryLocale = resultLocale(result);
+    if (
+      telemetryRevision &&
+      telemetryLocale &&
+      result.outcome === "applied"
+    ) {
+      const questionId = nextQuestionId(result);
+      after(() =>
+        recordTemplateCopilotV2TelemetryBestEffort({
+          service,
+          event: {
+            actorId: actor.id,
+            sessionId,
+            deduplicationKey: parsed.data.idempotencyKey,
+            locale: telemetryLocale,
+            mode: "guided",
+            eventType: questionId ? "question_selected" : "readiness_changed",
+            revision: telemetryRevision,
+            ...(questionId ? { questionId } : {}),
+            outcomeCode: "answer_applied",
+            counts: {
+              answer_commits: 1,
+              candidate_jobs_enqueued: candidateCreationEnabled ? 1 : 0,
+            },
+          },
+        }),
+      );
+    }
 
     // Candidate creation is answer-bound and durable. The response carries the
     // already-committed manual answer; a bounded post-response worker may only
@@ -101,4 +131,41 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
     const classified = classifyTemplateCopilotV2OperationError(error, "The Copilot v2 answer could not be completed.");
     return approvalJson(cookieSource, correlationId, { error: classified.error }, classified.status);
   }
+}
+
+function positiveInteger(value: unknown) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 1 ? number : null;
+}
+
+function resultLocale(result: Record<string, unknown>) {
+  const ledger =
+    result.ledger &&
+    typeof result.ledger === "object" &&
+    !Array.isArray(result.ledger)
+      ? (result.ledger as Record<string, unknown>)
+      : {};
+  return ledger.locale === "en" ||
+    ledger.locale === "zh-Hant" ||
+    ledger.locale === "zh-Hans"
+    ? ledger.locale
+    : null;
+}
+
+function nextQuestionId(result: Record<string, unknown>) {
+  const interview =
+    result.interview &&
+    typeof result.interview === "object" &&
+    !Array.isArray(result.interview)
+      ? (result.interview as Record<string, unknown>)
+      : {};
+  const nextQuestion =
+    interview.nextQuestion &&
+    typeof interview.nextQuestion === "object" &&
+    !Array.isArray(interview.nextQuestion)
+      ? (interview.nextQuestion as Record<string, unknown>)
+      : {};
+  return typeof nextQuestion.questionId === "string"
+    ? nextQuestion.questionId
+    : undefined;
 }
