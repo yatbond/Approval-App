@@ -147,6 +147,21 @@ export const publishTemplateDraftCommandSchema = z
   })
   .strict();
 
+export const activateTemplateVersionCommandSchema = z
+  .object({
+    expectedVersionNumber: z.number().int().min(1),
+    idempotencyKey: idempotencyKeySchema,
+  })
+  .strict();
+
+export const setTemplatePublisherCommandSchema = z
+  .object({
+    publisherEmail: z.string().trim().email().max(320),
+    enabled: z.boolean(),
+    idempotencyKey: idempotencyKeySchema,
+  })
+  .strict();
+
 export const templateFamilyListQuerySchema = z
   .object({
     status: z.enum(["active", "archived", "all"]).default("active"),
@@ -168,4 +183,10 @@ export type RequestTemplatePublishCommand = z.infer<
 >;
 export type ReviewTemplatePublishCommand = z.infer<
   typeof reviewTemplatePublishCommandSchema
+>;
+export type ActivateTemplateVersionCommand = z.infer<
+  typeof activateTemplateVersionCommandSchema
+>;
+export type SetTemplatePublisherCommand = z.infer<
+  typeof setTemplatePublisherCommandSchema
 >;

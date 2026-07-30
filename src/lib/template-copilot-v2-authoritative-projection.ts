@@ -1,5 +1,9 @@
 import { templateCopilotFactDefinitions, templateCopilotFactIds, type TemplateCopilotFactEntry, type TemplateCopilotFactId, type TemplateCopilotV2Ledger } from "./template-copilot-facts.ts";
-import { getTemplateCopilotReadiness, type TemplateCopilotReadiness } from "./template-copilot-readiness.ts";
+import type { TemplateCopilotReadiness } from "./template-copilot-readiness.ts";
+import {
+  buildTemplateCopilotV2Playback,
+  type TemplateCopilotV2Playback,
+} from "./template-copilot-v2-playback.ts";
 import {
   compileTemplateCopilotV2StructuredFact,
   previewTemplateCopilotV2StructuredFact,
@@ -14,7 +18,12 @@ import {
 
 export type TemplateCopilotV2ProjectionLocale = "en" | "zh-Hant" | "zh-Hans";
 type Locale = TemplateCopilotV2ProjectionLocale;
-export type TemplateCopilotV2AuthoritativeProjection = Readonly<{ locale: Locale; readiness: TemplateCopilotReadiness; facts: readonly TemplateCopilotV2ProjectedFact[] }>;
+export type TemplateCopilotV2AuthoritativeProjection = Readonly<{
+  locale: Locale;
+  readiness: TemplateCopilotReadiness;
+  playback: TemplateCopilotV2Playback;
+  facts: readonly TemplateCopilotV2ProjectedFact[];
+}>;
 export type TemplateCopilotV2ProjectedEvidence = Readonly<{
   kind: "current" | "stale" | "conflict";
   status: TemplateCopilotFactEntry["status"];
@@ -45,6 +54,60 @@ const enumText = (value: unknown, locale: Locale) => {
   const names: Record<string, readonly [string, string, string]> = { any_employee: ["Any employee", "任何員工", "任何员工"], directory_role: ["Directory role", "目錄角色", "目录角色"], requester_selected: ["Requester-selected", "發起人選定", "发起人选定"], fixed_email: ["Fixed email", "固定電郵", "固定邮箱"], directory_position: ["Directory position", "目錄職位", "目录职位"], request_field: ["Request field", "申請欄位", "申请字段"], requester: ["Requester", "發起人", "发起人"], unassigned_at_template: ["Resolve later", "稍後指定", "稍后指定"], approval: ["Approval", "審批", "审批"], review: ["Review", "覆核", "复核"], for_information: ["For information", "供知悉", "供知悉"], submission: ["Submission", "提交", "提交"], text: ["Text", "文字", "文本"], long_text: ["Long text", "長文字", "长文本"], number: ["Number", "數字", "数字"], date: ["Date", "日期", "日期"], currency: ["Currency", "貨幣", "货币"], email: ["Email", "電郵", "邮箱"], select: ["Select list", "下拉選單", "下拉列表"], radio: ["Single choice", "單選", "单选"], checkbox: ["Checkbox", "核取方塊", "复选框"], table: ["Table", "表格", "表格"], return_for_correction: ["Return for correction", "退回更正", "退回更正"], close: ["Close", "結束", "结束"], route_to_stage: ["Route to a stage", "前往階段", "前往阶段"], in_app: ["In-app", "應用程式內", "应用内"], pdf: ["PDF", "PDF", "PDF"], image: ["Image", "圖片", "图片"], excel_csv: ["Spreadsheet / CSV", "試算表／CSV", "电子表格／CSV"], contains: ["contains", "包含", "包含"] };
   return typeof value === "string" && names[value] ? pick(names[value], locale) : String(value ?? "");
 };
+const visibilityRuleText = (rule: string, locale: Locale) => {
+  const reviewed: Record<string, readonly [string, string, string]> = {
+    "status:participants": [
+      "Status updates: people taking part",
+      "進度狀態：參與流程的人員",
+      "进度状态：参与流程的人员",
+    ],
+    "status:department": [
+      "Status updates: people in the department",
+      "進度狀態：所屬部門人員",
+      "进度状态：所属部门人员",
+    ],
+    "status:process_owners": [
+      "Status updates: workflow owners only",
+      "進度狀態：只限流程負責人",
+      "进度状态：仅限流程负责人",
+    ],
+    "fields:all": [
+      "Request information: all fields",
+      "申請資料：所有欄位",
+      "申请信息：所有字段",
+    ],
+    "fields:hidden": [
+      "Request information: hidden unless a step explicitly allows it",
+      "申請資料：預設隱藏，除非步驟明確允許查看",
+      "申请信息：默认隐藏，除非步骤明确允许查看",
+    ],
+    "documents:all": [
+      "Documents: all documents",
+      "文件：所有文件",
+      "文件：所有文件",
+    ],
+    "documents:required_for_node": [
+      "Documents: only those needed for each step",
+      "文件：只限每個步驟所需的文件",
+      "文件：仅限每个步骤所需的文件",
+    ],
+    "documents:none": [
+      "Documents: hidden",
+      "文件：隱藏",
+      "文件：隐藏",
+    ],
+  };
+  if (reviewed[rule]) return pick(reviewed[rule], locale);
+  const prefix = pick(
+    [
+      "Additional visibility restriction",
+      "其他查看限制",
+      "其他查看限制",
+    ],
+    locale,
+  );
+  return `${prefix}: ${rule}`;
+};
 const person = (value: any, locale: Locale) => `${enumText(value?.mode, locale)}${value?.value ? `: ${value.value}` : ""}`;
 function lines(id: TemplateCopilotFactId, value: any, locale: Locale, ledger?: TemplateCopilotV2Ledger): string[] {
   const t = copy(locale);
@@ -53,7 +116,8 @@ function lines(id: TemplateCopilotFactId, value: any, locale: Locale, ledger?: T
   if (id === "workflow.conditions" && templateCopilotV2ConditionRulesSchema.safeParse(value).success) return [...previewTemplateCopilotV2StructuredFact(id, ledger ? compileTemplateCopilotV2StructuredFact(ledger, id) : value, locale)];
   if (id === "notifications.rules" && templateCopilotV2NotificationRulesSchema.safeParse(value).success) return [...previewTemplateCopilotV2StructuredFact(id, ledger ? compileTemplateCopilotV2StructuredFact(ledger, id) : value, locale)];
   if (["workflow.name", "workflow.purpose", "governance.owner"].includes(id)) return [text(value)];
-  if (id === "workflow.scope" || id === "collaboration.policy" || id === "visibility.policy") return [value.description, ...(value.rules || []).map((rule: string) => `${t.rule}: ${rule}`)].filter(Boolean);
+  if (id === "workflow.scope" || id === "collaboration.policy") return [value.description, ...(value.rules || []).map((rule: string) => `${t.rule}: ${rule}`)].filter(Boolean);
+  if (id === "visibility.policy") return [value.description, ...(value.rules || []).map((rule: string) => visibilityRuleText(rule, locale))].filter(Boolean);
   if (id === "request.initiator_policy") return [`${t.who}: ${enumText(value.mode, locale)}`, `${t.policy}: ${value.description}`];
   if (id === "request.fields") return value.map((item: any) => `${item.label} — ${enumText(item.type, locale)}; ${item.required ? t.required : t.optional}${item.options?.length ? `; ${t.options}: ${item.options.join(", ")}` : ""}`);
   if (id === "attachments.requirements") return value.map((item: any) => `${item.label} — ${item.required ? t.required : t.optional}; ${t.formats}: ${(item.formats || []).map((format: string) => enumText(format, locale)).join(", ") || t.any}${item.stage ? `; ${t.at}: ${item.stage}` : ""}`);
@@ -91,10 +155,17 @@ function projectEvidence({ factId, entry, locale, kind, invalidatedBy, ledger }:
     ...(invalidatedBy ? { invalidatedBy: `${t.invalidated}: ${templateCopilotV2ProjectionFactLabel(invalidatedBy, locale)}` } : {}),
   });
 }
-export function projectTemplateCopilotV2AuthoritativeLedger(ledger: TemplateCopilotV2Ledger, options: { inapplicableFactIds?: readonly TemplateCopilotFactId[] } = {}): TemplateCopilotV2AuthoritativeProjection {
-  const locale = ledger.locale as Locale; const readiness = getTemplateCopilotReadiness(ledger, { compilerValid: false, publishedRevisionMatches: false, inapplicableFactIds: options.inapplicableFactIds });
+export function projectTemplateCopilotV2AuthoritativeLedger(
+  ledger: TemplateCopilotV2Ledger,
+  options: {
+    inapplicableFactIds?: readonly TemplateCopilotFactId[];
+    sourceRevision?: number;
+    publishedSourceRevision?: number;
+  } = {},
+): TemplateCopilotV2AuthoritativeProjection {
+  const locale = ledger.locale as Locale;
   const t = copy(locale);
-  return Object.freeze({ locale, readiness, facts: Object.freeze(templateCopilotFactIds.map((factId) => {
+  const facts = Object.freeze(templateCopilotFactIds.map((factId) => {
     const entry = ledger.facts[factId];
     const current = projectEvidence({ factId, entry, locale, kind: "current", ledger });
     const history = Object.freeze(entry.staleHistory.map((item) => {
@@ -114,5 +185,23 @@ export function projectTemplateCopilotV2AuthoritativeLedger(ledger: TemplateCopi
       dependsOn: Object.freeze([...templateCopilotFactDefinitions[factId].dependsOn]),
       downstreamImpact: Object.freeze(downstream(factId)),
     });
-  })) });
+  }));
+  const playback = buildTemplateCopilotV2Playback({
+    ledger,
+    inapplicableFactIds: options.inapplicableFactIds,
+    sourceRevision: options.sourceRevision,
+    publishedSourceRevision: options.publishedSourceRevision,
+    factPresentation: Object.fromEntries(
+      facts.map((fact) => [
+        fact.factId,
+        { label: fact.label, lines: fact.lines },
+      ]),
+    ),
+  });
+  return Object.freeze({
+    locale,
+    readiness: playback.readiness,
+    playback,
+    facts,
+  });
 }

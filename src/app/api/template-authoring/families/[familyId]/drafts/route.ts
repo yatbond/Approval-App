@@ -8,6 +8,7 @@ import {
 import { readBoundedJson } from "@/lib/bounded-request";
 import { createTemplateDraftCommandSchema } from "@/lib/template-authoring-api-contracts";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
+import { removeUntrustedCopilotLineage } from "@/lib/template-authoring-lineage";
 import { createTemplateAuthoringDraft } from "@/lib/template-authoring-server-data";
 import { validateTemplateAuthoringDefinition } from "@/lib/template-authoring-validation";
 
@@ -31,7 +32,8 @@ export async function POST(
       400,
     );
   }
-  const validation = validateTemplateAuthoringDefinition(parsed.data);
+  const command = removeUntrustedCopilotLineage(parsed.data);
+  const validation = validateTemplateAuthoringDefinition(command);
   if (!validation.valid) {
     return approvalJson(
       cookieSource,
@@ -51,7 +53,7 @@ export async function POST(
       service,
       actor,
       familyId,
-      command: parsed.data,
+      command,
     });
     safeApprovalLog("template_draft_create", correlationId, {
       outcome: String(result.outcome || "unknown"),

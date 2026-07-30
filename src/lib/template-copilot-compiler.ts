@@ -29,6 +29,8 @@ type CompileTemplateCopilotPlanInput = {
   generatedAt: string;
   dossierId: string;
   templateId: string;
+  sourceSessionId?: string;
+  sourceSessionRevision?: number;
   sourceSummaries?: Array<{
     sectionId: string;
     summary: string;
@@ -991,6 +993,13 @@ export function compileTemplateCopilotPlan(
       generatedAt: input.generatedAt,
       generatedByEmail: input.actorEmail,
       unresolvedQuestionIds,
+      ...(input.sourceSessionId &&
+      input.sourceSessionRevision !== undefined
+        ? {
+            sourceSessionId: input.sourceSessionId,
+            sourceSessionRevision: input.sourceSessionRevision,
+          }
+        : {}),
     },
   });
   return { dossier, definition };

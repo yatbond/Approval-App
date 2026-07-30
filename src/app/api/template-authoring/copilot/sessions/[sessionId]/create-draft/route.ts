@@ -25,6 +25,11 @@ import {
 import { validateTemplateAuthoringDefinition } from "@/lib/template-authoring-validation";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
 import { isTemplateCopilotV2Enabled } from "@/lib/template-copilot-v2-feature";
+import {
+  compileTemplateCopilotV2AuthoringArtifacts,
+  TemplateCopilotV2DraftCompilerError,
+} from "@/lib/template-copilot-v2-draft-compiler";
+import { getTemplateCopilotV2InterviewState } from "@/lib/template-copilot-question-library";
 
 // Two independent bounded model calls run in parallel before deterministic
 // reconciliation. Keep the serverless execution window above the provider's
@@ -72,15 +77,10 @@ export async function POST(
         404,
       );
     }
-    if (current.ledger.schemaVersion !== 1) {
-      return approvalJson(
-        cookieSource,
-        correlationId,
-        { error: { code: "v2_session_read_only", message: "This v2 Copilot session must use its dedicated v2 draft path." } },
-        409,
-      );
-    }
-    if (isTemplateCopilotV2Enabled()) {
+    if (
+      current.ledger.schemaVersion === 1 &&
+      isTemplateCopilotV2Enabled()
+    ) {
       return approvalJson(
         cookieSource,
         correlationId,
@@ -182,23 +182,51 @@ export async function POST(
       );
     }
 
-    const artifacts = await generateTemplateAuthoringArtifacts({
-      ledger: current.ledger,
-      messages: current.messages.map((message) => ({
-        role: message.role as "user" | "assistant",
-        content: message.content,
-      })),
-      actorEmail: actor.email,
-      generatedAt: artifactIdentity.generatedAt,
-      dossierId: artifactIdentity.dossierId,
-      templateId: artifactIdentity.templateId,
-    });
+    const v2Interview =
+      current.ledger.schemaVersion === 2
+        ? getTemplateCopilotV2InterviewState(current.ledger)
+        : null;
+    const artifacts =
+      current.ledger.schemaVersion === 2
+        ? compileTemplateCopilotV2AuthoringArtifacts({
+            ledger: current.ledger,
+            actorEmail: actor.email,
+            generatedAt: artifactIdentity.generatedAt,
+            dossierId: artifactIdentity.dossierId,
+            templateId: artifactIdentity.templateId,
+            sourceSessionId: sessionId,
+            sourceSessionRevision: current.revision,
+            inapplicableFactIds:
+              v2Interview?.inapplicableFactIds || [],
+          })
+        : await generateTemplateAuthoringArtifacts({
+            ledger: current.ledger,
+            messages: current.messages.map((message) => ({
+              role: message.role as "user" | "assistant",
+              content: message.content,
+            })),
+            actorEmail: actor.email,
+            generatedAt: artifactIdentity.generatedAt,
+            dossierId: artifactIdentity.dossierId,
+            templateId: artifactIdentity.templateId,
+            sourceSessionId: sessionId,
+            sourceSessionRevision: current.revision,
+          });
     const validation = validateTemplateAuthoringDefinition(artifacts);
+    const expectedBlockedScaffold =
+      current.ledger.schemaVersion === 2 &&
+      artifacts.definition.generation.unresolvedQuestionIds.length > 0 &&
+      validation.issues
+        .filter((item) => item.severity === "error")
+        .every((item) => item.code === "blocking_question_unanswered");
     const inactiveEmails = await findInactiveFixedTemplateEmails({
       service,
       definition: artifacts.definition,
     });
-    if (!validation.valid || inactiveEmails.length) {
+    if (
+      (!validation.valid && !expectedBlockedScaffold) ||
+      inactiveEmails.length
+    ) {
       return approvalJson(
         cookieSource,
         correlationId,
@@ -274,6 +302,25 @@ export async function POST(
           }
         : {}),
     });
+    if (error instanceof TemplateCopilotV2DraftCompilerError) {
+      return approvalJson(
+        cookieSource,
+        correlationId,
+        {
+          error: {
+            code: "validation_failed",
+            message:
+              "Resolve the deterministic compiler issues before creating a draft.",
+          },
+          compilerIssues: error.issues.map((item) => ({
+            factId: item.factId,
+            code: item.code,
+            message: item.message,
+          })),
+        },
+        422,
+      );
+    }
     return approvalJson(
       cookieSource,
       correlationId,

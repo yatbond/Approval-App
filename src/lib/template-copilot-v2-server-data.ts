@@ -28,6 +28,7 @@ import {
 } from "./template-copilot-v2-candidates.ts";
 import { getTemplateCopilotV2CommittedAcknowledgement } from "./template-copilot-v2-step4.ts";
 import { projectTemplateCopilotV2AuthoritativeLedger } from "./template-copilot-v2-authoritative-projection.ts";
+import { getTemplateCopilotV2PublishedSourceRevision } from "./template-copilot-v2-lifecycle.ts";
 import {
   type TemplateCopilotV2AuthoringMode,
   type TemplateCopilotV2ModeState,
@@ -44,6 +45,55 @@ import {
 
 export function templateCopilotV2CommandHash(command: unknown) {
   return createHash("sha256").update(JSON.stringify(sortJson(command))).digest("hex");
+}
+
+export async function loadTemplateCopilotV2PublishedSourceRevision({
+  service,
+  sessionId,
+  draftId,
+}: {
+  service: SupabaseClient;
+  sessionId: string;
+  draftId?: string | null;
+}) {
+  if (!draftId) return undefined;
+  const [draftResult, sessionResult] = await Promise.all([
+    service
+      .from("template_authoring_drafts")
+      .select("status,dossier,definition,published_version_id")
+      .eq("id", draftId)
+      .maybeSingle(),
+    service
+      .from("template_copilot_sessions")
+      .select(
+        "status,draft_id,generated_source_revision,generated_artifact",
+      )
+      .eq("id", sessionId)
+      .maybeSingle(),
+  ]);
+  if (draftResult.error) throw draftResult.error;
+  if (sessionResult.error) throw sessionResult.error;
+  const data = draftResult.data;
+  const source = sessionResult.data;
+  if (
+    !data ||
+    !source ||
+    source.status !== "draft_created" ||
+    source.draft_id !== draftId ||
+    !Number.isInteger(source.generated_source_revision) ||
+    !sameTemplateCopilotV2CanonicalValue(source.generated_artifact, {
+      dossier: data.dossier,
+      definition: data.definition,
+    })
+  ) {
+    return undefined;
+  }
+  const revision = getTemplateCopilotV2PublishedSourceRevision({
+    draft: data,
+    sessionId,
+  });
+  if (revision !== Number(source.generated_source_revision)) return undefined;
+  return revision;
 }
 
 function sameTemplateCopilotV2CanonicalValue(left: unknown, right: unknown) {
@@ -977,5 +1027,5 @@ function withV2InterviewState(result: Record<string, unknown>) {
   if (!result.ledger) return result;
   const ledger = templateCopilotV2LedgerSchema.parse(result.ledger);
   const interview = getTemplateCopilotV2InterviewState(ledger);
-  return { ...result, interview, specialReview: getTemplateCopilotV2SpecialReview(ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled(), modeFlags: getTemplateCopilotV2ModeFlags(), structuredEditorFlags: getTemplateCopilotV2StructuredEditorFlags() };
+  return { ...result, interview, specialReview: getTemplateCopilotV2SpecialReview(ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds, sourceRevision: typeof result.revision === "number" ? result.revision : undefined }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled(), modeFlags: getTemplateCopilotV2ModeFlags(), structuredEditorFlags: getTemplateCopilotV2StructuredEditorFlags() };
 }

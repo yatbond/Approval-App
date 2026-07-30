@@ -13,7 +13,12 @@ import {
 import { getTemplateCopilotV2ModeFlags, getTemplateCopilotV2StructuredEditorFlags, isTemplateCopilotV2Enabled, isTemplateCopilotV2Step4Enabled, isTemplateCopilotV2Step5EditingEnabled } from "@/lib/template-copilot-v2-feature";
 import { getTemplateCopilotV2InterviewState, getTemplateCopilotV2SpecialReview } from "@/lib/template-copilot-question-library";
 import { projectTemplateCopilotV2AuthoritativeLedger } from "@/lib/template-copilot-v2-authoritative-projection";
-import { loadTemplateCopilotV2AuthoringModeState } from "@/lib/template-copilot-v2-server-data";
+import { getTemplateCopilotV2PlaybackSourceRevision } from "@/lib/template-copilot-v2-lifecycle";
+import { isTemplateAuthoringActivationEnabled } from "@/lib/template-authoring-lifecycle-feature";
+import {
+  loadTemplateCopilotV2AuthoringModeState,
+  loadTemplateCopilotV2PublishedSourceRevision,
+} from "@/lib/template-copilot-v2-server-data";
 import { logTemplateCopilotHelpFallback } from "@/lib/template-authoring-http";
 
 export async function GET(
@@ -47,8 +52,22 @@ export async function GET(
       const ledger = result.ledger;
       const interview = getTemplateCopilotV2InterviewState(ledger);
       logTemplateCopilotHelpFallback(correlationId, interview);
-      const modeState = await loadTemplateCopilotV2AuthoringModeState(service, result.id);
-      sessionPayload = { ...transcript, interview, specialReview: getTemplateCopilotV2SpecialReview(ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled(), modeFlags: getTemplateCopilotV2ModeFlags(), structuredEditorFlags: getTemplateCopilotV2StructuredEditorFlags(), modeState };
+      const [modeState, publishedSourceRevision] = await Promise.all([
+        loadTemplateCopilotV2AuthoringModeState(service, result.id),
+        isTemplateAuthoringActivationEnabled()
+          ? loadTemplateCopilotV2PublishedSourceRevision({
+              service,
+              sessionId: result.id,
+              draftId: result.draft_id,
+            })
+          : Promise.resolve(undefined),
+      ]);
+      const sourceRevision = getTemplateCopilotV2PlaybackSourceRevision({
+        revision: Number(result.revision),
+        status: result.status,
+        draftId: result.draft_id,
+      });
+      sessionPayload = { ...transcript, interview, specialReview: getTemplateCopilotV2SpecialReview(ledger), projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds, sourceRevision, publishedSourceRevision }), step4Enabled: isTemplateCopilotV2Step4Enabled(), step5EditingEnabled: isTemplateCopilotV2Step5EditingEnabled(), modeFlags: getTemplateCopilotV2ModeFlags(), structuredEditorFlags: getTemplateCopilotV2StructuredEditorFlags(), modeState };
     }
     safeApprovalLog("template_copilot_session_read", correlationId, {
       viewer: result.owner_id === actor.id ? "owner" : "admin",

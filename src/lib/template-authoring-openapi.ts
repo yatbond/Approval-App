@@ -4,7 +4,7 @@ export const templateAuthoringOpenApi = {
     title: "Approval Workflow Template Authoring API",
     version: "1.0.0",
     description:
-      "Server-authoritative API for requirements dossiers, workflow drafts, validation, simulation, review, and immutable publication.",
+      "Server-authoritative API for requirements dossiers, workflow drafts, validation, simulation, review, immutable publication, and exact-version activation.",
   },
   servers: [{ url: "/" }],
   security: [{ cookieAuth: [] }],
@@ -45,6 +45,12 @@ export const templateAuthoringOpenApi = {
         requestBody: jsonRequest("CreateTemplateDraftCommand"),
       }),
     },
+    "/api/template-authoring/families/{familyId}/publishers": {
+      post: operation("setTemplatePublisher", "Grant or revoke activation publisher access", {
+        parameters: [pathParameter("familyId")],
+        requestBody: jsonRequest("SetTemplatePublisherCommand"),
+      }),
+    },
     "/api/template-authoring/validate": {
       post: operation("validateTemplateDefinition", "Run coded validation", {
         requestBody: jsonRequest("TemplateDefinitionInput"),
@@ -76,6 +82,12 @@ export const templateAuthoringOpenApi = {
       post: operation("publishTemplateVersion", "Create an immutable inactive version", {
         parameters: [pathParameter("requestId")],
         requestBody: jsonRequest("PublishTemplateDraftCommand"),
+      }),
+    },
+    "/api/template-authoring/versions/{versionId}/activate": {
+      post: operation("activateTemplateVersion", "Activate one exact immutable published version", {
+        parameters: [pathParameter("versionId")],
+        requestBody: jsonRequest("ActivateTemplateVersionCommand"),
       }),
     },
     "/api/template-authoring/copilot/sessions": {
@@ -327,6 +339,29 @@ export const templateAuthoringOpenApi = {
         type: "object",
         required: ["idempotencyKey"],
         properties: { idempotencyKey: boundedString(128) },
+        additionalProperties: false,
+      },
+      ActivateTemplateVersionCommand: {
+        type: "object",
+        required: ["expectedVersionNumber", "idempotencyKey"],
+        properties: {
+          expectedVersionNumber: { type: "integer", minimum: 1 },
+          idempotencyKey: boundedString(128),
+        },
+        additionalProperties: false,
+      },
+      SetTemplatePublisherCommand: {
+        type: "object",
+        required: ["publisherEmail", "enabled", "idempotencyKey"],
+        properties: {
+          publisherEmail: {
+            type: "string",
+            format: "email",
+            maxLength: 320,
+          },
+          enabled: { type: "boolean" },
+          idempotencyKey: boundedString(128),
+        },
         additionalProperties: false,
       },
       TemplateCopilotStartCommand: {

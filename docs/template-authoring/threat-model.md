@@ -30,6 +30,20 @@ authoring tables.
 | Direct Data API bypass | Revoke browser mutation grants; RPC-only writes |
 | Prompt injection in a document | Treat document text as data; fixed system policy; allowlisted tools |
 | Model publishes without consent | No publish/activate model tool; human publish-review workflow |
+| Stale playback is treated as deployable | Drafts record the exact Copilot session and source revision; edited or mismatched definitions fail activation readiness |
+| A client preserves or forges Copilot lineage after editing | General draft mutations strip lineage, and activation compares the exact dossier and definition with the server-owned artifact frozen during Copilot draft linking |
+| Browser activates a different version | Server derives actor and family from the immutable version ID, checks the exact version number under lock, and requires publisher membership |
+| Administrator activates without delegated publisher authority | Activation requires an explicit active publisher membership for the exact family; administrator status is not an override |
+| Publisher access requires an undocumented database edit | IT uses the authenticated Activation publisher panel; the service-only grant/revoke command resolves an active directory profile, is idempotent, and writes an audit event |
+| Activation retry toggles twice or hides history | Actor-scoped idempotency receipt, sibling update, selected-version update, and activation audit event share one transaction |
+| Concurrent activation of two sibling versions deadlocks | Every activation locks the family first and only then the selected version, giving all sibling commands one lock order |
+| Stale whole-workspace save reverses activation | Governed authoring rows are immutable to the legacy save path; only the exact activation command can update the active marker |
+| Unreviewed or archived authoring version is activated | Activation requires an active family plus a published draft and matching published review request at the same revision |
+| Published runtime version differs from the reviewed draft | Activation compares the immutable snapshot, graph, documents, languages, name, business, and department with the normalized reviewed draft projection |
+| Null runtime scope bypasses an equality check | Exact activation comparisons use null-safe `IS DISTINCT FROM` and reject any null or drifted projection value |
+| Compiler silently broadens visibility or notification recipients | Unrepresentable semantics create deterministic blocking questions; the draft scaffold hides fields/documents and sends no notifications until a human resolves them |
+| Compiler combines prose into a nonexistent directory role | Directory-role initiation compiles only from an explicit lossless `roles:Role A|Role B` mapping; prose remains a publication blocker with no executable role |
+| Condition targets one member of a simultaneous group | The compiler rejects it as a publication blocker instead of gating or rerouting the whole group |
 | Cross-department data access | Scope memberships plus RLS and server authorization |
 | Sensitive attachment leakage | Private storage, signed retrieval, type/size limits, scanning, expiry |
 | Malicious file parser payload | Bounded upload, safe parser isolation, no executable content |
@@ -50,4 +64,7 @@ tokens, cookies, service keys, or full model prompts.
 An accepted draft is not a published workflow. Publication requires an
 authorized human review of the dossier, executable definition, diff, validation
 errors and warnings, simulation evidence, policy references, unresolved
-questions, and change reason. Activation remains a separate human action.
+questions, and change reason. Activation remains a separate human action
+against one exact immutable published version. Interview completion,
+draft-readiness, publication-readiness, and activation-readiness are not
+interchangeable states.

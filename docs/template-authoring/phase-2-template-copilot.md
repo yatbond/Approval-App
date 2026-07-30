@@ -567,6 +567,106 @@ Step 8 requires no database migration.
 
 ## Operations
 
+## Copilot v2 Step 9: deterministic playback and exact lifecycle readiness
+
+Every v2 session response now includes a server-derived final playback. It is
+rendered only from committed ledger facts and covers who starts, request
+information and documents, ordered and simultaneous actors, if/then/otherwise
+routes, correction behavior, due times and late-work actions, handoffs,
+notifications, visibility, ownership, policy, and record retention. Each
+playback line retains its durable evidence type, source identifier, transcript
+message links, and bounded excerpt when available. Stages with the same
+sequence run together. The deterministic compiler requires every blocking
+approval and review in that group to finish before continuing; FYI stages
+never count toward that completion rule.
+
+The UI keeps assumptions, not-applicable decisions, conflicts, unresolved
+items, compiler errors, and warnings in separate labelled groups. An empty
+assumption group is intentional: model prose, suggestions, unknowns, compiler
+defaults, and legacy values never become an assumption or executable rule.
+English, Traditional Chinese, and Simplified Chinese use the same ledger,
+compiler, section order, evidence links, and readiness decisions; only reviewed
+presentation copy changes.
+
+Four states are reported separately:
+
+- interview progress comes from the pinned deterministic question library;
+- draft readiness requires every draft-blocking fact to be committed or
+  validly marked not applicable;
+- publication readiness additionally requires publication-blocking facts and
+  strict compiler validation to pass; and
+- activation readiness additionally requires an immutable published version
+  whose recorded Copilot session ID and source revision exactly match this
+  playback.
+
+Draft generation records the exact Copilot session ID and source revision
+inside the strict definition contract. The server also freezes the exact
+generated dossier and definition when it links the draft. General family,
+new-draft, and replace-draft routes strip Copilot lineage; a later visual
+builder edit therefore becomes a manual definition. Even retained or forged
+client fields cannot match the server-owned artifact binding, so the original
+interview playback fails closed as activation-not-ready. Finishing an interview,
+generating a draft, requesting review, approving, publishing, and activating
+remain separate actions.
+
+The deterministic v2 compiler never hides a meaning it cannot represent.
+Unsupported branch shapes, prose-only late-work actions, notification
+delivery details, shared-submission confirmation ownership, and unstructured
+visibility become named blocking questions. The generated editable scaffold
+uses conservative settings—hidden fields, no document handoff, no
+notifications, and no collapsed confirmation rule—until a human resolves
+them. The foundation RPC rejects publication review while any generated
+question remains unresolved. Exact visibility can compile without a blocker
+only when the committed policy supplies one value for each of
+`status:participants|department|process_owners`,
+`fields:all|hidden`, and
+`documents:all|required_for_node|none`. A missing due time is shown as a
+blocked 48-hour draft scaffold, never as a confirmed user requirement.
+Directory-role initiation compiles only from the lossless form
+`roles:Role A|Role B`; free prose such as “Manager and Finance” remains a
+publication blocker and produces no executable role assignment.
+
+Activation uses
+`POST /api/template-authoring/versions/{immutableVersionId}/activate`. The
+browser supplies only the immutable database version ID, its displayed version
+number, and a bounded idempotency key. The server derives the actor, locks the
+authoring family before the selected version, requires an explicit active
+publisher membership (administrator status alone is insufficient) and an active
+family, checks the exact version number and matching published draft/review lineage,
+and proves the immutable snapshot, graph, documents, languages, and scope still
+equal the reviewed draft projection,
+deactivates sibling versions, activates the selected version, and writes the
+audit event and replay receipt in the same transaction. Governed authoring
+rows reject changes from the legacy whole-workspace persistence path, so a
+stale tab cannot overwrite the result. The browser reuses one key after an
+ambiguous retry and reconciles from the command response without writing a
+stale workspace snapshot. Browser roles have no direct execute grant. Existing
+non-authoring templates keep their legacy path; the authoring-family marker is
+server-written and cannot grant a role.
+
+The Step 9 migration is deliberately unapplied by this implementation commit.
+It must pass database review and be applied to an isolated environment before
+authenticated lifecycle qualification. Activation remains default-off and is
+enabled only with the exact server variable
+`TEMPLATE_AUTHORING_ACTIVATION_ENABLED=true`. Rollback removes that variable,
+which disables the mutation route and reports `canActivate: false` while
+leaving saved interviews, playback, drafts, and immutable published versions
+readable.
+
+Copilot-authored drafts additionally require the server-frozen exact source
+artifact. Reviewed manual and external-agent drafts require absent Copilot
+lineage and use the same exact immutable-version comparison; they are not
+silently excluded from activation.
+
+The context endpoint returns publisher-authorized family IDs rather than a
+global administrator capability. Template Library enables “Make active” only
+when the selected governed family is in that server-derived list.
+IT administrators provision that role in Workflow Library’s “Activation
+publisher” panel by entering the colleague’s exact active directory email.
+Grant and revoke are service-only, idempotent commands with an audit event;
+administrator status never substitutes for the family membership. Archived
+families are excluded from the capability response.
+
 Required server variables:
 
 - OpenRouter: `TEMPLATE_COPILOT_PROVIDER=openrouter` and

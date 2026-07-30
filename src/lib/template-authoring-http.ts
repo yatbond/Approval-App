@@ -98,6 +98,12 @@ function rpcError(outcome: string) {
         code: "invalid_scope",
         message: "The selected business or department is unavailable.",
       };
+    case "invalid_target":
+      return {
+        status: 422,
+        code: "invalid_target",
+        message: "Choose an active colleague with an exact directory email.",
+      };
     case "validation_failed":
       return {
         status: 422,
@@ -121,7 +127,12 @@ function rpcError(outcome: string) {
 
 function safeConflictState(result: Record<string, unknown>) {
   const state: Record<string, unknown> = {};
-  for (const key of ["currentRevision", "status", "draft"]) {
+  for (const key of [
+    "currentRevision",
+    "currentVersionNumber",
+    "status",
+    "draft",
+  ]) {
     if (result[key] !== undefined) state[key] = result[key];
   }
   return state;

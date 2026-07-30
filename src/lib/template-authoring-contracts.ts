@@ -733,6 +733,20 @@ export const templateDefinitionV1Schema = z
         generatedAt: z.string().datetime({ offset: true }),
         generatedByEmail: email,
         unresolvedQuestionIds: z.array(boundedId).max(100),
+        sourceSessionId: z.string().uuid().optional(),
+        sourceSessionRevision: z.number().int().positive().optional(),
+      })
+      .superRefine((generation, context) => {
+        if (
+          (generation.sourceSessionId === undefined) !==
+          (generation.sourceSessionRevision === undefined)
+        ) {
+          context.addIssue({
+            code: "custom",
+            message:
+              "Copilot source session and revision must be recorded together.",
+          });
+        }
       })
       .strict(),
   })

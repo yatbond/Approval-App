@@ -3,13 +3,41 @@ import {
   approvalError,
   approvalJson,
   createApprovalServerContext,
+  safeApprovalLog,
 } from "@/lib/approval-server";
 import { templateAuthoringCapabilities } from "@/lib/template-authoring-capabilities";
+import { isTemplateAuthoringActivationEnabled } from "@/lib/template-authoring-lifecycle-feature";
 
 export async function GET(request: NextRequest) {
   const resolved = await createApprovalServerContext(request);
   if (!resolved.ok) return approvalError(resolved);
-  const { actor, cookieSource, correlationId } = resolved.context;
+  const { service, actor, cookieSource, correlationId } = resolved.context;
+  const activationFeatureAvailable =
+    isTemplateAuthoringActivationEnabled();
+  let activationFamilyIds: string[] = [];
+  if (activationFeatureAvailable) {
+    const { data, error } = await service
+      .from("template_authoring_memberships")
+      .select("family_id,template_authoring_families!inner(status)")
+      .eq("profile_id", actor.id)
+      .eq("role", "publisher")
+      .eq("template_authoring_families.status", "active");
+    if (error) {
+      safeApprovalLog(
+        "template_authoring_activation_capability_failed",
+        correlationId,
+        { errorCode: String(error.code || "unknown") },
+      );
+    } else {
+      activationFamilyIds = [
+        ...new Set(
+          (data || [])
+            .map((item) => String(item.family_id || ""))
+            .filter(Boolean),
+        ),
+      ];
+    }
+  }
 
   return approvalJson(cookieSource, correlationId, {
     contractVersion: 1,
@@ -20,7 +48,10 @@ export async function GET(request: NextRequest) {
       mode: actor.isAdmin ? "publisher" : "employee_proposal",
       canCreateProposal: true,
       canPublish: actor.isAdmin,
-      canActivate: false,
+      canManagePublishers: actor.isAdmin,
+      activationFeatureAvailable,
+      activationFamilyIds,
+      canActivate: activationFamilyIds.length > 0,
     },
     defaults: {
       statusVisibility: "participants",

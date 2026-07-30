@@ -7,6 +7,7 @@ import type {
   CreateTemplateDraftCommand,
   ReplaceTemplateDraftCommand,
   ReviewTemplatePublishCommand,
+  SetTemplatePublisherCommand,
 } from "./template-authoring-api-contracts.ts";
 import type { ApprovalRuntimeProfile } from "./approval-runtime.ts";
 import type {
@@ -237,6 +238,57 @@ export async function publishTemplateAuthoringDraft({
       p_payload_hash: canonicalPayloadHash({ publishRequestId, idempotencyKey }),
     },
   );
+}
+
+export async function activateTemplateAuthoringVersion({
+  service,
+  actor,
+  publishedVersionId,
+  expectedVersionNumber,
+  idempotencyKey,
+}: {
+  service: SupabaseClient;
+  actor: ApprovalRuntimeProfile;
+  publishedVersionId: string;
+  expectedVersionNumber: number;
+  idempotencyKey: string;
+}) {
+  return executeRpc(
+    service,
+    "activate_template_authoring_version",
+    {
+      p_actor_id: actor.id,
+      p_published_version_id: publishedVersionId,
+      p_expected_version_number: expectedVersionNumber,
+      p_idempotency_key: idempotencyKey,
+      p_payload_hash: canonicalPayloadHash({
+        publishedVersionId,
+        expectedVersionNumber,
+        idempotencyKey,
+      }),
+    },
+  );
+}
+
+export async function setTemplateAuthoringPublisher({
+  service,
+  actor,
+  familyId,
+  command,
+}: {
+  service: SupabaseClient;
+  actor: ApprovalRuntimeProfile;
+  familyId: string;
+  command: SetTemplatePublisherCommand;
+}) {
+  return executeRpc(service, "set_template_authoring_publisher", {
+    p_actor_id: actor.id,
+    p_family_id: familyId,
+    p_publisher_email: command.publisherEmail,
+    p_enabled: command.enabled,
+    p_idempotency_key: command.idempotencyKey,
+    p_payload_hash: canonicalPayloadHash({ familyId, ...command }),
+  });
 }
 
 export async function findInactiveFixedTemplateEmails({

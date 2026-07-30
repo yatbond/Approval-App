@@ -176,7 +176,11 @@ function decorate(result: Record<string, unknown>) {
     ...result, outcome,
     ledger,
     interview,
-    projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, { inapplicableFactIds: interview.inapplicableFactIds }),
+    projection: projectTemplateCopilotV2AuthoritativeLedger(ledger, {
+      inapplicableFactIds: interview.inapplicableFactIds,
+      sourceRevision:
+        typeof result.revision === "number" ? result.revision : undefined,
+    }),
   } as TemplateCopilotV2DescribeTerminal;
 }
 

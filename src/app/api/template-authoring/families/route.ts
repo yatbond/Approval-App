@@ -11,6 +11,7 @@ import {
   templateFamilyListQuerySchema,
 } from "@/lib/template-authoring-api-contracts";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
+import { removeUntrustedCopilotLineage } from "@/lib/template-authoring-lineage";
 import {
   createTemplateAuthoringFamily,
   listTemplateAuthoringFamilies,
@@ -73,7 +74,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const validation = validateTemplateAuthoringDefinition(parsed.data);
+  const command = removeUntrustedCopilotLineage(parsed.data);
+  const validation = validateTemplateAuthoringDefinition(command);
   if (!validation.valid) {
     return approvalJson(
       cookieSource,
@@ -93,7 +95,7 @@ export async function POST(request: NextRequest) {
     const result = await createTemplateAuthoringFamily({
       service,
       actor,
-      command: parsed.data,
+      command,
     });
     safeApprovalLog("template_family_create", correlationId, {
       outcome: String(result.outcome || "unknown"),

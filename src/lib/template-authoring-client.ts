@@ -11,6 +11,18 @@ type SyncCallbacks = {
 
 const queues = new Map<string, Promise<void>>();
 const knownRevisions = new Map<string, number>();
+type ActivationResult = Readonly<{
+  outcome: "applied" | "replayed";
+  familyId: string;
+  publishedVersionId: string;
+  versionNumber: number;
+  active: true;
+}>;
+type ActivationAttempt = {
+  idempotencyKey: string;
+  inFlight: Promise<ActivationResult> | null;
+};
+const activationAttempts = new Map<string, ActivationAttempt>();
 
 export function queueTemplateAuthoringDraftSync({
   template,
@@ -60,6 +72,76 @@ export function queueTemplateAuthoringDraftSync({
       );
     });
   queues.set(draftId, next);
+}
+
+export function activateTemplateAuthoringVersionClient({
+  publishedVersionId,
+  expectedVersionNumber,
+}: {
+  publishedVersionId: string;
+  expectedVersionNumber: number;
+}) {
+  const attemptKey = `${publishedVersionId}:${expectedVersionNumber}`;
+  const prior = activationAttempts.get(attemptKey);
+  if (prior?.inFlight) return prior.inFlight;
+  const attempt =
+    prior || {
+      idempotencyKey: `activate:${crypto.randomUUID()}`,
+      inFlight: null,
+    };
+  const request = (async () => {
+    try {
+      const response = await fetch(
+        `/api/template-authoring/versions/${publishedVersionId}/activate`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            expectedVersionNumber,
+            idempotencyKey: attempt.idempotencyKey,
+          }),
+        },
+      );
+      const payload = (await response.json().catch(() => ({}))) as {
+        outcome?: string;
+        familyId?: string;
+        publishedVersionId?: string;
+        versionNumber?: number;
+        active?: boolean;
+        currentVersionNumber?: number;
+        error?: { message?: string };
+      };
+      if (
+        response.ok &&
+        ["applied", "replayed"].includes(String(payload.outcome)) &&
+        payload.familyId &&
+        payload.publishedVersionId === publishedVersionId &&
+        payload.versionNumber === expectedVersionNumber &&
+        payload.active === true
+      ) {
+        activationAttempts.delete(attemptKey);
+        return payload as ActivationResult;
+      }
+      if (response.status < 500) {
+        activationAttempts.delete(attemptKey);
+      }
+      if (response.status === 409 && payload.currentVersionNumber) {
+        throw new Error(
+          `This published version is now v${payload.currentVersionNumber}. Reload before activating it.`,
+        );
+      }
+      throw new Error(
+        payload.error?.message ||
+          "The exact published template version could not be activated.",
+      );
+    } finally {
+      const current = activationAttempts.get(attemptKey);
+      if (current === attempt) current.inFlight = null;
+    }
+  })();
+  attempt.inFlight = request;
+  activationAttempts.set(attemptKey, attempt);
+  return request;
 }
 
 async function putDraft({

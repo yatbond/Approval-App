@@ -436,6 +436,8 @@ export async function generateTemplateAuthoringArtifacts({
   generatedAt = new Date().toISOString(),
   dossierId = `dossier-${crypto.randomUUID()}`,
   templateId = `template-${crypto.randomUUID()}`,
+  sourceSessionId,
+  sourceSessionRevision,
 }: {
   ledger: TemplateCopilotLedger;
   messages: Array<{ role: "user" | "assistant"; content: string }>;
@@ -443,6 +445,8 @@ export async function generateTemplateAuthoringArtifacts({
   generatedAt?: string;
   dossierId?: string;
   templateId?: string;
+  sourceSessionId?: string;
+  sourceSessionRevision?: number;
 }) {
   const configured = aiConfiguration();
   const untrustedExtracts = ledger.requirementDocumentExtracts
@@ -539,6 +543,8 @@ export async function generateTemplateAuthoringArtifacts({
     generatedAt,
     dossierId,
     templateId,
+    sourceSessionId,
+    sourceSessionRevision,
     sourceSummaries: Object.entries(ledger.sections)
       .filter(([sectionId]) => sectionId !== "confirmation")
       .map(([sectionId, section]) => ({

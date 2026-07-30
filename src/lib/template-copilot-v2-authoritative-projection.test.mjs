@@ -75,3 +75,42 @@ test("a genuine committed correction projects the new value and the complete sup
   assert.match(row.history[0].confirmation, /33333333.*2026-07-28T00:00:00Z/s);
   assert.match(row.history[0].provenance.join(" "), /source-Initial committed name.*message-Initial committed name/s);
 });
+
+test("supported visibility settings use reviewed plain language in all three locales", () => {
+  const expected = {
+    en: [
+      "Status updates: people taking part",
+      "Request information: all fields",
+      "Documents: only those needed for each step",
+    ],
+    "zh-Hant": [
+      "進度狀態：參與流程的人員",
+      "申請資料：所有欄位",
+      "文件：只限每個步驟所需的文件",
+    ],
+    "zh-Hans": [
+      "进度状态：参与流程的人员",
+      "申请信息：所有字段",
+      "文件：仅限每个步骤所需的文件",
+    ],
+  };
+  for (const locale of ["en", "zh-Hant", "zh-Hans"]) {
+    const ledger = projectedLedger(locale);
+    ledger.facts["visibility.policy"].canonicalValue = {
+      description: locale === "en" ? "Approved visibility" : "已確認查看設定",
+      rules: [
+        "status:participants",
+        "fields:all",
+        "documents:required_for_node",
+      ],
+    };
+    const row = projectTemplateCopilotV2AuthoritativeLedger(ledger).facts.find(
+      (fact) => fact.factId === "visibility.policy",
+    );
+    for (const line of expected[locale]) assert.ok(row.lines.includes(line));
+    assert.doesNotMatch(
+      row.lines.join(" "),
+      /status:participants|fields:all|documents:required_for_node/,
+    );
+  }
+});

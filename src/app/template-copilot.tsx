@@ -33,6 +33,7 @@ import {
 import { TemplateCopilotHistoryPanel } from "./template-copilot-history-panel";
 import type { TemplateCopilotV2AuthoritativeProjection } from "@/lib/template-copilot-v2-authoritative-projection";
 import { TemplateCopilotV2AuthoritativeMap, type TemplateCopilotV2MapTransition } from "./template-copilot-v2-authoritative-map";
+import { TemplateCopilotV2PlaybackPanel } from "./template-copilot-v2-playback-panel";
 import { createPendingTemplateCopilotV2MapCommand, parsePendingTemplateCopilotV2MapCommand, templateCopilotV2PendingMapCommandBody, type PendingTemplateCopilotV2MapCommand } from "@/lib/template-copilot-v2-map-command";
 import { templateCopilotV2AuthoringModes, templateCopilotV2ModeCopy, type TemplateCopilotV2AuthoringMode, type TemplateCopilotV2ModeState } from "@/lib/template-copilot-v2-mode-contract";
 import { nextTemplateCopilotV2PendingModeCommand, parseTemplateCopilotV2PendingModeCommand, templateCopilotDocumentIdentity, templateCopilotV2PendingModeCommandFailureDisposition, templateCopilotV2PendingModeCommandRequest, type TemplateCopilotV2PendingModeCommand } from "@/lib/template-copilot-v2-mode-command";
@@ -1823,6 +1824,7 @@ export function TemplateCopilot({
           {messages.map((message) => (
             <div
               key={message.id}
+              id={`copilot-message-${message.id}`}
               className={
                 message.role === "assistant"
                   ? "mr-8 rounded-md bg-[#f1f6f3] p-3 text-sm text-neutral-800 dark:bg-neutral-800 dark:text-white"
@@ -2007,6 +2009,12 @@ export function TemplateCopilot({
             {selectedMode === "similar_template" && <p className="mt-1 text-xs text-neutral-700 dark:text-neutral-200">{modeUiCopy.similarLabel}</p>}
           </section>;
         })()}
+        {isV2State(state) && state.projection && (
+          <TemplateCopilotV2PlaybackPanel
+            playback={state.projection.playback}
+            locale={locale}
+          />
+        )}
         {isV2State(state) && <div className="mt-4"><TemplateCopilotV2AuthoritativeMap ledger={state.ledger} projection={state.projection} editingEnabled={state.step5EditingEnabled === true} structuredEditorFlags={state.structuredEditorFlags} busy={busy} onTransition={saveAuthoritativeMapFact} /></div>}
         {isV2State(state) && extractionReview && extractionReview.candidates.length > 0 && (
           <section className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900 dark:bg-neutral-800 dark:text-sky-100" aria-label={extractionReviewCopy.candidateSectionAria}>

@@ -1251,12 +1251,6 @@ export function TemplateCopilotV2AuthoritativeMap({
     );
     close();
   };
-  const readinessLabel = (state: "ready" | "blocked" | "not_ready") =>
-    state === "ready"
-      ? copy.ready
-      : state === "blocked"
-        ? copy.blocked
-        : copy.notReady;
   // The server-provided projection already contains every localized fact label.
   // Index it locally instead of importing server ledger/projection code into the
   // client component (those modules use server-only cryptographic helpers).
@@ -1268,10 +1262,7 @@ export function TemplateCopilotV2AuthoritativeMap({
   return (
     <section aria-label={copy.authoritative} className="space-y-3">
       <p className="text-xs text-neutral-600 dark:text-neutral-300">
-        {copy.authoritative} · {copy.draft}:{" "}
-        {readinessLabel(projection.readiness.draft)}; {copy.publication}:{" "}
-        {readinessLabel(projection.readiness.publication)}; {copy.activation}:{" "}
-        {readinessLabel(projection.readiness.activation)}
+        {copy.authoritative}
       </p>
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {error || status}

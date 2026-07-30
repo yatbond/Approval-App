@@ -8,6 +8,7 @@ import {
 import { readBoundedJson } from "@/lib/bounded-request";
 import { replaceTemplateDraftCommandSchema } from "@/lib/template-authoring-api-contracts";
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
+import { removeUntrustedCopilotLineage } from "@/lib/template-authoring-lineage";
 import {
   loadTemplateAuthoringDraft,
   replaceTemplateAuthoringDraft,
@@ -72,7 +73,8 @@ export async function PUT(
     );
   }
 
-  const validation = validateTemplateAuthoringDefinition(parsed.data);
+  const command = removeUntrustedCopilotLineage(parsed.data);
+  const validation = validateTemplateAuthoringDefinition(command);
   if (!validation.valid) {
     return approvalJson(
       cookieSource,
@@ -93,7 +95,7 @@ export async function PUT(
       service,
       actor,
       draftId,
-      command: parsed.data,
+      command,
     });
     safeApprovalLog("template_draft_replace", correlationId, {
       outcome: String(result.outcome || "unknown"),
