@@ -19,6 +19,14 @@ await run(process.execPath, ["scripts/test-openrouter-copilot-model.mjs"]);
 await runSql("scripts/test-template-authoring-rls.sql");
 await runSql("scripts/test-template-copilot-db.sql");
 await runSql("scripts/test-template-copilot-v2-telemetry-db.sql");
+await run(
+  process.execPath,
+  [
+    npmEntrypoint,
+    "run",
+    "test:db:template-copilot-v2-reviewed-library",
+  ],
+);
 await run(process.execPath, [npmEntrypoint, "run", "test:db:concurrency"]);
 await run(process.execPath, [npmEntrypoint, "run", "test:e2e:template-copilot-preview"]);
 await run(process.execPath, [npmEntrypoint, "run", "test:e2e:template-copilot-cross-user"]);
