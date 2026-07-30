@@ -15,6 +15,7 @@ import type {
   TemplateCopilotV2CandidateExtractionInput,
   TemplateCopilotV2ExtractionSection,
 } from "./template-copilot-v2-extraction-context.ts";
+import type { TemplateCopilotV2FocusedRecoverySummary } from "./template-copilot-v2-focused-recovery.ts";
 
 export type TemplateCopilotV2BroadAuthoringMode = "describe_everything" | "similar_template";
 
@@ -81,6 +82,7 @@ export type TemplateCopilotV2DescribeCommandInput = Readonly<{
   extractCandidates: (input: TemplateCopilotV2CandidateExtractionInput) => Promise<Readonly<{
     candidates: readonly TemplateCopilotV2Candidate[];
     rejected?: readonly TemplateCopilotV2CandidateRejection[];
+    recovery?: TemplateCopilotV2FocusedRecoverySummary | null;
   }>>;
   fallbackReason: (error: unknown) => string;
 }>;
@@ -351,6 +353,9 @@ export async function runTemplateCopilotV2DescribeCommand(input: TemplateCopilot
       ...(input.document ? { document: { id: input.document.id, fileName: input.document.fileName, sha256: input.document.sha256, safety: input.document.safety } } : {}),
       ...(noCandidateDelta ? {
         noCandidateReason,
+      } : {}),
+      ...(extracted.recovery ? {
+        focusedRecovery: extracted.recovery,
       } : {}),
       assistantMessage: describeAssistantMessage(prepared.ledger.locale, noCandidateDelta ? "no_candidates" : "candidates"),
     },

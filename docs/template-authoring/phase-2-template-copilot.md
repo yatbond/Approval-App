@@ -204,6 +204,15 @@ Shared atom kinds may be valid for more than one fact, so provider-schema
 narrowing is only an optimization. Exact section authority remains a
 deterministic server-side check.
 
+If a focused section call fails only because structured output is missing,
+invalid JSON, or does not match the schema, the server makes one bounded
+recovery call per fact in that section. Each recovery call has a fact-narrowed
+schema. Valid fact results are retained independently and failed facts remain
+unresolved for the guided interview. Configuration errors and provider
+outages are not retried, and neither `all` nor `document` extraction is
+multiplied. Durable audit detail records recovery attempt/success/failure
+counts only; it never records provider output, source text, or error text.
+
 The provider never receives or returns JSON Pointer paths, message IDs,
 offsets, or normalization rules. The server alone locates each unique source
 passage, walks the paired value/quote tree, assembles compatible atoms into a

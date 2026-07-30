@@ -5,7 +5,9 @@ import Ajv from "ajv";
 import { z } from "zod";
 import {
   adaptTemplateCopilotV2AtomicProviderCandidates,
+  mergeTemplateCopilotV2AtomicCandidateNormalizations,
   templateCopilotV2AtomicProviderOutputSchema,
+  templateCopilotV2AtomicProviderOutputSchemaForFacts,
   templateCopilotV2AtomicProviderVariants,
 } from "./template-copilot-v2-atomic-candidates.ts";
 
@@ -164,6 +166,73 @@ test("section authority rejects out-of-section atoms while preserving allowed fa
   );
   assert.deepEqual(result.rejected, [
     { code: "untraceable", detail: "workflow.name:out_of_section" },
+  ]);
+});
+
+test("fact-scoped provider schemas reject same-shaped sibling fact IDs", () => {
+  const schema = templateCopilotV2AtomicProviderOutputSchemaForFacts([
+    "workflow.name",
+  ]);
+  const base = atom(
+    "text_fact",
+    "workflow.name",
+    "Travel",
+    "Travel",
+    "Travel",
+  );
+  assert.equal(schema.safeParse({ atoms: [base] }).success, true);
+  assert.equal(
+    schema.safeParse({
+      atoms: [{ ...base, factId: "workflow.purpose" }],
+    }).success,
+    false,
+  );
+});
+
+test("recovered facts are globally normalized for cross-fact evidence overlap", () => {
+  const message = "Travel";
+  const name = adaptTemplateCopilotV2AtomicProviderCandidates({
+    message,
+    messageId: "atomic-recovery-overlap",
+    allowedFactIds: ["workflow.name"],
+    output: {
+      atoms: [
+        atom("text_fact", "workflow.name", "Travel", "Travel", "Travel"),
+      ],
+    },
+  });
+  const purpose = adaptTemplateCopilotV2AtomicProviderCandidates({
+    message,
+    messageId: "atomic-recovery-overlap",
+    allowedFactIds: ["workflow.purpose"],
+    output: {
+      atoms: [
+        atom(
+          "text_fact",
+          "workflow.purpose",
+          "Travel",
+          "Travel",
+          "Travel",
+        ),
+      ],
+    },
+  });
+  assert.equal(name.candidates.length, 1);
+  assert.equal(purpose.candidates.length, 1);
+  const merged = mergeTemplateCopilotV2AtomicCandidateNormalizations({
+    normalizations: [name, purpose],
+    message,
+    messageId: "atomic-recovery-overlap",
+  });
+  assert.deepEqual(
+    merged.candidates.map((candidate) => candidate.factId),
+    ["workflow.name"],
+  );
+  assert.deepEqual(merged.rejected, [
+    {
+      code: "overlapping_span",
+      detail: "workflow.purpose:atomic-recovery-overlap",
+    },
   ]);
 });
 
@@ -469,7 +538,7 @@ test("production extraction uses atomic schema v2 rather than whole-fact provide
   );
   assert.match(source, /templateCopilotV2AtomicProviderOutputSchema/);
   assert.match(source, /adaptTemplateCopilotV2AtomicProviderCandidates/);
-  assert.match(source, /schemaName: "template_copilot_v2_atomic_provider_output"/);
+  assert.match(source, /"template_copilot_v2_atomic_provider_output"/);
   assert.doesNotMatch(
     source.slice(source.indexOf("export async function extractTemplateCopilotV2Candidates")),
     /templateCopilotV2ProviderCandidateOutputSchema|adaptTemplateCopilotV2ProviderCandidates/,

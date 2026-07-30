@@ -257,6 +257,48 @@ test("Describe binds a focused section and ledger locale into extraction and rep
   );
 });
 
+test("Describe persists only bounded focused-recovery counts", async () => {
+  const ledger = createTemplateCopilotV2Ledger(scope, { enabled: true });
+  const service = serviceFor({
+    prepared: () => ({
+      outcome: "prepared",
+      revision: 4,
+      status: "interviewing",
+      ledger,
+      claimToken: "claim-recovered",
+      sourceMessageId: "mode-command:recovered",
+    }),
+    terminal: (args) => ({
+      outcome: "applied",
+      revision: 5,
+      status: "interviewing",
+      ledger: args.p_ledger,
+      detail: args.p_detail,
+    }),
+  });
+  const result = await command({
+    service,
+    sectionHint: "identity_scope",
+    extractCandidates: async ({ messageId }) => ({
+      candidates: [sourceCandidate(messageId)],
+      recovery: {
+        attemptedFactCount: 3,
+        completedFactCount: 2,
+        failedFactCount: 1,
+      },
+    }),
+  });
+  assert.deepEqual(result.detail.focusedRecovery, {
+    attemptedFactCount: 3,
+    completedFactCount: 2,
+    failedFactCount: 1,
+  });
+  assert.equal(
+    JSON.stringify(result.detail).includes("provider response"),
+    false,
+  );
+});
+
 test("empty, fully rejected, and duplicate broad output complete durably without fabricating candidates", async () => {
   const base = createTemplateCopilotV2Ledger(scope, { enabled: true });
   const existing = projectTemplateCopilotV2Candidates({

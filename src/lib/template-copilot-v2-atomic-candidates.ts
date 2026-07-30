@@ -323,9 +323,22 @@ export function templateCopilotV2AtomicProviderOutputSchemaForFacts(
   allowedFactIds: readonly TemplateCopilotFactId[],
 ): z.ZodType<{ atoms: TemplateCopilotV2AtomicProvider[] }> {
   const allowed = new Set(allowedFactIds);
-  const variants = templateCopilotV2AtomicProviderVariants.filter((variant) => {
+  const variants = templateCopilotV2AtomicProviderVariants.flatMap((variant) => {
     const atomType = variant.shape.atomType.value;
-    return factsByAtomType[atomType].some((factId) => allowed.has(factId));
+    const allowedVariantFacts = factsByAtomType[atomType].filter((factId) =>
+      allowed.has(factId),
+    );
+    if (!allowedVariantFacts.length) return [];
+    const factIdSchema =
+      allowedVariantFacts.length === 1
+        ? z.literal(allowedVariantFacts[0])
+        : z.enum(
+            allowedVariantFacts as [
+              TemplateCopilotFactId,
+              ...TemplateCopilotFactId[],
+            ],
+          );
+    return [variant.extend({ factId: factIdSchema })];
   });
   if (!variants.length) {
     throw new Error("The extraction section has no provider atom variants.");
@@ -343,6 +356,39 @@ export function templateCopilotV2AtomicProviderOutputSchemaForFacts(
     .describe(
       "Section-scoped atomic source-backed observations. The server enforces the exact allowed fact IDs.",
     ) as z.ZodType<{ atoms: TemplateCopilotV2AtomicProvider[] }>;
+}
+
+/** Re-runs the hostile-output normalizer across independently recovered facts
+ * so cross-fact overlap and dedupe rules remain identical to one primary
+ * provider response. */
+export function mergeTemplateCopilotV2AtomicCandidateNormalizations({
+  normalizations,
+  message,
+  messageId,
+}: {
+  normalizations: readonly TemplateCopilotV2CandidateNormalization[];
+  message: string;
+  messageId: string;
+}): TemplateCopilotV2CandidateNormalization {
+  const combined = normalizeTemplateCopilotV2Candidates({
+    output: {
+      candidates: normalizations.flatMap((result) => result.candidates),
+    },
+    messages: { [messageId]: message },
+  });
+  return Object.freeze({
+    candidates: combined.candidates,
+    rejected: Object.freeze(
+      [
+        ...normalizations.flatMap((result) => result.rejected),
+        ...combined.rejected,
+      ].sort((left, right) =>
+        `${left.code}:${left.detail}`.localeCompare(
+          `${right.code}:${right.detail}`,
+        ),
+      ),
+    ),
+  });
 }
 
 type QuoteLeaf = Readonly<{
