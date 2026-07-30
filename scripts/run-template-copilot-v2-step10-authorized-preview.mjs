@@ -4,18 +4,23 @@ import { resolve } from "node:path";
 import { assertTemplateCopilotV2Step10AuthorizedEnvironment } from "../src/lib/template-copilot-v2-step10-authorized-gate.ts";
 
 const gate = assertTemplateCopilotV2Step10AuthorizedEnvironment(process.env);
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+const npmEntrypoint = process.env.npm_execpath?.trim();
+if (!npmEntrypoint) {
+  throw new Error(
+    "Run the authorized Preview qualification through its npm script so the npm entrypoint is pinned.",
+  );
+}
 
-await run(npm, ["run", "test:template-copilot-v2-step10"]);
+await run(process.execPath, [npmEntrypoint, "run", "test:template-copilot-v2-step10"]);
 await run(process.execPath, ["scripts/test-openrouter-copilot-model.mjs"]);
 await runSql("scripts/test-template-authoring-rls.sql");
 await runSql("scripts/test-template-copilot-db.sql");
 await runSql("scripts/test-template-copilot-v2-telemetry-db.sql");
-await run(npm, ["run", "test:db:concurrency"]);
-await run(npm, ["run", "test:e2e:template-copilot-preview"]);
-await run(npm, ["run", "test:e2e:template-copilot-cross-user"]);
-await run(npm, ["run", "test:e2e:template-copilot-v2-step8"]);
-await run(npm, ["run", "test:e2e:template-copilot-qualification"]);
+await run(process.execPath, [npmEntrypoint, "run", "test:db:concurrency"]);
+await run(process.execPath, [npmEntrypoint, "run", "test:e2e:template-copilot-preview"]);
+await run(process.execPath, [npmEntrypoint, "run", "test:e2e:template-copilot-cross-user"]);
+await run(process.execPath, [npmEntrypoint, "run", "test:e2e:template-copilot-v2-step8"]);
+await run(process.execPath, [npmEntrypoint, "run", "test:e2e:template-copilot-qualification"]);
 
 console.log("template_copilot_v2_step10_authorized_preview=PASS");
 console.log(`model=${gate.model}`);

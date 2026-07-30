@@ -135,6 +135,12 @@ test("the authorized bundle cannot omit ZDR, RLS, concurrency, or accessibility 
   ]) {
     assert.match(authorizedRunner, new RegExp(escapeRegExp(required)));
   }
+  assert.match(authorizedRunner, /process\.env\.npm_execpath/);
+  assert.match(
+    authorizedRunner,
+    /run\(process\.execPath, \[npmEntrypoint, "run"/,
+  );
+  assert.doesNotMatch(authorizedRunner, /"npm\.cmd"/);
   assert.match(previewScript, /E2E_REQUIRE_COPILOT_ZDR/);
   assert.match(previewScript, /E2E_EXPECTED_COPILOT_PROVIDER/);
   assert.match(previewScript, /copilotCapabilities\.provider === expectedProvider/);
