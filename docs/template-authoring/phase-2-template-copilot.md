@@ -240,6 +240,39 @@ fallback applies. Audit detail stores only quarantine reason counts and
 block/atom counts; it never stores quarantined text, provider output, or error
 text.
 
+The source-only live semantic qualification runs the same 24 synthetic
+workflow archetypes, nine focused requirement sections, and three reviewed
+locales without creating database rows or requiring a deployment:
+
+```text
+npm run test:template-copilot-v2-live-semantic
+```
+
+It requires an explicit OpenRouter model and ZDR route and makes 216 bounded
+section-extraction invocations for the full matrix. Focused recovery may add
+fact-level provider requests, so the harness deliberately uses one scenario
+worker and caps peak internal provider concurrency at three; it does not
+misreport extraction invocations as provider-request count. The gate validates
+exact evidence spans and the same workflow-shape expectations used by the
+authenticated Preview suite, and writes only aggregate extraction diagnostics
+and semantic failures. It never writes the synthetic source narratives or raw
+provider output to its report. This source-only gate measures extraction
+quality; it does not replace the later authenticated Preview persistence,
+replay, authorization, and browser checks.
+
+The Step 6 Qwen baseline ran all 24 scenarios on extraction source revision
+`d7af852` with `qwen/qwen3.5-35b-a3b`, OpenRouter ZDR, the production
+12-second timeout, and one scenario worker. It completed 147 of 216
+section-extraction invocations (English 57/72, Traditional Chinese 51/72,
+Simplified Chinese 39/72) but achieved 0/24 strict semantic passes. The 69
+guided fallbacks were provider errors. Successful invocations still produced
+312 untraceable and 28 overlapping-span rejections; complex initiator/field,
+stage/participant, and visibility/notification sections were the weakest.
+The complete credential-free report is retained locally at
+`output/template-copilot-live-semantic/qwen35b-step6-full-reviewed/semantic-qualification-results.json`.
+This is a failed production-readiness gate and a valid model-comparison
+baseline, not authority to enable the pilot.
+
 The provider never receives or returns JSON Pointer paths, message IDs,
 offsets, or normalization rules. The server alone locates each unique source
 passage, walks the paired value/quote tree, assembles compatible atoms into a
