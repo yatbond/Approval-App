@@ -273,6 +273,66 @@ The complete credential-free report is retained locally at
 This is a failed production-readiness gate and a valid model-comparison
 baseline, not authority to enable the pilot.
 
+### Post-qualification remediation Step 7: live model comparison
+
+The Step 7 quality screen kept the extraction source revision, six difficult
+archetypes (`EN-01`, `EN-07`, `TC-01`, `TC-06`, `SC-02`, and `SC-04`), ZDR,
+strict server validation, the 12-second production timeout, one scenario
+worker, and the nine section calls per scenario fixed. The Qwen 35B values
+below are the same six rows selected from the full Step 6 report; they were not
+rerun. Qwen 397B and DeepSeek V4 Flash completed the six-case quality screen.
+GPT-5.4 mini failed the provider protocol on all six cases. Claude Sonnet 4.6
+failed the same protocol screen on the balanced `EN-07`, `TC-01`, and `SC-02`
+subset, so further calls were stopped; neither protocol-invalid run is a
+model-quality comparison.
+
+| Model | Applied section calls | Validated fact instances | Strict scenario passes | Result |
+|---|---:|---:|---:|---|
+| `qwen/qwen3.5-35b-a3b` | 39/54 | 25 | 0/6 | Best call reliability, but no semantic pass |
+| `qwen/qwen3.5-397b-a17b` | 18/54 | 7 | 0/6 | Eliminated: slower and less complete |
+| `deepseek/deepseek-v4-flash` | 19/54 | 14 | 0/6 | Compatible and inexpensive, but not production-ready |
+| `openai/gpt-5.4-mini` | 0/54 | 0 | N/A | Protocol-incompatible; not a quality result |
+| `anthropic/claude-sonnet-4.6` | 0/27 | 0 | N/A | Protocol-incompatible three-case screen; not a quality result |
+
+For Qwen 35B, the applied-call/fact counts by language were English 15/18 and
+14 facts, Traditional Chinese 13/18 and 6 facts, and Simplified Chinese 11/18
+and 5 facts. Qwen 397B returned 7/18 and 4, 7/18 and 3, and 4/18 and 0
+respectively. DeepSeek V4 Flash returned 6/18 and 10, 7/18 and 3, and 6/18 and
+1 respectively. These fact counts sum each scenario's distinct-fact count;
+they are validated fact instances across scenarios, not a union of globally
+unique fact IDs. None produced a complete workflow in any language.
+
+A controlled DeepSeek V4 Flash diagnostic raised the timeout to the existing
+20-second governed maximum for `EN-07`, `TC-01`, and `SC-02`. It improved to
+13/27 applied section calls from 9/27 on the same 12-second subset, but
+validated fact instances regressed from 10 to 9. It still produced 0/3 strict
+passes and made conversational latency unacceptable. A blanket timeout
+increase is therefore rejected.
+
+The GPT and Claude calls failed quickly at the provider protocol boundary.
+Operator-observed synthetic, credential-safe probes showed that the ZDR routes
+and simple strict structured output worked. Those probes, rather than the
+privacy-minimized qualification reports, showed the real generated schema was
+rejected first for an unsupported `maxItems`; after removing that bound in a
+probe, Claude's Amazon Bedrock route rejected the discriminated union's
+`oneOf`, while OpenAI's Azure route required optional properties to be
+represented as required nullable fields. The retained reports deliberately
+record only `provider_error`. The app's server-side Zod validation remains
+authoritative, so a future provider wire-schema adapter may remove
+provider-unsupported annotations, use a supported union representation, and
+normalize null sentinels before applying the unchanged strict server schema.
+Until that adapter is implemented and requalified, these two models are not
+eligible for selection and their zero counts must not be interpreted as
+model-quality failures.
+
+The comparison does not authorize a model switch. It shows that model scaling
+or a longer timeout alone cannot meet the gate. The next extraction revision
+must reduce the number of model round trips, use a compact quote-first wire
+contract, preserve exact source provenance, and let the deterministic compiler
+and unchanged strict validator assemble executable workflow meaning. Qwen 35B
+remains only the measured baseline; DeepSeek V4 Flash may remain a shadow
+candidate. The formal pilot remains held.
+
 The provider never receives or returns JSON Pointer paths, message IDs,
 offsets, or normalization rules. The server alone locates each unique source
 passage, walks the paired value/quote tree, assembles compatible atoms into a
