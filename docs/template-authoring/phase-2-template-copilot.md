@@ -191,6 +191,19 @@ contains a smallest unique `sourceQuote`, a strict typed value, and a quote
 tree that mirrors each primitive value leaf. A malformed or untraceable atom
 is rejected locally, so it cannot discard valid atoms for other facts.
 
+Each Describe request also binds the authoritative ledger locale and one
+focused interview section into its replay hash and provider contract. The nine
+interview sections cover the sixteen canonical facts exactly once. The
+provider-visible atomic union is narrowed to atom kinds that can contribute to
+that section, and the server rejects any returned fact outside the exact
+section allowlist. Whole-document extraction uses a separate `document`
+context with all facts enabled. English, Traditional Chinese, and Simplified
+Chinese receive explicit locale instructions that preserve the source wording
+and script; the provider must not translate, rewrite, or convert user text.
+Shared atom kinds may be valid for more than one fact, so provider-schema
+narrowing is only an optimization. Exact section authority remains a
+deterministic server-side check.
+
 The provider never receives or returns JSON Pointer paths, message IDs,
 offsets, or normalization rules. The server alone locates each unique source
 passage, walks the paired value/quote tree, assembles compatible atoms into a

@@ -132,6 +132,41 @@ test("one untraceable atom does not discard valid atoms for other facts", () => 
   ]);
 });
 
+test("section authority rejects out-of-section atoms while preserving allowed facts", () => {
+  const message =
+    "Call it Purchase Approval. Invoice is required as PDF.";
+  const result = adaptTemplateCopilotV2AtomicProviderCandidates({
+    message,
+    messageId: "atomic-section-authority",
+    allowedFactIds: ["attachments.requirements"],
+    output: {
+      atoms: [
+        atom(
+          "text_fact",
+          "workflow.name",
+          "Purchase Approval",
+          "Call it Purchase Approval",
+          "Purchase Approval",
+        ),
+        atom(
+          "attachment_requirement",
+          "attachments.requirements",
+          { label: "Invoice", required: true, formats: ["pdf"] },
+          "Invoice is required as PDF",
+          { label: "Invoice", required: "required", formats: ["PDF"] },
+        ),
+      ],
+    },
+  });
+  assert.deepEqual(
+    result.candidates.map((candidate) => candidate.factId),
+    ["attachments.requirements"],
+  );
+  assert.deepEqual(result.rejected, [
+    { code: "untraceable", detail: "workflow.name:out_of_section" },
+  ]);
+});
+
 test("repeated common wording is safely resolved inside unique atomic passages", () => {
   const message =
     "Invoice is required as PDF. Quotation is required as image.";

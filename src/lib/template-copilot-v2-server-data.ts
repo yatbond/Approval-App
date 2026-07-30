@@ -26,6 +26,7 @@ import {
   templateCopilotV2CandidateOutputSchema,
   type TemplateCopilotV2Candidate,
 } from "./template-copilot-v2-candidates.ts";
+import type { TemplateCopilotV2CandidateExtractionInput } from "./template-copilot-v2-extraction-context.ts";
 import { getTemplateCopilotV2CommittedAcknowledgement } from "./template-copilot-v2-step4.ts";
 import { projectTemplateCopilotV2AuthoritativeLedger } from "./template-copilot-v2-authoritative-projection.ts";
 import { getTemplateCopilotV2PublishedSourceRevision } from "./template-copilot-v2-lifecycle.ts";
@@ -479,7 +480,7 @@ export async function loadTemplateCopilotV2OwnedSession(session: SupabaseClient,
 
 type TemplateCopilotV2ExtractionJobDependencies = Readonly<{
   leaseToken?: string;
-  extractCandidates: (input: Readonly<{ message: string; messageId: string }>) => Promise<Readonly<{
+  extractCandidates: (input: TemplateCopilotV2CandidateExtractionInput) => Promise<Readonly<{
     candidates: readonly TemplateCopilotV2Candidate[];
   }>>;
   persistCandidates?: typeof applyTemplateCopilotV2CandidateExtraction;

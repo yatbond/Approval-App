@@ -11,6 +11,10 @@ import {
   summarizeTemplateCopilotV2ExtractionDiagnostics,
   type TemplateCopilotV2ExtractionTerminalCode,
 } from "./template-copilot-v2-extraction-diagnostics.ts";
+import type {
+  TemplateCopilotV2CandidateExtractionInput,
+  TemplateCopilotV2ExtractionSection,
+} from "./template-copilot-v2-extraction-context.ts";
 
 export type TemplateCopilotV2BroadAuthoringMode = "describe_everything" | "similar_template";
 
@@ -73,7 +77,8 @@ export type TemplateCopilotV2DescribeCommandInput = Readonly<{
   mode: TemplateCopilotV2BroadAuthoringMode;
   sourceText: string;
   document?: TemplateCopilotV2DescribeDocument;
-  extractCandidates: (input: Readonly<{ message: string; messageId: string }>) => Promise<Readonly<{
+  sectionHint?: TemplateCopilotV2ExtractionSection;
+  extractCandidates: (input: TemplateCopilotV2CandidateExtractionInput) => Promise<Readonly<{
     candidates: readonly TemplateCopilotV2Candidate[];
     rejected?: readonly TemplateCopilotV2CandidateRejection[];
   }>>;
@@ -149,7 +154,7 @@ async function attachPersistedDescribeMessages({ session, actor, sessionId, sour
   return { ...result, sourceMessageId, messages } as TemplateCopilotV2DescribeTerminal & { sourceMessageId: string; messages: readonly PersistedDescribeMessage[] };
 }
 
-function describeCommandHash({ sessionId, expectedRevision, idempotencyKey, mode, sourceText, document }: Omit<TemplateCopilotV2DescribeCommandInput, "session" | "service" | "actor" | "extractCandidates" | "fallbackReason">) {
+function describeCommandHash({ sessionId, expectedRevision, idempotencyKey, mode, sourceText, document, sectionHint }: Omit<TemplateCopilotV2DescribeCommandInput, "session" | "service" | "actor" | "extractCandidates" | "fallbackReason">) {
   const sourceKind = describeSourceKind({ mode, document });
   return templateCopilotV2CommandHash({
     operation: "broad_mode_extraction",
@@ -158,6 +163,7 @@ function describeCommandHash({ sessionId, expectedRevision, idempotencyKey, mode
     idempotencyKey,
     mode,
     sourceKind,
+    sectionHint: sectionHint || (document ? "document" : "all"),
     // Never place narrative/document contents into a receipt hash or audit
     // payload.  The original source is private in its durable message row.
     sourceSha256: createHash("sha256").update(sourceText).digest("hex"),
@@ -288,7 +294,12 @@ export async function runTemplateCopilotV2DescribeCommand(input: TemplateCopilot
   let extracted: Awaited<ReturnType<TemplateCopilotV2DescribeCommandInput["extractCandidates"]>>;
   let projected: ReturnType<typeof projectTemplateCopilotV2Candidates>;
   try {
-    extracted = await input.extractCandidates({ message: input.sourceText, messageId: prepared.sourceMessageId });
+    extracted = await input.extractCandidates({
+      message: input.sourceText,
+      messageId: prepared.sourceMessageId,
+      locale: prepared.ledger.locale,
+      section: input.sectionHint || (input.document ? "document" : "all"),
+    });
     projected = projectTemplateCopilotV2Candidates({ ledger: documentLedger, candidates: extracted.candidates });
   } catch (error) {
     const finalized = await finalizeTemplateCopilotV2DescribeCommand({
@@ -304,6 +315,7 @@ export async function runTemplateCopilotV2DescribeCommand(input: TemplateCopilot
       diagnosticAcceptedCandidateCount: 0,
       detail: {
         sourceKind,
+        sectionHint: input.sectionHint || (input.document ? "document" : "all"),
         ...(input.document ? { document: { id: input.document.id, fileName: input.document.fileName, sha256: input.document.sha256, safety: input.document.safety } } : {}),
         fallbackReason: input.fallbackReason(error),
         assistantMessage: describeAssistantMessage(prepared.ledger.locale, "fallback"),
@@ -335,6 +347,7 @@ export async function runTemplateCopilotV2DescribeCommand(input: TemplateCopilot
     diagnosticAcceptedCandidateCount: extracted.candidates.length,
     detail: {
       sourceKind,
+      sectionHint: input.sectionHint || (input.document ? "document" : "all"),
       ...(input.document ? { document: { id: input.document.id, fileName: input.document.fileName, sha256: input.document.sha256, safety: input.document.safety } } : {}),
       ...(noCandidateDelta ? {
         noCandidateReason,

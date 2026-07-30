@@ -25,6 +25,7 @@ export const templateCopilotV2ExtractionRejectionDiagnosticCodes = [
   "untraceable_atomic_incomplete",
   "untraceable_atomic_conflict",
   "untraceable_atomic_value_invalid",
+  "untraceable_out_of_section",
   "untraceable_other",
   "overlapping_span",
   "other",
@@ -61,6 +62,7 @@ const untraceableSuffixes = new Set([
   "atomic_incomplete",
   "atomic_conflict",
   "atomic_value_invalid",
+  "out_of_section",
 ]);
 
 /**

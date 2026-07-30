@@ -52,10 +52,10 @@ function serviceFor({ prepared, terminal }) {
   };
 }
 
-function command({ service, mode = "describe_everything", sourceText = "Purchase approval", document, extractCandidates, fallbackReason = (error) => error.reasonCode || "provider_error" }) {
+function command({ service, mode = "describe_everything", sourceText = "Purchase approval", document, sectionHint, extractCandidates, fallbackReason = (error) => error.reasonCode || "provider_error" }) {
   return runTemplateCopilotV2DescribeCommand({
     session: service, service, actor, sessionId, expectedRevision: 4,
-    idempotencyKey: "describe:durable:001", mode, sourceText, document,
+    idempotencyKey: "describe:durable:001", mode, sourceText, document, sectionHint,
     extractCandidates, fallbackReason,
   });
 }
@@ -79,10 +79,12 @@ test("Describe persists its exact source before one provider call and finalizes 
   let providerCalls = 0;
   const result = await command({
     service,
-    extractCandidates: async ({ message, messageId }) => {
+    extractCandidates: async ({ message, messageId, locale, section }) => {
       providerCalls += 1;
       assert.equal(message, "Purchase approval");
       assert.equal(messageId, "mode-command:source-1");
+      assert.equal(locale, "en");
+      assert.equal(section, "all");
       return { candidates: [sourceCandidate(messageId)] };
     },
   });
@@ -199,9 +201,11 @@ test("v2 requirement documents retain safe provenance and evidence only after th
   });
   const result = await command({
     service, sourceText: document.text, document,
-    extractCandidates: async ({ message, messageId }) => {
+    extractCandidates: async ({ message, messageId, locale, section }) => {
       assert.equal(message, document.text);
       assert.equal(messageId, "mode-command:document");
+      assert.equal(locale, "en");
+      assert.equal(section, "document");
       return { candidates: [sourceCandidate(messageId)] };
     },
   });
@@ -210,7 +214,47 @@ test("v2 requirement documents retain safe provenance and evidence only after th
   assert.equal(result.ledger.extractionEvidence.candidates[0].evidence[0].messageId, "mode-command:document");
   assert.equal(result.messages[0].content, document.text, "the response exposes the exact durable evidence source, not a UI file-name substitute");
   assert.deepEqual(service.calls[1].args.p_detail.document, { id: document.id, fileName: document.fileName, sha256: document.sha256, safety: document.safety });
+  assert.equal(service.calls[1].args.p_detail.sectionHint, "document");
   assert.equal(JSON.stringify(service.calls[1].args.p_detail).includes(document.text), false, "raw document text never enters audit detail");
+});
+
+test("Describe binds a focused section and ledger locale into extraction and replay identity", async () => {
+  const ledger = createTemplateCopilotV2Ledger(
+    { ...scope, locale: "zh-Hant" },
+    { enabled: true },
+  );
+  const service = serviceFor({
+    prepared: () => ({
+      outcome: "prepared",
+      revision: 4,
+      status: "interviewing",
+      ledger,
+      claimToken: "claim-focused",
+      sourceMessageId: "mode-command:focused",
+    }),
+    terminal: (args) => ({
+      outcome: "applied",
+      revision: 5,
+      status: "interviewing",
+      ledger: args.p_ledger,
+      detail: args.p_detail,
+    }),
+  });
+  await command({
+    service,
+    sectionHint: "attachments",
+    extractCandidates: async ({ locale, section, messageId }) => {
+      assert.equal(locale, "zh-Hant");
+      assert.equal(section, "attachments");
+      return { candidates: [sourceCandidate(messageId)] };
+    },
+  });
+  assert.equal(service.calls[1].args.p_detail.sectionHint, "attachments");
+  assert.notEqual(
+    service.calls[0].args.p_command_hash,
+    "",
+    "the focused section is included in the prepared command identity",
+  );
 });
 
 test("empty, fully rejected, and duplicate broad output complete durably without fabricating candidates", async () => {

@@ -326,6 +326,7 @@ async function runScenario(context, item) {
             expectedRevision,
             idempotencyKey: describeId,
             mode: "describe_everything",
+            sectionHint: sectionId,
             message,
           },
           label: `${item.id}-describe-${sectionId}`,
@@ -370,6 +371,7 @@ async function runScenario(context, item) {
         expectedRevision,
         idempotencyKey: describeId,
         mode: "describe_everything",
+        sectionHint: sectionId,
         message,
       };
       replayOriginalOutcome = describeOutcome;

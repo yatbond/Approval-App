@@ -278,6 +278,73 @@ export type TemplateCopilotV2AtomicProvider = z.infer<
   typeof templateCopilotV2AtomicProviderSchema
 >;
 
+const factsByAtomType = Object.freeze({
+  text_fact: [
+    "workflow.name",
+    "workflow.purpose",
+    "governance.owner",
+  ],
+  policy_description: [
+    "workflow.scope",
+    "collaboration.policy",
+    "visibility.policy",
+  ],
+  policy_rule: [
+    "workflow.scope",
+    "collaboration.policy",
+    "visibility.policy",
+  ],
+  initiator_mode: ["request.initiator_policy"],
+  initiator_description: ["request.initiator_policy"],
+  request_field: ["request.fields"],
+  attachment_requirement: ["attachments.requirements"],
+  workflow_stage: ["workflow.stages"],
+  workflow_condition: ["workflow.conditions"],
+  rejection_action: ["workflow.rejection_policy"],
+  rejection_route: ["workflow.rejection_policy"],
+  default_due_hours: ["timing.rules"],
+  escalation_description: ["timing.rules"],
+  escalation_rule: ["timing.rules"],
+  notification_rule: ["notifications.rules"],
+  governance_policy: ["governance.policies"],
+  retention_period: ["governance.retention"],
+  retention_rationale: ["governance.retention"],
+} as const) satisfies Readonly<
+  Record<
+    TemplateCopilotV2AtomicProvider["atomType"],
+    readonly TemplateCopilotFactId[]
+  >
+>;
+
+/** Narrows the provider-visible union to atom kinds relevant to this section.
+ * Shared atom kinds can still contain several statically declared fact IDs,
+ * so the adapter independently enforces the exact allowed fact set. */
+export function templateCopilotV2AtomicProviderOutputSchemaForFacts(
+  allowedFactIds: readonly TemplateCopilotFactId[],
+): z.ZodType<{ atoms: TemplateCopilotV2AtomicProvider[] }> {
+  const allowed = new Set(allowedFactIds);
+  const variants = templateCopilotV2AtomicProviderVariants.filter((variant) => {
+    const atomType = variant.shape.atomType.value;
+    return factsByAtomType[atomType].some((factId) => allowed.has(factId));
+  });
+  if (!variants.length) {
+    throw new Error("The extraction section has no provider atom variants.");
+  }
+  const schema = z.discriminatedUnion(
+    "atomType",
+    variants as unknown as [
+      (typeof templateCopilotV2AtomicProviderVariants)[number],
+      ...(typeof templateCopilotV2AtomicProviderVariants)[number][],
+    ],
+  );
+  return z
+    .object({ atoms: z.array(schema).max(64) })
+    .strict()
+    .describe(
+      "Section-scoped atomic source-backed observations. The server enforces the exact allowed fact IDs.",
+    ) as z.ZodType<{ atoms: TemplateCopilotV2AtomicProvider[] }>;
+}
+
 type QuoteLeaf = Readonly<{
   path: string;
   exactText: string;
@@ -304,10 +371,12 @@ export function adaptTemplateCopilotV2AtomicProviderCandidates({
   output,
   message,
   messageId,
+  allowedFactIds,
 }: {
   output: unknown;
   message: string;
   messageId: string;
+  allowedFactIds?: readonly TemplateCopilotFactId[];
 }): TemplateCopilotV2CandidateNormalization {
   const parsed = templateCopilotV2AtomicProviderOutputSchema.safeParse(output);
   if (!parsed.success) {
@@ -320,7 +389,17 @@ export function adaptTemplateCopilotV2AtomicProviderCandidates({
     );
   }
   const rejected: TemplateCopilotV2CandidateRejection[] = [];
+  const allowedFacts = allowedFactIds
+    ? new Set<TemplateCopilotFactId>(allowedFactIds)
+    : null;
   const validAtoms = parsed.data.atoms.flatMap((supplied) => {
+    if (allowedFacts && !allowedFacts.has(supplied.factId)) {
+      rejected.push({
+        code: "untraceable",
+        detail: `${supplied.factId}:out_of_section`,
+      });
+      return [];
+    }
     const validated = validateAtom(supplied, message);
     if ("rejection" in validated) {
       rejected.push(validated.rejection);

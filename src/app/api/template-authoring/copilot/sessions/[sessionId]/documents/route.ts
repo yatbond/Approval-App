@@ -110,6 +110,7 @@ export async function POST(
       const result = await runTemplateCopilotV2DescribeCommand({
         session, service, actor, sessionId, expectedRevision, idempotencyKey: clientMessageId,
         mode: "describe_everything",
+        sectionHint: "document",
         sourceText: document.text, document,
         extractCandidates: extractTemplateCopilotV2Candidates,
         fallbackReason: (error) => error instanceof TemplateCopilotModelError

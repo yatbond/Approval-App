@@ -20,6 +20,7 @@ import {
   templateCopilotV2ExtractionDiagnosticTelemetryCounts,
   type TemplateCopilotV2ExtractionDiagnostics,
 } from "@/lib/template-copilot-v2-extraction-diagnostics";
+import { templateCopilotV2ExtractionSectionSchema } from "@/lib/template-copilot-v2-extraction-context";
 
 // The mode command schema is refined, and Zod deliberately disallows omit on
 // refined objects. Keep the describe command explicit and equally bounded.
@@ -27,6 +28,9 @@ const schema = z.object({
   expectedRevision: z.number().int().min(1),
   idempotencyKey: z.string().trim().min(8).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
   mode: z.enum(["describe_everything", "similar_template"]),
+  sectionHint: templateCopilotV2ExtractionSectionSchema
+    .exclude(["document"])
+    .optional(),
   message: z.string().trim().min(1).superRefine((value, context) => {
     if (templateCopilotUnicodeCodePointCount(value) > 80_000) context.addIssue({ code: "custom", message: "Description exceeds 80000 Unicode characters." });
   }),
@@ -66,6 +70,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
       expectedRevision: parsed.data.expectedRevision,
       idempotencyKey: parsed.data.idempotencyKey,
       mode: parsed.data.mode,
+      sectionHint: parsed.data.sectionHint,
       sourceText: parsed.data.message,
       extractCandidates: async (input) => {
         providerInvoked = true;
