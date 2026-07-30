@@ -47,16 +47,29 @@ try {
     await ensureProfile(database, createdUserId, email);
   }
   const storageState = await authenticate(previewAccessContext);
+  const context = await browser.newContext({
+    storageState,
+    viewport: { width: 1280, height: 960 },
+  });
   for (const locale of ["en", "zh-Hant", "zh-Hans"]) {
-    const context = await browser.newContext({ storageState, viewport: { width: 1280, height: 960 } });
+    console.log(`template_copilot_v2_step8_locale=${locale}:START`);
     const page = await context.newPage();
     await page.goto(origin, { waitUntil: "domcontentloaded" });
     await page.getByRole("link", { name: "Workflow", exact: true }).click();
     await page.getByLabel(/Language|語言|语言/).selectOption(locale);
+    const startButton = page.getByRole("button", {
+      name: locale === "zh-Hant"
+        ? "開始引導式訪談"
+        : locale === "zh-Hans"
+          ? "开始引导式访谈"
+          : "Start guided interview",
+      exact: true,
+    });
+    await startButton.waitFor();
     const startResponse = page.waitForResponse((response) =>
       response.request().method() === "POST"
       && /\/copilot\/sessions$/.test(new URL(response.url()).pathname));
-    await page.getByRole("button", { name: /Start guided interview|開始引導訪談|开始引导访谈/ }).click();
+    await startButton.click();
     const response = await startResponse;
     assert.equal(response.status(), 201);
     const payload = await response.json();
@@ -67,12 +80,16 @@ try {
     assert.equal(payload.interview.nextQuestion.helpDetail.requestedLocale, locale);
     assert.equal(payload.interview.nextQuestion.helpDetail.displayedLocale, locale);
     assert.equal(payload.interview.nextQuestion.helpDetail.fallback, undefined);
+    console.log(`template_copilot_v2_step8_locale=${locale}:SESSION_CREATED`);
 
     const helpButton = page.locator("#copilot-current-question-help-control");
     await helpButton.waitFor();
     assert.equal(await helpButton.getAttribute("aria-expanded"), "false");
     await helpButton.focus();
     await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      () => document.querySelector("#copilot-current-question-help-control")?.getAttribute("aria-expanded") === "true",
+    );
     assert.equal(await helpButton.getAttribute("aria-expanded"), "true");
     const panel = page.locator("#copilot-current-question-help");
     await panel.waitFor();
@@ -85,6 +102,7 @@ try {
 
     await axe(page, `${locale} light`);
     await page.locator("html").evaluate((element) => { element.dataset.theme = "dark"; });
+    await page.waitForTimeout(300);
     await axe(page, `${locale} dark`);
     await page.setViewportSize({ width: 390, height: 844 });
     const renderedStressText = locale === "en"
@@ -109,9 +127,14 @@ try {
     await page.keyboard.press("Shift+Tab");
     await helpButton.focus();
     await page.keyboard.press("Space");
+    await page.waitForFunction(
+      () => document.querySelector("#copilot-current-question-help-control")?.getAttribute("aria-expanded") === "false",
+    );
     assert.equal(await helpButton.getAttribute("aria-expanded"), "false");
-    await context.close();
+    await page.close();
+    console.log(`template_copilot_v2_step8_locale=${locale}:PASS`);
   }
+  await context.close();
   console.log("template_copilot_v2_step8_browser=PASS");
 } finally {
   if (browser) await browser.close();

@@ -33,6 +33,27 @@ The resulting content fingerprints are:
 - Concept content: `fnv1a64:4a149e693daab18d`
 - Localized question content: `fnv1a64:df415823535ac40f`
 
-The human language review is complete. The candidate remains disabled for new
-sessions until an authorized authenticated Preview passes the Step 8
-accessibility qualification.
+The human language review is complete.
+
+## Authenticated Preview accessibility qualification
+
+The isolated, non-Production Preview qualification passed:
+
+- Evidence recorded: `2026-07-30T08:40:14+08:00`
+- Exact source revision: `28ec3ab852501885375218e11521ec24fed1eef0`
+- Vercel deployment: `dpl_4Ja4XsJXTajVjrAzTd9qWadQkH78`
+- Deployment host: `approval-b5ger23zz-derrick-pangs-projects.vercel.app`
+- Database: isolated Supabase branch `codex-server-authoritative-preview`
+- Locales: English, Hong Kong Traditional Chinese, and Simplified Chinese
+- Result: `template_copilot_v2_step8_browser=PASS`
+
+The authenticated gate created genuine `v2.2` sessions pinned to
+`concepts.v1.0` in all three locales. It verified exact deployment identity,
+no locale fallback, keyboard open/close behavior, labelled help semantics,
+minimum touch sizing, mobile overflow, long CJK and pseudo-localized content,
+and axe scans in settled light and dark themes.
+
+This evidence completes Step 8 qualification only. It does not authorize
+Production rollout, Production environment changes, database-branch merging,
+or migration of Production data. New Production sessions remain pinned to
+`v2.1` until a separately authorized rollout.

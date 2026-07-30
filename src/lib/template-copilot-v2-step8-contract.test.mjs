@@ -16,7 +16,7 @@ import { isTemplateCopilotQuestionLibraryStartAllowed } from "./template-copilot
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("new starts remain on v2.1 while Step 8 accessibility qualification is pending without changing legacy recovery", () => {
+test("ordinary new starts remain on v2.1 after isolated Preview qualification without changing legacy recovery", () => {
   const createKey = () => "start:step8:test";
   const scope = {
     businessUnitId: "00000000-0000-4000-8000-000000000001",
@@ -189,7 +189,7 @@ test("Step 8 is wired through the real client, server contracts, Admin view, tel
   assert.match(adminPanel, /Runtime AI translation is not used/);
   assert.match(adminPanel, /Concept topics reviewed/);
   assert.match(adminPanel, /Guided questions reviewed/);
-  assert.match(adminPanel, /Language review approved; accessibility qualification pending/);
+  assert.match(adminPanel, /Preview accessibility passed; Production rollout disabled/);
   assert.doesNotMatch(adminPanel, /Pending human approval/);
   assert.match(adminPanel, /Question content:/);
   assert.match(adminPanel, /template_copilot_help_fallback/);
@@ -197,6 +197,9 @@ test("Step 8 is wired through the real client, server contracts, Admin view, tel
   assert.match(rollout, /enabledCandidateLocales: Object\.freeze\(\[\]/);
   assert.match(rollout, /NEXT_PUBLIC_TEMPLATE_COPILOT_V2_STEP8_QUALIFICATION/);
   assert.match(rollout, /qualificationCandidateLocales: Object\.freeze\(\["en", "zh-Hant", "zh-Hans"\]/);
+  assert.match(rollout, /status: "passed" as const/);
+  assert.match(rollout, /sourceRevision: "28ec3ab852501885375218e11521ec24fed1eef0"/);
+  assert.match(rollout, /deploymentId: "dpl_4Ja4XsJXTajVjrAzTd9qWadQkH78"/);
 });
 
 test("the Step 8 runtime library is static reviewed content with no model translation path", async () => {
@@ -218,6 +221,7 @@ test("the authenticated browser gate covers all locales, keyboard, CJK/mobile la
   assert.match(script, /database\.auth\.admin\.deleteUser/);
   assert.match(script, /email_confirm: true/);
   assert.match(script, /await establishPreviewAccess\(browser\)/);
+  assert.match(script, /const context = await browser\.newContext/);
   assert.match(script, /page\.goto\(previewUrl/);
   assert.match(script, /deployment\?\.environment, "preview"/);
   assert.match(script, /source\?\.revision, expectedRevision/);
@@ -225,6 +229,7 @@ test("the authenticated browser gate covers all locales, keyboard, CJK/mobile la
   assert.match(script, /page\.keyboard\.press\("Space"\)/);
   assert.match(script, /new AxeBuilder\(\{ page \}\)\.analyze\(\)/);
   assert.match(script, /dataset\.theme = "dark"/);
+  assert.match(script, /waitForTimeout\(300\)/);
   assert.match(script, /setViewportSize\(\{ width: 390, height: 844 \}\)/);
   assert.match(script, /locator\("#copilot-current-question-help-control"\)/);
   assert.match(script, /locator\("#copilot-current-question-help"\)/);
@@ -255,8 +260,10 @@ test("the Phase 2 runbook documents pins, evidence, fallback, telemetry, qualifi
   assert.match(docs, /## Step 8 language-review candidate/);
   assert.match(docs, /questionLibraryVersion: v2\.2/);
   assert.match(docs, /conceptLibraryVersion: concepts\.v1\.0/);
-  assert.match(docs, /Human language review approved; accessibility qualification pending/);
-  assert.match(docs, /v2\.1 remains the preferred version for new sessions/);
+  assert.match(docs, /Human language review and isolated Preview accessibility qualification passed/);
+  assert.match(docs, /28ec3ab852501885375218e11521ec24fed1eef0/);
+  assert.match(docs, /dpl_4Ja4XsJXTajVjrAzTd9qWadQkH78/);
+  assert.match(docs, /`v2\.1` remains the preferred version\s+for ordinary new sessions/);
   assert.match(docs, /template_copilot_help_fallback/);
   assert.match(docs, /Runtime model\s+translation is never permitted/);
   assert.match(docs, /test:e2e:template-copilot-v2-step8/);

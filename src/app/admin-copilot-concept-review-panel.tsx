@@ -1,6 +1,7 @@
 import { BookOpenCheck, CheckCircle2, Languages, ShieldAlert } from "lucide-react";
 import { getTemplateCopilotConceptReviewSummary } from "@/lib/template-copilot-concepts";
 import { getTemplateCopilotQuestionReviewSummary } from "@/lib/template-copilot-v2-step8-review";
+import { templateCopilotV2Step8Rollout } from "@/lib/template-copilot-v2-step8-rollout";
 
 const localeNames = {
   en: "English",
@@ -12,6 +13,8 @@ export function AdminCopilotConceptReviewPanel() {
   const summary = getTemplateCopilotConceptReviewSummary();
   const questionReview = getTemplateCopilotQuestionReviewSummary();
   const productionReady = summary.productionReady && Boolean(questionReview?.productionReady);
+  const previewQualificationPassed =
+    templateCopilotV2Step8Rollout.previewQualification.status === "passed";
   const languageReviewApproved = Object.values(summary.locales).every((review) => review.approved === review.total)
     && Boolean(questionReview)
     && Object.values(questionReview.locales).every((review) => review.status === "approved");
@@ -46,8 +49,10 @@ export function AdminCopilotConceptReviewPanel() {
             {productionReady ? <CheckCircle2 aria-hidden="true" size={16} /> : <ShieldAlert aria-hidden="true" size={16} />}
             {productionReady
               ? "Passed"
-              : languageReviewApproved
-                ? "Language review approved; accessibility qualification pending"
+              : languageReviewApproved && previewQualificationPassed
+                ? "Preview accessibility passed; Production rollout disabled"
+                : languageReviewApproved
+                  ? "Language review approved; accessibility qualification pending"
                 : "Human language review pending"}
           </p>
         </div>

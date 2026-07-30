@@ -427,21 +427,29 @@ structure into prose.
 `questionLibraryVersion: v2.2` is the immutable Step 8 candidate and pins
 `conceptLibraryVersion: concepts.v1.0`. ST completed the human language review
 for English, Hong Kong Traditional Chinese, and Simplified Chinese. The
-candidate remains rollout-disabled while accessibility qualification is
-pending.
-v2.1 remains the preferred version for new sessions until the reviewed
-candidate passes the authorized authenticated Preview accessibility gate.
+isolated authenticated Preview accessibility qualification also passed.
+Production rollout remains disabled, and `v2.1` remains the preferred version
+for ordinary new sessions until a separately authorized rollout.
 No generic role, model, automated test, or this document is accepted as human
 approval evidence. The supplied ST workbook is the evidence for the completed
 language review; it is bound by its exact SHA-256 digest.
 
-**Human language review approved; accessibility qualification pending.**
+**Human language review and isolated Preview accessibility qualification passed.**
 
-| Locale | Concept review | Question review | Enabled for new `v2.2` sessions |
+| Locale | Concept review | Question review | Isolated Preview qualification |
 | --- | --- | --- | --- |
-| English | Approved by ST | Approved by ST | No; Preview gate pending |
-| Hong Kong Traditional Chinese | Approved by ST | Approved by ST | No; Preview gate pending |
-| Simplified Chinese | Approved by ST | Approved by ST | No; Preview gate pending |
+| English | Approved by ST | Approved by ST | Passed |
+| Hong Kong Traditional Chinese | Approved by ST | Approved by ST | Passed |
+| Simplified Chinese | Approved by ST | Approved by ST | Passed |
+
+The authenticated gate passed on source revision
+`28ec3ab852501885375218e11521ec24fed1eef0`, Vercel deployment
+`dpl_4Ja4XsJXTajVjrAzTd9qWadQkH78`, with evidence recorded at
+`2026-07-30T08:40:14+08:00`. It exercised genuine `v2.2` sessions in all three
+locales, exact version pins, fallback absence, keyboard help, labelled
+semantics, light and settled dark axe scans, mobile touch sizing and overflow,
+and long CJK/pseudo-localized text in the real component. This is
+non-Production evidence only; it does not authorize Production rollout.
 
 The concept candidate covers all 16 pilot fact topics. Every stable concept ID
 and entry version has an internal technical name, a language-independent
@@ -506,8 +514,9 @@ outstanding, `REJECTED` when any reviewer requires a revised candidate, and
 evidence, false attestations, or candidate drift.
 
 The ST evidence is now copied into the pinned concept and question review
-manifests. The candidate locales remain disabled until the authenticated
-Preview accessibility qualification passes. A locale becomes production-ready only
+manifests. The authenticated Preview accessibility qualification has passed,
+but the candidate locales remain disabled for Production rollout. A locale
+becomes production-ready only
 when the rollout switch, all concept approvals, and the complete question
 approval are true together. Missing, pending, rejected, model-reviewed,
 unnamed, untimestamped, or evidence-free content fails closed.
