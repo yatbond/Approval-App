@@ -226,6 +226,7 @@ test("the authenticated browser gate covers all locales, keyboard, CJK/mobile la
   assert.match(script, /new AxeBuilder\(\{ page \}\)\.analyze\(\)/);
   assert.match(script, /dataset\.theme = "dark"/);
   assert.match(script, /setViewportSize\(\{ width: 390, height: 844 \}\)/);
+  assert.match(script, /locator\("#copilot-current-question-help-control"\)/);
   assert.match(script, /locator\("#copilot-current-question-help"\)/);
   assert.match(script, /data-help-section='explanation'/);
   assert.match(script, /renderedStressText/);
@@ -233,6 +234,20 @@ test("the authenticated browser gate covers all locales, keyboard, CJK/mobile la
   assert.match(script, /实际写入说明组件/);
   assert.match(script, /scrollWidth <= document\.documentElement\.clientWidth/);
   assert.match(packageJson, /test:e2e:template-copilot-v2-step8/);
+});
+
+test("the workflow and Step 8 help preserve a complete heading outline for axe", async () => {
+  const [workflow, copilot, help] = await Promise.all([
+    read("../app/workflow-view.tsx"),
+    read("../app/template-copilot.tsx"),
+    read("../app/template-copilot-concept-help.tsx"),
+  ]);
+  assert.match(workflow, /<h1 className="font-semibold">[\s\S]*workflow\.name[\s\S]*<\/h1>/);
+  assert.match(copilot, /<h2 className="sr-only">\{copy\.title\}<\/h2>/);
+  assert.match(copilot, /<h3[^>]*id="copilot-current-question"/);
+  assert.match(help, /<h4 id=\{`\$\{panelId\}-title`\}/);
+  assert.doesNotMatch(copilot, /<h4[^>]*id="copilot-current-question"/);
+  assert.doesNotMatch(help, /<h5 id=\{`\$\{panelId\}-title`\}/);
 });
 
 test("the Phase 2 runbook documents pins, evidence, fallback, telemetry, qualification, and non-destructive rollback", async () => {

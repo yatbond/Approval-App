@@ -1114,9 +1114,9 @@ export function WorkflowView({
     <div className="space-y-4">
       <section className="rounded-md border border-[#e6e6e6] bg-white">
         <div className="border-b border-[#e6e6e6] p-4">
-          <h2 className="font-semibold">
+          <h1 className="font-semibold">
             {isCreatingTemplate ? "New workflow" : workflow ? workflow.name : "No templates"}
-          </h2>
+          </h1>
           {!isCreatingTemplate && workflow ? (
             <p className="text-sm text-neutral-400">
               {workflow.business} - {workflow.department}

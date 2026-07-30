@@ -1716,7 +1716,7 @@ export function TemplateCopilot({
             <Bot aria-hidden="true" size={20} />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="font-semibold text-neutral-900">{copy.title}</h3>
+            <h2 className="font-semibold text-neutral-900">{copy.title}</h2>
             <p className="mt-1 text-sm text-neutral-600">
               {copy.description}
             </p>
@@ -1814,6 +1814,7 @@ export function TemplateCopilot({
       aria-label={copy.title}
       className="grid gap-4 rounded-md border border-[#d9e4df] bg-[#f7fbf9] p-4 dark:border-neutral-700 dark:bg-neutral-950 lg:grid-cols-[minmax(0,1fr)_280px]"
     >
+      <h2 className="sr-only">{copy.title}</h2>
       <div className="min-w-0">
         <div
           aria-live="polite"
@@ -1853,8 +1854,8 @@ export function TemplateCopilot({
         )}
         {state.status !== "draft_created" && (
           <div className="mt-3 space-y-3">
-            {broadMode && <><h4 id="copilot-current-question" className="w-full text-sm font-semibold text-neutral-900 dark:text-white">{broadComposerLabel}</h4><p id="copilot-broad-mode-example" className="w-full rounded-md border border-sky-300 bg-sky-50 p-3 text-xs text-sky-950 dark:border-sky-700 dark:bg-neutral-800 dark:text-white">{broadComposerExample}</p></>}
-            {!broadMode && isV2State(state) && v2InputMode === "answerable" && state.interview.nextQuestion && <h4 ref={v2QuestionHeadingRef} id="copilot-current-question" tabIndex={-1} className="w-full text-sm font-semibold text-neutral-900 dark:text-white">{state.interview.nextQuestion.prompt}</h4>}
+            {broadMode && <><h3 id="copilot-current-question" className="w-full text-sm font-semibold text-neutral-900 dark:text-white">{broadComposerLabel}</h3><p id="copilot-broad-mode-example" className="w-full rounded-md border border-sky-300 bg-sky-50 p-3 text-xs text-sky-950 dark:border-sky-700 dark:bg-neutral-800 dark:text-white">{broadComposerExample}</p></>}
+            {!broadMode && isV2State(state) && v2InputMode === "answerable" && state.interview.nextQuestion && <h3 ref={v2QuestionHeadingRef} id="copilot-current-question" tabIndex={-1} className="w-full text-sm font-semibold text-neutral-900 dark:text-white">{state.interview.nextQuestion.prompt}</h3>}
             {activeModeDisabled && <p className="w-full rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-neutral-800 dark:text-amber-100">{modeUiCopy.modeReadOnly}</p>}
             {!broadMode && isV2State(state) && v2InputMode === "answerable" && v2VisibleExample && (
               <div className="mb-2 w-full rounded-md border border-sky-300 bg-sky-50 p-3 text-xs text-sky-950 dark:border-sky-700 dark:bg-neutral-800 dark:text-white">
@@ -1959,9 +1960,9 @@ export function TemplateCopilot({
         {error && <ErrorMessage message={error} />}
       </div>
       <aside className="rounded-md border border-[#e2e8e5] bg-white p-3">
-        <h4 className="font-semibold text-neutral-900">
+        <h3 className="font-semibold text-neutral-900">
           {isV2State(state) ? copy.currentDecision : `${copy.requirements} ${completed}/${templateCopilotSectionIds.length}`}
-        </h4>
+        </h3>
         <ul className="mt-3 space-y-2 text-xs">
           {!isV2State(state) && templateCopilotSectionIds.map((id) => {
             const section = state.ledger.sections[id];
@@ -2113,7 +2114,7 @@ function DossierReviewEditor({
           size={20}
         />
         <div className="min-w-0 flex-1">
-          <h4 className="font-semibold text-neutral-900">{copy.title}</h4>
+          <h3 className="font-semibold text-neutral-900">{copy.title}</h3>
           <p className="mt-1 text-sm text-neutral-600">{copy.description}</p>
         </div>
       </div>
@@ -2187,9 +2188,9 @@ function DossierReviewEditor({
       </label>
 
       <div className="mt-4 rounded-md border border-sky-100 bg-white p-3">
-        <h5 className="text-sm font-semibold text-neutral-900">
+        <h4 className="text-sm font-semibold text-neutral-900">
           {copy.compiledCoverage}
-        </h5>
+        </h4>
         <p className="mt-1 text-xs leading-5 text-neutral-600">
           {copy.coverageSummary
             .replace("{fields}", String(dossier.initiation.requestFields.length))
@@ -2204,9 +2205,9 @@ function DossierReviewEditor({
 
       {dossier.assumptions.length > 0 && (
         <div className="mt-4">
-          <h5 className="text-sm font-semibold text-neutral-900">
+          <h4 className="text-sm font-semibold text-neutral-900">
             {copy.assumptions}
-          </h5>
+          </h4>
           <div className="mt-2 space-y-2">
             {dossier.assumptions.map((assumption, index) => (
               <div
@@ -2263,9 +2264,9 @@ function DossierReviewEditor({
 
       {dossier.openQuestions.length > 0 && (
         <div className="mt-4">
-          <h5 className="text-sm font-semibold text-neutral-900">
+          <h4 className="text-sm font-semibold text-neutral-900">
             {copy.openQuestions}
-          </h5>
+          </h4>
           <div className="mt-2 space-y-2">
             {dossier.openQuestions.map((question, index) => (
               <label
@@ -2298,9 +2299,9 @@ function DossierReviewEditor({
       )}
 
       <div className="mt-4">
-        <h5 className="text-sm font-semibold text-neutral-900">
+        <h4 className="text-sm font-semibold text-neutral-900">
           {copy.citations} ({dossier.citations.length})
-        </h5>
+        </h4>
         {dossier.citations.length ? (
           <ul className="mt-2 max-h-56 space-y-2 overflow-y-auto">
             {dossier.citations.map((citation) => (

@@ -44,9 +44,9 @@ export function TemplateCopilotConceptHelp({
           aria-labelledby={`${panelId}-title`}
           className="mt-2 min-w-0 max-w-full space-y-3 overflow-hidden rounded-md border border-sky-300 bg-sky-50 p-4 text-sm leading-6 text-sky-950 shadow-sm dark:border-sky-700 dark:bg-neutral-900 dark:text-sky-100"
         >
-          <h5 id={`${panelId}-title`} className="break-words font-semibold">
+          <h4 id={`${panelId}-title`} className="break-words font-semibold">
             {detail.plainLabel}
-          </h5>
+          </h4>
           <div className="min-w-0">
             <p className="font-medium">{detail.controls.explanation}</p>
             <p data-help-section="explanation" className="break-words [overflow-wrap:anywhere]">{detail.explanation}</p>

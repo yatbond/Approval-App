@@ -50,7 +50,7 @@ try {
   for (const locale of ["en", "zh-Hant", "zh-Hans"]) {
     const context = await browser.newContext({ storageState, viewport: { width: 1280, height: 960 } });
     const page = await context.newPage();
-    await page.goto(origin, { waitUntil: "networkidle" });
+    await page.goto(origin, { waitUntil: "domcontentloaded" });
     await page.getByRole("link", { name: "Workflow", exact: true }).click();
     await page.getByLabel(/Language|語言|语言/).selectOption(locale);
     const startResponse = page.waitForResponse((response) =>
@@ -68,7 +68,7 @@ try {
     assert.equal(payload.interview.nextQuestion.helpDetail.displayedLocale, locale);
     assert.equal(payload.interview.nextQuestion.helpDetail.fallback, undefined);
 
-    const helpButton = page.getByRole("button", { name: /What does this mean|這是甚麼意思|这是什么意思/ });
+    const helpButton = page.locator("#copilot-current-question-help-control");
     await helpButton.waitFor();
     assert.equal(await helpButton.getAttribute("aria-expanded"), "false");
     await helpButton.focus();
