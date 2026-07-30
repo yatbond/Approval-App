@@ -27,6 +27,14 @@ const factDeltaSql = await readFile(
   new URL("../../supabase/migrations/20260728000000_template_copilot_v2_fact_delta.sql", import.meta.url),
   "utf8",
 );
+const atomicJsonbKeyCorrectionSql = await readFile(
+  new URL("../../supabase/migrations/20260730051103_fix_template_copilot_v2_atomic_answer_jsonb_key_type.sql", import.meta.url),
+  "utf8",
+);
+const jsonbPrecedenceCorrectionSql = await readFile(
+  new URL("../../supabase/migrations/20260730051339_fix_template_copilot_v2_atomic_answer_jsonb_precedence.sql", import.meta.url),
+  "utf8",
+);
 
 function extractPinnedGraph(sql) {
   const match = sql.match(/\$v2_dependency_graph\$(\{[\s\S]*\})\$v2_dependency_graph\$/);
@@ -95,7 +103,7 @@ function extractFunctionBody(sql, functionName) {
 }
 
 test("all hardened Copilot mutation migrations parse as PostgreSQL SQL and PL/pgSQL", async () => {
-  const [atomicAst, atomicPlPgSql, specialAst, specialPlPgSql, extractionAst, extractionPlPgSql, factDeltaAst, factDeltaPlPgSql] = await Promise.all([
+  const [atomicAst, atomicPlPgSql, specialAst, specialPlPgSql, extractionAst, extractionPlPgSql, factDeltaAst, factDeltaPlPgSql, correctionAst, correctionPlPgSql, precedenceAst, precedencePlPgSql] = await Promise.all([
     parse(atomicSql),
     parsePlPgSQL(atomicSql),
     parse(specialSql),
@@ -104,6 +112,10 @@ test("all hardened Copilot mutation migrations parse as PostgreSQL SQL and PL/pg
     parsePlPgSQL(extractionSql),
     parse(factDeltaSql),
     parsePlPgSQL(factDeltaSql),
+    parse(atomicJsonbKeyCorrectionSql),
+    parsePlPgSQL(atomicJsonbKeyCorrectionSql),
+    parse(jsonbPrecedenceCorrectionSql),
+    parsePlPgSQL(jsonbPrecedenceCorrectionSql),
   ]);
   assert.ok(atomicAst.stmts.length >= 6);
   assert.equal(atomicPlPgSql.plpgsql_funcs.length, 1);
@@ -120,7 +132,49 @@ test("all hardened Copilot mutation migrations parse as PostgreSQL SQL and PL/pg
   assert.doesNotMatch(extractionSql, /grant execute on function public\.apply_template_copilot_v2_extraction[\s\S]+to authenticated/i);
   assert.ok(factDeltaAst.stmts.length >= 18);
   assert.ok(factDeltaPlPgSql.plpgsql_funcs.length >= 8);
+  assert.ok(correctionAst.stmts.length >= 3);
+  assert.equal(correctionPlPgSql.plpgsql_funcs.length, 1);
+  assert.ok(precedenceAst.stmts.length >= 7);
+  assert.equal(precedencePlPgSql.plpgsql_funcs.length, 1);
   assert.match(factDeltaSql, /revoke all on function public\.mutate_template_copilot_v2_fact_delta\(uuid,uuid,bigint,text,text,text,text,jsonb,text\) from public, anon, authenticated/i);
+});
+
+test("the forward atomic-answer correction explicitly types both JSONB deletion keys", () => {
+  assert.match(
+    atomicJsonbKeyCorrectionSql,
+    /\(p_ledger - ''atomicDecisions''::text\)/,
+  );
+  assert.match(
+    atomicJsonbKeyCorrectionSql,
+    /\(s\.ledger - ''atomicDecisions''::text\)/,
+  );
+  assert.match(
+    atomicJsonbKeyCorrectionSql,
+    /untyped_parameter_occurrences <> 1[\s\S]*untyped_stored_occurrences <> 1/,
+  );
+  assert.match(
+    atomicJsonbKeyCorrectionSql,
+    /pg_get_function_identity_arguments\(p\.oid\)/,
+  );
+});
+
+test("the forward precedence correction repairs every extraction-then-deletion expression", () => {
+  assert.match(
+    jsonbPrecedenceCorrectionSql,
+    /\(\(p_ledger->''atomicDecisions''\) - p_decision_id\)/,
+  );
+  assert.match(
+    jsonbPrecedenceCorrectionSql,
+    /\(\(conflict->''existing''\) - ''candidate''\)/,
+  );
+  assert.match(
+    jsonbPrecedenceCorrectionSql,
+    /occurrence_count <> 1/,
+  );
+  assert.doesNotMatch(
+    jsonbPrecedenceCorrectionSql,
+    /grant execute[\s\S]*to authenticated/,
+  );
 });
 
 test("extraction mutation remains owner-locked, bounded, replay-safe, and cannot replace a committed fact", () => {

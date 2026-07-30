@@ -173,6 +173,7 @@ try {
     });
     return {
       status: response.status,
+      schema: response.headers.get("x-template-copilot-schema-version"),
       zdr: response.headers.get("x-template-copilot-openrouter-zdr"),
       provider: response.headers.get("x-template-copilot-provider"),
       model: response.headers.get("x-template-copilot-model"),
@@ -180,6 +181,10 @@ try {
     };
   });
   assert(copilotCapabilities.status === 200, "Copilot capability probe failed.");
+  assert(
+    copilotCapabilities.schema === "2",
+    "The deployed Preview did not enable the governed Copilot v2 interview.",
+  );
   if (requireZdr) {
     assert(
       expectedProvider === "openrouter",
@@ -259,34 +264,42 @@ try {
     (response) =>
       response.request().method() === "POST" &&
       response.url().includes(
-        `/api/template-authoring/copilot/sessions/${startBody.sessionId}/messages`,
+        `/api/template-authoring/copilot/sessions/${startBody.sessionId}/answers`,
       ),
     { timeout: 90_000 },
   );
   await page.getByRole("button", { name: "Send answer" }).click();
   const turnResponse = await turnResponsePromise;
   const turnBody = await turnResponse.json();
-  assert(turnResponse.status() === 200, `Copilot turn returned ${turnResponse.status()}.`);
+  assert(
+    turnResponse.status() === 200,
+    `Copilot turn returned ${turnResponse.status()} (${
+      turnBody?.error?.code || "unknown"
+    }: ${turnBody?.error?.message || "no message"}).`,
+  );
   assert(turnBody.outcome === "applied", "Copilot turn was not applied.");
   assert(Number(turnBody.revision) === 2, "Copilot revision did not advance.");
-  await page.getByText("You", { exact: true }).waitFor({ state: "visible" });
   assert(
-    (await page.getByText(/Requirements 1\//).count()) === 1,
-    "The visible requirements checklist did not record the first answer.",
+    turnBody.interview?.nextQuestion?.questionId,
+    "Copilot turn did not return the next guided question.",
+  );
+  await page.getByText("You", { exact: true }).waitFor({ state: "visible" });
+  const visibleNextQuestion = page.locator("#copilot-current-question");
+  await visibleNextQuestion.waitFor({ state: "visible", timeout: 30_000 });
+  assert(
+    (await visibleNextQuestion.innerText()).trim() ===
+      turnBody.interview.nextQuestion.prompt,
+    "The visible guided question did not advance after the saved first answer.",
   );
 
   const { data: storedSession, error: sessionError } = await database
     .from("template_copilot_sessions")
-    .select("id,owner_id,revision,status,model")
+    .select("id,owner_id,revision,status")
     .eq("id", startBody.sessionId)
     .single();
   if (sessionError) throw sessionError;
   assert(storedSession.owner_id === createdUserId, "Stored session owner is incorrect.");
   assert(Number(storedSession.revision) === 2, "Stored session revision is incorrect.");
-  assert(
-    storedSession.model === expectedModel,
-    `Unexpected Copilot model: ${storedSession.model}`,
-  );
 
   const { count: messageCount, error: messageError } = await database
     .from("template_copilot_messages")
@@ -310,7 +323,7 @@ try {
   console.log("template_copilot_preview_e2e=PASS");
   console.log(`deployment_origin=${previewOrigin}`);
   console.log("authenticated_context=PASS");
-  console.log("openrouter_turn=PASS");
+  console.log("copilot_v2_turn=PASS");
   console.log("owner_scoped_persistence=PASS");
   if (requireTelemetry) {
     console.log("preview_route_telemetry_admin_read=PASS");

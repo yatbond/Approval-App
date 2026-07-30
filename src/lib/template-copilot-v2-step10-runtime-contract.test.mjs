@@ -141,6 +141,11 @@ test("the authorized bundle cannot omit ZDR, RLS, concurrency, or accessibility 
   assert.match(previewScript, /copilotCapabilities\.model === expectedModel/);
   assert.match(previewScript, /copilotCapabilities\.zdr === "required"/);
   assert.match(previewScript, /E2E_REQUIRE_COPILOT_TELEMETRY/);
+  assert.match(previewScript, /copilotCapabilities\.schema === "2"/);
+  assert.match(
+    previewScript,
+    /sessions\/\$\{startBody\.sessionId\}\/answers/,
+  );
   assert.match(previewScript, /copilotCapabilities\.telemetry === "enabled"/);
   assert.match(
     previewScript,
