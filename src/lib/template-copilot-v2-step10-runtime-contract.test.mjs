@@ -138,6 +138,10 @@ test("the authorized bundle cannot omit ZDR, RLS, concurrency, or accessibility 
   assert.match(authorizedRunner, /process\.env\.npm_execpath/);
   assert.match(
     authorizedRunner,
+    /process\.env\.E2E_EXPECTED_GIT_REVISION = gate\.expectedCommit/,
+  );
+  assert.match(
+    authorizedRunner,
     /run\(process\.execPath, \[npmEntrypoint, "run"/,
   );
   assert.doesNotMatch(authorizedRunner, /"npm\.cmd"/);

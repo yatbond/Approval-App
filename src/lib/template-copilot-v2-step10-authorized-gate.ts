@@ -13,6 +13,7 @@ const requiredAuthorizedPreviewVariables = [
   "E2E_CROSS_USER_SESSION_ID",
   "E2E_EXPECTED_COPILOT_MODEL",
   "E2E_EXPECTED_COPILOT_PROVIDER",
+  "E2E_EXPECTED_COMMIT",
   "LOCAL_SUPABASE_URL",
   "LOCAL_SUPABASE_SERVICE_ROLE_KEY",
   "LOCAL_POSTGRES_CONTAINER",
@@ -70,6 +71,12 @@ export function assertTemplateCopilotV2Step10AuthorizedEnvironment(
       "Step 10 authorized qualification requires both the live and deployed expected provider pins to be openrouter.",
     );
   }
+  const expectedCommit = env.E2E_EXPECTED_COMMIT?.trim() || "";
+  if (!/^[0-9a-f]{40}$/.test(expectedCommit)) {
+    throw new Error(
+      "Step 10 authorized qualification requires one full lowercase Git commit revision.",
+    );
+  }
   const preview = new URL(env.E2E_PREVIEW_SHARE_URL || "");
   if (preview.protocol !== "https:") {
     throw new Error("The authorized Preview URL must use HTTPS.");
@@ -77,6 +84,7 @@ export function assertTemplateCopilotV2Step10AuthorizedEnvironment(
   return Object.freeze({
     model: env.TEMPLATE_COPILOT_MODEL?.trim() || "",
     provider: "openrouter" as const,
+    expectedCommit,
     previewOrigin: preview.origin,
     postgresContainer: env.LOCAL_POSTGRES_CONTAINER?.trim() || "",
   });

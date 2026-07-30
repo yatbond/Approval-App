@@ -4,6 +4,9 @@ import { resolve } from "node:path";
 import { assertTemplateCopilotV2Step10AuthorizedEnvironment } from "../src/lib/template-copilot-v2-step10-authorized-gate.ts";
 
 const gate = assertTemplateCopilotV2Step10AuthorizedEnvironment(process.env);
+// Step 8 historically used a different variable name. Bind it from the one
+// authorized full-commit pin so every browser gate verifies one deployment.
+process.env.E2E_EXPECTED_GIT_REVISION = gate.expectedCommit;
 const npmEntrypoint = process.env.npm_execpath?.trim();
 if (!npmEntrypoint) {
   throw new Error(

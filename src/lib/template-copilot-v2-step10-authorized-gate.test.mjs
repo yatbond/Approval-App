@@ -22,6 +22,7 @@ function validEnvironment() {
     E2E_CROSS_USER_SESSION_ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     E2E_EXPECTED_COPILOT_MODEL: "qwen/qwen3.5-35b-a3b",
     E2E_EXPECTED_COPILOT_PROVIDER: "openrouter",
+    E2E_EXPECTED_COMMIT: "a".repeat(40),
     LOCAL_SUPABASE_URL: "http://127.0.0.1:54321",
     LOCAL_SUPABASE_SERVICE_ROLE_KEY: "local-service-key",
     LOCAL_POSTGRES_CONTAINER: "supabase_db_approval",
@@ -63,7 +64,20 @@ test("the authorized gate pins one model and a strong telemetry pseudonym secret
   );
   assert.equal(valid.model, "qwen/qwen3.5-35b-a3b");
   assert.equal(valid.provider, "openrouter");
+  assert.equal(valid.expectedCommit, "a".repeat(40));
   assert.equal(valid.previewOrigin, "https://approval-preview.example.test");
+});
+
+test("the authorized gate requires one canonical full Git revision", () => {
+  for (const revision of ["abc123", "A".repeat(40), "a".repeat(39), "g".repeat(40)]) {
+    const environment = validEnvironment();
+    environment.E2E_EXPECTED_COMMIT = revision;
+    assert.throws(
+      () => assertTemplateCopilotV2Step10AuthorizedEnvironment(environment),
+      /full lowercase Git commit revision/i,
+      revision,
+    );
+  }
 });
 
 test("the authorized gate rejects a provider fallback even when ZDR is true", () => {
