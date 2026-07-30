@@ -34,6 +34,7 @@ const commonAnswers = {
 function scenario(input) {
   return {
     departmentName: "Procurement Operations",
+    ...input,
     collaboration:
       input.collaboration || commonAnswers[input.language].collaboration,
     timing: input.timing || commonAnswers[input.language].timing,
@@ -56,7 +57,6 @@ function scenario(input) {
       requiredTerms: [],
       ...input.expectations,
     },
-    ...input,
   };
 }
 

@@ -22,4 +22,18 @@ test("all live FYI qualifications name the scenario-specific recipient", () => {
       );
     }
   }
+  const nonFyiScenarios = templateCopilotQualificationScenarios.filter(
+    (scenario) => !scenario.expectations.requireFyi,
+  );
+  assert.equal(nonFyiScenarios.length, 8);
+  for (const scenario of nonFyiScenarios) {
+    assert.deepEqual(scenario.expectations.expectedFyiTerms, []);
+  }
+  assert.ok(
+    templateCopilotQualificationScenarios.every(
+      (scenario) =>
+        typeof scenario.expectations.requireSharedFulfillment === "boolean",
+    ),
+    "scenario defaults must survive an explicit expectation override",
+  );
 });
