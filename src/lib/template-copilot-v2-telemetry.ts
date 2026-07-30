@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { templateCopilotFactIds } from "./template-copilot-v2-canonical-values.ts";
 
 export const templateCopilotV2TelemetrySchemaVersion = 1 as const;
 export const templateCopilotV2TelemetryRetentionDays = 30 as const;
@@ -83,6 +84,11 @@ export type TemplateCopilotV2TelemetryAdminViewEvent = Omit<
 const forbiddenTelemetryKey =
   /(?:answer|message|prompt|content|transcript|document|excerpt|email|name|raw|text)/i;
 const emailLikeValue = /[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/;
+const safeRejectedFactCountKeys = new Set(
+  templateCopilotFactIds.map(
+    (factId) => `rejected_fact_${factId.replaceAll(".", "_")}`,
+  ),
+);
 
 export function assertTemplateCopilotV2TelemetryMinimized(input: unknown) {
   const event = templateCopilotV2TelemetryEventSchema.parse(input);
@@ -96,7 +102,9 @@ function inspectTelemetryValue(value: unknown, path: string) {
   }
   if (!value || typeof value !== "object") return;
   for (const [key, child] of Object.entries(value)) {
-    if (forbiddenTelemetryKey.test(key)) {
+    const isCanonicalRejectedFactCount =
+      path === "$.counts" && safeRejectedFactCountKeys.has(key);
+    if (!isCanonicalRejectedFactCount && forbiddenTelemetryKey.test(key)) {
       throw new Error(`Telemetry contains forbidden raw-text key ${path}.${key}.`);
     }
     inspectTelemetryValue(child, `${path}.${key}`);

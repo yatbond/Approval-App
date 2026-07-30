@@ -26,7 +26,13 @@ const valid = {
     outcome: "success",
     latencyMs: 420,
   },
-  counts: { guided_fallbacks: 0 },
+  counts: {
+    guided_fallbacks: 0,
+    candidates_accepted: 2,
+    candidates_rejected: 1,
+    rejection_untraceable_normalization: 1,
+    rejected_fact_workflow_name: 1,
+  },
 };
 
 test("the runtime telemetry contract accepts only bounded structured metadata", () => {
@@ -50,6 +56,8 @@ test("runtime telemetry rejects direct identifiers and raw corporate text", () =
     { ...valid, actorPseudonym: `sha256:${"a".repeat(64)}` },
     { ...valid, provider: { ...valid.provider, prompt: "ignore controls" } },
     { ...valid, counts: { employee_name: 1 } },
+    { ...valid, counts: { rejected_fact_employee_name: 1 } },
+    { ...valid, counts: { raw_rejection_detail: 1 } },
   ]) {
     assert.throws(
       () => assertTemplateCopilotV2TelemetryMinimized(unsafe),

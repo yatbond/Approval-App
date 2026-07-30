@@ -567,6 +567,24 @@ Step 8 requires no database migration.
 
 ## Operations
 
+### Extraction rejection diagnostics
+
+Every completed Describe or requirements-document command returns and stores a
+bounded `detail.extractionDiagnostics` object. It reports the terminal outcome,
+accepted and rejected candidate totals, rejection-code counts, and counts by
+canonical fact ID. Provider telemetry carries the same aggregate counts, and
+the Admin telemetry panel shows accepted/rejected totals and rejection
+reasons. The multilingual qualification trace retains this object for every
+Describe turn so a failed semantic scenario can be traced to schema,
+evidence-shape, leaf-path, quote-position, source-passage, normalization,
+overlap, or provider-failure causes.
+
+These diagnostics deliberately exclude source wording, document text,
+excerpts, message IDs, JSON values, provider output, and exception text.
+Canonical fact IDs and fixed reason codes are operational metadata, not
+workflow authority. They cannot commit a fact, change a revision, publish a
+template, or activate a workflow.
+
 ## Copilot v2 Step 9: deterministic playback and exact lifecycle readiness
 
 Every v2 session response now includes a server-derived final playback. It is

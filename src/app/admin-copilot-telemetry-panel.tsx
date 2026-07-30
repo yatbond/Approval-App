@@ -80,6 +80,10 @@ export function AdminCopilotTelemetryPanel() {
               <Metric label="Provider calls" value={summary.providerCalls} />
               <Metric label="ZDR provider calls" value={summary.zdrProviderCalls} />
               <Metric label="Non-success outcomes" value={summary.nonSuccess} />
+              <Metric
+                label="Rejected candidates"
+                value={summary.rejectedCandidates}
+              />
             </dl>
             <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
               {response.events.map((event) => (
@@ -100,11 +104,14 @@ export function AdminCopilotTelemetryPanel() {
                     {humanize(event.outcomeCode)} · revision {event.revision}
                   </p>
                   {event.provider ? (
-                    <p className="mt-1 break-words text-neutral-500 dark:text-neutral-400">
-                      {event.provider.providerCode} / {event.provider.modelCode} ·{" "}
-                      {event.provider.privacyMode.toUpperCase()} ·{" "}
-                      {event.provider.latencyMs} ms
-                    </p>
+                    <>
+                      <p className="mt-1 break-words text-neutral-500 dark:text-neutral-400">
+                        {event.provider.providerCode} / {event.provider.modelCode} ·{" "}
+                        {event.provider.privacyMode.toUpperCase()} ·{" "}
+                        {event.provider.latencyMs} ms
+                      </p>
+                      <ProviderDiagnostics counts={event.counts} />
+                    </>
                   ) : null}
                 </article>
               ))}
@@ -153,7 +160,32 @@ function summarize(events: TemplateCopilotV2TelemetryAdminViewEvent[]) {
     nonSuccess: events.filter(
       (event) => event.provider && event.provider.outcome !== "success",
     ).length,
+    rejectedCandidates: events.reduce(
+      (total, event) => total + (event.counts.candidates_rejected || 0),
+      0,
+    ),
   };
+}
+
+function ProviderDiagnostics({
+  counts,
+}: {
+  counts: Record<string, number>;
+}) {
+  const reasons = Object.entries(counts)
+    .filter(([key, count]) => key.startsWith("rejection_") && count > 0)
+    .map(([key, count]) => `${humanize(key.slice("rejection_".length))}: ${count}`);
+  return (
+    <div className="mt-2 rounded bg-neutral-50 p-2 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
+      <p>
+        Accepted candidates: {counts.candidates_accepted || 0} · rejected:{" "}
+        {counts.candidates_rejected || 0}
+      </p>
+      {reasons.length ? (
+        <p className="mt-1 break-words">Reasons: {reasons.join(" · ")}</p>
+      ) : null}
+    </div>
+  );
 }
 
 function humanize(value: string) {

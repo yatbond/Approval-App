@@ -97,6 +97,14 @@ test("Describe persists its exact source before one provider call and finalizes 
   assert.equal(result.ledger.facts["workflow.name"].confirmation, undefined, "Describe never auto-commits");
   assert.deepEqual(result.messages.map((message) => message.role), ["user", "assistant"]);
   assert.equal(result.messages[0].clientMessageId, "mode-command:source-1");
+  assert.deepEqual(service.calls[1].args.p_detail.extractionDiagnostics, {
+    schemaVersion: 1,
+    terminalCode: "candidates_applied",
+    acceptedCandidateCount: 1,
+    rejectedCandidateCount: 0,
+    rejectionCodeCounts: {},
+    rejectedFactCounts: {},
+  });
 });
 
 test("Similar differences use the broad candidate path, then return to Guided gaps without becoming an atomic answer", async () => {
@@ -165,6 +173,19 @@ test("outage, malformed/configuration failure finalizes one durable Guided fallb
   assert.equal(service.calls.length, 2);
   assert.equal(service.calls[1].args.p_outcome, "guided_fallback");
   assert.equal(service.calls[1].args.p_detail.fallbackReason, "provider_configuration");
+  assert.deepEqual(service.calls[1].args.p_detail.extractionDiagnostics, {
+    schemaVersion: 1,
+    terminalCode: "provider_failure",
+    acceptedCandidateCount: 0,
+    rejectedCandidateCount: 0,
+    rejectionCodeCounts: {},
+    rejectedFactCounts: {},
+  });
+  assert.equal(
+    JSON.stringify(service.calls[1].args.p_detail).includes("missing config"),
+    false,
+    "provider error text never enters diagnostic detail",
+  );
   assert.deepEqual(service.calls[1].args.p_ledger.facts, ledger.facts);
   assert.deepEqual(service.calls[1].args.p_ledger.extractionEvidence, ledger.extractionEvidence);
 });
@@ -199,19 +220,69 @@ test("empty, fully rejected, and duplicate broad output complete durably without
     candidates: [sourceCandidate("mode-command:no-candidates")],
   }).ledger;
   const cases = [
-    { name: "empty", ledger: base, extracted: { candidates: [] } },
-    { name: "rejected", ledger: base, extracted: { candidates: [], rejected: [{ index: 0, reason: "invalid_evidence", factId: "workflow.name" }] } },
-    { name: "duplicate", ledger: existing, extracted: { candidates: [sourceCandidate("mode-command:no-candidates")] } },
+    {
+      name: "empty",
+      ledger: base,
+      extracted: { candidates: [] },
+      expectedTerminal: "no_candidates",
+      expectedAccepted: 0,
+      expectedRejected: 0,
+    },
+    {
+      name: "rejected",
+      ledger: base,
+      extracted: {
+        candidates: [],
+        rejected: [
+          {
+            code: "untraceable",
+            detail: "workflow.name:normalization",
+          },
+        ],
+      },
+      expectedTerminal: "no_usable_candidates",
+      expectedAccepted: 0,
+      expectedRejected: 1,
+    },
+    {
+      name: "duplicate",
+      ledger: existing,
+      extracted: [sourceCandidate("mode-command:no-candidates")],
+      expectedTerminal: "no_new_candidates",
+      expectedAccepted: 1,
+      expectedRejected: 0,
+    },
   ];
   for (const scenario of cases) {
     const service = serviceFor({
       prepared: () => ({ outcome: "prepared", revision: 4, status: "interviewing", ledger: scenario.ledger, claimToken: `claim-${scenario.name}`, sourceMessageId: "mode-command:no-candidates" }),
       terminal: (args) => ({ outcome: "applied", revision: 4, status: "interviewing", ledger: args.p_ledger, modeState: { mode: "guided" }, detail: args.p_detail }),
     });
-    const result = await command({ service, extractCandidates: async () => scenario.extracted });
+    const extracted = Array.isArray(scenario.extracted)
+      ? { candidates: scenario.extracted }
+      : scenario.extracted;
+    const result = await command({ service, extractCandidates: async () => extracted });
     assert.equal(service.calls[1].args.p_outcome, "no_candidates", scenario.name);
     assert.equal(result.modeState.mode, "guided", scenario.name);
     assert.equal(result.ledger.extractionEvidence.candidates.length, scenario.ledger.extractionEvidence.candidates.length, scenario.name);
+    const diagnostics = service.calls[1].args.p_detail.extractionDiagnostics;
+    assert.equal(diagnostics.terminalCode, scenario.expectedTerminal, scenario.name);
+    assert.equal(diagnostics.acceptedCandidateCount, scenario.expectedAccepted, scenario.name);
+    assert.equal(diagnostics.rejectedCandidateCount, scenario.expectedRejected, scenario.name);
+    if (scenario.name === "rejected") {
+      assert.deepEqual(diagnostics.rejectionCodeCounts, {
+        untraceable_normalization: 1,
+      });
+      assert.deepEqual(diagnostics.rejectedFactCounts, {
+        "workflow.name": 1,
+      });
+      assert.equal(
+        JSON.stringify(service.calls[1].args.p_detail).includes("normalization"),
+        true,
+        "only the bounded reason code is retained",
+      );
+      assert.equal("rejected" in service.calls[1].args.p_detail, false);
+    }
   }
 });
 

@@ -15,6 +15,11 @@ import { recordTemplateCopilotV2TelemetryBestEffort } from "@/lib/template-copil
 import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
 import { z } from "zod";
 import { templateCopilotUnicodeCodePointCount } from "@/lib/template-copilot-unicode";
+import {
+  summarizeTemplateCopilotV2ExtractionDiagnostics,
+  templateCopilotV2ExtractionDiagnosticTelemetryCounts,
+  type TemplateCopilotV2ExtractionDiagnostics,
+} from "@/lib/template-copilot-v2-extraction-diagnostics";
 
 // The mode command schema is refined, and Zod deliberately disallows omit on
 // refined objects. Keep the describe command explicit and equally bounded.
@@ -48,6 +53,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
     let providerInvoked = false;
     let providerOutcome: "success" | "outage" | "timeout" | "malformed_output" | "privacy_route_rejected" = "success";
     let providerRouting: TemplateCopilotAiRoutingMetadata | null = null;
+    let extractionDiagnostics: TemplateCopilotV2ExtractionDiagnostics | null =
+      null;
     try {
       providerRouting = getTemplateCopilotAiRoutingMetadata();
     } catch {
@@ -63,7 +70,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
       extractCandidates: async (input) => {
         providerInvoked = true;
         try {
-          return await extractTemplateCopilotV2Candidates(input);
+          const extracted = await extractTemplateCopilotV2Candidates(input);
+          extractionDiagnostics =
+            summarizeTemplateCopilotV2ExtractionDiagnostics({
+              acceptedCandidateCount: extracted.candidates.length,
+              rejected: extracted.rejected,
+              terminalCode: "candidates_applied",
+            });
+          return extracted;
         } catch (error) {
           providerOutcome = classifyProviderOutcome(error);
           throw error;
@@ -104,6 +118,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
               : {}),
             counts: {
               guided_fallbacks: result.outcome === "guided_fallback" ? 1 : 0,
+              ...templateCopilotV2ExtractionDiagnosticTelemetryCounts(
+                extractionDiagnostics,
+              ),
             },
           },
         }),

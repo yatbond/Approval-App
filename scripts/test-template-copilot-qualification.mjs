@@ -340,6 +340,8 @@ async function runScenario(context, item) {
         outcome: describe.body?.outcome || "",
         revision: Number(describe.body?.revision || 0),
         sourceMessageId,
+        extractionDiagnostics:
+          describe.body?.detail?.extractionDiagnostics || null,
         cumulativeCandidateCount:
           describe.body?.ledger?.extractionEvidence?.candidates?.length || 0,
       });
@@ -356,6 +358,8 @@ async function runScenario(context, item) {
           outcome: describeOutcome || "missing",
           errorCode: describe.body?.error?.code || "",
           errorMessage: describe.body?.error?.message || "",
+          extractionDiagnostics:
+            describe.body?.detail?.extractionDiagnostics || null,
         });
       }
       if (Number.isInteger(Number(describe.body?.revision))) {

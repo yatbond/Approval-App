@@ -7,6 +7,10 @@ import { projectTemplateCopilotV2Candidates } from "./template-copilot-v2-candid
 import { templateCopilotV2CommandHash } from "./template-copilot-v2-server-data.ts";
 import { getTemplateCopilotV2InterviewState } from "./template-copilot-question-library.ts";
 import { projectTemplateCopilotV2AuthoritativeLedger } from "./template-copilot-v2-authoritative-projection.ts";
+import {
+  summarizeTemplateCopilotV2ExtractionDiagnostics,
+  type TemplateCopilotV2ExtractionTerminalCode,
+} from "./template-copilot-v2-extraction-diagnostics.ts";
 
 export type TemplateCopilotV2BroadAuthoringMode = "describe_everything" | "similar_template";
 
@@ -216,7 +220,7 @@ export async function prepareTemplateCopilotV2DescribeCommand({ service, actor, 
   });
 }
 
-async function finalizeTemplateCopilotV2DescribeCommand({ service, actor, sessionId, idempotencyKey, commandHash, claimToken, outcome, mode, ledger, candidates, rejected, detail }: {
+async function finalizeTemplateCopilotV2DescribeCommand({ service, actor, sessionId, idempotencyKey, commandHash, claimToken, outcome, mode, ledger, candidates, rejected, detail, diagnosticTerminalCode, diagnosticAcceptedCandidateCount }: {
   service: SupabaseClient;
   actor: Pick<ApprovalRuntimeProfile, "id">;
   sessionId: string;
@@ -229,7 +233,18 @@ async function finalizeTemplateCopilotV2DescribeCommand({ service, actor, sessio
   candidates: readonly TemplateCopilotV2Candidate[];
   rejected: readonly TemplateCopilotV2CandidateRejection[];
   detail: Record<string, unknown>;
+  diagnosticTerminalCode?: TemplateCopilotV2ExtractionTerminalCode;
+  diagnosticAcceptedCandidateCount?: number;
 }) {
+  const extractionDiagnostics =
+    summarizeTemplateCopilotV2ExtractionDiagnostics({
+      acceptedCandidateCount:
+        diagnosticAcceptedCandidateCount ?? candidates.length,
+      rejected,
+      terminalCode:
+        diagnosticTerminalCode ||
+        (outcome === "applied" ? "candidates_applied" : "no_candidates"),
+    });
   const { data, error } = await service.rpc("finalize_template_copilot_v2_mode_command", {
     p_actor_id: actor.id,
     p_session_id: sessionId,
@@ -242,8 +257,8 @@ async function finalizeTemplateCopilotV2DescribeCommand({ service, actor, sessio
     p_evidence_hash: templateCopilotV2CandidateEvidenceHash(candidates),
     p_detail: {
       ...detail,
-      rejected: rejected.slice(0, 20),
       candidateCount: candidates.length,
+      extractionDiagnostics,
     },
   });
   if (error) throw error;
@@ -285,6 +300,8 @@ export async function runTemplateCopilotV2DescribeCommand(input: TemplateCopilot
       // durable transcript; it is added to the ledger only with a successful
       // candidate projection and document provenance.
       ledger: prepared.ledger, candidates: [], rejected: [],
+      diagnosticTerminalCode: "provider_failure",
+      diagnosticAcceptedCandidateCount: 0,
       detail: {
         sourceKind,
         ...(input.document ? { document: { id: input.document.id, fileName: input.document.fileName, sha256: input.document.sha256, safety: input.document.safety } } : {}),
@@ -295,6 +312,11 @@ export async function runTemplateCopilotV2DescribeCommand(input: TemplateCopilot
     return attachPersistedDescribeMessages({ session: input.session, actor: input.actor, sessionId: input.sessionId, sourceMessageId: prepared.sourceMessageId, result: finalized });
   }
   const noCandidateDelta = templateCopilotV2CommandHash(projected.ledger) === templateCopilotV2CommandHash(documentLedger);
+  const noCandidateReason = extracted.candidates.length
+    ? "no_new_candidates"
+    : extracted.rejected?.length
+      ? "no_usable_candidates"
+      : "no_candidates";
   // Do not put finalization in the provider-failure boundary. A database or
   // network error after a successful provider result must leave the durable
   // command prepared for replay/recovery, not create a competing fallback.
@@ -307,11 +329,15 @@ export async function runTemplateCopilotV2DescribeCommand(input: TemplateCopilot
     ledger: noCandidateDelta ? documentLedger : projected.ledger,
     candidates: noCandidateDelta ? [] : extracted.candidates,
     rejected: [...(extracted.rejected || [])],
+    diagnosticTerminalCode: noCandidateDelta
+      ? noCandidateReason
+      : "candidates_applied",
+    diagnosticAcceptedCandidateCount: extracted.candidates.length,
     detail: {
       sourceKind,
       ...(input.document ? { document: { id: input.document.id, fileName: input.document.fileName, sha256: input.document.sha256, safety: input.document.safety } } : {}),
       ...(noCandidateDelta ? {
-        noCandidateReason: extracted.candidates.length ? "no_new_candidates" : (extracted.rejected?.length ? "no_usable_candidates" : "no_candidates"),
+        noCandidateReason,
       } : {}),
       assistantMessage: describeAssistantMessage(prepared.ledger.locale, noCandidateDelta ? "no_candidates" : "candidates"),
     },

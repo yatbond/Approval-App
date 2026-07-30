@@ -99,6 +99,10 @@ test("the Admin surface exposes operational metadata without becoming a transcri
     /sessionPseudonym|actorPseudonym/,
   );
   assert.match(adminRoute, /Cache-Control|approvalJson/);
+  assert.match(adminPanel, /Rejected candidates/);
+  assert.match(adminPanel, /candidates_rejected/);
+  assert.match(adminPanel, /key\.startsWith\("rejection_"\)/);
+  assert.doesNotMatch(adminPanel, /event\.detail|raw_rejection|rejection\.detail/);
 });
 
 test("real server routes emit replay-safe telemetry and scheduled retention purges it", () => {
@@ -110,6 +114,10 @@ test("real server routes emit replay-safe telemetry and scheduled retention purg
   assert.match(describeRoute, /getTemplateCopilotAiRoutingMetadata/);
   assert.match(describeRoute, /providerCode: providerRouting\.providerCode/);
   assert.match(describeRoute, /privacyMode: providerRouting\.privacyMode/);
+  assert.match(
+    describeRoute,
+    /templateCopilotV2ExtractionDiagnosticTelemetryCounts/,
+  );
   assert.doesNotMatch(describeRoute, /providerCode: "openrouter"/);
   assert.match(cron, /runTemplateCopilotV2TelemetryRetention\(\)/);
   assert.match(cron, /Promise\.all\(\[[\s\S]*templateCopilotTelemetryRetention/);
