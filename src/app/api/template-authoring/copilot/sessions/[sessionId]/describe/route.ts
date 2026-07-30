@@ -21,6 +21,7 @@ import {
   type TemplateCopilotV2ExtractionDiagnostics,
 } from "@/lib/template-copilot-v2-extraction-diagnostics";
 import { templateCopilotV2ExtractionSectionSchema } from "@/lib/template-copilot-v2-extraction-context";
+import { createTemplateCopilotProviderRequestTracker } from "@/lib/template-copilot-provider-request-tracker";
 
 // The mode command schema is refined, and Zod deliberately disallows omit on
 // refined objects. Keep the describe command explicit and equally bounded.
@@ -53,9 +54,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
   const { sessionId } = await context.params;
   if (!isTemplateCopilotV2ModeEnabled(parsed.data.mode)) return approvalJson(cookieSource, correlationId, { error: { code: "mode_unavailable", message: "This Copilot mode is temporarily unavailable." } }, 404);
   try {
-    const providerStartedAt = Date.now();
-    let providerInvoked = false;
-    let providerOutcome: "success" | "outage" | "timeout" | "malformed_output" | "privacy_route_rejected" = "success";
+    const providerRequests = createTemplateCopilotProviderRequestTracker();
     let providerRouting: TemplateCopilotAiRoutingMetadata | null = null;
     let extractionDiagnostics: TemplateCopilotV2ExtractionDiagnostics | null =
       null;
@@ -73,31 +72,26 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
       sectionHint: parsed.data.sectionHint,
       sourceText: parsed.data.message,
       extractCandidates: async (input) => {
-        providerInvoked = true;
-        try {
-          const extracted = await extractTemplateCopilotV2Candidates(input);
-          extractionDiagnostics =
-            summarizeTemplateCopilotV2ExtractionDiagnostics({
-              acceptedCandidateCount: extracted.candidates.length,
-              rejected: extracted.rejected,
-              terminalCode: "candidates_applied",
-            });
-          return extracted;
-        } catch (error) {
-          providerOutcome = classifyProviderOutcome(error);
-          throw error;
-        }
+        const extracted = await extractTemplateCopilotV2Candidates({
+          ...input,
+          observeProviderRequest: providerRequests.observe,
+        });
+        extractionDiagnostics =
+          summarizeTemplateCopilotV2ExtractionDiagnostics({
+            acceptedCandidateCount: extracted.candidates.length,
+            rejected: extracted.rejected,
+            terminalCode: "candidates_applied",
+          });
+        return extracted;
       },
-      fallbackReason: (error) => {
-        providerOutcome = classifyProviderOutcome(error);
-        return error instanceof TemplateCopilotModelError
-          ? error.reasonCode
-          : "provider_error";
-      },
+      fallbackReason: (error) => error instanceof TemplateCopilotModelError
+        ? error.reasonCode
+        : "provider_error",
     });
+    const providerSummary = providerRequests.snapshot();
     const telemetryRevision = positiveInteger(result.revision);
     const telemetryLocale = resultLocale(result);
-    if (providerInvoked && telemetryRevision && telemetryLocale) {
+    if (providerSummary.requestCount > 0 && telemetryRevision && telemetryLocale) {
       after(() =>
         recordTemplateCopilotV2TelemetryBestEffort({
           service,
@@ -109,19 +103,22 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
             mode: parsed.data.mode,
             eventType: "provider_call_completed",
             revision: telemetryRevision,
-            outcomeCode: `provider_${providerOutcome}`,
+            outcomeCode: `provider_${providerSummary.outcome}`,
             ...(providerRouting
               ? {
                   provider: {
                     providerCode: providerRouting.providerCode,
                     modelCode: safeModelCode(providerRouting.model),
                     privacyMode: providerRouting.privacyMode,
-                    outcome: providerOutcome,
-                    latencyMs: Math.min(Date.now() - providerStartedAt, 300_000),
+                    outcome: providerSummary.outcome,
+                    latencyMs: providerSummary.averageLatencyMs,
                   },
                 }
               : {}),
             counts: {
+              provider_requests: providerSummary.requestCount,
+              provider_request_successes: providerSummary.successCount,
+              provider_request_failures: providerSummary.failureCount,
               guided_fallbacks: result.outcome === "guided_fallback" ? 1 : 0,
               ...templateCopilotV2ExtractionDiagnosticTelemetryCounts(
                 extractionDiagnostics,
@@ -164,21 +161,6 @@ function resultLocale(result: Record<string, unknown>) {
     ledger.locale === "zh-Hans"
     ? ledger.locale
     : null;
-}
-
-function classifyProviderOutcome(error: unknown) {
-  const reason =
-    error instanceof TemplateCopilotModelError
-      ? error.reasonCode
-      : error instanceof Error
-        ? error.name
-        : "provider_error";
-  if (/privacy|zdr/i.test(reason)) return "privacy_route_rejected" as const;
-  if (/timeout/i.test(reason)) return "timeout" as const;
-  if (/malformed|schema|json|output/i.test(reason)) {
-    return "malformed_output" as const;
-  }
-  return "outage" as const;
 }
 
 function safeModelCode(model: string) {

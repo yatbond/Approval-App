@@ -30,6 +30,9 @@ const valid = {
     guided_fallbacks: 0,
     candidates_accepted: 2,
     candidates_rejected: 1,
+    extraction_blocks_attempted: 3,
+    extraction_blocks_completed: 2,
+    extraction_blocks_failed: 1,
     rejection_untraceable_normalization: 1,
     rejected_fact_workflow_name: 1,
   },
@@ -58,6 +61,7 @@ test("runtime telemetry rejects direct identifiers and raw corporate text", () =
     { ...valid, counts: { employee_name: 1 } },
     { ...valid, counts: { rejected_fact_employee_name: 1 } },
     { ...valid, counts: { raw_rejection_detail: 1 } },
+    { ...valid, counts: { document_blocks_attempted: 1 } },
   ]) {
     assert.throws(
       () => assertTemplateCopilotV2TelemetryMinimized(unsafe),

@@ -6,6 +6,7 @@ import {
 import {
   deriveTemplateCopilotV2ServerEvidenceRule,
   normalizeTemplateCopilotV2Candidates,
+  templateCopilotV2CandidateSchema,
   templateCopilotV2CandidateValueTypes,
   type TemplateCopilotV2Candidate,
   type TemplateCopilotV2CandidateNormalization,
@@ -786,10 +787,18 @@ function assembleAtoms(
       if (
         actions.length !== 1 ||
         routes.length > 1 ||
-        (actions[0]?.atom.value === "route_to_stage" && routes.length !== 1)
+        (actions[0]?.atom.value === "route_to_stage" && routes.length !== 1) ||
+        (actions[0]?.atom.value !== "route_to_stage" && routes.length !== 0)
       ) {
         rejected.push(
-          incomplete(factId, actions.length > 1 || routes.length > 1),
+          incomplete(
+            factId,
+            actions.length > 1 ||
+              routes.length > 1 ||
+              (actions.length === 1 &&
+                actions[0].atom.value !== "route_to_stage" &&
+                routes.length > 0),
+          ),
         );
       } else {
         const selected =
@@ -907,9 +916,13 @@ function candidateFromAssembly(
 ):
   | Readonly<{ candidate: TemplateCopilotV2Candidate }>
   | Readonly<{ rejection: TemplateCopilotV2CandidateRejection }> {
-  const sourceStart = Math.min(...assembly.atoms.map((item) => item.sourceStart));
-  const sourceEnd = Math.max(...assembly.atoms.map((item) => item.sourceEnd));
-  const originalWording = message.slice(sourceStart, sourceEnd);
+  const representative = [...assembly.atoms].sort(
+    (left, right) =>
+      left.sourceStart - right.sourceStart || left.sourceEnd - right.sourceEnd,
+  )[0];
+  const originalWording = representative
+    ? message.slice(representative.sourceStart, representative.sourceEnd)
+    : "";
   if (
     !originalWording.trim() ||
     templateCopilotUnicodeCodePointCount(originalWording) > 8_000
@@ -963,18 +976,21 @@ function candidateFromAssembly(
   ]
     .join("; ")
     .slice(0, 500);
-  return {
-    candidate: {
-      factId: assembly.factId,
-      valueType: templateCopilotV2CandidateValueTypes[assembly.factId],
-      value: canonicalValue,
-      originalWording,
-      evidence: evidence as TemplateCopilotV2Candidate["evidence"],
-      confidence: confidenceValue,
-      ambiguity: ambiguityValue,
-      ...(ambiguityNote ? { ambiguityNote } : {}),
-    } as TemplateCopilotV2Candidate,
-  };
+  const candidate = {
+    factId: assembly.factId,
+    valueType: templateCopilotV2CandidateValueTypes[assembly.factId],
+    value: canonicalValue,
+    originalWording,
+    evidence: evidence as TemplateCopilotV2Candidate["evidence"],
+    confidence: confidenceValue,
+    ambiguity: ambiguityValue,
+    ...(ambiguityNote ? { ambiguityNote } : {}),
+  } as TemplateCopilotV2Candidate;
+  const parsedCandidate = templateCopilotV2CandidateSchema.safeParse(candidate);
+  if (!parsedCandidate.success) {
+    return reject(assembly.factId, "atomic_candidate_invalid");
+  }
+  return { candidate: parsedCandidate.data };
 }
 
 function quoteLeaves(

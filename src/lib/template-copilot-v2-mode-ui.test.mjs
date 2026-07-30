@@ -87,4 +87,7 @@ test("all three locales provide plain-language broad and difference prompts", ()
   assert.match(traditional.similarPlaceholder, /保留、移除或更改/u);
   assert.match(simplified.describePlaceholder, /谁提出申请.*文件.*每一步/u);
   assert.match(simplified.similarPlaceholder, /保留、删除或更改/u);
+  assert.match(english.documentTooLarge, /80,000.*split/iu);
+  assert.match(traditional.documentTooLarge, /80,000.*分拆/u);
+  assert.match(simplified.documentTooLarge, /80,000.*拆分/u);
 });

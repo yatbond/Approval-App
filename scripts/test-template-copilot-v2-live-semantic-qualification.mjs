@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
@@ -8,7 +10,10 @@ import { scoreLiveSemanticExtraction } from "./template-copilot-live-semantic-sc
 import {
   extractTemplateCopilotV2Candidates,
   getTemplateCopilotAiRoutingMetadata,
+  templateCopilotProviderTimeoutMs,
 } from "../src/lib/template-copilot-ai.ts";
+import { templateCopilotV2ExtractionPromptVersion } from "../src/lib/template-copilot-v2-candidates.ts";
+import { createTemplateCopilotProviderRequestTracker } from "../src/lib/template-copilot-provider-request-tracker.ts";
 
 const expectedScenarioCount = 24;
 const scenarioFilter = new Set(
@@ -46,6 +51,23 @@ const fullScenarioSetSelected =
   new Set(scenarios.map((item) => item.id)).size === expectedScenarioCount;
 const startedAt = new Date();
 const providerRoute = getTemplateCopilotAiRoutingMetadata();
+const sourceRevision = readGit(["rev-parse", "HEAD"]);
+const worktreeStatus = readGit(["status", "--porcelain"]);
+const allowDirtySource =
+  process.env.QUALIFICATION_ALLOW_DIRTY_SOURCE?.trim() === "true";
+if (!/^[0-9a-f]{40}$/u.test(sourceRevision)) {
+  throw new Error(
+    "Live semantic qualification requires an exact Git source revision.",
+  );
+}
+if (worktreeStatus && !allowDirtySource) {
+  throw new Error(
+    "Live semantic qualification requires a clean source worktree. Commit the verified extraction source or explicitly set QUALIFICATION_ALLOW_DIRTY_SOURCE=true for a non-comparable exploratory run.",
+  );
+}
+const fixtureFingerprint = createHash("sha256")
+  .update(JSON.stringify(templateCopilotQualificationScenarios))
+  .digest("hex");
 const report = {
   metadata: {
     startedAt: startedAt.toISOString(),
@@ -63,7 +85,13 @@ const report = {
     expectedExtractionInvocationCount: scenarios.length * 9,
     extractionWorkerConcurrency: concurrency,
     maximumInternalProviderConcurrency: 3,
-    providerRequestCountAvailable: false,
+    providerRequestCountAvailable: true,
+    providerTimeoutMs: templateCopilotProviderTimeoutMs(),
+    extractionPromptVersion: templateCopilotV2ExtractionPromptVersion,
+    sourceRevision,
+    sourceWorktreeClean: worktreeStatus === "",
+    comparableCleanSource: worktreeStatus === "",
+    fixtureFingerprint: `sha256:${fixtureFingerprint}`,
     providerRoute,
   },
   scenarios: [],
@@ -147,6 +175,16 @@ const successfulExtractionInvocationCount = report.scenarios.reduce(
   (total, item) => total + item.successfulExtractionInvocationCount,
   0,
 );
+const providerRequestCount = report.scenarios.reduce(
+  (total, item) =>
+    total +
+    item.extractions.reduce(
+      (scenarioTotal, extraction) =>
+        scenarioTotal + extraction.providerRequestCount,
+      0,
+    ),
+  0,
+);
 const semanticPassCount = report.scenarios.filter(
   (item) => item.semanticFidelity.passed,
 ).length;
@@ -162,6 +200,7 @@ report.summary = {
   scenarioCount: report.scenarios.length,
   successfulExtractionInvocationCount,
   extractionInvocationCount,
+  providerRequestCount,
   guidedFallbackCount:
     extractionInvocationCount - successfulExtractionInvocationCount,
   languageSummaries,
@@ -192,18 +231,25 @@ async function runScenario(item) {
     const messageId = `${item.id}:${section}`;
     sourceMessages[messageId] = message;
     const callStartedAt = Date.now();
+    const providerRequests = createTemplateCopilotProviderRequestTracker();
     try {
       const extracted = await extractTemplateCopilotV2Candidates({
         message,
         messageId,
         locale: item.language,
         section,
+        observeProviderRequest: providerRequests.observe,
       });
+      const providerSummary = providerRequests.snapshot();
       candidates.push(...extracted.candidates);
       extractions.push({
         section,
         status: "applied",
         durationMs: Date.now() - callStartedAt,
+        providerRequestCount: providerSummary.requestCount,
+        providerRequestSuccessCount: providerSummary.successCount,
+        providerRequestFailureCount: providerSummary.failureCount,
+        averageProviderRequestLatencyMs: providerSummary.averageLatencyMs,
         candidateCount: extracted.candidates.length,
         rejectedCount: extracted.rejected.length,
         rejectionCodes: countBy(extracted.rejected, (entry) => entry.code),
@@ -211,10 +257,15 @@ async function runScenario(item) {
         documentBlocks: extracted.documentBlocks,
       });
     } catch (error) {
+      const providerSummary = providerRequests.snapshot();
       extractions.push({
         section,
         status: "guided_fallback",
         durationMs: Date.now() - callStartedAt,
+        providerRequestCount: providerSummary.requestCount,
+        providerRequestSuccessCount: providerSummary.successCount,
+        providerRequestFailureCount: providerSummary.failureCount,
+        averageProviderRequestLatencyMs: providerSummary.averageLatencyMs,
         candidateCount: 0,
         rejectedCount: 0,
         errorName: error instanceof Error ? error.name : "UnknownError",
@@ -245,6 +296,18 @@ async function runScenario(item) {
     semanticFidelity,
     durationMs: Date.now() - scenarioStartedAt,
   };
+}
+
+function readGit(args) {
+  try {
+    return execFileSync("git", args, {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
 }
 
 function countBy(items, keyFor) {

@@ -420,6 +420,64 @@ test("a no-candidate document is retained once and continues with Guided gaps", 
   assert.equal(result.modeState.mode, "guided");
 });
 
+test("partial document extraction is disclosed in the durable assistant turn in every locale", async () => {
+  for (const [locale, pattern] of [
+    ["en", /Only 1 of 8 document sections were analysed; 7 failed/u],
+    ["zh-Hant", /只完成分析 1\/8 個部分；其餘 7 個部分未能分析/u],
+    ["zh-Hans", /只完成分析 1\/8 个部分；其余 7 个部分未能分析/u],
+  ]) {
+    const ledger = createTemplateCopilotV2Ledger(
+      { ...scope, locale },
+      { enabled: true },
+    );
+    const document = {
+      id: `req-${String(locale).padEnd(32, "a").slice(0, 32)}`,
+      fileName: "requirements.txt",
+      sha256: "c".repeat(64),
+      text: "General background only",
+      safety: "sanitized_untrusted_text",
+    };
+    const service = serviceFor({
+      prepared: () => ({
+        outcome: "prepared",
+        revision: 4,
+        status: "interviewing",
+        ledger,
+        claimToken: `claim-partial-${locale}`,
+        sourceMessageId: `mode-command:partial-${locale}`,
+      }),
+      terminal: (args) => ({
+        outcome: "applied",
+        revision: 5,
+        status: "interviewing",
+        ledger: args.p_ledger,
+        modeState: { mode: "guided" },
+        detail: args.p_detail,
+      }),
+    });
+    await command({
+      service,
+      sourceText: document.text,
+      document,
+      extractCandidates: async () => ({
+        candidates: [],
+        documentBlocks: {
+          attemptedBlockCount: 8,
+          completedBlockCount: 1,
+          failedBlockCount: 7,
+          retainedAtomCount: 0,
+          truncatedAtomCount: 0,
+        },
+      }),
+    });
+    assert.match(
+      service.calls[1].args.p_detail.assistantMessage,
+      pattern,
+      locale,
+    );
+  }
+});
+
 test("durable broad-mode assistant turns are localized in all supported locales", async () => {
   for (const [locale, pattern] of [["en", /Review the extracted suggestions/u], ["zh-Hant", /審閱已擷取的建議/u], ["zh-Hans", /审核已提取的建议/u]]) {
     const ledger = createTemplateCopilotV2Ledger({ ...scope, locale }, { enabled: true });

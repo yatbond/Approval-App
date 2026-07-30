@@ -367,7 +367,11 @@ export async function runTemplateCopilotV2DescribeCommand(input: TemplateCopilot
       ...(extracted.recovery ? {
         focusedRecovery: extracted.recovery,
       } : {}),
-      assistantMessage: describeAssistantMessage(prepared.ledger.locale, noCandidateDelta ? "no_candidates" : "candidates"),
+      assistantMessage: describeAssistantMessage(
+        prepared.ledger.locale,
+        noCandidateDelta ? "no_candidates" : "candidates",
+        extracted.documentBlocks,
+      ),
     },
   });
   return attachPersistedDescribeMessages({ session: input.session, actor: input.actor, sessionId: input.sessionId, sourceMessageId: prepared.sourceMessageId, result: finalized });
@@ -376,18 +380,51 @@ export async function runTemplateCopilotV2DescribeCommand(input: TemplateCopilot
 function describeAssistantMessage(
   locale: TemplateCopilotV2Ledger["locale"],
   outcome: "candidates" | "no_candidates" | "fallback",
+  documentBlocks?: TemplateCopilotV2DocumentBlockExtractionSummary | null,
+) {
+  const partial =
+    documentBlocks && documentBlocks.failedBlockCount > 0
+      ? localizedPartialDocumentExtraction(locale, documentBlocks)
+      : "";
+  let message: string;
+  if (locale === "zh-Hant") {
+    if (outcome === "candidates") {
+      message = "請先審閱已擷取的建議，然後回答下一個尚未確定的簡單問題。";
+    } else if (outcome === "no_candidates") {
+      message = "沒有找到可安全提出的新增建議。請回答下一個尚未確定的簡單問題；已確認的資料沒有更改。";
+    } else {
+      message = "暫時無法分析這項描述。請繼續回答下一個簡單問題；其他資料沒有更改。";
+    }
+  } else if (locale === "zh-Hans") {
+    if (outcome === "candidates") {
+      message = "请先审核已提取的建议，然后回答下一个尚未确定的简单问题。";
+    } else if (outcome === "no_candidates") {
+      message = "没有找到可安全提出的新增建议。请回答下一个尚未确定的简单问题；已确认的信息没有更改。";
+    } else {
+      message = "暂时无法分析这项描述。请继续回答下一个简单问题；其他信息没有更改。";
+    }
+  } else if (outcome === "candidates") {
+    message =
+      "Review the extracted suggestions, then answer the next simple question that is still undecided.";
+  } else if (outcome === "no_candidates") {
+    message =
+      "No safe new suggestions were found. Answer the next simple question that is still undecided; confirmed information was not changed.";
+  } else {
+    message =
+      "The description could not be analysed. Continue with the next simple question; nothing else was changed.";
+  }
+  return partial ? `${partial}\n\n${message}` : message;
+}
+
+function localizedPartialDocumentExtraction(
+  locale: TemplateCopilotV2Ledger["locale"],
+  summary: TemplateCopilotV2DocumentBlockExtractionSummary,
 ) {
   if (locale === "zh-Hant") {
-    if (outcome === "candidates") return "請先審閱已擷取的建議，然後回答下一個尚未確定的簡單問題。";
-    if (outcome === "no_candidates") return "沒有找到可安全提出的新增建議。請回答下一個尚未確定的簡單問題；已確認的資料沒有更改。";
-    return "暫時無法分析這項描述。請繼續回答下一個簡單問題；其他資料沒有更改。";
+    return `檔案只完成分析 ${summary.completedBlockCount}/${summary.attemptedBlockCount} 個部分；其餘 ${summary.failedBlockCount} 個部分未能分析。請勿假設整份檔案已被涵蓋。請審閱建議，並考慮把檔案分成較小部分後重新上載。`;
   }
   if (locale === "zh-Hans") {
-    if (outcome === "candidates") return "请先审核已提取的建议，然后回答下一个尚未确定的简单问题。";
-    if (outcome === "no_candidates") return "没有找到可安全提出的新增建议。请回答下一个尚未确定的简单问题；已确认的信息没有更改。";
-    return "暂时无法分析这项描述。请继续回答下一个简单问题；其他信息没有更改。";
+    return `文件只完成分析 ${summary.completedBlockCount}/${summary.attemptedBlockCount} 个部分；其余 ${summary.failedBlockCount} 个部分未能分析。请勿假设整份文件已被涵盖。请审核建议，并考虑把文件分成较小部分后重新上传。`;
   }
-  if (outcome === "candidates") return "Review the extracted suggestions, then answer the next simple question that is still undecided.";
-  if (outcome === "no_candidates") return "No safe new suggestions were found. Answer the next simple question that is still undecided; confirmed information was not changed.";
-  return "The description could not be analysed. Continue with the next simple question; nothing else was changed.";
+  return `Only ${summary.completedBlockCount} of ${summary.attemptedBlockCount} document sections were analysed; ${summary.failedBlockCount} failed. Do not assume the whole document was covered. Review the suggestions and consider splitting the file into smaller parts before uploading it again.`;
 }

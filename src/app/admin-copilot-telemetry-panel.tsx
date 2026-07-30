@@ -108,7 +108,7 @@ export function AdminCopilotTelemetryPanel() {
                       <p className="mt-1 break-words text-neutral-500 dark:text-neutral-400">
                         {event.provider.providerCode} / {event.provider.modelCode} ·{" "}
                         {event.provider.privacyMode.toUpperCase()} ·{" "}
-                        {event.provider.latencyMs} ms
+                        {event.provider.latencyMs} ms average request latency
                       </p>
                       <ProviderDiagnostics counts={event.counts} />
                     </>
@@ -153,18 +153,36 @@ function Metric({ label, value }: { label: string; value: number }) {
 
 function summarize(events: TemplateCopilotV2TelemetryAdminViewEvent[]) {
   return {
-    providerCalls: events.filter((event) => event.provider).length,
-    zdrProviderCalls: events.filter(
-      (event) => event.provider?.privacyMode === "zdr",
-    ).length,
-    nonSuccess: events.filter(
-      (event) => event.provider && event.provider.outcome !== "success",
-    ).length,
+    providerCalls: events.reduce(
+      (total, event) => total + providerRequestCount(event),
+      0,
+    ),
+    zdrProviderCalls: events.reduce(
+      (total, event) =>
+        total +
+        (event.provider?.privacyMode === "zdr"
+          ? providerRequestCount(event)
+          : 0),
+      0,
+    ),
+    nonSuccess: events.reduce(
+      (total, event) =>
+        total +
+        (event.counts.provider_request_failures ??
+          (event.provider && event.provider.outcome !== "success" ? 1 : 0)),
+      0,
+    ),
     rejectedCandidates: events.reduce(
       (total, event) => total + (event.counts.candidates_rejected || 0),
       0,
     ),
   };
+}
+
+function providerRequestCount(
+  event: TemplateCopilotV2TelemetryAdminViewEvent,
+) {
+  return event.counts.provider_requests ?? (event.provider ? 1 : 0);
 }
 
 function ProviderDiagnostics({
@@ -178,6 +196,11 @@ function ProviderDiagnostics({
   return (
     <div className="mt-2 rounded bg-neutral-50 p-2 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
       <p>
+        Provider requests: {counts.provider_requests || 0} · succeeded:{" "}
+        {counts.provider_request_successes || 0} · failed:{" "}
+        {counts.provider_request_failures || 0}
+      </p>
+      <p className="mt-1">
         Accepted candidates: {counts.candidates_accepted || 0} · rejected:{" "}
         {counts.candidates_rejected || 0}
       </p>

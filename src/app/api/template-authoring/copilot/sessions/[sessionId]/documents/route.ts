@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import {
   approvalError,
   approvalJson,
@@ -23,7 +23,20 @@ import { templateAuthoringRpcResponse } from "@/lib/template-authoring-http";
 import { isTemplateCopilotV2Enabled, isTemplateCopilotV2ModeEnabled } from "@/lib/template-copilot-v2-feature";
 import { bindTemplateCopilotV2DocumentIdentity, runTemplateCopilotV2DescribeCommand } from "@/lib/template-copilot-v2-describe-command";
 import { templateCopilotV2DescribeResponseDisposition } from "@/lib/template-copilot-v2-describe-response";
-import { extractTemplateCopilotV2Candidates, TemplateCopilotModelError } from "@/lib/template-copilot-ai";
+import {
+  extractTemplateCopilotV2Candidates,
+  getTemplateCopilotAiRoutingMetadata,
+  TemplateCopilotModelError,
+  type TemplateCopilotAiRoutingMetadata,
+} from "@/lib/template-copilot-ai";
+import {
+  summarizeTemplateCopilotV2ExtractionDiagnostics,
+  templateCopilotV2ExtractionDiagnosticTelemetryCounts,
+  type TemplateCopilotV2ExtractionDiagnostics,
+} from "@/lib/template-copilot-v2-extraction-diagnostics";
+import type { TemplateCopilotV2DocumentBlockExtractionSummary } from "@/lib/template-copilot-v2-document-block-extraction";
+import { createTemplateCopilotProviderRequestTracker } from "@/lib/template-copilot-provider-request-tracker";
+import { recordTemplateCopilotV2TelemetryBestEffort } from "@/lib/template-copilot-v2-telemetry-server";
 
 export async function POST(
   request: NextRequest,
@@ -107,17 +120,97 @@ export async function POST(
         idempotencyKey: clientMessageId,
         document: safe.extract,
       });
+      const providerRequests = createTemplateCopilotProviderRequestTracker();
+      let providerRouting: TemplateCopilotAiRoutingMetadata | null = null;
+      let extractionDiagnostics: TemplateCopilotV2ExtractionDiagnostics | null =
+        null;
+      let documentBlocks: TemplateCopilotV2DocumentBlockExtractionSummary | null =
+        null;
+      try {
+        providerRouting = getTemplateCopilotAiRoutingMetadata();
+      } catch {
+        // The durable command records configuration failure as Guided
+        // fallback. No provider-call telemetry is invented when no request
+        // reached a provider.
+      }
       const result = await runTemplateCopilotV2DescribeCommand({
         session, service, actor, sessionId, expectedRevision, idempotencyKey: clientMessageId,
         mode: "describe_everything",
         sectionHint: "document",
         documentQuarantine: safe.quarantine,
         sourceText: document.text, document,
-        extractCandidates: extractTemplateCopilotV2Candidates,
+        extractCandidates: async (input) => {
+          const extracted = await extractTemplateCopilotV2Candidates({
+            ...input,
+            observeProviderRequest: providerRequests.observe,
+          });
+          extractionDiagnostics =
+            summarizeTemplateCopilotV2ExtractionDiagnostics({
+              acceptedCandidateCount: extracted.candidates.length,
+              rejected: extracted.rejected,
+              terminalCode: "candidates_applied",
+            });
+          documentBlocks = extracted.documentBlocks;
+          return extracted;
+        },
         fallbackReason: (error) => error instanceof TemplateCopilotModelError
           ? error.reasonCode
           : "provider_error",
       });
+      const providerSummary = providerRequests.snapshot();
+      const telemetryRevision = positiveInteger(result.revision);
+      const telemetryLocale = resultLocale(result);
+      if (
+        providerSummary.requestCount > 0 &&
+        telemetryRevision &&
+        telemetryLocale
+      ) {
+        after(() =>
+          recordTemplateCopilotV2TelemetryBestEffort({
+            service,
+            event: {
+              actorId: actor.id,
+              sessionId,
+              deduplicationKey: clientMessageId,
+              locale: telemetryLocale,
+              mode: "describe_everything",
+              eventType: "provider_call_completed",
+              revision: telemetryRevision,
+              outcomeCode: `provider_${providerSummary.outcome}`,
+              ...(providerRouting
+                ? {
+                    provider: {
+                      providerCode: providerRouting.providerCode,
+                      modelCode: safeModelCode(providerRouting.model),
+                      privacyMode: providerRouting.privacyMode,
+                      outcome: providerSummary.outcome,
+                      latencyMs: providerSummary.averageLatencyMs,
+                    },
+                  }
+                : {}),
+              counts: {
+                provider_requests: providerSummary.requestCount,
+                provider_request_successes: providerSummary.successCount,
+                provider_request_failures: providerSummary.failureCount,
+                guided_fallbacks:
+                  result.outcome === "guided_fallback" ? 1 : 0,
+                ...(documentBlocks
+                  ? {
+                      extraction_blocks_attempted:
+                        documentBlocks.attemptedBlockCount,
+                      extraction_blocks_completed:
+                        documentBlocks.completedBlockCount,
+                      extraction_blocks_failed: documentBlocks.failedBlockCount,
+                    }
+                  : {}),
+                ...templateCopilotV2ExtractionDiagnosticTelemetryCounts(
+                  extractionDiagnostics,
+                ),
+              },
+            },
+          }),
+        );
+      }
       if (result.outcome === "guided_fallback") {
         safeApprovalLog("template_copilot_v2_document_fallback", correlationId, {
           reason: typeof result.detail === "object" && result.detail && "fallbackReason" in result.detail
@@ -189,6 +282,29 @@ export async function POST(
       503,
     );
   }
+}
+
+function positiveInteger(value: unknown) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 1 ? number : null;
+}
+
+function resultLocale(result: Record<string, unknown>) {
+  const ledger =
+    result.ledger &&
+    typeof result.ledger === "object" &&
+    !Array.isArray(result.ledger)
+      ? (result.ledger as Record<string, unknown>)
+      : {};
+  return ledger.locale === "en" ||
+    ledger.locale === "zh-Hant" ||
+    ledger.locale === "zh-Hans"
+    ? ledger.locale
+    : null;
+}
+
+function safeModelCode(model: string) {
+  return model.toLowerCase().replaceAll("/", ":").replace(/[^a-z0-9_.:-]/g, "_");
 }
 
 function localizedDocumentAccepted(

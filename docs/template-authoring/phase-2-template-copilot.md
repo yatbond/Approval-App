@@ -218,27 +218,34 @@ provider call is created. The sanitizer splits English, Traditional Chinese,
 and Simplified Chinese text into sentence-level units and quarantines only
 bounded instruction-override, secret-exfiltration, and role/tool-control
 patterns. Bounded rolling-window checks catch a control phrase split across
-several lines or sentence boundaries and quarantine only the trigger and
-target units, not an intervening business requirement. Ordinary workflow uses
-of words such as `override`, `policy`, or `system message` remain available.
-A legitimate neighbouring sentence therefore remains available
-(for example, `Require one quotation PDF.`) while an embedded instruction is
-absent from both the model input and candidate evidence. Instruction-only
-documents fail before provider extraction. The immutable SHA-256 remains the
-hash of the original uploaded bytes; the ledger and transcript retain the
-exact sanitized source used for evidence.
+several lines or sentence boundaries and quarantine every sentence-level unit
+inside the matched control span. This prevents an attacker from placing a
+privilege-changing instruction between a separated trigger and target.
+Ordinary workflow uses of words such as `override`, `policy`, or `system
+message` remain available. A legitimate neighbouring sentence outside the
+matched span therefore remains available (for example, `Require one quotation
+PDF.`) while an embedded instruction is absent from both the model input and
+candidate evidence. Instruction-only documents fail before provider
+extraction. The immutable SHA-256 remains the hash of the original uploaded
+bytes; the ledger and transcript retain the exact sanitized source used for
+evidence.
 
 Sanitized text is then divided without gaps into at most eight source-ordered
-blocks of at most 10,000 Unicode code points. At most three provider calls run
-concurrently. Successful block outputs survive failed sibling blocks, are
-fairly selected across successful blocks before the 64-atom cap, and are then
-reassembled in source order. Server-owned block spans disambiguate repeated
-wording before every candidate passes through the same global hostile-output
-normalizer, so cross-block and cross-fact evidence overlap is still rejected.
-If every block fails, the existing durable Guided
-fallback applies. Audit detail stores only quarantine reason counts and
-block/atom counts; it never stores quarantined text, provider output, or error
-text.
+blocks of at most 10,000 Unicode code points. A file over 5 MB, a PDF over 100
+pages, or extracted text over 80,000 code points is rejected with a split-file
+instruction; it is never silently truncated or presented as fully analysed.
+At most three provider calls run concurrently. Successful block outputs
+survive failed sibling blocks, are fairly selected across successful blocks
+before the 64-atom cap, and are then reassembled in source order. If any block
+fails, the durable assistant turn states the completed/attempted/failed counts
+in the session locale and warns the employee not to assume whole-document
+coverage. If every block fails, the existing durable Guided fallback applies.
+Server-owned block spans disambiguate repeated wording before every candidate
+passes through the same global hostile-output normalizer, so cross-block and
+cross-fact evidence overlap is still rejected. A candidate may cite distant
+source leaves without storing the intervening text as its short representative
+excerpt. Audit detail stores only quarantine reason counts and block/atom
+counts; it never stores quarantined text, provider output, or error text.
 
 The source-only live semantic qualification runs the same 24 synthetic
 workflow archetypes, nine focused requirement sections, and three reviewed
@@ -251,8 +258,13 @@ npm run test:template-copilot-v2-live-semantic
 It requires an explicit OpenRouter model and ZDR route and makes 216 bounded
 section-extraction invocations for the full matrix. Focused recovery may add
 fact-level provider requests, so the harness deliberately uses one scenario
-worker and caps peak internal provider concurrency at three; it does not
-misreport extraction invocations as provider-request count. The gate validates
+worker and caps peak internal provider concurrency at three. It records both
+logical extraction invocations and observed provider-request counts, plus the
+Git revision, clean/dirty worktree state, fixture SHA-256, extraction prompt
+version, and provider timeout; it does not misreport extraction invocations as
+provider-request count. Comparable runs fail unless the revision is exact and
+the worktree is clean; a dirty-source override is explicitly marked
+non-comparable. The gate validates
 exact evidence spans and the same workflow-shape expectations used by the
 authenticated Preview suite, and writes only aggregate extraction diagnostics
 and semantic failures. It never writes the synthetic source narratives or raw
@@ -722,12 +734,16 @@ Step 8 requires no database migration.
 Every completed Describe or requirements-document command returns and stores a
 bounded `detail.extractionDiagnostics` object. It reports the terminal outcome,
 accepted and rejected candidate totals, rejection-code counts, and counts by
-canonical fact ID. Provider telemetry carries the same aggregate counts, and
-the Admin telemetry panel shows accepted/rejected totals and rejection
-reasons. The multilingual qualification trace retains this object for every
-Describe turn so a failed semantic scenario can be traced to schema,
-evidence-shape, leaf-path, quote-position, source-passage, normalization,
-overlap, or provider-failure causes.
+canonical fact ID. Provider telemetry covers both narrative and document
+extraction and carries the same aggregate counts. It records the actual model
+request count, successes, failures, and average request-only latency; focused
+recovery and document blocks are not collapsed into one misleading call.
+Document events also record attempted/completed/failed block counts. The Admin
+telemetry panel shows these provider-request and accepted/rejected totals plus
+rejection reasons. The multilingual qualification trace retains the same safe
+diagnostics for every extraction turn so a failed semantic scenario can be
+traced to schema, evidence-shape, leaf-path, quote-position, source-passage,
+normalization, overlap, or provider-failure causes.
 
 These diagnostics deliberately exclude source wording, document text,
 excerpts, message IDs, JSON values, provider output, and exception text.

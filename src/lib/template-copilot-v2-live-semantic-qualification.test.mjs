@@ -86,7 +86,15 @@ test("live provider harness is ZDR-required and stores neither source nor raw ou
   assert.match(script, /providerOutputStored:\s*false/);
   assert.match(script, /QUALIFICATION_CONCURRENCY=1/);
   assert.match(script, /maximumInternalProviderConcurrency:\s*3/);
-  assert.match(script, /providerRequestCountAvailable:\s*false/);
+  assert.match(script, /providerRequestCountAvailable:\s*true/);
+  assert.match(script, /observeProviderRequest:\s*providerRequests\.observe/);
+  assert.match(script, /sourceRevision,\s*\n\s*sourceWorktreeClean:/);
+  assert.match(script, /sourceWorktreeClean:\s*worktreeStatus === ""/);
+  assert.match(script, /QUALIFICATION_ALLOW_DIRTY_SOURCE/);
+  assert.match(script, /requires a clean source worktree/);
+  assert.match(script, /fixtureFingerprint:\s*`sha256:/);
+  assert.match(script, /extractionPromptVersion:/);
+  assert.match(script, /providerTimeoutMs:/);
   assert.doesNotMatch(script, /sourceMessages,\s*candidates,\s*calls/);
   assert.match(
     packageJson,

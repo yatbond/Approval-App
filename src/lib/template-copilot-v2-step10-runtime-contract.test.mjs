@@ -13,6 +13,7 @@ const [
   sessionRoute,
   answerRoute,
   describeRoute,
+  documentRoute,
   previewScript,
   authorizedRunner,
   telemetryDatabaseTest,
@@ -27,6 +28,7 @@ const [
   source("../app/api/template-authoring/copilot/sessions/route.ts"),
   source("../app/api/template-authoring/copilot/sessions/[sessionId]/answers/route.ts"),
   source("../app/api/template-authoring/copilot/sessions/[sessionId]/describe/route.ts"),
+  source("../app/api/template-authoring/copilot/sessions/[sessionId]/documents/route.ts"),
   source("../../scripts/test-template-copilot-preview.mjs"),
   source("../../scripts/run-template-copilot-v2-step10-authorized-preview.mjs"),
   source("../../scripts/test-template-copilot-v2-telemetry-db.sql"),
@@ -111,6 +113,11 @@ test("real server routes emit replay-safe telemetry and scheduled retention purg
   assert.match(sessionRoute, /resultRecord\.outcome === "applied"/);
   assert.match(answerRoute, /result\.outcome === "applied"/);
   assert.match(describeRoute, /eventType: "provider_call_completed"/);
+  assert.match(documentRoute, /eventType: "provider_call_completed"/);
+  assert.match(describeRoute, /provider_requests: providerSummary\.requestCount/);
+  assert.match(documentRoute, /provider_requests: providerSummary\.requestCount/);
+  assert.match(adminPanel, /providerRequestCount\(event\)/);
+  assert.match(adminPanel, /provider_request_failures/);
   assert.match(describeRoute, /getTemplateCopilotAiRoutingMetadata/);
   assert.match(describeRoute, /providerCode: providerRouting\.providerCode/);
   assert.match(describeRoute, /privacyMode: providerRouting\.privacyMode/);

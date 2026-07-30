@@ -1516,6 +1516,13 @@ export function TemplateCopilot({
           setError(modeUiCopy.documentLimit);
           return;
         }
+        if (
+          errorCode === "unsafe_requirement_document" &&
+          status === 413
+        ) {
+          setError(modeUiCopy.documentTooLarge);
+          return;
+        }
         const retryHelp = lifecycle && pendingModeCommandRef.current?.operation.kind === "document"
           ? (locale === "zh-Hant" ? " 請重新選擇同一檔案，以安全檢查或重試。" : locale === "zh-Hans" ? " 请重新选择同一文件，以安全检查或重试。" : " Reselect the same file to safely check or retry.")
           : "";
@@ -2641,7 +2648,7 @@ const templateCopilotCopy: Record<
     addFile: "Add requirements file",
     generate: "Generate editable draft",
     fileBoundary:
-      "Files are bounded and treated as untrusted data. PDF active content is rejected. Human review is always required before publication.",
+      "Files are treated as untrusted data. Files over 5 MB, PDFs over 100 pages, or extracted text over 80,000 characters are rejected instead of being partly analysed; split a larger file before uploading. PDF active content is rejected. Human review is always required before publication.",
     draftCreated:
       "Editable draft created. Review it in Builder and Canvas, run validation and simulation, then send it for publication review.",
     historyNotice:
@@ -2702,7 +2709,7 @@ const templateCopilotCopy: Record<
     addFile: "加入需求文件",
     generate: "建立可編輯草稿",
     fileBoundary:
-      "文件大小及內容均受限制，並視為不受信任的資料。含主動內容的 PDF 會被拒絕。發布前必須由人員審核。",
+      "文件會視為不受信任的資料。超過 5 MB、超過 100 頁的 PDF，或擷取文字超過 80,000 個字元的文件會被拒絕，不會只分析部分內容；請先把大型文件分拆再上載。含主動內容的 PDF 亦會被拒絕。發布前必須由人員審核。",
     draftCreated:
       "可編輯草稿已建立。請在建構器及畫布中審核、執行驗證和模擬，然後提交發布審核。",
     historyNotice:
@@ -2763,7 +2770,7 @@ const templateCopilotCopy: Record<
     addFile: "添加需求文件",
     generate: "创建可编辑草稿",
     fileBoundary:
-      "文件大小和内容均受限制，并视为不受信任的数据。包含主动内容的 PDF 会被拒绝。发布前必须由人员审核。",
+      "文件会视为不受信任的数据。超过 5 MB、超过 100 页的 PDF，或提取文本超过 80,000 个字符的文件会被拒绝，不会只分析部分内容；请先把大型文件拆分后再上传。包含主动内容的 PDF 也会被拒绝。发布前必须由人员审核。",
     draftCreated:
       "可编辑草稿已创建。请在构建器和画布中审核、运行验证和模拟，然后提交发布审核。",
     historyNotice:

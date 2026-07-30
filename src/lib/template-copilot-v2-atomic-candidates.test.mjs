@@ -495,6 +495,143 @@ test("independent policy, timing, and initiator atoms assemble into strict fact 
   );
 });
 
+test("distant atoms for one fact retain leaf evidence without an oversized bridge excerpt", () => {
+  const first = "Retain an approval audit trail.";
+  const second = "Require annual control-owner review.";
+  const message = `${first}${" ".repeat(8_100)}${second}`;
+  const result = adaptTemplateCopilotV2AtomicProviderCandidates({
+    message,
+    messageId: "atomic-distant-policy",
+    output: {
+      atoms: [
+        atom(
+          "governance_policy",
+          "governance.policies",
+          first,
+          first,
+          first,
+        ),
+        atom(
+          "governance_policy",
+          "governance.policies",
+          second,
+          second,
+          second,
+        ),
+      ],
+    },
+  });
+  assert.equal(result.rejected.length, 0);
+  assert.deepEqual(result.candidates[0].value, [first, second]);
+  assert.equal(result.candidates[0].originalWording, first);
+  assert.equal(result.candidates[0].evidence.length, 2);
+  assert.ok(result.candidates[0].evidence[1].startCodePoint > 8_000);
+});
+
+test("an oversized assembled fact is rejected without discarding an unrelated valid fact", () => {
+  const options = (prefix) =>
+    Array.from({ length: 100 }, (_, index) =>
+      `${prefix}_option_${String(index).padStart(3, "0")}`,
+    );
+  const fieldAtom = (label, fieldOptions) => {
+    const sourceQuote = `${label} select required ${fieldOptions.join(" ")}`;
+    return {
+      sourceQuote,
+      value: {
+        label,
+        type: "select",
+        required: true,
+        options: fieldOptions,
+      },
+      evidence: {
+        label,
+        type: "select",
+        required: "required",
+        options: fieldOptions,
+      },
+    };
+  };
+  const first = fieldAtom("Field Alpha", options("alpha"));
+  const second = fieldAtom("Field Beta", options("beta"));
+  const message = [
+    "Call it Purchase Approval.",
+    first.sourceQuote,
+    second.sourceQuote,
+  ].join("\n");
+  const result = adaptTemplateCopilotV2AtomicProviderCandidates({
+    message,
+    messageId: "atomic-candidate-isolation",
+    output: {
+      atoms: [
+        atom(
+          "text_fact",
+          "workflow.name",
+          "Purchase Approval",
+          "Call it Purchase Approval",
+          "Purchase Approval",
+        ),
+        atom(
+          "request_field",
+          "request.fields",
+          first.value,
+          first.sourceQuote,
+          first.evidence,
+        ),
+        atom(
+          "request_field",
+          "request.fields",
+          second.value,
+          second.sourceQuote,
+          second.evidence,
+        ),
+      ],
+    },
+  });
+  assert.deepEqual(
+    result.candidates.map((candidate) => candidate.factId),
+    ["workflow.name"],
+  );
+  assert.deepEqual(result.rejected, [
+    {
+      code: "untraceable",
+      detail: "request.fields:atomic_candidate_invalid",
+    },
+  ]);
+});
+
+test("a rejection route conflicting with a non-routing action rejects the whole fact", () => {
+  const message = "Close the request. Send rejected requests to Legal Review.";
+  const result = adaptTemplateCopilotV2AtomicProviderCandidates({
+    message,
+    messageId: "atomic-rejection-conflict",
+    output: {
+      atoms: [
+        atom(
+          "rejection_action",
+          "workflow.rejection_policy",
+          "close",
+          "Close the request",
+          "Close",
+        ),
+        atom(
+          "rejection_route",
+          "workflow.rejection_policy",
+          "Legal Review",
+          "Send rejected requests to Legal Review",
+          "Legal Review",
+        ),
+      ],
+    },
+  });
+  assert.equal(result.candidates.length, 0);
+  assert.deepEqual(result.rejected, [
+    {
+      code: "untraceable",
+      detail: "workflow.rejection_policy:atomic_conflict",
+    },
+  ]);
+});
+
 test("incomplete atoms fail one fact without fabricating missing components", () => {
   const result = adaptTemplateCopilotV2AtomicProviderCandidates({
     message: "Directory role may request. Purchase Approval.",

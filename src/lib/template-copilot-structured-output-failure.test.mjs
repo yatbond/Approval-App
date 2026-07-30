@@ -37,7 +37,7 @@ test("transport and API failures remain non-recoverable provider failures", () =
   );
 });
 
-test("the Responses request catch maps SDK decode errors before provider_error", async () => {
+test("the Responses request catch maps SDK decode errors before bounded transport failures", async () => {
   const source = await readFile(
     new URL("./template-copilot-ai.ts", import.meta.url),
     "utf8",
@@ -47,8 +47,14 @@ test("the Responses request catch maps SDK decode errors before provider_error",
     source.indexOf("\n}\n\nexport async function extractTemplateCopilotTurn"),
   );
   assert.match(catchBody, /classifyTemplateCopilotStructuredDecodeFailure/);
+  assert.match(
+    catchBody,
+    /classifyTemplateCopilotProviderFailureReasonCode\(error\)/,
+  );
   assert.ok(
     catchBody.indexOf("classifyTemplateCopilotStructuredDecodeFailure") <
-      catchBody.lastIndexOf('reasonCode: "provider_error"'),
+      catchBody.lastIndexOf(
+        "classifyTemplateCopilotProviderFailureReasonCode(error)",
+      ),
   );
 });
