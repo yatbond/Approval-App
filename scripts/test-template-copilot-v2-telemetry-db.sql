@@ -47,17 +47,37 @@ values
   statement_timestamp()
 );
 
-update public.profiles
-set is_admin = id = current_setting('app.telemetry_admin')::uuid,
-    is_active = true,
-    role = case
-      when id = current_setting('app.telemetry_admin')::uuid then 'superuser'
-      else 'participant'
-    end
-where id in (
+insert into public.profiles (
+  id,
+  full_name,
+  email,
+  role,
+  is_admin,
+  is_active
+)
+values
+(
   current_setting('app.telemetry_admin')::uuid,
-  current_setting('app.telemetry_other')::uuid
-);
+  'Template Telemetry Admin',
+  'template-telemetry-admin@example.com',
+  'superuser',
+  true,
+  true
+),
+(
+  current_setting('app.telemetry_other')::uuid,
+  'Template Telemetry Other',
+  'template-telemetry-other@example.com',
+  'participant',
+  false,
+  true
+)
+on conflict (id) do update
+set full_name = excluded.full_name,
+    email = excluded.email,
+    role = excluded.role,
+    is_admin = excluded.is_admin,
+    is_active = excluded.is_active;
 
 set local role service_role;
 
