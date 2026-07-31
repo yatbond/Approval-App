@@ -13,6 +13,7 @@ import {
   templateCopilotV3QualificationObservedMetricKeys,
   templateCopilotV3QualificationSourceStateMatches,
 } from "../../scripts/template-copilot-v3-live-semantic-qualification-runner.mjs";
+import { templateCopilotV3SemanticScenarioManifest } from "../../scripts/template-copilot-v3-semantic-scenario-manifests.mjs";
 import { templateCopilotV3ProviderQuoteContractVersion } from "./template-copilot-v3-provider-quotes.ts";
 import { templateCopilotV3LiveSemanticScoringContract } from "../../scripts/template-copilot-v3-live-semantic-scoring.mjs";
 
@@ -40,11 +41,11 @@ test("v3 qualification executes exactly two sequential batches for all 24 multil
       return {
         model: templateCopilotV3QualificationBaselineModel,
         batch: batchIdentity(input),
-        accepted: [],
+        accepted: acceptedFixtureBatch(input.batchId),
         rejected: [],
       };
     },
-    assembleReview: emptyAssembly,
+    assembleReview: passingAssembly,
     scoreProjection: passingScore,
     metadata: qualificationMetadata(),
     now: monotonicClock(),
@@ -57,20 +58,171 @@ test("v3 qualification executes exactly two sequential batches for all 24 multil
     assert.equal(calls[index + 1].batchId, "policy_context");
     assert.equal(calls[index].scenarioId, calls[index + 1].scenarioId);
   }
-  assert.equal(report.summary.fullGatePassed, true);
-  assert.equal(report.summary.selectedGatePassed, true);
+  assert.equal(report.summary.fullGatePassed, false);
+  assert.equal(report.summary.passed, false);
+  assert.equal(report.metadata.expectedLocaleCount, 3);
+  assert.equal(report.metadata.expectedScenariosPerLocale, 8);
+  assert.equal(report.summary.selectedGatePassed, false);
+  assert.equal(report.summary.semanticCaptureGate.passed, false);
+  assert.equal(report.summary.semanticCaptureGate.fullCorpusPassed, false);
   assert.equal(report.summary.scenarioPassCount, 24);
+  assert.equal(report.summary.governedHoldCount, 0);
+  assert.equal(report.summary.executableDraftGate.passed, false);
+  assert.equal(report.summary.executableDraftGate.evaluated, false);
+  assert.equal(report.summary.activationGate.passed, false);
+  assert.equal(report.summary.pilotGate.passed, false);
   assert.equal(report.summary.successfulBatchCount, 48);
   assert.equal(report.summary.providerRequestCount, 48);
   for (const locale of ["en", "zh-Hant", "zh-Hans"]) {
     assert.deepEqual(report.summary.languageSummaries[locale], {
       scenarioCount: 8,
-      semanticPassCount: 8,
+      sourceCapturePassCount: 8,
+      governedHoldCount: 0,
+      executableDraftPassCount: 0,
       successfulBatchCount: 16,
       batchCount: 16,
     });
   }
 });
+
+test("v3 qualification reports 24/24 source capture and 64 holds without claiming executable or pilot readiness", () => {
+  const scenarios = templateCopilotQualificationScenarios.map((item) => {
+    const governedHolds = expectedGovernedHolds(item.id);
+    return {
+      id: item.id,
+      language: item.language,
+      batchCount: 2,
+      successfulBatchCount: 2,
+      batches: ["structure", "policy_context"].map((batchId) => ({
+        batchId,
+        status: "applied",
+        providerRequestCount: 1,
+        providerRequestSuccessCount: 1,
+        providerRequestFailureCount: 0,
+        providerOutcome: "success",
+        failureCount: 0,
+      })),
+      semanticCapture: {
+        resultValid: true,
+        passed: true,
+        governedHoldCount: governedHolds.length,
+        governedHolds,
+      },
+      executableDraft: { evaluated: false, passed: false },
+    };
+  });
+  const report = {
+    metadata: {
+      ...qualificationMetadata(),
+      fullScenarioSetSelected: true,
+    },
+    scenarios,
+  };
+  const summary = summarizeQualification(report);
+
+  assert.equal(summary.passed, false);
+  assert.equal(summary.fullGatePassed, false);
+  assert.equal(summary.selectedGatePassed, false);
+  assert.equal(summary.semanticCaptureGate.passed, true);
+  assert.equal(summary.semanticCaptureGate.fullCorpusPassed, true);
+  assert.equal(summary.semanticCaptureGate.scenarioPassCount, 24);
+  assert.equal(summary.semanticCaptureGate.identityAndLocalePassed, true);
+  assert.equal(summary.semanticCaptureGate.inventoryMatchedScenarioCount, 24);
+  assert.equal(summary.semanticCaptureGate.governedHoldCount, 64);
+  assert.equal(summary.executableDraftGate.evaluated, false);
+  assert.equal(summary.executableDraftGate.passed, false);
+  assert.equal(summary.executableDraftGate.scenarioPassCount, 0);
+  assert.equal(summary.executableDraftGate.scenarioCount, 24);
+  assert.ok(
+    summary.executableDraftGate.blockerCodes.includes(
+      "governed_semantics_not_executable",
+    ),
+  );
+  assert.equal(summary.activationGate.evaluated, false);
+  assert.equal(summary.activationGate.passed, false);
+  assert.equal(summary.pilotGate.evaluated, false);
+  assert.equal(summary.pilotGate.passed, false);
+  for (const locale of ["en", "zh-Hant", "zh-Hans"]) {
+    assert.equal(summary.languageSummaries[locale].scenarioCount, 8);
+    assert.equal(summary.languageSummaries[locale].sourceCapturePassCount, 8);
+    assert.equal(summary.languageSummaries[locale].executableDraftPassCount, 0);
+  }
+
+  const wrongScenario = structuredClone(report);
+  const allHolds = wrongScenario.scenarios.flatMap(
+    (scenario) => scenario.semanticCapture.governedHolds,
+  );
+  for (const scenario of wrongScenario.scenarios) {
+    scenario.semanticCapture.governedHolds = [];
+    scenario.semanticCapture.governedHoldCount = 0;
+  }
+  wrongScenario.scenarios[0].semanticCapture.governedHolds = allHolds;
+  wrongScenario.scenarios[0].semanticCapture.governedHoldCount = allHolds.length;
+  const wrongScenarioSummary = summarizeQualification(wrongScenario);
+  assert.equal(wrongScenarioSummary.governedHoldCount, 64);
+  assert.equal(wrongScenarioSummary.semanticCaptureGate.passed, false);
+  assert.equal(wrongScenarioSummary.semanticCaptureGate.fullCorpusPassed, false);
+  assert.equal(
+    wrongScenarioSummary.semanticCaptureGate.inventoryMatchedScenarioCount,
+    0,
+  );
+
+  const wrongReason = structuredClone(report);
+  const conditionHold = wrongReason.scenarios
+    .flatMap((scenario) => scenario.semanticCapture.governedHolds)
+    .find(
+      (hold) =>
+        hold.factId === "workflow.conditions" &&
+        hold.blockingReason === "unsupported_semantics_not_executable",
+    );
+  assert.ok(conditionHold);
+  conditionHold.blockingReason = "compound_predicate_not_executable";
+  const wrongReasonSummary = summarizeQualification(wrongReason);
+  assert.equal(wrongReasonSummary.governedHoldCount, 64);
+  assert.equal(wrongReasonSummary.semanticCaptureGate.passed, false);
+  assert.equal(wrongReasonSummary.semanticCaptureGate.fullCorpusPassed, false);
+
+  const wrongLocale = structuredClone(report);
+  wrongLocale.scenarios[0].language = "zh-Hant";
+  const wrongLocaleSummary = summarizeQualification(wrongLocale);
+  assert.equal(wrongLocaleSummary.governedHoldCount, 64);
+  assert.equal(wrongLocaleSummary.semanticCaptureGate.identityAndLocalePassed, false);
+  assert.equal(wrongLocaleSummary.semanticCaptureGate.passed, false);
+  assert.equal(wrongLocaleSummary.semanticCaptureGate.fullCorpusPassed, false);
+});
+
+function expectedGovernedHolds(id) {
+  const manifest = templateCopilotV3SemanticScenarioManifest(id);
+  assert.ok(manifest, `Missing manifest ${id}`);
+  return [
+    ...manifest.attachments
+      .filter(
+        (entry) => !["required", "optional"].includes(entry.requirementMode),
+      )
+      .map(() => ({
+        factId: "attachments.requirements",
+        blockingReason: "unsupported_semantics_not_executable",
+      })),
+    ...manifest.stages
+      .filter((entry) => entry.kind === "record_update")
+      .map(() => ({
+        factId: "workflow.stages",
+        blockingReason: "unsupported_semantics_not_executable",
+      })),
+    ...manifest.conditions
+      .filter(
+        (entry) => entry.predicateContext.executionMode !== "structured",
+      )
+      .map((entry) => ({
+        factId: "workflow.conditions",
+        blockingReason: entry.predicateContext.executionMode,
+      })),
+  ].sort(
+    (left, right) =>
+      left.factId.localeCompare(right.factId, "en") ||
+      left.blockingReason.localeCompare(right.blockingReason, "en"),
+  );
+}
 
 test("v3 qualification keeps stable server source IDs and quarantines the hostile EN-01 probe before extraction", async () => {
   const observedSlots = [];
@@ -233,14 +385,18 @@ test("v3 qualification hard subset is fixed and never masquerades as the full ga
     corpus: templateCopilotQualificationScenarios,
     scenarios: selected,
     extractBatch: successfulExtractor,
-    assembleReview: emptyAssembly,
+    assembleReview: passingAssembly,
     scoreProjection: passingScore,
     metadata: qualificationMetadata(),
     now: monotonicClock(),
   });
-  assert.equal(report.summary.selectedGatePassed, true);
+  assert.equal(report.summary.selectedGatePassed, false);
+  assert.equal(report.summary.semanticCaptureGate.passed, false);
+  assert.equal(report.summary.semanticCaptureGate.inventoryMatchedScenarioCount, 0);
+  assert.equal(report.summary.semanticCaptureGate.fullCorpusPassed, false);
   assert.equal(report.summary.fullGatePassed, false);
   assert.equal(report.summary.passed, false);
+  assert.equal(report.summary.pilotGate.passed, false);
   assert.equal(report.summary.scenarioPassCount, 6);
   assert.equal(report.summary.successfulBatchCount, 12);
 });
@@ -250,7 +406,7 @@ test("v3 formal full gate requires clean comparable source, baseline route, time
     corpus: templateCopilotQualificationScenarios,
     scenarios: templateCopilotQualificationScenarios,
     extractBatch: successfulExtractor,
-    assembleReview: emptyAssembly,
+    assembleReview: passingAssembly,
     scoreProjection: passingScore,
     metadata: {
       ...qualificationMetadata(),
@@ -258,7 +414,8 @@ test("v3 formal full gate requires clean comparable source, baseline route, time
     },
     now: monotonicClock(),
   });
-  assert.equal(report.summary.selectedGatePassed, true);
+  assert.equal(report.summary.selectedGatePassed, false);
+  assert.equal(report.summary.semanticCaptureGate.fullCorpusPassed, false);
   assert.equal(report.summary.fullGatePassed, false);
 
   report.metadata.providerTimeoutMs = 12_000;
@@ -339,8 +496,8 @@ test("v3 qualification report allowlists fact IDs and run metadata", async () =>
     },
     now: monotonicClock(),
   });
-  assert.deepEqual(report.scenarios[0].semanticFidelity.factIds, []);
-  assert.equal(report.scenarios[0].semanticFidelity.resultValid, false);
+  assert.deepEqual(report.scenarios[0].semanticCapture.factIds, []);
+  assert.equal(report.scenarios[0].semanticCapture.resultValid, false);
   assert.doesNotMatch(
     JSON.stringify(report),
     /must-not-enter-report|providerSecret/u,
@@ -418,7 +575,7 @@ test("v3 qualification accepts semantic completeness without executable complete
     corpus: templateCopilotQualificationScenarios,
     scenarios: [scenario],
     extractBatch: successfulExtractor,
-    assembleReview: emptyAssembly,
+    assembleReview: () => passingAssembly({ completeItemCount: 0 }),
     scoreProjection: () => ({
       ...passingScore(),
       semanticCompleteItemCount: 5,
@@ -427,14 +584,14 @@ test("v3 qualification accepts semantic completeness without executable complete
     metadata: qualificationMetadata(),
     now: monotonicClock(),
   });
-  assert.equal(semanticOnly.scenarios[0].semanticFidelity.resultValid, true);
-  assert.equal(semanticOnly.scenarios[0].semanticFidelity.passed, true);
+  assert.equal(semanticOnly.scenarios[0].semanticCapture.resultValid, true);
+  assert.equal(semanticOnly.scenarios[0].semanticCapture.passed, true);
 
   const inverted = await runTemplateCopilotV3LiveSemanticQualification({
     corpus: templateCopilotQualificationScenarios,
     scenarios: [scenario],
     extractBatch: successfulExtractor,
-    assembleReview: emptyAssembly,
+    assembleReview: () => passingAssembly({ completeItemCount: 0 }),
     scoreProjection: () => ({
       ...passingScore(),
       semanticCompleteItemCount: 5,
@@ -443,8 +600,8 @@ test("v3 qualification accepts semantic completeness without executable complete
     metadata: qualificationMetadata(),
     now: monotonicClock(),
   });
-  assert.equal(inverted.scenarios[0].semanticFidelity.resultValid, false);
-  assert.equal(inverted.scenarios[0].semanticFidelity.passed, false);
+  assert.equal(inverted.scenarios[0].semanticCapture.resultValid, false);
+  assert.equal(inverted.scenarios[0].semanticCapture.passed, false);
 });
 
 test("v3 qualification rejects malformed and contradictory scorer results", async () => {
@@ -466,8 +623,8 @@ test("v3 qualification rejects malformed and contradictory scorer results", asyn
       metadata: qualificationMetadata(),
       now: monotonicClock(),
     });
-    assert.equal(report.scenarios[0].semanticFidelity.resultValid, false);
-    assert.equal(report.scenarios[0].semanticFidelity.passed, false);
+    assert.equal(report.scenarios[0].semanticCapture.resultValid, false);
+    assert.equal(report.scenarios[0].semanticCapture.passed, false);
     assert.equal(report.summary.selectedGatePassed, false);
   }
 });
@@ -478,7 +635,11 @@ test("v3 qualification safely persists partial scenarios for malformed scorer fi
     ["passed"],
     ["failures"],
     ["candidateCount"],
+    ["sourceCapturePassed"],
+    ["captureFailures"],
+    ["governedHolds"],
     ["acceptedProjectionCount"],
+    ["blockedSemanticItemCount"],
     ["semanticCompleteItemCount"],
     ["completeItemCount"],
     ["semanticFactCount"],
@@ -509,6 +670,9 @@ test("v3 qualification safely persists partial scenarios for malformed scorer fi
     ["scenarioSemantics", "passed"],
     ["scenarioSemantics", "failures"],
     ["scenarioSemantics", "observed"],
+    ["scenarioSemantics", "sourceCapturePassed"],
+    ["scenarioSemantics", "captureFailures"],
+    ["scenarioSemantics", "governedHolds"],
     ["manifestVersion"],
     ["manifestCorpusFingerprint"],
   ];
@@ -561,12 +725,12 @@ test("v3 qualification safely persists partial scenarios for malformed scorer fi
     assert.equal(persisted[0].metadata.status, "running", malformedCase.label);
     assert.equal(persisted[0].scenarios.length, 1, malformedCase.label);
     assert.equal(
-      persisted[0].scenarios[0].semanticFidelity.resultValid,
+      persisted[0].scenarios[0].semanticCapture.resultValid,
       false,
       malformedCase.label,
     );
     assert.equal(
-      report.scenarios[0].semanticFidelity.resultValid,
+      report.scenarios[0].semanticCapture.resultValid,
       false,
       malformedCase.label,
     );
@@ -640,8 +804,8 @@ test("v3 qualification rejects unknown scorer fields and mismatched manifest ide
       metadata: qualificationMetadata(),
       now: monotonicClock(),
     });
-    assert.equal(report.scenarios[0].semanticFidelity.resultValid, false);
-    assert.equal(report.scenarios[0].semanticFidelity.passed, false);
+    assert.equal(report.scenarios[0].semanticCapture.resultValid, false);
+    assert.equal(report.scenarios[0].semanticCapture.passed, false);
     assert.equal(report.summary.selectedGatePassed, false);
     assert.doesNotMatch(
       JSON.stringify(report),
@@ -655,6 +819,7 @@ test("v3 formal full gate rejects a vacuous zero-fact scorer pass", async () => 
   for (const field of [
     "candidateCount",
     "acceptedProjectionCount",
+    "blockedSemanticItemCount",
     "semanticCompleteItemCount",
     "completeItemCount",
     "semanticFactCount",
@@ -685,8 +850,8 @@ test("v3 formal full gate rejects a vacuous zero-fact scorer pass", async () => 
   assert.ok(
     report.scenarios.every(
       (scenario) =>
-        scenario.semanticFidelity.resultValid === false &&
-        scenario.semanticFidelity.passed === false,
+        scenario.semanticCapture.resultValid === false &&
+        scenario.semanticCapture.passed === false,
     ),
   );
 });
@@ -704,7 +869,7 @@ test("v3 qualification rejects a silent negative semantic result", async () => {
     metadata: qualificationMetadata(),
     now: monotonicClock(),
   });
-  const semantic = report.scenarios[0].semanticFidelity;
+  const semantic = report.scenarios[0].semanticCapture;
   assert.equal(semantic.resultValid, false);
   assert.equal(semantic.passed, false);
   assert.equal(semantic.failureCount, 1);
@@ -726,6 +891,7 @@ test("v3 qualification accepts only the synchronized observed-metric allowlist",
     "attachmentEntityCount",
     "stageEntityCount",
     "conditionEntityCount",
+    "governedSemanticHoldCount",
   ]);
   const scenario = templateCopilotQualificationScenarios[0];
   const report = await runTemplateCopilotV3LiveSemanticQualification({
@@ -741,7 +907,7 @@ test("v3 qualification accepts only the synchronized observed-metric allowlist",
     metadata: qualificationMetadata(),
     now: monotonicClock(),
   });
-  const semantic = report.scenarios[0].semanticFidelity;
+  const semantic = report.scenarios[0].semanticCapture;
   assert.equal(semantic.resultValid, false);
   assert.equal(semantic.passed, false);
   assert.deepEqual(
@@ -849,6 +1015,17 @@ test("v3 qualification CLI fixes canonical cwd, governed atomic output, and endi
     cliSource,
     /template-copilot-v3-live-semantic-qualification-source\.mjs/u,
   );
+  assert.match(cliSource, /source_capture=.*CAPTURE_PASS/u);
+  assert.match(cliSource, /governed_holds=/u);
+  assert.match(cliSource, /executable_draft=BLOCKED/u);
+  assert.match(cliSource, /activation=BLOCKED/u);
+  assert.match(cliSource, /pilot=BLOCKED/u);
+  assert.match(cliSource, /overall=BLOCKED/u);
+  assert.match(
+    cliSource,
+    /if \(!report\.summary\.pilotGate\.passed\)\s*\{\s*process\.exitCode = 1;/u,
+  );
+  assert.doesNotMatch(cliSource, /semantic(?:_fidelity)?=.*PASS/u);
   assert.doesNotMatch(
     cliSource,
     /function readGit|execFileSync|cwd: process\.cwd\(\)/u,
@@ -865,14 +1042,18 @@ test("v3 full gate requires 24 distinct selected scenario IDs", async () => {
     corpus: templateCopilotQualificationScenarios,
     scenarios: duplicateSelection,
     extractBatch: successfulExtractor,
-    assembleReview: emptyAssembly,
+    assembleReview: passingAssembly,
     scoreProjection: passingScore,
     metadata: qualificationMetadata(),
     now: monotonicClock(),
   });
-  assert.equal(report.summary.selectedGatePassed, true);
+  assert.equal(report.summary.selectedGatePassed, false);
+  assert.equal(report.summary.semanticCaptureGate.passed, false);
+  assert.equal(report.summary.semanticCaptureGate.identityAndLocalePassed, false);
+  assert.equal(report.summary.semanticCaptureGate.fullCorpusPassed, false);
   assert.equal(report.metadata.fullScenarioSetSelected, false);
   assert.equal(report.summary.fullGatePassed, false);
+  assert.equal(report.summary.pilotGate.passed, false);
 });
 
 async function successfulExtractor(input) {
@@ -880,7 +1061,7 @@ async function successfulExtractor(input) {
   return {
     model: templateCopilotV3QualificationBaselineModel,
     batch: batchIdentity(input),
-    accepted: [],
+    accepted: acceptedFixtureBatch(input.batchId),
     rejected: [],
   };
 }
@@ -907,12 +1088,179 @@ function emptyAssembly() {
   };
 }
 
+function acceptedFixtureBatch(batchId) {
+  return Array.from({ length: 8 }, (_, itemIndex) => ({ batchId, itemIndex }));
+}
+
+function passingAssembly({
+  completeItemCount = 5,
+  heldFactId = null,
+  heldBlockingReason = null,
+} = {}) {
+  const itemFactIds = [
+    ...templateCopilotV3LiveSemanticScoringContract.itemFactIds,
+  ];
+  const semanticFactIds = templateCopilotV3QualificationFactIds.filter(
+    (factId) => !itemFactIds.includes(factId),
+  );
+  const items = itemFactIds.map((factId, index) => {
+    const held = factId === heldFactId;
+    return {
+      factId,
+      semanticComplete: !held,
+      complete: !held && index < completeItemCount,
+      fragmentId: null,
+      persisted: false,
+      executable: false,
+      bindings: [{}],
+      semanticLeaves:
+        held && factId === "workflow.stages"
+          ? [{ role: "kind", advisoryHint: "record_update" }]
+          : [{}],
+      relationships: [],
+      ...(held ? { blockingReason: heldBlockingReason } : {}),
+    };
+  });
+  const semanticFacts = semanticFactIds.map((factId, index) => ({
+    factId,
+    leaves: index < 3 ? [{}] : [],
+  }));
+  return {
+    envelope: { sourceSpans: [], fragments: [] },
+    review: {
+      items,
+      scalarFacts: semanticFacts.slice(0, 8),
+      policyItems: semanticFacts.slice(8),
+      conflicts: [],
+      rejections: [],
+    },
+  };
+}
+
+function safeHoldAssembly({
+  factId = "workflow.conditions",
+  blockingReason = "compound_predicate_not_executable",
+} = {}) {
+  return passingAssembly({
+    heldFactId: factId,
+    heldBlockingReason: blockingReason,
+  });
+}
+
+test("v3 qualification preserves both governed safe-hold categories", async () => {
+  const cases = [
+    {
+      factId: "workflow.conditions",
+      blockingReason: "compound_predicate_not_executable",
+    },
+    {
+      factId: "attachments.requirements",
+      blockingReason: "unsupported_semantics_not_executable",
+    },
+  ];
+  for (const entry of cases) {
+    const scenario = templateCopilotQualificationScenarios[0];
+    const report = await runTemplateCopilotV3LiveSemanticQualification({
+      corpus: templateCopilotQualificationScenarios,
+      scenarios: [scenario],
+      extractBatch: successfulExtractor,
+      assembleReview: () => safeHoldAssembly(entry),
+      scoreProjection: () => safeHoldScore(entry),
+      metadata: qualificationMetadata(),
+      now: monotonicClock(),
+    });
+    const semantic = report.scenarios[0].semanticCapture;
+    const label = `${entry.factId}:${entry.blockingReason}`;
+    assert.equal(semantic.resultValid, true, label);
+    assert.equal(semantic.passed, true, label);
+    assert.equal(semantic.governedHoldCount, 1, label);
+    assert.deepEqual(semantic.governedHolds, [entry], label);
+    assert.equal(report.scenarios[0].executableDraft.evaluated, false, label);
+    assert.equal(report.scenarios[0].executableDraft.passed, false, label);
+    assert.equal(report.summary.semanticCaptureGate.passed, false, label);
+    assert.equal(report.summary.selectedGatePassed, false, label);
+  }
+});
+
+test("v3 qualification rejects missing, forged, and mutated governed-hold inventories", async () => {
+  const mutations = [
+    {
+      label: "missing",
+      apply(score) {
+        score.governedHolds = [];
+        score.scenarioSemantics.governedHolds = [];
+      },
+    },
+    {
+      label: "forged",
+      apply(score) {
+        const forged = {
+          factId: "workflow.stages",
+          blockingReason: "unsupported_semantics_not_executable",
+        };
+        score.governedHolds = [forged];
+        score.scenarioSemantics.governedHolds = [forged];
+      },
+    },
+    {
+      label: "mutated",
+      apply(score) {
+        score.scenarioSemantics.governedHolds = [{
+          factId: "workflow.conditions",
+          blockingReason: "unsupported_semantics_not_executable",
+        }];
+      },
+    },
+  ];
+  for (const mutation of mutations) {
+    const score = safeHoldScore();
+    mutation.apply(score);
+    const report = await runTemplateCopilotV3LiveSemanticQualification({
+      corpus: templateCopilotQualificationScenarios,
+      scenarios: [templateCopilotQualificationScenarios[0]],
+      extractBatch: successfulExtractor,
+      assembleReview: safeHoldAssembly,
+      scoreProjection: () => score,
+      metadata: qualificationMetadata(),
+      now: monotonicClock(),
+    });
+    assert.equal(report.scenarios[0].semanticCapture.resultValid, false, mutation.label);
+    assert.equal(report.scenarios[0].semanticCapture.passed, false, mutation.label);
+    assert.equal(report.summary.semanticCaptureGate.passed, false, mutation.label);
+    assert.equal(report.summary.pilotGate.passed, false, mutation.label);
+  }
+});
+
+test("v3 qualification rejects mismatched blocked-item metrics", async () => {
+  const scenario = templateCopilotQualificationScenarios[0];
+  const score = safeHoldScore();
+  score.scenarioSemantics.observed.governedSemanticHoldCount = 0;
+  const report = await runTemplateCopilotV3LiveSemanticQualification({
+    corpus: templateCopilotQualificationScenarios,
+    scenarios: [scenario],
+    extractBatch: successfulExtractor,
+    assembleReview: safeHoldAssembly,
+    scoreProjection: () => score,
+    metadata: qualificationMetadata(),
+    now: monotonicClock(),
+  });
+  const semantic = report.scenarios[0].semanticCapture;
+  assert.equal(semantic.resultValid, false);
+  assert.equal(semantic.passed, false);
+  assert.equal(semantic.blockedSemanticItemCount, 1);
+  assert.equal(report.summary.selectedGatePassed, false);
+});
+
 function passingScore() {
   return {
     passed: true,
     failures: [],
+    sourceCapturePassed: true,
+    captureFailures: [],
+    governedHolds: [],
     candidateCount: 16,
     acceptedProjectionCount: 16,
+    blockedSemanticItemCount: 0,
     semanticCompleteItemCount: 5,
     completeItemCount: 5,
     semanticFactCount: 11,
@@ -943,6 +1291,9 @@ function passingScore() {
     scenarioSemantics: {
       passed: true,
       failures: [],
+      sourceCapturePassed: true,
+      captureFailures: [],
+      governedHolds: [],
       observed: {
         documents: 2,
         requestFields: 7,
@@ -956,12 +1307,30 @@ function passingScore() {
         attachmentEntityCount: 2,
         stageEntityCount: 4,
         conditionEntityCount: 1,
+        governedSemanticHoldCount: 0,
       },
     },
     manifestVersion: templateCopilotV3LiveSemanticScoringContract.manifestVersion,
     manifestCorpusFingerprint:
       templateCopilotV3LiveSemanticScoringContract.manifestCorpusFingerprint,
   };
+}
+
+function safeHoldScore({
+  factId = "workflow.conditions",
+  blockingReason = "compound_predicate_not_executable",
+} = {}) {
+  const score = passingScore();
+  const hold = { factId, blockingReason };
+  score.governedHolds = [hold];
+  score.acceptedProjectionCount -= 1;
+  score.semanticCompleteItemCount -= 1;
+  score.completeItemCount -= 1;
+  score.evidenceLeafCount -= 2;
+  score.blockedSemanticItemCount = 1;
+  score.scenarioSemantics.governedHolds = [hold];
+  score.scenarioSemantics.observed.governedSemanticHoldCount = 1;
+  return score;
 }
 
 function malformedScorerField(path, mode) {

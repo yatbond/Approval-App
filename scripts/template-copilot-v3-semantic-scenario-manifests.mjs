@@ -5,7 +5,7 @@ import {
 } from "./template-copilot-qualification-scenarios.mjs";
 
 export const templateCopilotV3SemanticManifestVersion =
-  "template-copilot-v3-semantic-manifests.4";
+  "template-copilot-v3-semantic-manifests.11";
 export const templateCopilotV3SemanticManifestCorpusFingerprint =
   "sha256:accda596f469157d28c12f5d5d6b88843285ec764bb91d4c0f47b18da057878c";
 
@@ -38,21 +38,37 @@ const t = (value) =>
 const groups = (...values) => Object.freeze(values.map(t));
 const roleTerm = (role, term, hint = null) =>
   Object.freeze({ role, term, hint });
+const attachmentRequirementModes = Object.freeze([
+  "required",
+  "optional",
+  "conditional",
+  "required_with_conditional_extension",
+  "optional_conditional",
+]);
 const attachment = (
   label,
   {
     kind = "attachment",
     required = true,
+    requirementMode = required ? "required" : "optional",
     formats = [],
     quantities = [],
     maximumFileSizeTerms = [],
     stageTerms = [],
   } = {},
-) =>
-  Object.freeze({
+) => {
+  if (
+    !attachmentRequirementModes.includes(requirementMode) ||
+    (required && ["optional", "optional_conditional"].includes(requirementMode)) ||
+    (!required && !["optional", "optional_conditional"].includes(requirementMode))
+  ) {
+    throw new Error(`Attachment ${label} has an invalid requirement mode.`);
+  }
+  return Object.freeze({
     label,
     kind,
     required,
+    requirementMode,
     formats: Object.freeze(
       formats.map(([term, hint]) => roleTerm("format", term, hint)),
     ),
@@ -70,6 +86,7 @@ const attachment = (
       ),
     ),
   });
+};
 
 const scalarFactContractSpecs = Object.freeze([
   Object.freeze({
@@ -155,12 +172,6 @@ function attachmentSupplementalEvidenceTerms(contract) {
   ]);
 }
 
-function clauseHasConditionalMeaning(clause) {
-  return /\b(?:if|when|where|retrospective|high[- ]risk|personal|sensitive|production|emergency|missing|above|over|more than)\b|若|如|當|当|時|时|高風險|高风险|生產|生产|緊急|紧急|缺少|缺失|超過|超过|以上|才|另要|再|申請簽證|申请签证/iu.test(
-    clause,
-  );
-}
-
 function attachmentContractWithEvidence(contract, source) {
   const normalizedLabel = normalizeManifestText(contract.label);
   const supplementalTerms = attachmentSupplementalEvidenceTerms(contract);
@@ -179,19 +190,8 @@ function attachmentContractWithEvidence(contract, source) {
       "Attachment " + contract.label + " has no exact source clause.",
     );
   }
-  const conditionalClauseCount = evidenceClauses.filter(
-    clauseHasConditionalMeaning,
-  ).length;
-  const requirementMode = !contract.required
-    ? "optional"
-    : conditionalClauseCount === 0
-      ? "required"
-      : conditionalClauseCount === evidenceClauses.length
-        ? "conditional"
-        : "required_with_conditional_extension";
   return Object.freeze({
     ...contract,
-    requirementMode,
     evidenceClauses,
   });
 }
@@ -224,11 +224,15 @@ const condition = (
   matchingHint = "stage_reference",
   otherwiseTerm = null,
   otherwiseHint = null,
+  predicateContext = {},
+  currencyTerm = null,
 ) =>
   Object.freeze({
     field,
     operator: roleTerm("operator", operatorTerm, operatorHint),
     value,
+    currency:
+      currencyTerm === null ? null : roleTerm("currency", currencyTerm),
     matchingRoute: roleTerm("matching_route", matchingTerm, matchingHint),
     otherwiseRoute:
       otherwiseTerm === null
@@ -238,24 +242,53 @@ const condition = (
             otherwiseTerm,
             otherwiseHint ?? "stage_reference",
           ),
+    predicateContext: Object.freeze({
+      executionMode:
+        currencyTerm !== null ||
+        [
+          ...(predicateContext.withinField ?? []),
+          ...(predicateContext.unsupportedOutcome ?? []),
+          ...(predicateContext.unsupportedMeaning ?? []),
+        ].length
+        ? "unsupported_semantics_not_executable"
+        : [
+              ...(predicateContext.beforeField ?? []),
+              ...(predicateContext.withinValue ?? []),
+              ...(predicateContext.betweenValueAndMatchingRoute ?? []),
+            ].length
+          ? "compound_predicate_not_executable"
+          : "structured",
+      beforeField: Object.freeze([...(predicateContext.beforeField ?? [])]),
+      withinField: Object.freeze([...(predicateContext.withinField ?? [])]),
+      withinValue: Object.freeze([...(predicateContext.withinValue ?? [])]),
+      betweenValueAndMatchingRoute: Object.freeze([
+        ...(predicateContext.betweenValueAndMatchingRoute ?? []),
+      ]),
+      unsupportedOutcome: Object.freeze([
+        ...(predicateContext.unsupportedOutcome ?? []),
+      ]),
+      unsupportedMeaning: Object.freeze([
+        ...(predicateContext.unsupportedMeaning ?? []),
+      ]),
+    }),
   });
 
 const stageKindsByScenario = Object.freeze({
   "EN-01": t("approval|review|approval|approval"),
   "EN-02": t("review|approval"),
   "EN-03": t("approval|review|review|approval"),
-  "EN-04": t("approval|review|approval"),
+  "EN-04": t("approval|approval|review"),
   "EN-05": t("approval|review|review|review|approval"),
   "EN-06": t("approval|approval|approval|approval"),
   "EN-07": t("approval|review|review|review|approval"),
   "EN-08": t("approval|approval|approval|approval|approval"),
-  "TC-01": t("approval|review|review|approval|review|approval"),
+  "TC-01": t("approval|review|review|review|approval|approval"),
   "TC-02": t("approval|review|approval"),
   "TC-03": t("approval|review|review|review|review|approval|approval"),
   "TC-04": t("review|review|review|approval|approval"),
   "TC-05": t("approval|review|approval|approval|approval|approval"),
   "TC-06": t("review|review|review|approval|approval"),
-  "TC-07": t("approval|approval|approval|approval"),
+  "TC-07": t("approval|approval|approval|submission|approval|record_update"),
   "TC-08": t("approval|approval"),
   "SC-01": t("review|review|review|review|approval|approval"),
   "SC-02": t("approval|approval|approval|approval"),
@@ -430,9 +463,11 @@ const conditionContracts = Object.freeze({
       ">=",
       "50,000",
       "high-value approver",
-      "stage_reference",
+      "unsupported_outcome",
       "complete",
       "complete",
+      { unsupportedOutcome: t("high-value approver") },
+      "HKD",
     ),
   ]),
   "EN-02": Object.freeze([
@@ -445,18 +480,25 @@ const conditionContracts = Object.freeze({
       "stage_reference",
       "cost centre owner",
       "stage_reference",
+      { withinValue: t("both PO total and goods-received total") },
     ),
   ]),
   "EN-03": Object.freeze([
     condition(
       "Board FYI",
       "above",
-      ">",
+      "unsupported_predicate",
       "2,000,000",
       "Board FYI",
-      "stage_reference",
+      "unsupported_outcome",
       "complete",
       "complete",
+      {
+        withinField: t("Board FYI"),
+        unsupportedOutcome: t("Board FYI"),
+        unsupportedMeaning: t("The Board FYI applies only above HKD 2,000,000"),
+      },
+      "HKD",
     ),
   ]),
   "EN-04": Object.freeze([
@@ -469,20 +511,28 @@ const conditionContracts = Object.freeze({
       "stage_reference",
       "Finance",
       "stage_reference",
-    ),
-    condition(
-      "receipt is missing",
-      "missing",
-      "=",
-      "receipt",
-      "Department Head",
-      "stage_reference",
-      "Finance",
-      "stage_reference",
+      {
+        betweenValueAndMatchingRoute: [" or a receipt is missing, add "],
+      },
+      "HKD",
     ),
   ]),
   "EN-05": Object.freeze([
-    condition("Finance", "above", ">", "500,000", "Finance", "stage_reference"),
+    condition(
+      "Finance",
+      "above",
+      "unsupported_predicate",
+      "500,000",
+      "Finance",
+      "stage_reference",
+      null,
+      null,
+      {
+        withinField: t("Finance"),
+        unsupportedMeaning: t("Finance is required only above HKD 500,000"),
+      },
+      "HKD",
+    ),
     condition(
       "personal-data choice",
       "personal",
@@ -494,40 +544,51 @@ const conditionContracts = Object.freeze({
   ]),
   "EN-06": Object.freeze([
     condition(
-      "High-risk visits",
+      "visits",
       "High-risk",
       "=",
-      "High-risk visits",
+      "High-risk",
       "Site Manager",
       "stage_reference",
-      "complete",
-      "complete",
+      "complete after both Safety and Security approve",
+      "unsupported_outcome",
+      {
+        unsupportedOutcome: t(
+          "complete after both Safety and Security approve",
+        ),
+        unsupportedMeaning: t(
+          "Normal visits complete after both Safety and Security approve",
+        ),
+      },
     ),
     condition(
-      "Missing induction",
+      "induction",
       "Missing",
       "=",
-      "induction",
+      "Missing",
       "blocks submission",
-      "stage_reference",
+      "unsupported_outcome",
+      null,
+      null,
+      { unsupportedOutcome: t("blocks submission") },
     ),
   ]),
   "EN-07": Object.freeze([
     condition(
-      "Personal",
-      "Personal",
-      "=",
-      "Personal",
+      "Personal or sensitive data",
+      "Personal or sensitive data",
+      "unsupported_predicate",
+      "Personal or sensitive data",
       "Data Protection",
       "stage_reference",
-    ),
-    condition(
-      "sensitive data",
-      "sensitive",
-      "=",
-      "sensitive data",
-      "Data Protection",
-      "stage_reference",
+      null,
+      null,
+      {
+        withinField: t("Personal or sensitive data"),
+        unsupportedMeaning: t(
+          "Personal or sensitive data also requires Data Protection",
+        ),
+      },
     ),
     condition(
       "country",
@@ -541,38 +602,62 @@ const conditionContracts = Object.freeze({
   "EN-08": Object.freeze([
     condition(
       "amount",
+      "at most",
+      "<=",
+      "100,000",
+      "General Manager",
+      "stage_reference",
+      null,
+      null,
+      {},
+      "HKD",
+    ),
+    condition(
+      "amount",
       "Above",
       ">",
       "100,000",
       "CEO approval",
       "stage_reference",
-      "General Manager",
-      "stage_reference",
+      null,
+      null,
+      {},
+      "HKD",
     ),
     condition(
-      "Retrospective status",
+      "status",
       "Retrospective",
       "=",
-      "Retrospective status",
+      "Retrospective",
       "does not skip approval",
-      "stage_reference",
+      "unsupported_outcome",
+      null,
+      null,
+      { unsupportedOutcome: t("does not skip approval") },
     ),
   ]),
   "TC-01": Object.freeze([
-    condition("註冊地", "不在", "!=", "香港", "法務審查", "stage_reference"),
     condition(
-      "銀行所在地",
-      "不在",
-      "!=",
-      "香港",
+      "註冊地或銀行所在地",
+      "註冊地或銀行所在地",
+      "unsupported_predicate",
+      "註冊地或銀行所在地",
       "法務審查",
       "stage_reference",
+      null,
+      null,
+      {
+        withinField: t("註冊地或銀行所在地"),
+        unsupportedMeaning: t(
+          "若註冊地或銀行所在地不在香港，增加法務審查",
+        ),
+      },
     ),
     condition(
       "利益衝突",
       "申報有利益衝突",
       "=",
-      "利益衝突",
+      "有利益衝突",
       "高級管理層審批",
       "stage_reference",
     ),
@@ -584,9 +669,14 @@ const conditionContracts = Object.freeze({
       ">=",
       "三日",
       "醫生證明",
-      "stage_reference",
+      "unsupported_outcome",
       "HR 核對後完成",
-      "stage_reference",
+      "unsupported_outcome",
+      {
+        betweenValueAndMatchingRoute: t("或以上才要求"),
+        unsupportedOutcome: t("醫生證明|HR 核對後完成"),
+        unsupportedMeaning: t("病假日數三日或以上才要求醫生證明"),
+      },
     ),
     condition(
       "無薪假",
@@ -596,10 +686,28 @@ const conditionContracts = Object.freeze({
       "部門主管路徑",
       "stage_reference",
       "HR 核對後完成",
-      "stage_reference",
+      "unsupported_outcome",
+      {
+        unsupportedOutcome: t("HR 核對後完成"),
+        unsupportedMeaning: t("其他假別在 HR 核對後完成"),
+      },
     ),
   ]),
   "TC-03": Object.freeze([
+    condition(
+      "No-Go",
+      "No-Go",
+      "=",
+      "No-Go",
+      "直接結束並記錄原因",
+      "unsupported_outcome",
+      null,
+      null,
+      {
+        unsupportedOutcome: t("直接結束並記錄原因"),
+        unsupportedMeaning: t("No-Go 直接結束並記錄原因"),
+      },
+    ),
     condition(
       "估算合約額",
       "超過",
@@ -607,36 +715,58 @@ const conditionContracts = Object.freeze({
       "一億元",
       "董事會主席批准",
       "stage_reference",
+      null,
+      null,
+      {},
+      "港幣",
     ),
     condition(
+      "投標",
       "聯營投標",
-      "聯營投標",
-      "=",
-      "聯營投標",
+      "unsupported_predicate",
+      "聯營",
       "法務審查",
       "stage_reference",
+      null,
+      null,
+      {
+        unsupportedMeaning: t(
+          "聯營投標必須增加法務審查",
+        ),
+      },
     ),
   ]),
   "TC-04": Object.freeze([
     condition(
-      "高風險工序",
+      "工序",
       "高風險",
       "=",
-      "高風險工序",
+      "高風險",
       "公司安全主管批准",
       "stage_reference",
       "項目經理後完成",
-      "stage_reference",
+      "unsupported_outcome",
+      {
+        unsupportedOutcome: t("項目經理後完成"),
+        unsupportedMeaning: t("非高風險則項目經理後完成"),
+      },
     ),
   ]),
   "TC-05": Object.freeze([
     condition(
       "申報金額與核實金額差異",
       "超過",
-      ">",
+      "unsupported_predicate",
       "百分之五",
       "退回分判商確認差異",
-      "stage_reference",
+      "unsupported_outcome",
+      null,
+      null,
+      {
+        withinField: t("申報金額與核實金額差異"),
+        unsupportedOutcome: t("退回分判商確認差異"),
+        unsupportedMeaning: t("若申報金額與核實金額差異超過百分之五，必須先退回分判商確認差異"),
+      },
     ),
     condition(
       "核實金額",
@@ -645,40 +775,72 @@ const conditionContracts = Object.freeze({
       "五百萬元",
       "財務總監批准",
       "stage_reference",
+      null,
+      null,
+      {},
+      "港幣",
     ),
   ]),
   "TC-06": Object.freeze([
     condition(
-      "高風險",
-      "高風險",
-      "=",
-      "高風險",
+      "高風險或期限超過九十日",
+      "高風險或期限超過九十日",
+      "unsupported_predicate",
+      "高風險或期限超過九十日",
       "行政總裁批准",
       "stage_reference",
+      null,
+      null,
+      {
+        withinField: t("高風險或期限超過九十日"),
+        unsupportedMeaning: t(
+          "高風險或期限超過九十日者增加行政總裁批准",
+        ),
+      },
     ),
-    condition("期限", "超過", ">", "九十日", "行政總裁批准", "stage_reference"),
   ]),
   "TC-07": Object.freeze([
-    condition("費用", "超過", ">", "一萬元", "部門主管批准", "stage_reference"),
+    condition(
+      "費用",
+      "超過",
+      ">",
+      "一萬元",
+      "部門主管批准",
+      "stage_reference",
+      null,
+      null,
+      {},
+      "港幣",
+    ),
     condition(
       "法定培訓",
       "未能提供證書",
-      "=",
+      "unsupported_predicate",
       "證書",
       "不可完成",
-      "stage_reference",
+      "unsupported_outcome",
+      null,
+      null,
+      {
+        unsupportedOutcome: t("不可完成"),
+        unsupportedMeaning: t("法定培訓未能提供證書時不可完成"),
+      },
     ),
   ]),
   "TC-08": Object.freeze([
     condition(
-      "受限制區域",
+      "區域",
       "受限制區域",
       "=",
-      "受限制區域",
+      "受限制",
       "資訊保安",
       "stage_reference",
       "主管批准後完成",
-      "stage_reference",
+      "unsupported_outcome",
+      {
+        unsupportedOutcome: t("主管批准後完成"),
+        unsupportedMeaning: t("普通辦公室到訪在主管批准後完成"),
+      },
     ),
   ]),
   "SC-01": Object.freeze([
@@ -686,7 +848,7 @@ const conditionContracts = Object.freeze({
       "安全影响",
       "为是",
       "=",
-      "安全影响",
+      "是",
       "安全评审",
       "stage_reference",
     ),
@@ -696,17 +858,26 @@ const conditionContracts = Object.freeze({
       ">",
       "一百万元",
       "额外审批",
-      "stage_reference",
+      "unsupported_outcome",
+      null,
+      null,
+      { unsupportedOutcome: t("额外审批") },
+      "港币",
     ),
   ]),
   "SC-02": Object.freeze([
     condition(
+      "数据库",
       "生产数据库",
-      "生产数据库",
-      "=",
-      "生产数据库",
+      "unsupported_predicate",
+      "生产",
       "数据负责人",
       "stage_reference",
+      null,
+      null,
+      {
+        unsupportedMeaning: t("生产数据库增加数据负责人"),
+      },
     ),
   ]),
   "SC-03": Object.freeze([
@@ -714,7 +885,7 @@ const conditionContracts = Object.freeze({
       "客户名称",
       "为是",
       "=",
-      "客户名称",
+      "是",
       "客户经理",
       "stage_reference",
     ),
@@ -730,13 +901,30 @@ const conditionContracts = Object.freeze({
   "SC-04": Object.freeze([
     condition(
       "申请额度",
+      "不超过",
+      "<=",
+      "一百万元",
+      "财务经理批准后完成",
+      "unsupported_outcome",
+      null,
+      null,
+      {
+        betweenValueAndMatchingRoute: t("且风险低时可在"),
+        unsupportedOutcome: t("财务经理批准后完成"),
+      },
+      "港币",
+    ),
+    condition(
+      "申请额度",
       "超过",
       ">",
       "一百万元",
       "财务总监批准",
       "stage_reference",
-      "财务经理批准后完成",
-      "stage_reference",
+      null,
+      null,
+      {},
+      "港币",
     ),
     condition(
       "申请额度",
@@ -745,8 +933,10 @@ const conditionContracts = Object.freeze({
       "五百万元",
       "行政总裁批准",
       "stage_reference",
-      "财务总监批准",
-      "stage_reference",
+      null,
+      null,
+      {},
+      "港币",
     ),
   ]),
   "SC-05": Object.freeze([
@@ -757,36 +947,71 @@ const conditionContracts = Object.freeze({
       "二十万元",
       "财务总监批准",
       "stage_reference",
+      null,
+      null,
+      {},
+      "港币",
     ),
     condition(
-      "含数据设备",
+      "设备",
       "含数据设备",
       "=",
-      "含数据设备",
+      "含数据",
       "安全审批和清除证明",
-      "stage_reference",
+      "unsupported_outcome",
+      null,
+      null,
+      { unsupportedOutcome: t("安全审批和清除证明") },
     ),
   ]),
   "SC-06": Object.freeze([
     condition(
-      "严重程度",
-      "为高",
-      "=",
-      "严重程度为高",
+      "严重程度为高或需要监管报告",
+      "严重程度为高或需要监管报告",
+      "unsupported_predicate",
+      "严重程度为高或需要监管报告",
       "高级管理层批准",
       "stage_reference",
+      null,
+      null,
+      {
+        withinField: t("严重程度为高或需要监管报告"),
+        unsupportedMeaning: t(
+          "严重程度为高或需要监管报告时增加高级管理层批准",
+        ),
+      },
     ),
     condition(
-      "监管报告",
-      "需要监管报告",
-      "=",
-      "监管报告",
-      "高级管理层批准",
-      "stage_reference",
+      "措施",
+      "未验证",
+      "unsupported_predicate",
+      "未验证",
+      "不得结案",
+      "unsupported_outcome",
+      null,
+      null,
+      {
+        unsupportedOutcome: t("不得结案"),
+        unsupportedMeaning: t("任何措施未验证不得结案"),
+      },
     ),
-    condition("措施", "未验证", "=", "未验证", "不得结案", "stage_reference"),
   ]),
   "SC-07": Object.freeze([
+    condition(
+      "总额",
+      "不超过",
+      "<=",
+      "二万元",
+      "财务后完成",
+      "unsupported_outcome",
+      null,
+      null,
+      {
+        beforeField: t("本地低风险且"),
+        unsupportedOutcome: t("财务后完成"),
+      },
+      "港币",
+    ),
     condition(
       "总额",
       "超过",
@@ -794,17 +1019,25 @@ const conditionContracts = Object.freeze({
       "二万元",
       "部门主管",
       "stage_reference",
-      "财务后完成",
-      "stage_reference",
+      null,
+      null,
+      {},
+      "港币",
     ),
-    condition("国际", "国际", "=", "国际", "HR 和安全", "stage_reference"),
     condition(
-      "高风险",
-      "高风险",
-      "=",
-      "高风险",
+      "国际或高风险",
+      "国际或高风险",
+      "unsupported_predicate",
+      "国际或高风险",
       "HR 和安全",
-      "stage_reference",
+      "unsupported_outcome",
+      null,
+      null,
+      {
+        withinField: t("国际或高风险"),
+        unsupportedOutcome: t("HR 和安全"),
+        unsupportedMeaning: t("国际或高风险增加 HR 和安全"),
+      },
     ),
   ]),
   "SC-08": Object.freeze([
@@ -812,25 +1045,39 @@ const conditionContracts = Object.freeze({
       "关联人士",
       "有关联人士",
       "=",
-      "关联人士",
+      "有",
       "独立高管审批",
       "stage_reference",
     ),
     condition(
-      "五十万元",
+      "超过港币五十万元",
       "超过",
-      ">",
+      "unsupported_predicate",
       "五十万元",
       "行政总裁",
       "stage_reference",
+      null,
+      null,
+      {
+        withinField: t("超过港币五十万元"),
+        unsupportedMeaning: t("超过港币五十万元增加行政总裁"),
+      },
+      "港币",
     ),
     condition(
-      "境外受赠机构",
+      "受赠机构",
       "境外",
-      "=",
-      "境外受赠机构",
+      "unsupported_predicate",
+      "境外",
       "法务审查",
       "stage_reference",
+      null,
+      null,
+      {
+        unsupportedMeaning: t(
+          "境外受赠机构增加法务审查",
+        ),
+      },
     ),
   ]),
 });
@@ -838,7 +1085,6 @@ const conditionContracts = Object.freeze({
 const conditionPolicyTerms = Object.freeze({
   "EN-03": t("Both parallel reviews are mandatory"),
   "EN-08": t("does not skip approval"),
-  "TC-03": t("No-Go 直接結束並記錄原因"),
   "TC-08": t("到訪日期過後自動失效"),
   "SC-01": t("紧急选项不能跳过审批"),
   "SC-02": t("紧急访问可缩短时限但不可跳过审批|二十四小时后复核"),
@@ -907,23 +1153,16 @@ function fyiContractsFor(id, manifest) {
   );
 }
 
-const routeOnlyApprovalNodeContracts = Object.freeze({
-  "SC-07": Object.freeze([
-    Object.freeze({
-      conditionField: "总额",
-      routeRole: "matching_route",
-      routeTerm: "部门主管",
-    }),
-  ]),
-});
+const routeOnlyApprovalNodeContracts = Object.freeze({});
 
 const attachmentContracts = Object.freeze({
   "EN-01": Object.freeze([
     attachment("supplier quotation", {
+      requirementMode: "required_with_conditional_extension",
       formats: [["supplier quotation PDF", "pdf"]],
       quantities: [
         ["minimum_quantity", "one"],
-        ["maximum_quantity", "two more quotation PDFs"],
+        ["conditional_quantity_increment", "two more quotation PDFs"],
       ],
       maximumFileSizeTerms: ["20 MB"],
     }),
@@ -973,7 +1212,10 @@ const attachmentContracts = Object.freeze({
       ],
       maximumFileSizeTerms: ["10 MB"],
     }),
-    attachment("declaration form", { kind: "form" }),
+    attachment("declaration form", {
+      kind: "form",
+      requirementMode: "conditional",
+    }),
   ]),
   "EN-05": Object.freeze([
     attachment("contract file", {
@@ -995,9 +1237,13 @@ const attachmentContracts = Object.freeze({
     }),
     attachment("identity image", { formats: [["identity image", "image"]] }),
     attachment("method statement", {
+      requirementMode: "conditional",
       formats: [["method statement PDF", "pdf"]],
     }),
-    attachment("permit-to-work", { kind: "form" }),
+    attachment("permit-to-work", {
+      kind: "form",
+      requirementMode: "conditional",
+    }),
   ]),
   "EN-07": Object.freeze([
     attachment("data inventory", {
@@ -1005,6 +1251,7 @@ const attachmentContracts = Object.freeze({
     }),
     attachment("recipient-risk assessment form", { kind: "form" }),
     attachment("data-protection impact assessment", {
+      requirementMode: "conditional",
       formats: [["data-protection impact assessment PDF", "pdf"]],
     }),
   ]),
@@ -1018,7 +1265,7 @@ const attachmentContracts = Object.freeze({
       required: false,
       formats: [["incident photo", "image"]],
     }),
-    attachment("proof of instruction"),
+    attachment("proof of instruction", { requirementMode: "conditional" }),
   ]),
   "TC-01": Object.freeze([
     attachment("商業登記證", {
@@ -1036,18 +1283,21 @@ const attachmentContracts = Object.freeze({
     attachment("利益衝突聲明表", {
       kind: "form",
       quantities: [["minimum_quantity", "一份"]],
-      maximumFileSizeTerms: ["每份檔案最多二十五 MB"],
     }),
   ]),
   "TC-02": Object.freeze([
     attachment("醫生證明", {
+      requirementMode: "conditional",
       formats: [
         ["醫生證明 PDF", "pdf"],
         ["圖片", "image"],
       ],
     }),
-    attachment("預產期證明"),
-    attachment("財務影響表", { kind: "form" }),
+    attachment("預產期證明", { requirementMode: "conditional" }),
+    attachment("財務影響表", {
+      kind: "form",
+      requirementMode: "conditional",
+    }),
   ]),
   "TC-03": Object.freeze([
     attachment("招標文件", { formats: [["招標文件 PDF", "pdf"]] }),
@@ -1069,6 +1319,7 @@ const attachmentContracts = Object.freeze({
     attachment("圖則", { formats: [["圖則 PDF", "pdf"]] }),
     attachment("檢查表", { kind: "form" }),
     attachment("起重計劃或密閉空間計劃", {
+      requirementMode: "conditional",
       formats: [["起重計劃或密閉空間計劃 PDF", "pdf"]],
     }),
   ]),
@@ -1096,6 +1347,7 @@ const attachmentContracts = Object.freeze({
       stageTerms: [["申請時", "request_submission"]],
     }),
     attachment("報價", {
+      requirementMode: "conditional",
       formats: [["報價 PDF", "pdf"]],
       stageTerms: [["申請時", "request_submission"]],
     }),
@@ -1106,19 +1358,32 @@ const attachmentContracts = Object.freeze({
     attachment("學習成果表", { kind: "form", stageTerms: [["完成後"]] }),
   ]),
   "TC-08": Object.freeze([
-    attachment("保密協議", { formats: [["保密協議 PDF", "pdf"]] }),
-    attachment("器材及資料存取聲明表", { kind: "form" }),
+    attachment("保密協議", {
+      requirementMode: "conditional",
+      formats: [["保密協議 PDF", "pdf"]],
+    }),
+    attachment("器材及資料存取聲明表", {
+      kind: "form",
+      requirementMode: "conditional",
+    }),
   ]),
   "SC-01": Object.freeze([
     attachment("修订图纸", { formats: [["修订图纸 PDF", "pdf"]] }),
     attachment("变更说明 PDF", { formats: [["变更说明 PDF", "pdf"]] }),
     attachment("成本与工期影响表", { kind: "form" }),
-    attachment("计算书", { formats: [["计算书 PDF", "pdf"]] }),
+    attachment("计算书", {
+      requirementMode: "conditional",
+      formats: [["计算书 PDF", "pdf"]],
+    }),
   ]),
   "SC-02": Object.freeze([
     attachment("最小权限检查表", { kind: "form" }),
-    attachment("风险评估", { formats: [["风险评估 PDF", "pdf"]] }),
+    attachment("风险评估", {
+      requirementMode: "conditional",
+      formats: [["风险评估 PDF", "pdf"]],
+    }),
     attachment("事故或故障工单", {
+      requirementMode: "conditional",
       formats: [
         ["文本", "text"],
         ["PDF", "pdf"],
@@ -1138,33 +1403,57 @@ const attachmentContracts = Object.freeze({
         ["图片", "image"],
       ],
     }),
-    attachment("客户同意书", { formats: [["客户同意书 PDF", "pdf"]] }),
+    attachment("客户同意书", {
+      requirementMode: "conditional",
+      formats: [["客户同意书 PDF", "pdf"]],
+    }),
     attachment("声明依据表", { kind: "form" }),
   ]),
   "SC-04": Object.freeze([
     attachment("信用报告", { formats: [["信用报告 PDF", "pdf"]] }),
     attachment("财务报表", { formats: [["财务报表 PDF", "pdf"]] }),
     attachment("应收账款分析表", { kind: "form" }),
-    attachment("担保文件", { formats: [["担保文件 PDF", "pdf"]] }),
+    attachment("担保文件", {
+      requirementMode: "conditional",
+      formats: [["担保文件 PDF", "pdf"]],
+    }),
   ]),
   "SC-05": Object.freeze([
     attachment("资产照片", { formats: [["资产照片", "image"]] }),
     attachment("资产登记截图", { formats: [["资产登记截图", "image"]] }),
-    attachment("报价", { formats: [["报价 PDF", "pdf"]] }),
-    attachment("受赠机构审查表", { kind: "form" }),
-    attachment("数据清除证明", { formats: [["数据清除证明 PDF", "pdf"]] }),
+    attachment("报价", {
+      requirementMode: "conditional",
+      formats: [["报价 PDF", "pdf"]],
+    }),
+    attachment("受赠机构审查表", {
+      kind: "form",
+      requirementMode: "conditional",
+    }),
+    attachment("数据清除证明", {
+      requirementMode: "conditional",
+      formats: [["数据清除证明 PDF", "pdf"]],
+    }),
   ]),
   "SC-06": Object.freeze([
     attachment("事故报告", { formats: [["事故报告 PDF", "pdf"]] }),
     attachment("现场照片", { formats: [["现场照片", "image"]] }),
     attachment("根本原因和措施表", { kind: "form" }),
-    attachment("报告副本", { formats: [["报告副本 PDF", "pdf"]] }),
+    attachment("报告副本", {
+      requirementMode: "conditional",
+      formats: [["报告副本 PDF", "pdf"]],
+    }),
   ]),
   "SC-07": Object.freeze([
     attachment("行程或邀请函", { formats: [["行程或邀请函 PDF", "pdf"]] }),
     attachment("费用预算表", { kind: "form" }),
-    attachment("旅行风险评估", { formats: [["旅行风险评估 PDF", "pdf"]] }),
-    attachment("护照资料页", { required: false }),
+    attachment("旅行风险评估", {
+      requirementMode: "conditional",
+      formats: [["旅行风险评估 PDF", "pdf"]],
+    }),
+    attachment("护照资料页", {
+      required: false,
+      requirementMode: "optional_conditional",
+    }),
   ]),
   "SC-08": Object.freeze([
     attachment("受赠机构注册证明", {
@@ -1172,7 +1461,10 @@ const attachmentContracts = Object.freeze({
     }),
     attachment("方案", { formats: [["方案 PDF", "pdf"]] }),
     attachment("尽职调查和利益冲突表", { kind: "form" }),
-    attachment("物品清单", { formats: [["物品清单 Excel", "excel_csv"]] }),
+    attachment("物品清单", {
+      requirementMode: "conditional",
+      formats: [["物品清单 Excel", "excel_csv"]],
+    }),
   ]),
 });
 /*
@@ -1227,7 +1519,7 @@ const reviewed = {
       "expense date|category|merchant|purpose|currency|amount|cost centre|client-billable|missing-receipt",
     ),
     attachments: t("receipt images|declaration form"),
-    stages: t("line manager|Finance|Department Head"),
+    stages: t("line manager|Department Head|Finance"),
     conditions: t("10,000"),
     parallelGroups: groups(),
     fyiRecipients: t("Payroll"),
@@ -1297,7 +1589,9 @@ const reviewed = {
       "公司中英文名稱|註冊地|公司編號|地址|聯絡人|電郵|電話|付款貨幣|付款條款|銀行所在地|供應類別",
     ),
     attachments: t("商業登記證|銀行證明|稅務表格|利益衝突聲明表"),
-    stages: t("採購經理|財務供應商資料組|合規主任|採購總監|法務|高級管理層"),
+    stages: t(
+      "採購經理|財務供應商資料組|合規主任|法務|高級管理層|採購總監",
+    ),
     conditions: t("註冊地或銀行所在地|利益衝突"),
     parallelGroups: groups("財務供應商資料組|合規主任"),
     fyiRecipients: t(""),
@@ -1345,7 +1639,7 @@ const reviewed = {
       "分判商|合約編號|估值期|申報金額|核實金額|保留金|前期累計|變更工程金額|成本代碼",
     ),
     attachments: t("分判商申報|現場量度|進度照片|扣款明細表|變更指示"),
-    stages: t("地盤工程師|項目工料測量師|項目經理|財務|商務總監|財務總監"),
+    stages: t("地盤工程師|項目工料測量師|項目經理|財務|財務總監|商務總監"),
     conditions: t("百分之五|五百萬元"),
     parallelGroups: groups("項目經理|財務"),
     fyiRecipients: t(""),
@@ -1369,7 +1663,7 @@ const reviewed = {
       "員工|課程名稱|供應機構|開始日期|費用|貨幣|培訓類別|法定要求|預期成果",
     ),
     attachments: t("課程資料|報價|證書|學習成果表"),
-    stages: t("直屬主管|培訓經理|部門主管|主管確認"),
+    stages: t("直屬主管|培訓經理|部門主管|員工|主管確認|HR"),
     conditions: t("一萬元|法定培訓"),
     parallelGroups: groups("直屬主管|培訓經理"),
     fyiRecipients: t("HR"),
@@ -1430,7 +1724,7 @@ const reviewed = {
     ),
     attachments: t("信用报告|财务报表|应收账款分析表|担保文件"),
     stages: t("销售总监|信用控制|财务经理|财务总监|行政总裁"),
-    conditions: t("一百万元|五百万元"),
+    conditions: t("一百万元|五百万元|风险低"),
     parallelGroups: groups("信用控制|财务经理"),
     fyiRecipients: t(""),
     visibilityTerms: t("不得看到完整信用报告"),
@@ -1453,7 +1747,7 @@ const reviewed = {
       "事故编号|类别|发生时间|地点|严重程度|描述|即时措施|根本原因负责人|目标结案日|监管报告",
     ),
     attachments: t("事故报告|现场照片|根本原因和措施表|报告副本"),
-    stages: t("部门主管|安全|质量|措施负责人|独立验证人|流程负责人|高级管理层"),
+    stages: t("部门主管|安全|质量|措施负责人|独立验证人|高级管理层|流程负责人"),
     conditions: t("严重程度为高或需要监管报告|未验证"),
     parallelGroups: groups("安全|质量"),
     fyiRecipients: t("相关管理层"),
@@ -1466,7 +1760,7 @@ const reviewed = {
     ),
     attachments: t("行程或邀请函|费用预算表|旅行风险评估|护照资料页"),
     stages: t("直属主管|财务|HR|安全"),
-    conditions: t("二万元|国际或高风险"),
+    conditions: t("二万元|国际或高风险|本地低风险"),
     parallelGroups: groups("HR|安全"),
     fyiRecipients: t("旅行服务团队"),
     visibilityTerms: t("不看护照附件"),
@@ -1548,21 +1842,47 @@ export const templateCopilotV3SemanticScenarioManifests = Object.freeze(
           ) {
             return false;
           }
-          const boundCondition = conditions.find(
-            (entry) => entry.field === routeNode.conditionField,
-          );
-          if (!boundCondition) return false;
-          const route =
-            routeNode.routeRole === "matching_route"
-              ? boundCondition.matchingRoute
-              : routeNode.routeRole === "otherwise_route"
-                ? boundCondition.otherwiseRoute
-                : null;
-          return (
-            route?.term === routeNode.routeTerm &&
-            route.hint === "stage_reference"
-          );
+          return conditions.some((entry) => {
+            if (entry.field !== routeNode.conditionField) return false;
+            if (entry.predicateContext.executionMode !== "structured") return false;
+            const route =
+              routeNode.routeRole === "matching_route"
+                ? entry.matchingRoute
+                : routeNode.routeRole === "otherwise_route"
+                  ? entry.otherwiseRoute
+                  : null;
+            return (
+              route?.term === routeNode.routeTerm &&
+              route.hint === "stage_reference"
+            );
+          });
         },
+      );
+      const predicateContextsAreValid = conditions.every(
+        (entry) =>
+          entry.predicateContext &&
+          [
+            "structured",
+            "compound_predicate_not_executable",
+            "unsupported_semantics_not_executable",
+          ].includes(entry.predicateContext.executionMode) &&
+          [
+            "beforeField",
+            "withinField",
+            "withinValue",
+            "betweenValueAndMatchingRoute",
+            "unsupportedOutcome",
+            "unsupportedMeaning",
+          ].every(
+            (position) =>
+              Array.isArray(entry.predicateContext[position]) &&
+              entry.predicateContext[position].every(
+                (term) =>
+                  typeof term === "string" &&
+                  term.length > 0 &&
+                  sourceSlots.conditions_exceptions.includes(term),
+              ),
+          ),
       );
       const notificationSlotsAreValid = notificationRules.every(
         (rule) =>
@@ -1587,15 +1907,11 @@ export const templateCopilotV3SemanticScenarioManifests = Object.freeze(
         ) ||
         attachments?.some(
           (contract) =>
-            ![
-              "required",
-              "optional",
-              "conditional",
-              "required_with_conditional_extension",
-            ].includes(contract.requirementMode) ||
+            !attachmentRequirementModes.includes(contract.requirementMode) ||
             contract.evidenceClauses.length === 0,
         ) ||
         !routeOnlyApprovalNodesAreValid ||
+        !predicateContextsAreValid ||
         !notificationSlotsAreValid ||
         attachments.map((entry) => entry.label).join("\n") !==
           manifest.attachments.join("\n") ||

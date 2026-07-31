@@ -164,7 +164,9 @@ const report = await runTemplateCopilotV3LiveSemanticQualification({
         `scenario=${latest.id}`,
         `locale=${latest.language}`,
         `batches=${latest.successfulBatchCount}/2`,
-        `semantic=${latest.semanticFidelity.passed ? "PASS" : "FAIL"}`,
+        `capture=${latest.semanticCapture.passed ? "CAPTURE_PASS" : "CAPTURE_FAIL"}`,
+        `holds=${latest.semanticCapture.governedHoldCount}`,
+        "executable=BLOCKED",
       ].join(" "),
     );
   },
@@ -185,24 +187,24 @@ report.summary = summarizeQualification(report);
 await persistReport(report);
 
 console.log(
-  `template_copilot_v3_full_semantic_qualification=${report.summary.fullGatePassed ? "PASS" : "FAIL"}`,
+  `template_copilot_v3_source_capture=${report.summary.semanticCaptureGate.fullCorpusPassed ? "CAPTURE_PASS" : "CAPTURE_FAIL"}`,
 );
 console.log(
-  `selected_qualification=${report.summary.selectedGatePassed ? "PASS" : "FAIL"}`,
+  `capture_scenarios=${report.summary.semanticCaptureGate.scenarioPassCount}/${report.summary.semanticCaptureGate.scenarioCount}`,
 );
 console.log(
-  `scenario_passes=${report.summary.scenarioPassCount}/${report.summary.scenarioCount}`,
+  `governed_holds=${report.summary.semanticCaptureGate.governedHoldCount}`,
 );
+console.log("executable_draft=BLOCKED");
+console.log("activation=BLOCKED");
+console.log("pilot=BLOCKED");
+console.log("overall=BLOCKED");
 console.log(
   `batch_passes=${report.summary.successfulBatchCount}/${report.summary.batchCount}`,
 );
 console.log(`report=${reportPath}`);
 
-if (
-  metadata.selectionMode === "full"
-    ? !report.summary.fullGatePassed
-    : !report.summary.selectedGatePassed
-) {
+if (!report.summary.pilotGate.passed) {
   process.exitCode = 1;
 }
 

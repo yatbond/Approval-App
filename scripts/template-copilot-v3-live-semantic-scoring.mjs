@@ -23,6 +23,7 @@ import {
   templateCopilotV3SemanticManifestCorpusFingerprint,
   templateCopilotV3SemanticManifestVersion,
   templateCopilotV3SemanticScenarioManifest,
+  templateCopilotV3SemanticScenarioManifests,
 } from "./template-copilot-v3-semantic-scenario-manifests.mjs";
 
 const expectedBatchIds = Object.freeze(["structure", "policy_context"]);
@@ -39,6 +40,7 @@ const observedMetricKeys = Object.freeze([
   "attachmentEntityCount",
   "stageEntityCount",
   "conditionEntityCount",
+  "governedSemanticHoldCount",
 ]);
 const itemFactIds = Object.freeze([
   "request.fields",
@@ -64,6 +66,11 @@ const expectedFactIds = Object.freeze([...scalarFactIds, ...itemFactIds]);
 const itemFactIdSet = new Set(itemFactIds);
 const scalarFactIdSet = new Set(scalarFactIds);
 const expectedFactIdSet = new Set(expectedFactIds);
+const governedHoldBlockingReasons = Object.freeze([
+  "compound_predicate_not_executable",
+  "unsupported_semantics_not_executable",
+]);
+const governedHoldBlockingReasonSet = new Set(governedHoldBlockingReasons);
 const providerRoles = Object.freeze([...templateCopilotV3ProviderQuoteRoles]);
 const providerRoleSet = new Set(providerRoles);
 const providerSlotSet = new Set(templateCopilotV3ProviderQuoteSlots);
@@ -140,6 +147,7 @@ const reviewItemKeys = new Set([
   "defaulted",
   "confidence",
   "ambiguity",
+  "blockingReason",
   "ambiguityNote",
   "observedRoles",
   "semanticValue",
@@ -247,6 +255,7 @@ export function scoreTemplateCopilotV3LiveSemantic({
   }
 
   const semanticItems = [];
+  const blockedSemanticItems = [];
   for (const [index, entry] of rawItems.entries()) {
     const label = `items[${index}]`;
     if (!isRecord(entry) || !itemFactIdSet.has(entry.factId)) {
@@ -270,6 +279,32 @@ export function scoreTemplateCopilotV3LiveSemantic({
       continue;
     }
     if (entry.semanticComplete !== true) {
+      if (
+        (
+          (entry.factId === "workflow.conditions" &&
+            [
+              "compound_predicate_not_executable",
+              "unsupported_semantics_not_executable",
+            ].includes(entry.blockingReason)) ||
+          (entry.factId === "attachments.requirements" &&
+            entry.blockingReason ===
+              "unsupported_semantics_not_executable") ||
+          (entry.factId === "workflow.stages" &&
+            entry.blockingReason ===
+              "unsupported_semantics_not_executable" &&
+            entry.semanticLeaves.some(
+              (leaf) =>
+                leaf.role === "kind" && leaf.advisoryHint === "record_update",
+            ))
+        ) &&
+        entry.complete === false &&
+        entry.fragmentId === null &&
+        entry.persisted === false &&
+        entry.executable === false
+      ) {
+        blockedSemanticItems.push(entry);
+        continue;
+      }
       evidenceFailures.push(
         `${label}: unresolved semantic item cannot qualify`,
       );
@@ -346,29 +381,39 @@ export function scoreTemplateCopilotV3LiveSemantic({
     ? scoreScenarioManifestSemantics({
         manifest,
         semanticItems,
+        blockedSemanticItems,
         semanticFacts,
         sourceMessages,
       })
     : {
         passed: false,
         failures: ["No fixed semantic manifest was available."],
+        sourceCapturePassed: false,
+        captureFailures: ["No fixed semantic manifest was available."],
+        governedHolds: [],
         observed: {},
       };
-  failures.push(...scenarioSemantics.failures);
+  failures.push(...scenarioSemantics.captureFailures);
 
   const factIds = [
     ...new Set([
       ...semanticItems.map((entry) => entry.factId),
+      ...blockedSemanticItems.map((entry) => entry.factId),
       ...semanticFacts.map((entry) => entry.factId),
     ]),
   ].sort();
+  const sourceCapturePassed = failures.length === 0;
   return {
-    passed: failures.length === 0,
+    passed: sourceCapturePassed,
     failures,
+    sourceCapturePassed,
+    captureFailures: [...failures],
+    governedHolds: scenarioSemantics.governedHolds,
     batchGate,
     candidateCount:
       rawItems.length + rawScalarFacts.length + rawPolicyItems.length,
     acceptedProjectionCount: semanticItems.length + semanticFacts.length,
+    blockedSemanticItemCount: blockedSemanticItems.length,
     semanticCompleteItemCount: semanticItems.length,
     completeItemCount: rawItems.filter(
       (entry) => isRecord(entry) && entry.complete === true,
@@ -659,6 +704,45 @@ function validateReviewItem({
       `${label}: a semantic review item must be non-persisted, non-executable, and non-defaulted`,
     );
   }
+  if (entry.blockingReason !== undefined) {
+    const supportedBlockingState =
+      (
+        entry.blockingReason === "compound_predicate_not_executable" &&
+        entry.factId === "workflow.conditions"
+      ) ||
+      (
+        entry.blockingReason === "unsupported_semantics_not_executable" &&
+        (
+          ["workflow.conditions", "attachments.requirements"].includes(
+            entry.factId,
+          ) ||
+          (
+            entry.factId === "workflow.stages" &&
+            Array.isArray(entry.semanticLeaves) &&
+            entry.semanticLeaves.some(
+              (leaf) =>
+                isRecord(leaf) &&
+                leaf.role === "kind" &&
+                leaf.advisoryHint === "record_update",
+            )
+          )
+        )
+      );
+    if (
+      !supportedBlockingState ||
+      entry.semanticComplete !== false ||
+      entry.complete !== false ||
+      entry.fragmentId !== null
+    ) {
+      failures.push(
+        `${label}: governed semantic blocking state is invalid`,
+      );
+    }
+  } else if (entry.semanticComplete !== true) {
+    failures.push(
+      `${label}: unresolved semantic item needs an explicit governed blocking reason`,
+    );
+  }
   if (!isRecord(entry.value))
     failures.push(`${label}: strict value is invalid`);
   const kind = arrayKindByFactId[entry.factId];
@@ -861,11 +945,14 @@ function validateReviewItem({
   const missingPaths = Array.isArray(entry.missingPaths)
     ? entry.missingPaths
     : [];
+  const governedAuthorityBlocked = entry.blockingReason !== undefined;
+  const expectedComplete =
+    missingPaths.length === 0 && !governedAuthorityBlocked;
   if (
     typeof entry.complete !== "boolean" ||
-    entry.complete !== (missingPaths.length === 0)
+    entry.complete !== expectedComplete
   ) {
-    failures.push(`${label}: strict complete flag does not match missingPaths`);
+    failures.push(`${label}: strict complete flag does not match governed authority and missingPaths`);
   }
   validateSourceMessageIds(entry, sourceSpans, label, failures);
   validateSourceOrder(
@@ -1084,12 +1171,15 @@ function validateSemanticFact({
 function scoreScenarioManifestSemantics({
   manifest,
   semanticItems,
+  blockedSemanticItems,
   semanticFacts,
   sourceMessages,
 }) {
   const failures = [];
+  const governedHolds = [];
+  const retainedItems = [...semanticItems, ...blockedSemanticItems];
   const entries = (factId) =>
-    semanticItems.filter((entry) => entry.factId === factId);
+    retainedItems.filter((entry) => entry.factId === factId);
   const facts = (factId) =>
     semanticFacts.filter((entry) => entry.factId === factId);
   const factRoleText = (factId, role) =>
@@ -1101,12 +1191,12 @@ function scoreScenarioManifestSemantics({
       )
       .join("\n");
   const retainedText = [
-    ...semanticItems.map((entry) => semanticItemString(entry)),
+    ...retainedItems.map((entry) => semanticItemString(entry)),
     ...semanticFacts.map((entry) => semanticFactString(entry)),
   ].join("\n");
 
   const factIds = new Set([
-    ...semanticItems.map((entry) => entry.factId),
+    ...retainedItems.map((entry) => entry.factId),
     ...semanticFacts.map((entry) => entry.factId),
   ]);
   const missingFactIds = manifest.requiredFactIds.filter(
@@ -1175,11 +1265,11 @@ function scoreScenarioManifestSemantics({
     (_, index) => stageKinds[index] === "for_information",
   );
   const governedStages = stages.filter((_, index) =>
-    ["approval", "review", "submission"].includes(stageKinds[index]),
+    ["approval", "review", "submission", "record_update"].includes(stageKinds[index]),
   );
   const unknownStages = stages.filter(
     (_, index) =>
-      !["approval", "review", "submission", "for_information"].includes(
+      !["approval", "review", "submission", "record_update", "for_information"].includes(
         stageKinds[index],
       ),
   );
@@ -1235,7 +1325,7 @@ function scoreScenarioManifestSemantics({
     requireExactRoleHints(
       entry,
       "required",
-      [expected.required ? "true" : "false"],
+      [attachmentRequirementHint(expected.requirementMode)],
       label,
       failures,
     );
@@ -1246,7 +1336,11 @@ function scoreScenarioManifestSemantics({
       label,
       failures,
     );
-    for (const role of ["minimum_quantity", "maximum_quantity"]) {
+    for (const role of [
+      "minimum_quantity",
+      "maximum_quantity",
+      "conditional_quantity_increment",
+    ]) {
       requireExactRoleContracts(
         entry,
         role,
@@ -1278,6 +1372,24 @@ function scoreScenarioManifestSemantics({
       failures,
     );
     requireExactSourceClauses(entry, expected.evidenceClauses, label, failures);
+    const governedRequirement =
+      !["required", "optional"].includes(expected.requirementMode);
+    if (governedRequirement) {
+      if (!isExactGovernedHold(entry, "unsupported_semantics_not_executable")) {
+        failures.push(
+          `${label} did not remain safely blocked as a non-executable conditional attachment requirement.`,
+        );
+      } else {
+        governedHolds.push(governedHoldForEntry(entry));
+      }
+    } else if (
+      entry.blockingReason !== undefined ||
+      entry.semanticComplete !== true
+    ) {
+      failures.push(
+        `${label} was not retained as a complete unconditional attachment requirement.`,
+      );
+    }
   }
 
   const stageMatch = matchRoleContractsOneToOne({
@@ -1321,11 +1433,31 @@ function scoreScenarioManifestSemantics({
     if (hasParallel !== (expected.topology === "parallel")) {
       failures.push(`${label} lost its exact reviewed topology.`);
     }
+    if (expected.kind === "record_update") {
+      if (!isExactGovernedHold(entry, "unsupported_semantics_not_executable")) {
+        failures.push(
+          `${label} did not remain safely blocked as a non-executable record-update action.`,
+        );
+      } else {
+        governedHolds.push(governedHoldForEntry(entry));
+      }
+    } else if (
+      entry.blockingReason !== undefined ||
+      entry.semanticComplete !== true
+    ) {
+      failures.push(
+        `${label} was not retained as a semantically complete governed stage.`,
+      );
+    }
   }
+  const sourceNormalizedGovernedStages =
+    normalizeGovernedStageOrderFromSource(governedStages, sourceMessages);
   const orderedStageEntries = stageMatch.pairs.map((pair) => pair[1]);
   if (
-    orderedStageEntries.length === governedStages.length &&
-    orderedStageEntries.some((entry, index) => entry !== governedStages[index])
+    orderedStageEntries.length === sourceNormalizedGovernedStages.length &&
+    orderedStageEntries.some(
+      (entry, index) => entry !== sourceNormalizedGovernedStages[index],
+    )
   ) {
     failures.push(
       "Governed stage order does not match the reviewed source sequence.",
@@ -1376,6 +1508,7 @@ function scoreScenarioManifestSemantics({
     matches: conditionContractMatchesEntry,
     failures,
   });
+  let governedConditionHoldCount = 0;
   for (const [expected, entry] of conditionMatch.pairs) {
     const label = `Condition ${expected.field}`;
     requireExactRoleContracts(
@@ -1401,6 +1534,26 @@ function scoreScenarioManifestSemantics({
     );
     requireExactRoleContracts(
       entry,
+      "currency",
+      expected.currency ? [expected.currency] : [],
+      label,
+      failures,
+    );
+    if (
+      expected.currency &&
+      !conditionCurrencyHasSourceAffinity(
+        entry,
+        expected,
+        manifest.conditions,
+        sourceMessages,
+      )
+    ) {
+      failures.push(
+        `${label} currency is not grounded in its numeric value clause or source field carry-forward.`,
+      );
+    }
+    requireExactRoleContracts(
+      entry,
       "matching_route",
       [expected.matchingRoute],
       label,
@@ -1413,12 +1566,42 @@ function scoreScenarioManifestSemantics({
       label,
       failures,
     );
+    requireExactConditionPredicateContext({
+      entry,
+      expected,
+      sourceMessages,
+      label,
+      failures,
+    });
+    const expectedBlockingReason =
+      expected.predicateContext?.executionMode === "structured"
+        ? null
+        : expected.predicateContext?.executionMode;
+    if (expectedBlockingReason) {
+      governedConditionHoldCount += 1;
+      if (!isExactGovernedHold(entry, expectedBlockingReason)) {
+        failures.push(
+          `${label} did not remain safely blocked with its reviewed governed reason.`,
+        );
+      } else {
+        governedHolds.push(governedHoldForEntry(entry));
+      }
+    } else if (
+      entry.blockingReason !== undefined ||
+      entry.semanticComplete !== true
+    ) {
+      failures.push(
+        `${label} was not retained as a complete structured condition.`,
+      );
+    }
   }
 
   const matchedRouteOnlyApprovalNodeCount =
     manifest.routeOnlyApprovalNodes.filter((routeNode) =>
       conditionMatch.pairs.some(
         ([expected, entry]) =>
+          expected.predicateContext?.executionMode === "structured" &&
+          entry.blockingReason === undefined &&
           expected.field === routeNode.conditionField &&
           hasRoleContract(
             entry,
@@ -1591,6 +1774,21 @@ function scoreScenarioManifestSemantics({
     );
   }
 
+  const expectedGovernedHolds = expectedGovernedHoldsForManifest(manifest);
+  const actualGovernedHolds = sortGovernedHolds(
+    blockedSemanticItems.map(governedHoldForEntry),
+  );
+  if (!sameGovernedHoldInventory(actualGovernedHolds, expectedGovernedHolds)) {
+    failures.push(
+      "The governed hold count or blocking-reason inventory does not match the fixed source contract.",
+    );
+  }
+  if (!sameGovernedHoldInventory(actualGovernedHolds, governedHolds)) {
+    failures.push(
+      "The governed hold inventory is not bound one-to-one to the reviewed source contracts.",
+    );
+  }
+
   const observed = {
     documents: attachments.length,
     requestFields: fields.length,
@@ -1598,7 +1796,7 @@ function scoreScenarioManifestSemantics({
       governedStages.filter((entry) =>
         ["approval", "review"].includes(stageKind(entry)),
       ).length + matchedRouteOnlyApprovalNodeCount,
-    conditionNodes: conditions.length,
+    conditionNodes: conditions.length - governedConditionHoldCount,
     notificationRules: notifications.length,
     fyiRecipients: fyiStages.length,
     parallelStageCount: observedParallelCount,
@@ -1606,7 +1804,9 @@ function scoreScenarioManifestSemantics({
     fieldEntityCount: fieldMatch.matchedCount,
     attachmentEntityCount: attachmentMatch.matchedCount,
     stageEntityCount: stageMatch.matchedCount,
-    conditionEntityCount: conditionMatch.matchedCount,
+    conditionEntityCount:
+      conditionMatch.matchedCount - governedConditionHoldCount,
+    governedSemanticHoldCount: blockedSemanticItems.length,
   };
   if (
     JSON.stringify(Object.keys(observed)) !== JSON.stringify(observedMetricKeys)
@@ -1615,7 +1815,76 @@ function scoreScenarioManifestSemantics({
       "Observed semantic metrics drifted from the privacy allowlist.",
     );
   }
-  return { passed: failures.length === 0, failures, observed };
+  const sourceCapturePassed = failures.length === 0;
+  return {
+    passed: sourceCapturePassed,
+    failures,
+    sourceCapturePassed,
+    captureFailures: [...failures],
+    governedHolds: actualGovernedHolds,
+    observed,
+  };
+}
+
+function isExactGovernedHold(entry, blockingReason) {
+  return (
+    governedHoldBlockingReasonSet.has(blockingReason) &&
+    entry.blockingReason === blockingReason &&
+    entry.semanticComplete === false &&
+    entry.complete === false &&
+    entry.fragmentId === null &&
+    entry.persisted === false &&
+    entry.executable === false
+  );
+}
+
+function governedHoldForEntry(entry) {
+  return {
+    factId: entry.factId,
+    blockingReason: entry.blockingReason,
+  };
+}
+
+function expectedGovernedHoldsForManifest(manifest) {
+  return sortGovernedHolds([
+    ...manifest.attachments
+      .filter(
+        (entry) => !["required", "optional"].includes(entry.requirementMode),
+      )
+      .map(() => ({
+        factId: "attachments.requirements",
+        blockingReason: "unsupported_semantics_not_executable",
+      })),
+    ...manifest.stages
+      .filter((entry) => entry.kind === "record_update")
+      .map(() => ({
+        factId: "workflow.stages",
+        blockingReason: "unsupported_semantics_not_executable",
+      })),
+    ...manifest.conditions
+      .filter(
+        (entry) => entry.predicateContext.executionMode !== "structured",
+      )
+      .map((entry) => ({
+        factId: "workflow.conditions",
+        blockingReason: entry.predicateContext.executionMode,
+      })),
+  ]);
+}
+
+function sortGovernedHolds(governedHolds) {
+  return [...governedHolds].sort((left, right) => {
+    const factComparison = left.factId.localeCompare(right.factId, "en");
+    if (factComparison !== 0) return factComparison;
+    return left.blockingReason.localeCompare(right.blockingReason, "en");
+  });
+}
+
+function sameGovernedHoldInventory(left, right) {
+  return (
+    JSON.stringify(sortGovernedHolds(left)) ===
+    JSON.stringify(sortGovernedHolds(right))
+  );
 }
 
 function roleContract(role, term, hint = null) {
@@ -1629,7 +1898,7 @@ function roleLeaves(entry, role) {
 function hasRoleContract(entry, contract) {
   return roleLeaves(entry, contract.role).some(
     (leaf) =>
-      canonicalIncludes(leaf.quote, contract.term) &&
+      canonicalEquals(leaf.quote, contract.term) &&
       leaf.advisoryHint === contract.hint,
   );
 }
@@ -1720,6 +1989,417 @@ function spansShareSourceClause(left, right, sourceMessages) {
   return clauseKey(left) === clauseKey(right);
 }
 
+function conditionCurrencyHasSourceAffinity(
+  entry,
+  expected,
+  conditionContracts,
+  sourceMessages,
+) {
+  const currency = sourceTermRangeForRole(
+    entry,
+    expected.currency,
+    sourceMessages,
+  );
+  const value = sourceTermRangeForRole(
+    entry,
+    roleContract("value", expected.value),
+    sourceMessages,
+  );
+  const field = sourceTermRangeForRole(
+    entry,
+    roleContract("field", expected.field),
+    sourceMessages,
+  );
+  if (
+    !currency ||
+    !value ||
+    currency.messageId !== value.messageId
+  ) {
+    return false;
+  }
+  const text = Array.from(sourceMessages[currency.messageId]);
+  const currencyClause = sourceClauseBoundsForRange(text, currency);
+  const valueClause = sourceClauseBoundsForRange(text, value);
+  const valueClauseText = text
+    .slice(valueClause.startCodePoint, valueClause.endCodePoint)
+    .join("");
+  const valueClauseHasExpectedCurrency = canonicalIncludes(
+    valueClauseText,
+    expected.currency.term,
+  );
+
+  if (valueClauseHasExpectedCurrency) {
+    return spansShareSourceClause(currency, value, sourceMessages);
+  }
+  if (sourceTextHasExplicitCurrency(valueClauseText)) return false;
+  if (spansShareSourceClause(currency, value, sourceMessages)) return true;
+  if (
+    currency.endCodePoint > value.startCodePoint ||
+    field === null ||
+    field.messageId !== currency.messageId ||
+    !spansShareSourceClause(currency, field, sourceMessages)
+  ) {
+    return false;
+  }
+
+  const interveningText = text
+    .slice(currencyClause.endCodePoint, valueClause.startCodePoint)
+    .join("");
+  if (sourceTextHasExplicitCurrency(interveningText)) return false;
+  return !conditionContracts.some(
+    (contract) =>
+      typeof contract.field === "string" &&
+      canonicalIncludes(interveningText, contract.field),
+  );
+}
+
+function sourceTextHasExplicitCurrency(source) {
+  return /\b(?:AED|AUD|CAD|CHF|CNY|EUR|GBP|HKD|JPY|RMB|SGD|USD)\b|港幣|港币|香港元|美元|美金|人民幣|人民币|日圓|日元|歐元|欧元|英鎊|英镑|新加坡元/iu.test(
+    source,
+  );
+}
+
+function normalizeGovernedStageOrderFromSource(entries, sourceMessages) {
+  const explicitlyPositioned = new Set();
+  let normalized = [...entries];
+  for (const entry of entries) {
+    const target = conditionSourcedInsertionTarget(entry, entries, sourceMessages);
+    if (target === null) continue;
+    const entryIndex = normalized.indexOf(entry);
+    const targetIndex = normalized.indexOf(target);
+    if (entryIndex < 0 || targetIndex < 0 || entryIndex === targetIndex - 1) {
+      explicitlyPositioned.add(entry);
+      continue;
+    }
+    normalized.splice(entryIndex, 1);
+    normalized.splice(normalized.indexOf(target), 0, entry);
+    explicitlyPositioned.add(entry);
+  }
+
+  const explicitFinalStages = entries.filter((entry) =>
+    stageHasLeadingFinalMarker(entry, sourceMessages),
+  );
+  if (explicitFinalStages.length !== 1) return normalized;
+
+  const finalStage = explicitFinalStages[0];
+  const finalIndex = normalized.indexOf(finalStage);
+  const conditionAddedAfterFinal = normalized
+    .slice(finalIndex + 1)
+    .filter(
+      (entry) =>
+        !explicitlyPositioned.has(entry) &&
+        stageIsConditionSourcedAddedGovernedStage(entry, sourceMessages),
+    );
+  if (conditionAddedAfterFinal.length === 0) return normalized;
+
+  const moved = new Set(conditionAddedAfterFinal);
+  return [
+    ...normalized.slice(0, finalIndex),
+    ...conditionAddedAfterFinal,
+    finalStage,
+    ...normalized.slice(finalIndex + 1).filter((entry) => !moved.has(entry)),
+  ];
+}
+
+function stageHasLeadingFinalMarker(entry, sourceMessages) {
+  const source = stageParticipantSourcePrefix(
+    entry,
+    sourceMessages,
+    "stages_participants",
+  );
+  return (
+    source !== null &&
+    /(?:\b(?:finally|lastly)(?:\s+by)?(?:\s+the)?|最後(?:由)?|最后(?:由)?)\s*$/iu.test(
+      source,
+    )
+  ) || stageHasTrailingFinalMarker(entry, sourceMessages);
+}
+
+function stageHasTrailingFinalMarker(entry, sourceMessages) {
+  const participantLeaves = roleLeaves(entry, "participant");
+  if (participantLeaves.length !== 1) return false;
+  const participant = participantLeaves[0];
+  if (
+    !isRecord(participant.sourceSpan) ||
+    participant.sourceSpan.messageId.slice(
+      participant.sourceSpan.messageId.lastIndexOf(":") + 1,
+    ) !== "stages_participants" ||
+    typeof sourceMessages[participant.sourceSpan.messageId] !== "string"
+  ) return false;
+  const text = Array.from(sourceMessages[participant.sourceSpan.messageId]);
+  const clause = sourceClauseBoundsForRange(text, participant.sourceSpan);
+  const suffix = text
+    .slice(participant.sourceSpan.endCodePoint, clause.endCodePoint)
+    .join("")
+    .trim();
+  return /^(?:is\s+the\s+)?final(?:ly)?\b|^最終(?:批准|審批|审批)|^最终(?:批准|審批|审批)/iu.test(
+    suffix,
+  );
+}
+
+function conditionSourcedInsertionTarget(entry, entries, sourceMessages) {
+  if (!stageIsConditionSourcedAddedGovernedStage(entry, sourceMessages)) return null;
+  const participantLeaves = roleLeaves(entry, "participant");
+  if (participantLeaves.length !== 1) return null;
+  const participant = participantLeaves[0];
+  const text = Array.from(sourceMessages[participant.sourceSpan.messageId] ?? "");
+  const clause = sourceClauseBoundsForRange(text, participant.sourceSpan);
+  const suffix = text
+    .slice(participant.sourceSpan.endCodePoint, clause.endCodePoint)
+    .join("")
+    .toLocaleLowerCase("en");
+  return (
+    entries.find((candidate) => {
+      if (candidate === entry) return false;
+      const target = roleValues(candidate, "participant");
+      if (target.length !== 1) return false;
+      const normalizedTarget = target[0].toLocaleLowerCase("en");
+      return (
+        suffix.includes(`before ${normalizedTarget}`) ||
+        suffix.includes(`before the ${normalizedTarget}`)
+      );
+    }) ?? null
+  );
+}
+
+function stageIsConditionSourcedAddedGovernedStage(entry, sourceMessages) {
+  if (
+    !semanticHints(entry, "kind").some((kind) =>
+      ["approval", "review", "submission", "record_update"].includes(kind),
+    )
+  ) {
+    return false;
+  }
+  const source = stageParticipantSourcePrefix(
+    entry,
+    sourceMessages,
+    "conditions_exceptions",
+  );
+  return (
+    source !== null &&
+    /(?:\b(?:add|adds|added|include|includes|included)(?:\s+(?:an?|the))?|增加|新增|加上)\s*$/iu.test(
+      source,
+    )
+  );
+}
+
+function stageParticipantSourcePrefix(entry, sourceMessages, slot) {
+  const participantLeaves = roleLeaves(entry, "participant");
+  if (participantLeaves.length !== 1) return null;
+  const participant = participantLeaves[0];
+  if (
+    !isRecord(participant.sourceSpan) ||
+    participant.sourceSpan.messageId.slice(
+      participant.sourceSpan.messageId.lastIndexOf(":") + 1,
+    ) !== slot ||
+    typeof sourceMessages[participant.sourceSpan.messageId] !== "string"
+  ) {
+    return null;
+  }
+  const text = Array.from(sourceMessages[participant.sourceSpan.messageId]);
+  const clause = sourceClauseBoundsForRange(text, participant.sourceSpan);
+  return text
+    .slice(clause.startCodePoint, participant.sourceSpan.startCodePoint)
+    .join("")
+    .trim();
+}
+
+function requireExactConditionPredicateContext({
+  entry,
+  expected,
+  sourceMessages,
+  label,
+  failures,
+}) {
+  const beforeField = Array.isArray(expected.predicateContext?.beforeField)
+    ? expected.predicateContext.beforeField
+    : [];
+  const withinField = Array.isArray(expected.predicateContext?.withinField)
+    ? expected.predicateContext.withinField
+    : [];
+  const withinValue = Array.isArray(expected.predicateContext?.withinValue)
+    ? expected.predicateContext.withinValue
+    : [];
+  const betweenValueAndMatchingRoute = Array.isArray(
+    expected.predicateContext?.betweenValueAndMatchingRoute,
+  )
+    ? expected.predicateContext.betweenValueAndMatchingRoute
+    : [];
+  const unsupportedOutcome = Array.isArray(
+    expected.predicateContext?.unsupportedOutcome,
+  )
+    ? expected.predicateContext.unsupportedOutcome
+    : [];
+  const unsupportedMeaning = Array.isArray(
+    expected.predicateContext?.unsupportedMeaning,
+  )
+    ? expected.predicateContext.unsupportedMeaning
+    : [];
+  if (
+    beforeField.length === 0 &&
+    withinField.length === 0 &&
+    withinValue.length === 0 &&
+    betweenValueAndMatchingRoute.length === 0 &&
+    unsupportedOutcome.length === 0 &&
+    unsupportedMeaning.length === 0
+  ) {
+    return;
+  }
+
+  const fieldRange = sourceTermRangeForRole(
+    entry,
+    roleContract("field", expected.field),
+    sourceMessages,
+  );
+  const valueRange = sourceTermRangeForRole(
+    entry,
+    roleContract("value", expected.value),
+    sourceMessages,
+  );
+  const matchingRouteRange = sourceTermRangeForRole(
+    entry,
+    expected.matchingRoute,
+    sourceMessages,
+  );
+
+  for (const term of withinField) {
+    if (!expected.field.includes(term)) {
+      failures.push(`${label} predicate context within field is not exact.`);
+    }
+  }
+  for (const term of withinValue) {
+    if (!expected.value.includes(term)) {
+      failures.push(`${label} predicate context within value is not exact.`);
+    }
+  }
+  const outcomeTerms = [
+    expected.matchingRoute.term,
+    ...(expected.otherwiseRoute ? [expected.otherwiseRoute.term] : []),
+  ];
+  for (const term of unsupportedOutcome) {
+    if (!outcomeTerms.some((outcome) => outcome.includes(term))) {
+      failures.push(`${label} unsupported outcome context is not exact.`);
+    }
+  }
+  const ownedSourceIds = new Set(
+    (entry.sourceAnchors ?? []).map((anchor) => anchor.messageId),
+  );
+  for (const term of unsupportedMeaning) {
+    if (
+      ![...ownedSourceIds].some(
+        (messageId) => sourceMessages[messageId]?.includes(term),
+      )
+    ) {
+      failures.push(`${label} unsupported source meaning is not exact.`);
+    }
+  }
+
+  if (beforeField.length > 0) {
+    const expectedPrefix = beforeField.join("");
+    if (!fieldRange) {
+      failures.push(
+        `${label} predicate context before field is not exact and adjacent.`,
+      );
+    } else {
+      const text = Array.from(sourceMessages[fieldRange.messageId]);
+      const clause = sourceClauseBoundsForRange(text, fieldRange);
+      const actualPrefix = text
+        .slice(clause.startCodePoint, fieldRange.startCodePoint)
+        .join("");
+      if (actualPrefix !== expectedPrefix) {
+        failures.push(
+          `${label} predicate context before field is not exact and adjacent.`,
+        );
+      }
+    }
+  }
+
+  if (betweenValueAndMatchingRoute.length > 0) {
+    const expectedBridge = betweenValueAndMatchingRoute.join("");
+    if (
+      !valueRange ||
+      !matchingRouteRange ||
+      valueRange.messageId !== matchingRouteRange.messageId ||
+      valueRange.endCodePoint > matchingRouteRange.startCodePoint ||
+      !spansShareSourceClause(
+        valueRange,
+        matchingRouteRange,
+        sourceMessages,
+      )
+    ) {
+      failures.push(
+        `${label} predicate context between value and matching route is not exact.`,
+      );
+    } else {
+      const text = Array.from(sourceMessages[valueRange.messageId]);
+      const actualBridge = text
+        .slice(
+          valueRange.endCodePoint,
+          matchingRouteRange.startCodePoint,
+        )
+        .join("");
+      if (actualBridge !== expectedBridge) {
+        failures.push(
+          `${label} predicate context between value and matching route is not exact.`,
+        );
+      }
+    }
+  }
+}
+
+function sourceTermRangeForRole(entry, contract, sourceMessages) {
+  const term = Array.from(contract.term);
+  const ranges = [];
+  for (const leaf of roleLeaves(entry, contract.role)) {
+    if (
+      leaf.advisoryHint !== contract.hint ||
+      !canonicalEquals(leaf.quote, contract.term) ||
+      !isRecord(leaf.sourceSpan) ||
+      typeof sourceMessages[leaf.sourceSpan.messageId] !== "string"
+    ) {
+      continue;
+    }
+    const source = Array.from(sourceMessages[leaf.sourceSpan.messageId]);
+    const first = leaf.sourceSpan.startCodePoint;
+    const last = leaf.sourceSpan.endCodePoint - term.length;
+    for (let start = first; start <= last; start += 1) {
+      if (source.slice(start, start + term.length).join("") !== contract.term) {
+        continue;
+      }
+      ranges.push({
+        messageId: leaf.sourceSpan.messageId,
+        startCodePoint: start,
+        endCodePoint: start + term.length,
+      });
+    }
+  }
+  return ranges.length === 1 ? ranges[0] : null;
+}
+
+function sourceClauseBoundsForRange(text, range) {
+  let startCodePoint = range.startCodePoint;
+  while (
+    startCodePoint > 0 &&
+    !/[.!?。！？；;\n]/u.test(text[startCodePoint - 1])
+  ) {
+    startCodePoint -= 1;
+  }
+  let endCodePoint = range.endCodePoint;
+  while (
+    endCodePoint < text.length &&
+    !/[.!?。！？；;\n]/u.test(text[endCodePoint])
+  ) {
+    endCodePoint += 1;
+  }
+  return { startCodePoint, endCodePoint };
+}
+
+function attachmentRequirementHint(requirementMode) {
+  if (requirementMode === "required") return "true";
+  if (requirementMode === "optional") return "false";
+  return requirementMode;
+}
+
 function conditionContractMatchesEntry(expected, entry) {
   return [
     roleContract("field", expected.field),
@@ -1805,7 +2485,7 @@ function requireExactRoleContracts(entry, role, expected, label, failures) {
     const index = leaves.findIndex(
       (leaf, leafIndex) =>
         !used.has(leafIndex) &&
-        canonicalIncludes(leaf.quote, contract.term) &&
+        canonicalEquals(leaf.quote, contract.term) &&
         leaf.advisoryHint === contract.hint,
     );
     if (index === -1) {
@@ -1831,6 +2511,10 @@ function canonicalSemanticText(value) {
     .normalize("NFKC")
     .toLocaleLowerCase()
     .replace(/[\p{P}\p{S}\p{Z}\s]/gu, "");
+}
+
+function canonicalEquals(left, right) {
+  return canonicalSemanticText(left) === canonicalSemanticText(right);
 }
 
 function canonicalIncludes(text, term) {
@@ -1956,7 +2640,9 @@ function advisoryHintHasExactSourceMeaning(kind, role, hint, quote) {
       /\b(?:not required|optional)\b|可選擇上載|可選上載|可选上传|選填|选填|非必須|非必须|不需要|毋須|毋须|無須|无须|可選擇|可选择|可選|可选/u.test(
         meaning,
       );
-    if (hint === "false") return optional;
+    if (["false", "optional_conditional"].includes(hint)) {
+      return optional;
+    }
     return (
       !optional &&
       /\b(?:must|required|requires?|mandatory|upload|attach|submit|provide|include|fill|add)\b|必須填寫|必须填写|必須提供|必须提供|必須上載|必须上传|須上載|须上传|要上載|要上传|必須提交|必须提交|須提交|须提交|必須附上|必须附上|必須|必须|需要|必填|上載|上传|提交|附上|提供|填寫|填写|要填|須填|须填/u.test(
@@ -1981,6 +2667,8 @@ function advisoryHintHasExactSourceMeaning(kind, role, hint, quote) {
       review:
         /\b(?:reviews?|reviewed|compares?|compared|audits?|audited)\b|審核|审核|覆核|复核|審查|审查|評審|评审|核對|核对/u,
       submission: /\b(?:submits?|submission)\b|提交|呈交/u,
+      record_update:
+        /\b(?:updates?|updated|updating)\b|更新/u,
       for_information:
         /\b(?:fyi|for information|informational)\b|知會|知会|供參考|供参考|供知悉/u,
     };
@@ -2233,6 +2921,7 @@ function stageKind(entry) {
   }
   if (hints.some((value) => value === "review")) return "review";
   if (hints.some((value) => value === "submission")) return "submission";
+  if (hints.some((value) => value === "record_update")) return "record_update";
   if (
     hints.some((value) =>
       ["for_information", "fyi", "informational"].includes(value),
@@ -2245,6 +2934,7 @@ function stageKind(entry) {
     return "for_information";
   }
   if (/review|審核|审核|覆核|复核/u.test(text)) return "review";
+  if (/\b(?:updates?|updated|updating)\b|更新/u.test(text)) return "record_update";
   if (/submit|submission|提交|呈交/u.test(text)) return "submission";
   if (/approve|approval|審批|审批|核准|批准/u.test(text)) return "approval";
   return "unknown";
@@ -2427,13 +3117,33 @@ function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+const expectedGovernedHoldInventoryByScenario = Object.freeze(
+  Object.fromEntries(
+    Object.entries(templateCopilotV3SemanticScenarioManifests)
+      .sort(([left], [right]) => left.localeCompare(right, "en"))
+      .map(([scenarioId, manifest]) => [
+        scenarioId,
+        Object.freeze({
+          language: manifest.language,
+          governedHolds: Object.freeze(
+            expectedGovernedHoldsForManifest(manifest).map((hold) =>
+              Object.freeze({ ...hold }),
+            ),
+          ),
+        }),
+      ]),
+  ),
+);
+
 export const templateCopilotV3LiveSemanticScoringContract = Object.freeze({
   expectedBatchIds: [...expectedBatchIds],
   expectedFactIds: [...expectedFactIds],
   itemFactIds: [...itemFactIds],
   observedMetricKeys: [...observedMetricKeys],
   providerRoles: [...providerRoles],
+  governedHoldBlockingReasons: [...governedHoldBlockingReasons],
   forbiddenSourceText: [...forbiddenSourceText],
+  expectedGovernedHoldInventoryByScenario,
   manifestVersion: templateCopilotV3SemanticManifestVersion,
   manifestCorpusFingerprint: templateCopilotV3SemanticManifestCorpusFingerprint,
   providerSlots: [...templateCopilotV3ProviderQuoteSlots],

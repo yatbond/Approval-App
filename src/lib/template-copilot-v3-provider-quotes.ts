@@ -4,6 +4,8 @@ import {
   templateCopilotUnicodeCodePointCount,
 } from "./template-copilot-unicode.ts";
 import {
+  templateCopilotV3CanonicalDecimalText,
+  templateCopilotV3NormalizeLexicalText,
   templateCopilotV3SourceSpanId,
   templateCopilotV3SourceSpanSchema,
   templateCopilotV3ContainsNonWhitespace,
@@ -11,6 +13,13 @@ import {
   type TemplateCopilotV3SourceSpan,
 } from "./template-copilot-v3-evidence.ts";
 import { quarantineTemplateCopilotRequirementText } from "./template-copilot-safety.ts";
+import {
+  templateCopilotV3ConditionRouteTargetIsClosed,
+  templateCopilotV3ImmediateDefaultRouteIsAffirmative,
+  templateCopilotV3MatchingRouteIsAffirmative,
+  templateCopilotV3SliceConditionRouteClause,
+  type TemplateCopilotV3ConditionRouteHint,
+} from "./template-copilot-v3-condition-route-grammar.ts";
 
 export const templateCopilotV3ProviderQuoteContractVersion = 1 as const;
 
@@ -166,6 +175,7 @@ export const templateCopilotV3ProviderQuoteRoles = [
   "format",
   "minimum_quantity",
   "maximum_quantity",
+  "conditional_quantity_increment",
   "maximum_file_size_mb",
   "stage",
   "contributor_policy",
@@ -368,10 +378,17 @@ export const templateCopilotV3ProviderQuoteKindRoleHints = Object.freeze({
   attachment: roles({
     label: null,
     kind: hints("attachment", "form"),
-    required: hints("true", "false"),
+    required: hints(
+      "true",
+      "false",
+      "conditional",
+      "required_with_conditional_extension",
+      "optional_conditional",
+    ),
     format: hints("text", "pdf", "image", "excel_csv"),
     minimum_quantity: null,
     maximum_quantity: null,
+    conditional_quantity_increment: null,
     maximum_file_size_mb: null,
     stage: hints("request_submission", "stage_reference"),
     contributor_policy: hints(
@@ -386,7 +403,13 @@ export const templateCopilotV3ProviderQuoteKindRoleHints = Object.freeze({
   }),
   stage: roles({
     label: null,
-    kind: hints("approval", "review", "for_information", "submission"),
+    kind: hints(
+      "approval",
+      "review",
+      "for_information",
+      "submission",
+      "record_update",
+    ),
     participant_mode: hints(
       "fixed_email",
       "directory_position",
@@ -401,7 +424,16 @@ export const templateCopilotV3ProviderQuoteKindRoleHints = Object.freeze({
   condition: roles({
     sequence: null,
     field: null,
-    operator: hints("=", "!=", ">", ">=", "<", "<=", "contains"),
+    operator: hints(
+      "=",
+      "!=",
+      ">",
+      ">=",
+      "<",
+      "<=",
+      "contains",
+      "unsupported_predicate",
+    ),
     value: null,
     currency: null,
     unit: null,
@@ -410,12 +442,14 @@ export const templateCopilotV3ProviderQuoteKindRoleHints = Object.freeze({
       "return_for_correction",
       "stage_reference",
       "condition_reference",
+      "unsupported_outcome",
     ),
     otherwise_route: hints(
       "complete",
       "return_for_correction",
       "stage_reference",
       "condition_reference",
+      "unsupported_outcome",
     ),
   }),
   rejection: roles({
@@ -638,25 +672,98 @@ export function locateTemplateCopilotV3ProviderQuotes({
       );
       return;
     }
+    const stagedLeafMatches = item.leaves.map((leaf) => ({
+      leaf,
+      match: uniqueOffset(item.quote, leaf.quote),
+    }));
+    const numericConditionValue = item.kind === "condition" &&
+        item.leaves.some((leaf) =>
+          leaf.role === "operator" &&
+          [">", ">=", "<", "<="].includes(leaf.hint ?? "")
+        )
+      ? item.leaves.find((leaf) => leaf.role === "value")
+      : undefined;
+    if (
+      numericConditionValue !== undefined &&
+      !conditionNumericValueQuoteIsClosed(numericConditionValue.quote)
+    ) {
+      rejected.push(
+        rejection(itemIndex, "leaf_ambiguous", "condition:value"),
+      );
+      return;
+    }
+    const unsafeConditionRoute = item.kind === "condition"
+      ? item.leaves.find(
+        (leaf) =>
+          (leaf.role === "matching_route" ||
+            leaf.role === "otherwise_route") &&
+          leaf.hint !== null &&
+          !templateCopilotV3ConditionRouteTargetIsClosed(
+            leaf.quote,
+            leaf.hint as TemplateCopilotV3ConditionRouteHint,
+          ),
+      )
+      : undefined;
+    if (unsafeConditionRoute !== undefined) {
+      rejected.push(
+        rejection(
+          itemIndex,
+          "leaf_ambiguous",
+          `condition:${unsafeConditionRoute.role}`,
+        ),
+      );
+      return;
+    }
     const leafMatches: Array<{
       leaf: TemplateCopilotV3ProviderQuoteItem["leaves"][number];
       startCodeUnit: number;
     }> = [];
-    for (const leaf of item.leaves) {
-      const match = uniqueOffset(item.quote, leaf.quote);
-      if (match.status === "none") {
+    for (const staged of stagedLeafMatches) {
+      if (staged.match.status === "none") {
         rejected.push(
-          rejection(itemIndex, "leaf_not_found", `${item.kind}:${leaf.role}`),
+          rejection(
+            itemIndex,
+            "leaf_not_found",
+            `${item.kind}:${staged.leaf.role}`,
+          ),
         );
         return;
       }
-      if (match.status === "ambiguous") {
+      const startCodeUnit = staged.match.status === "unique"
+        ? staged.match.startCodeUnit
+        : (
+          resolveAmbiguousConditionThresholdLeafWithoutOtherwise(
+            item,
+            staged.leaf,
+            stagedLeafMatches,
+          ) ??
+          resolveAmbiguousConditionThresholdLeaf(
+            item,
+            staged.leaf,
+            stagedLeafMatches,
+          ) ??
+          resolveAmbiguousConditionNumericValue(
+            item,
+            staged.leaf,
+            stagedLeafMatches,
+          ) ??
+          resolveAmbiguousConditionOtherwiseRoute(
+            item,
+            staged.leaf,
+            stagedLeafMatches,
+          )
+        );
+      if (startCodeUnit === null) {
         rejected.push(
-          rejection(itemIndex, "leaf_ambiguous", `${item.kind}:${leaf.role}`),
+          rejection(
+            itemIndex,
+            "leaf_ambiguous",
+            `${item.kind}:${staged.leaf.role}`,
+          ),
         );
         return;
       }
-      leafMatches.push({ leaf, startCodeUnit: match.startCodeUnit });
+      leafMatches.push({ leaf: staged.leaf, startCodeUnit });
     }
 
     const anchor = locatedSpan(
@@ -777,6 +884,1100 @@ function validateAndOrderSourceSlots(
       return source;
     }),
   );
+}
+
+type StagedProviderLeafMatch = Readonly<{
+  leaf: TemplateCopilotV3ProviderQuoteItem["leaves"][number];
+  match:
+    | Readonly<{ status: "none" }>
+    | Readonly<{ status: "unique"; startCodeUnit: number }>
+    | Readonly<{ status: "ambiguous" }>;
+}>;
+
+const conditionNumericOperatorAliases = Object.freeze({
+  "=": Object.freeze(["=", "equals", "equal", "is", "等於", "等于"]),
+  "!=": Object.freeze([
+    "!=",
+    "not equal",
+    "not equal to",
+    "is not",
+    "不等於",
+    "不等于",
+  ]),
+  ">": Object.freeze([
+    "greater than",
+    "above",
+    "exceeds",
+    "over",
+    "超過",
+    "超过",
+    "大於",
+    "大于",
+  ]),
+  ">=": Object.freeze([
+    "at least",
+    "or above",
+    "or more",
+    "or higher",
+    "不少於",
+    "不少于",
+    "至少",
+    "大於或等於",
+    "大于或等于",
+  ]),
+  "<": Object.freeze([
+    "less than",
+    "below",
+    "under",
+    "少於",
+    "少于",
+    "低於",
+    "低于",
+  ]),
+  "<=": Object.freeze([
+    "at most",
+    "does not exceed",
+    "no more than",
+    "not over",
+    "不超過",
+    "不超过",
+    "不多於",
+    "不多于",
+    "至多",
+    "少於或等於",
+    "少于或等于",
+  ]),
+} satisfies Readonly<Record<string, readonly string[]>>);
+
+const complementaryThresholdAliases = Object.freeze({
+  ">": Object.freeze([
+    "at most",
+    "no more than",
+    "not over",
+    "不超過",
+    "不超过",
+    "不多於",
+    "不多于",
+    "至多",
+  ]),
+  ">=": Object.freeze([
+    "below",
+    "less than",
+    "under",
+    "少於",
+    "少于",
+    "低於",
+    "低于",
+  ]),
+  "<": Object.freeze([
+    "at least",
+    "or above",
+    "or more",
+    "or higher",
+    "不少於",
+    "不少于",
+    "至少",
+  ]),
+  "<=": Object.freeze([
+    "above",
+    "greater than",
+    "exceeds",
+    "over",
+    "超過",
+    "超过",
+    "大於",
+    "大于",
+  ]),
+} satisfies Readonly<Record<string, readonly string[]>>);
+
+
+function resolveAmbiguousConditionThresholdLeafWithoutOtherwise(
+  item: TemplateCopilotV3ProviderQuoteItem,
+  target: TemplateCopilotV3ProviderQuoteItem["leaves"][number],
+  staged: readonly StagedProviderLeafMatch[],
+) {
+  if (
+    item.kind !== "condition" ||
+    (target.role !== "operator" && target.role !== "value")
+  ) {
+    return null;
+  }
+  const fields = staged.filter((entry) => entry.leaf.role === "field");
+  const operators = staged.filter((entry) => entry.leaf.role === "operator");
+  const values = staged.filter((entry) => entry.leaf.role === "value");
+  const matchingRoutes = staged.filter(
+    (entry) => entry.leaf.role === "matching_route",
+  );
+  const otherwiseRoutes = staged.filter(
+    (entry) => entry.leaf.role === "otherwise_route",
+  );
+  const field = fields[0];
+  const operator = operators[0];
+  const value = values[0];
+  const matchingRoute = matchingRoutes[0];
+  if (
+    fields.length !== 1 ||
+    operators.length !== 1 ||
+    values.length !== 1 ||
+    matchingRoutes.length !== 1 ||
+    otherwiseRoutes.length !== 0 ||
+    !field ||
+    !operator ||
+    !value ||
+    !matchingRoute ||
+    !(
+      (target.role === "operator" && operator.leaf === target) ||
+      (target.role === "value" && value.leaf === target)
+    ) ||
+    field.match.status !== "unique" ||
+    matchingRoute.match.status !== "unique" ||
+    operator.match.status === "none" ||
+    value.match.status === "none"
+  ) {
+    return null;
+  }
+  const operatorAliases = conditionNumericOperatorAliasSet(
+    operator.leaf.hint,
+  );
+  const matchingHint = conditionRouteHint(matchingRoute.leaf.hint);
+  if (
+    operatorAliases === null ||
+    matchingHint === null ||
+    !operatorAliases.includes(
+      templateCopilotV3NormalizeLexicalText(operator.leaf.quote),
+    ) ||
+    !thresholdValueQuoteIsClosed(value.leaf.quote)
+  ) {
+    return null;
+  }
+
+  const fieldStart = field.match.startCodeUnit;
+  const matchingStart = matchingRoute.match.startCodeUnit;
+  const matchingEnd = matchingStart + matchingRoute.leaf.quote.length;
+  const fieldIndex = hardClauseIndex(item.quote, fieldStart);
+  const matchingIndex = hardClauseIndex(item.quote, matchingStart);
+  if (
+    fieldIndex !== 0 ||
+    (matchingIndex !== 1 && matchingIndex !== 2)
+  ) {
+    return null;
+  }
+  const matchingClause = hardClauseAt(
+    item.quote,
+    matchingStart,
+    matchingEnd,
+  );
+  if (
+    !conditionRouteInHardClauseIsAffirmative(
+      item.quote,
+      matchingClause,
+      matchingStart,
+      matchingEnd,
+      matchingHint,
+    ) ||
+    !/^[\s\r\n.!?;。！？；]*$/u.test(
+      item.quote.slice(matchingClause.endCodeUnit),
+    )
+  ) {
+    return null;
+  }
+
+  const operatorOccurrences = exactOffsets(item.quote, operator.leaf.quote);
+  const valueOccurrences = exactOffsets(item.quote, value.leaf.quote);
+  if (
+    operatorOccurrences.length > 8 ||
+    valueOccurrences.length > 8 ||
+    operatorOccurrences.filter(
+      (start) => hardClauseIndex(item.quote, start) === matchingIndex,
+    ).length !== 1 ||
+    valueOccurrences.filter(
+      (start) => hardClauseIndex(item.quote, start) === matchingIndex,
+    ).length !== 1
+  ) {
+    return null;
+  }
+  const pairs: Array<Readonly<{
+    operatorStart: number;
+    valueStart: number;
+  }>> = [];
+  for (const operatorStart of operatorOccurrences) {
+    const operatorEnd = operatorStart + operator.leaf.quote.length;
+    if (
+      hardClauseIndex(item.quote, operatorStart) !== matchingIndex ||
+      !/^[\s,，:：\-–—]*$/u.test(
+        item.quote.slice(matchingClause.startCodeUnit, operatorStart),
+      )
+    ) {
+      continue;
+    }
+    for (const valueStart of valueOccurrences) {
+      const valueEnd = valueStart + value.leaf.quote.length;
+      if (
+        valueStart < operatorEnd ||
+        valueEnd > matchingStart ||
+        hardClauseIndex(item.quote, valueStart) !== matchingIndex ||
+        !thresholdValueTokenIsBounded(
+          item.quote,
+          value.leaf.quote,
+          valueStart,
+          valueEnd,
+        ) ||
+        !thresholdCurrencyBridgeIsClosed(
+          item.quote.slice(operatorEnd, valueStart),
+        ) ||
+        !thresholdMatchingOnlyRouteBridgeIsClosed(
+          item.quote.slice(valueEnd, matchingStart),
+          matchingIndex,
+        )
+      ) {
+        continue;
+      }
+      pairs.push({ operatorStart, valueStart });
+    }
+  }
+  if (pairs.length !== 1) return null;
+  const selected = pairs[0];
+  if (!selected) return null;
+
+  let lowerValue = value.leaf.quote;
+  if (matchingIndex === 2) {
+    const priorOperatorStarts = exactOffsets(
+      item.quote,
+      operator.leaf.quote,
+    ).filter((start) => hardClauseIndex(item.quote, start) === 1);
+    if (priorOperatorStarts.length !== 1) return null;
+    const priorOperatorStart = priorOperatorStarts[0];
+    if (priorOperatorStart === undefined) return null;
+    const priorClause = hardClauseAt(
+      item.quote,
+      priorOperatorStart,
+      priorOperatorStart + operator.leaf.quote.length,
+    );
+    lowerValue = thresholdClosedContinuationValue({
+      itemQuote: item.quote,
+      clause: priorClause,
+      operatorStart: priorOperatorStart,
+      operatorQuote: operator.leaf.quote,
+    }) ?? "";
+    if (
+      lowerValue.length === 0 ||
+      templateCopilotV3NormalizeLexicalText(lowerValue) ===
+        templateCopilotV3NormalizeLexicalText(value.leaf.quote)
+    ) {
+      return null;
+    }
+  }
+  const fieldClause = hardClauseAt(
+    item.quote,
+    fieldStart,
+    fieldStart + field.leaf.quote.length,
+  );
+  if (
+    !thresholdFieldCarryClauseIsClosed({
+      itemQuote: item.quote,
+      clause: fieldClause,
+      fieldStart,
+      fieldQuote: field.leaf.quote,
+      operatorAliases: complementaryThresholdAliasSet(operator.leaf.hint),
+      valueQuote: lowerValue,
+    })
+  ) {
+    return null;
+  }
+
+  return target.role === "operator"
+    ? selected.operatorStart
+    : selected.valueStart;
+}
+
+function resolveAmbiguousConditionThresholdLeaf(
+  item: TemplateCopilotV3ProviderQuoteItem,
+  target: TemplateCopilotV3ProviderQuoteItem["leaves"][number],
+  staged: readonly StagedProviderLeafMatch[],
+) {
+  if (
+    item.kind !== "condition" ||
+    (target.role !== "operator" && target.role !== "value")
+  ) {
+    return null;
+  }
+  const fields = staged.filter((entry) => entry.leaf.role === "field");
+  const operators = staged.filter((entry) => entry.leaf.role === "operator");
+  const values = staged.filter((entry) => entry.leaf.role === "value");
+  const matchingRoutes = staged.filter(
+    (entry) => entry.leaf.role === "matching_route",
+  );
+  const otherwiseRoutes = staged.filter(
+    (entry) => entry.leaf.role === "otherwise_route",
+  );
+  const field = fields[0];
+  const operator = operators[0];
+  const value = values[0];
+  const matchingRoute = matchingRoutes[0];
+  const otherwiseRoute = otherwiseRoutes[0];
+  if (
+    fields.length !== 1 ||
+    operators.length !== 1 ||
+    values.length !== 1 ||
+    matchingRoutes.length !== 1 ||
+    otherwiseRoutes.length !== 1 ||
+    !field ||
+    !operator ||
+    !value ||
+    !matchingRoute ||
+    !otherwiseRoute ||
+    !(
+      (target.role === "operator" && operator.leaf === target) ||
+      (target.role === "value" && value.leaf === target)
+    ) ||
+    field.match.status !== "unique" ||
+    matchingRoute.match.status !== "unique" ||
+    otherwiseRoute.match.status !== "unique" ||
+    operator.match.status === "none" ||
+    value.match.status === "none"
+  ) {
+    return null;
+  }
+  const operatorAliases = conditionNumericOperatorAliasSet(
+    operator.leaf.hint,
+  );
+  if (
+    operatorAliases === null ||
+    !operatorAliases.includes(
+      templateCopilotV3NormalizeLexicalText(operator.leaf.quote),
+    ) ||
+    !thresholdValueQuoteIsClosed(value.leaf.quote)
+  ) {
+    return null;
+  }
+
+  const matchingHint = conditionRouteHint(matchingRoute.leaf.hint);
+  const otherwiseHint = conditionRouteHint(otherwiseRoute.leaf.hint);
+  if (matchingHint === null || otherwiseHint === null) return null;
+  const fieldStart = field.match.startCodeUnit;
+  const matchingStart = matchingRoute.match.startCodeUnit;
+  const matchingEnd = matchingStart + matchingRoute.leaf.quote.length;
+  const otherwiseStart = otherwiseRoute.match.startCodeUnit;
+  const otherwiseEnd = otherwiseStart + otherwiseRoute.leaf.quote.length;
+  const matchingIndex = hardClauseIndex(item.quote, matchingStart);
+  const otherwiseIndex = hardClauseIndex(item.quote, otherwiseStart);
+  const fieldIndex = hardClauseIndex(item.quote, fieldStart);
+  if (
+    matchingIndex !== 1 ||
+    otherwiseIndex !== matchingIndex - 1 ||
+    fieldIndex !== 0 ||
+    (fieldIndex !== matchingIndex - 1 && fieldIndex !== matchingIndex - 2)
+  ) {
+    return null;
+  }
+  const matchingClause = hardClauseAt(
+    item.quote,
+    matchingStart,
+    matchingEnd,
+  );
+  const otherwiseClause = hardClauseAt(
+    item.quote,
+    otherwiseStart,
+    otherwiseEnd,
+  );
+  if (
+    !conditionRouteInHardClauseIsAffirmative(
+      item.quote,
+      matchingClause,
+      matchingStart,
+      matchingEnd,
+      matchingHint,
+    ) ||
+    !conditionRouteInHardClauseIsAffirmative(
+      item.quote,
+      otherwiseClause,
+      otherwiseStart,
+      otherwiseEnd,
+      otherwiseHint,
+    ) ||
+    !/^[\s\r\n.!?;。！？；]*$/u.test(
+      item.quote.slice(matchingClause.endCodeUnit),
+    )
+  ) {
+    return null;
+  }
+
+  const operatorOccurrences = exactOffsets(item.quote, operator.leaf.quote);
+  const valueOccurrences = exactOffsets(item.quote, value.leaf.quote);
+  if (
+    operatorOccurrences.length > 8 ||
+    valueOccurrences.length > 8 ||
+    operatorOccurrences.filter((start) =>
+      hardClauseIndex(item.quote, start) === matchingIndex
+    ).length !== 1 ||
+    valueOccurrences.filter((start) =>
+      hardClauseIndex(item.quote, start) === matchingIndex
+    ).length !== 1
+  ) {
+    return null;
+  }
+  const pairs: Array<Readonly<{
+    operatorStart: number;
+    valueStart: number;
+  }>> = [];
+  for (const operatorStart of operatorOccurrences) {
+    const operatorEnd = operatorStart + operator.leaf.quote.length;
+    if (
+      hardClauseIndex(item.quote, operatorStart) !== matchingIndex ||
+      !/^[\s,，:：\-–—]*$/u.test(
+        item.quote.slice(matchingClause.startCodeUnit, operatorStart),
+      )
+    ) {
+      continue;
+    }
+    for (const valueStart of valueOccurrences) {
+      const valueEnd = valueStart + value.leaf.quote.length;
+      if (
+        valueStart < operatorEnd ||
+        valueEnd > matchingStart ||
+        hardClauseIndex(item.quote, valueStart) !== matchingIndex ||
+        !thresholdValueTokenIsBounded(
+          item.quote,
+          value.leaf.quote,
+          valueStart,
+          valueEnd,
+        ) ||
+        !thresholdCurrencyBridgeIsClosed(
+          item.quote.slice(operatorEnd, valueStart),
+        )
+      ) {
+        continue;
+      }
+      pairs.push({ operatorStart, valueStart });
+    }
+  }
+  if (pairs.length !== 1) return null;
+  const selected = pairs[0];
+  if (!selected) return null;
+
+  if (
+    !thresholdClauseCarriesFieldComparison({
+      itemQuote: item.quote,
+      clause: otherwiseClause,
+      fieldStart,
+      fieldQuote: field.leaf.quote,
+      operatorAliases: complementaryThresholdAliasSet(operator.leaf.hint),
+      valueQuote: value.leaf.quote,
+    }) ||
+    !thresholdComplementaryDefaultRouteIsClosed({
+      itemQuote: item.quote,
+      clause: otherwiseClause,
+      fieldStart,
+      fieldQuote: field.leaf.quote,
+      valueQuote: value.leaf.quote,
+      routeStart: otherwiseStart,
+      routeEnd: otherwiseEnd,
+    })
+  ) {
+    return null;
+  }
+
+  return target.role === "operator"
+    ? selected.operatorStart
+    : selected.valueStart;
+}
+
+function thresholdMatchingOnlyRouteBridgeIsClosed(
+  bridge: string,
+  matchingIndex: number,
+) {
+  const normalized = templateCopilotV3NormalizeLexicalText(bridge)
+    .replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  return matchingIndex === 2
+    ? /^(?:再由|再經|再经)$/u.test(normalized)
+    : /^(?:adds?|requires?|由|交由|送交|轉至|转至|增加|加入|增設|增设|要求|需要)$/u
+      .test(normalized);
+}
+
+function thresholdClosedContinuationValue(input: Readonly<{
+  itemQuote: string;
+  clause: Readonly<{ startCodeUnit: number; endCodeUnit: number }>;
+  operatorStart: number;
+  operatorQuote: string;
+}>) {
+  if (
+    input.operatorStart < input.clause.startCodeUnit ||
+    input.operatorStart + input.operatorQuote.length > input.clause.endCodeUnit ||
+    !/^[\s,，:：\-–—]*$/u.test(
+      input.itemQuote.slice(input.clause.startCodeUnit, input.operatorStart),
+    )
+  ) {
+    return null;
+  }
+  const tail = input.itemQuote.slice(
+    input.operatorStart + input.operatorQuote.length,
+    input.clause.endCodeUnit,
+  );
+  const match = tail.match(
+    /^\s*(?:(?:HKD|港幣|港币)\s*)?((?:\d[\d,.]*|[零〇一二三四五六七八九十百千萬万億亿兆兩两]+元))\s*(?:由|交由|送交|轉至|转至)([\p{L}\p{N}]{1,24})(?:批准|審批|审批|審查|审查)(?:(?:後|后)完成)?\s*$/iu,
+  );
+  return match?.[1] &&
+      match[2] &&
+      thresholdCjkRouteNameIsClosed(match[2])
+    ? match[1]
+    : null;
+}
+
+function thresholdFieldCarryClauseIsClosed(input: Readonly<{
+  itemQuote: string;
+  clause: Readonly<{ startCodeUnit: number; endCodeUnit: number }>;
+  fieldStart: number;
+  fieldQuote: string;
+  operatorAliases: readonly string[];
+  valueQuote: string;
+}>) {
+  if (!thresholdClauseCarriesFieldComparison(input)) return false;
+  const valueStarts = exactOffsets(input.itemQuote, input.valueQuote)
+    .filter((start) =>
+      start >= input.clause.startCodeUnit &&
+      start + input.valueQuote.length <= input.clause.endCodeUnit &&
+      thresholdValueTokenIsBounded(
+        input.itemQuote,
+        input.valueQuote,
+        start,
+        start + input.valueQuote.length,
+      )
+    );
+  if (valueStarts.length !== 1) return false;
+  const valueStart = valueStarts[0];
+  if (valueStart === undefined) return false;
+  const prefix = templateCopilotV3NormalizeLexicalText(
+    input.itemQuote.slice(input.clause.startCodeUnit, input.fieldStart),
+  ).replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  const tail = templateCopilotV3NormalizeLexicalText(
+    input.itemQuote.slice(
+      valueStart + input.valueQuote.length,
+      input.clause.endCodeUnit,
+    ),
+  ).replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  const english = tail.match(
+    /^,?\s*([\p{L}\p{N}][\p{L}\p{N}\s'’&/()\-]{0,63})\s+is\s+(?:the\s+)?final\s+approver$/u,
+  );
+  if (
+    /^(?:if|when)$/u.test(prefix) &&
+    english?.[1] &&
+    thresholdEnglishRouteNameIsClosed(english[1])
+  ) {
+    return true;
+  }
+  if (prefix.length === 0) {
+    const lowRisk = tail.match(
+      /^且(?:風險|风险)低(?:時|时)可在([\p{L}\p{N}]{1,24})(?:批准|審批|审批|審查|审查)(?:後|后)完成$/u,
+    );
+    if (
+      lowRisk?.[1] &&
+      thresholdCjkRouteNameIsClosed(lowRisk[1])
+    ) {
+      return true;
+    }
+    const direct = tail.match(
+      /^(?:由|交由|送交|轉至|转至)([\p{L}\p{N}]{1,24})(?:批准|審批|审批|審查|审查)(?:(?:後|后)完成)?$/u,
+    );
+    return Boolean(
+      direct?.[1] &&
+        thresholdCjkRouteNameIsClosed(direct[1]),
+    );
+  }
+  if (/^(?:本地|當地|当地)(?:低風險|低风险)且$/u.test(prefix)) {
+    return /^(?:財務|财务)(?:審核|审核)?(?:後|后)完成$/u.test(tail);
+  }
+  return false;
+}
+
+function thresholdComplementaryDefaultRouteIsClosed(input: Readonly<{
+  itemQuote: string;
+  clause: Readonly<{ startCodeUnit: number; endCodeUnit: number }>;
+  fieldStart: number;
+  fieldQuote: string;
+  valueQuote: string;
+  routeStart: number;
+  routeEnd: number;
+}>) {
+  const valueStarts = exactOffsets(input.itemQuote, input.valueQuote)
+    .filter((start) =>
+      start >= input.clause.startCodeUnit &&
+      start + input.valueQuote.length <= input.clause.endCodeUnit &&
+      thresholdValueTokenIsBounded(
+        input.itemQuote,
+        input.valueQuote,
+        start,
+        start + input.valueQuote.length,
+      )
+    );
+  if (valueStarts.length !== 1) return false;
+  const valueStart = valueStarts[0];
+  if (valueStart === undefined) return false;
+  const prefix = templateCopilotV3NormalizeLexicalText(
+    input.itemQuote.slice(input.clause.startCodeUnit, input.fieldStart),
+  ).replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  const bridge = input.itemQuote.slice(
+    valueStart + input.valueQuote.length,
+    input.routeStart,
+  );
+  const suffix = templateCopilotV3NormalizeLexicalText(
+    input.itemQuote.slice(input.routeEnd, input.clause.endCodeUnit),
+  ).replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  return /^(?:otherwise|else|by\s+default)\s+(?:if|when)$/u.test(prefix) &&
+    /^[\s,，:：\-–—]*$/u.test(bridge) &&
+    /^is\s+(?:the\s+)?final\s+approver$/u.test(suffix);
+}
+
+function conditionRouteInHardClauseIsAffirmative(
+  itemQuote: string,
+  clause: Readonly<{ startCodeUnit: number; endCodeUnit: number }>,
+  routeStart: number,
+  routeEnd: number,
+  hint: TemplateCopilotV3ConditionRouteHint,
+) {
+  const parts = templateCopilotV3SliceConditionRouteClause(
+    itemQuote.slice(clause.startCodeUnit, clause.endCodeUnit),
+    templateCopilotUnicodeCodePointCount(
+      itemQuote.slice(clause.startCodeUnit, routeStart),
+    ),
+    templateCopilotUnicodeCodePointCount(
+      itemQuote.slice(clause.startCodeUnit, routeEnd),
+    ),
+  );
+  return parts !== null &&
+    templateCopilotV3MatchingRouteIsAffirmative(parts, hint);
+}
+
+function thresholdValueQuoteIsClosed(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return templateCopilotV3CanonicalDecimalText(normalized) !== null ||
+    /^[零〇一二三四五六七八九十百千萬万億亿兆兩两]+元$/u.test(normalized);
+}
+
+function conditionNumericValueQuoteIsClosed(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  const decimal = normalized.match(
+    /^(?:(?:hkd|usd|rmb|cny)\s*)?([+-]?\d[\d,.]*)(?:\s*(?:%|percent|days?|hours?|months?|years?))?$/u,
+  );
+  const decimalText = decimal?.[1];
+  if (decimalText && templateCopilotV3CanonicalDecimalText(decimalText) !== null) return true;
+  return /^(?:(?:港幣|港币|人民幣|人民币)\s*)?(?:百分之)?[零〇一二三四五六七八九十百千萬万億亿兆兩两]+(?:元|日|天|小時|小时|月|年|%)?$/u
+      .test(normalized);
+}
+
+function thresholdEnglishRouteNameIsClosed(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return /^(?:(?:general|finance|financial|legal|security|compliance|department|business|regional|country|project|procurement|operations|technical|executive|managing|senior|chief|credit|risk|sales|data|hr)\s+){0,3}(?:manager|director|controller|officer|head|chair|chairman|chairperson|approver|ceo|cfo|coo|president|committee|board|finance|legal|security|hr)$/u
+    .test(normalized);
+}
+
+function thresholdCjkRouteNameIsClosed(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  const qualifier =
+    "(?:公司|集團|集团|董事會|董事会|財務|财务|法務|法务|合規|合规|信用|風險|风险|安全|資訊保安|信息安全|人力資源|人力资源|行政|銷售|销售|採購|采购|部門|部门|項目|项目|工程|品質|质量|營運|运营|總務|总务)";
+  const role =
+    "(?:經理|经理|總監|总监|主管|總裁|总裁|主席|主任|負責人|负责人|審批人|审批人|董事|高管|委員會|委员会)";
+  return new RegExp(`^(?:${qualifier}){0,3}${role}$`, "u").test(normalized) ||
+    /^(?:財務|财务|法務|法务|合規|合规|安全|資訊保安|信息安全|HR)$/u
+      .test(normalized);
+}
+
+function thresholdValueTokenIsBounded(
+  source: string,
+  quote: string,
+  start: number,
+  end: number,
+) {
+  if (templateCopilotV3CanonicalDecimalText(quote) !== null) {
+    const before = Array.from(source.slice(0, start)).at(-1) ?? "";
+    const after = Array.from(source.slice(end))[0] ?? "";
+    const afterNext = Array.from(source.slice(end))[1] ?? "";
+    return !/[\p{L}\p{N}_,.]/u.test(before) &&
+      !/[\p{L}\p{N}_.]/u.test(after) &&
+      (after !== "," || !/\p{N}/u.test(afterNext));
+  }
+  const before = Array.from(source.slice(0, start)).at(-1) ?? "";
+  const after = Array.from(source.slice(end))[0] ?? "";
+  return !/[零〇一二三四五六七八九十百千萬万億亿兆兩两元]/u.test(before) &&
+    !/[零〇一二三四五六七八九十百千萬万億亿兆兩两元]/u.test(after);
+}
+
+function thresholdCurrencyBridgeIsClosed(value: string) {
+  return /^\s*(?:(?:HKD|港幣|港币)\s*)?$/iu.test(value);
+}
+
+function thresholdClauseCarriesFieldComparison(input: Readonly<{
+  itemQuote: string;
+  clause: Readonly<{ startCodeUnit: number; endCodeUnit: number }>;
+  fieldStart: number;
+  fieldQuote: string;
+  operatorAliases: readonly string[];
+  valueQuote: string;
+}>) {
+  if (
+    input.operatorAliases.length === 0 ||
+    input.fieldStart < input.clause.startCodeUnit ||
+    input.fieldStart + input.fieldQuote.length > input.clause.endCodeUnit
+  ) {
+    return false;
+  }
+  const fieldEnd = input.fieldStart + input.fieldQuote.length;
+  const folded = input.itemQuote.toLocaleLowerCase("en");
+  const valueStarts = exactOffsets(input.itemQuote, input.valueQuote)
+    .filter((start) =>
+      start >= input.clause.startCodeUnit &&
+      start + input.valueQuote.length <= input.clause.endCodeUnit &&
+      thresholdValueTokenIsBounded(
+        input.itemQuote,
+        input.valueQuote,
+        start,
+        start + input.valueQuote.length,
+      )
+    );
+  if (valueStarts.length !== 1) return false;
+  const valueStart = valueStarts[0];
+  if (valueStart === undefined) return false;
+  const candidates: number[] = [];
+  for (const alias of input.operatorAliases) {
+    for (const operatorStart of exactOffsets(
+      folded,
+      alias.toLocaleLowerCase("en"),
+    )) {
+      const operatorEnd = operatorStart + alias.length;
+      if (
+        operatorStart < fieldEnd ||
+        operatorEnd > valueStart ||
+        operatorStart < input.clause.startCodeUnit ||
+        !/^\s*(?:(?:is|are|was|were)\s*)?$/iu.test(
+          input.itemQuote.slice(fieldEnd, operatorStart),
+        ) ||
+        !thresholdCurrencyBridgeIsClosed(
+          input.itemQuote.slice(operatorEnd, valueStart),
+        )
+      ) {
+        continue;
+      }
+      candidates.push(operatorStart);
+    }
+  }
+  return candidates.length === 1;
+}
+
+function resolveAmbiguousConditionNumericValue(
+  item: TemplateCopilotV3ProviderQuoteItem,
+  target: TemplateCopilotV3ProviderQuoteItem["leaves"][number],
+  staged: readonly StagedProviderLeafMatch[],
+) {
+  if (
+    item.kind !== "condition" ||
+    target.role !== "value" ||
+    templateCopilotV3CanonicalDecimalText(target.quote) === null
+  ) {
+    return null;
+  }
+  const valueLeaves = staged.filter((entry) => entry.leaf.role === "value");
+  const fieldLeaves = staged.filter((entry) => entry.leaf.role === "field");
+  const operatorLeaves = staged.filter((entry) => entry.leaf.role === "operator");
+  const field = fieldLeaves[0];
+  const operator = operatorLeaves[0];
+  if (
+    valueLeaves.length !== 1 ||
+    valueLeaves[0]?.leaf !== target ||
+    fieldLeaves.length !== 1 ||
+    operatorLeaves.length !== 1 ||
+    !field ||
+    !operator
+  ) {
+    return null;
+  }
+  const fieldMatch = field.match;
+  const operatorMatch = operator.match;
+  if (
+    fieldMatch.status !== "unique" ||
+    operatorMatch.status !== "unique"
+  ) {
+    return null;
+  }
+  const operatorAliases = conditionNumericOperatorAliasSet(
+    operator.leaf.hint,
+  );
+  if (
+    operatorAliases === null ||
+    !operatorAliases.includes(
+      templateCopilotV3NormalizeLexicalText(operator.leaf.quote),
+    )
+  ) {
+    return null;
+  }
+  const fieldStart = fieldMatch.startCodeUnit;
+  const fieldEnd = fieldStart + field.leaf.quote.length;
+  const operatorStart = operatorMatch.startCodeUnit;
+  const operatorEnd = operatorStart + operator.leaf.quote.length;
+  if (
+    fieldStart >= operatorStart ||
+    hardClauseIndex(item.quote, fieldStart) !==
+      hardClauseIndex(item.quote, operatorStart)
+  ) {
+    return null;
+  }
+  const fieldToOperator = item.quote.slice(fieldEnd, operatorStart);
+  const directlyLinked = /^[\s:：]*(?:is|are|was|were)?[\s:：]*$/iu.test(
+    fieldToOperator,
+  );
+  const complementary = complementaryThresholdAliasSet(operator.leaf.hint);
+  const escapedValue = escapeRegExp(target.quote);
+  const carryForward = complementary.some((alias) =>
+    new RegExp(
+      `^\\s*${escapeRegExp(alias)}\\s+(?:HKD\\s+)?${escapedValue}\\s+(?:versus|vs\\.?)\\s*$`,
+      "iu",
+    ).test(fieldToOperator)
+  );
+  if (!directlyLinked && !carryForward) return null;
+
+  const occurrences = exactOffsets(item.quote, target.quote);
+  if (occurrences.length !== 2) return null;
+  const candidates = occurrences.filter((startCodeUnit) => {
+    if (
+      startCodeUnit < operatorEnd ||
+      hardClauseIndex(item.quote, startCodeUnit) !==
+        hardClauseIndex(item.quote, operatorStart) ||
+      !numericTokenIsBounded(
+        item.quote,
+        startCodeUnit,
+        startCodeUnit + target.quote.length,
+      )
+    ) {
+      return false;
+    }
+    return /^\s*(?:HKD\s+)?$/iu.test(
+      item.quote.slice(operatorEnd, startCodeUnit),
+    );
+  });
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function resolveAmbiguousConditionOtherwiseRoute(
+  item: TemplateCopilotV3ProviderQuoteItem,
+  target: TemplateCopilotV3ProviderQuoteItem["leaves"][number],
+  staged: readonly StagedProviderLeafMatch[],
+) {
+  if (item.kind !== "condition" || target.role !== "otherwise_route") {
+    return null;
+  }
+  const otherwiseLeaves = staged.filter(
+    (entry) => entry.leaf.role === "otherwise_route",
+  );
+  const fieldLeaves = staged.filter((entry) => entry.leaf.role === "field");
+  const operatorLeaves = staged.filter(
+    (entry) => entry.leaf.role === "operator",
+  );
+  const valueLeaves = staged.filter((entry) => entry.leaf.role === "value");
+  const matchingLeaves = staged.filter(
+    (entry) => entry.leaf.role === "matching_route",
+  );
+  const field = fieldLeaves[0];
+  const operator = operatorLeaves[0];
+  const value = valueLeaves[0];
+  const matching = matchingLeaves[0];
+  if (
+    otherwiseLeaves.length !== 1 ||
+    otherwiseLeaves[0]?.leaf !== target ||
+    fieldLeaves.length !== 1 ||
+    operatorLeaves.length !== 1 ||
+    valueLeaves.length !== 1 ||
+    matchingLeaves.length !== 1 ||
+    !field ||
+    !operator ||
+    !value ||
+    !matching
+  ) {
+    return null;
+  }
+  const fieldMatch = field.match;
+  const operatorMatch = operator.match;
+  const valueMatch = value.match;
+  const matchingMatch = matching.match;
+  if (
+    fieldMatch.status !== "unique" ||
+    operatorMatch.status !== "unique" ||
+    valueMatch.status !== "unique" ||
+    matchingMatch.status !== "unique"
+  ) {
+    return null;
+  }
+  const matchingHint = conditionRouteHint(matching.leaf.hint);
+  const targetHint = conditionRouteHint(target.hint);
+  if (matchingHint === null || targetHint === null) return null;
+  const governingIndex = hardClauseIndex(
+    item.quote,
+    operatorMatch.startCodeUnit,
+  );
+  if (
+    hardClauseIndex(item.quote, fieldMatch.startCodeUnit) !==
+      governingIndex ||
+    hardClauseIndex(item.quote, valueMatch.startCodeUnit) !==
+      governingIndex ||
+    hardClauseIndex(item.quote, matchingMatch.startCodeUnit) !==
+      governingIndex
+  ) {
+    return null;
+  }
+  const matchingStart = matchingMatch.startCodeUnit;
+  const matchingEnd = matchingStart + matching.leaf.quote.length;
+  const governingClause = hardClauseAt(
+    item.quote,
+    matchingStart,
+    matchingEnd,
+  );
+  const matchingParts = templateCopilotV3SliceConditionRouteClause(
+    item.quote.slice(
+      governingClause.startCodeUnit,
+      governingClause.endCodeUnit,
+    ),
+    templateCopilotUnicodeCodePointCount(
+      item.quote.slice(governingClause.startCodeUnit, matchingStart),
+    ),
+    templateCopilotUnicodeCodePointCount(
+      item.quote.slice(governingClause.startCodeUnit, matchingEnd),
+    ),
+  );
+  if (
+    !matchingParts ||
+    !templateCopilotV3MatchingRouteIsAffirmative(
+      matchingParts,
+      matchingHint,
+    )
+  ) {
+    return null;
+  }
+  const occurrences = exactOffsets(item.quote, target.quote);
+  if (occurrences.length !== 2) return null;
+  const candidates = occurrences.filter(
+    (startCodeUnit) => {
+      const endCodeUnit = startCodeUnit + target.quote.length;
+      if (!textTokenIsBounded(item.quote, startCodeUnit, endCodeUnit)) {
+        return false;
+      }
+      const routeIndex = hardClauseIndex(item.quote, startCodeUnit);
+      if (routeIndex !== governingIndex + 1) return false;
+      const clause = hardClauseAt(item.quote, startCodeUnit, endCodeUnit);
+      const parts = templateCopilotV3SliceConditionRouteClause(
+        item.quote.slice(clause.startCodeUnit, clause.endCodeUnit),
+        templateCopilotUnicodeCodePointCount(
+          item.quote.slice(clause.startCodeUnit, startCodeUnit),
+        ),
+        templateCopilotUnicodeCodePointCount(
+          item.quote.slice(clause.startCodeUnit, endCodeUnit),
+        ),
+      );
+      return parts !== null &&
+        templateCopilotV3ImmediateDefaultRouteIsAffirmative({
+          ...parts,
+          hint: targetHint,
+          governingHardClauseIndex: governingIndex,
+          routeHardClauseIndex: routeIndex,
+        });
+    },
+  );
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function conditionNumericOperatorAliasSet(
+  hint: string | null,
+): readonly string[] | null {
+  switch (hint) {
+    case "=":
+    case "!=":
+    case ">":
+    case ">=":
+    case "<":
+    case "<=":
+      return conditionNumericOperatorAliases[hint];
+    default:
+      return null;
+  }
+}
+
+function complementaryThresholdAliasSet(
+  hint: string | null,
+): readonly string[] {
+  switch (hint) {
+    case ">":
+    case ">=":
+    case "<":
+    case "<=":
+      return complementaryThresholdAliases[hint];
+    default:
+      return [];
+  }
+}
+
+function conditionRouteHint(
+  hint: string | null,
+): TemplateCopilotV3ConditionRouteHint | null {
+  return hint === "stage_reference" ||
+      hint === "condition_reference" ||
+      hint === "complete" ||
+      hint === "return_for_correction" ||
+      hint === "unsupported_outcome"
+    ? hint
+    : null;
+}
+
+function hardClauseAt(
+  value: string,
+  containedStart: number,
+  containedEnd: number,
+) {
+  let startCodeUnit = containedStart;
+  while (
+    startCodeUnit > 0 &&
+    !/[\r\n.!?;。！？；]/u.test(value[startCodeUnit - 1])
+  ) {
+    startCodeUnit -= 1;
+  }
+  let endCodeUnit = containedEnd;
+  while (
+    endCodeUnit < value.length &&
+    !/[\r\n.!?;。！？；]/u.test(value[endCodeUnit])
+  ) {
+    endCodeUnit += 1;
+  }
+  return { startCodeUnit, endCodeUnit };
+}
+
+function textTokenIsBounded(value: string, start: number, end: number) {
+  const before = Array.from(value.slice(0, start)).at(-1) ?? "";
+  const after = Array.from(value.slice(end))[0] ?? "";
+  return !/[\p{L}\p{N}_]/u.test(before) &&
+    !/[\p{L}\p{N}_]/u.test(after);
+}
+
+function hardClauseIndex(value: string, codeUnitOffset: number) {
+  return Array.from(value.slice(0, codeUnitOffset))
+    .filter((character) => /[\r\n.!?;。！？；]/u.test(character)).length;
+}
+
+function exactOffsets(value: string, needle: string) {
+  const offsets: number[] = [];
+  let cursor = 0;
+  while (cursor <= value.length - needle.length) {
+    const offset = value.indexOf(needle, cursor);
+    if (offset < 0) break;
+    offsets.push(offset);
+    cursor = offset + Math.max(needle.length, 1);
+  }
+  return offsets;
+}
+
+function numericTokenIsBounded(value: string, start: number, end: number) {
+  const before = Array.from(value.slice(0, start)).at(-1) ?? "";
+  const after = Array.from(value.slice(end))[0] ?? "";
+  return !/[\p{L}\p{N}_,.]/u.test(before) &&
+    !/[\p{L}\p{N}_,.]/u.test(after);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function locatedSpan(

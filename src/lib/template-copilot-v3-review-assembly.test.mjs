@@ -440,7 +440,7 @@ test("canonicalizes and deduplicates semantic projection leaves before identity"
   assert.deepEqual(forward.leaves, reversed.leaves);
 });
 
-test("keeps fixed-corpus optional uploads semantically complete but strictly unresolved", () => {
+test("keeps unconditional optional uploads and safely holds conditional optional uploads", () => {
   const cases = [
     {
       scenarioId: "TC-05",
@@ -449,6 +449,7 @@ test("keeps fixed-corpus optional uploads semantically complete but strictly unr
       kindQuote: "上載",
       kindOccurrence: 1,
       requiredQuote: "可選擇上載",
+      blockingReason: null,
     },
     {
       scenarioId: "TC-06",
@@ -457,6 +458,7 @@ test("keeps fixed-corpus optional uploads semantically complete but strictly unr
       kindQuote: "上載",
       kindOccurrence: 1,
       requiredQuote: "可選上載",
+      blockingReason: null,
     },
     {
       scenarioId: "SC-07",
@@ -465,6 +467,7 @@ test("keeps fixed-corpus optional uploads semantically complete but strictly unr
       kindQuote: "上传",
       kindOccurrence: 2,
       requiredQuote: "可选上传",
+      blockingReason: "unsupported_semantics_not_executable",
     },
   ];
 
@@ -504,7 +507,20 @@ test("keeps fixed-corpus optional uploads semantically complete but strictly unr
     });
     const item = result.review.items[0];
     assert.ok(item, JSON.stringify(result.review.rejections));
-    assert.equal(item.semanticComplete, true, entry.scenarioId);
+    assert.equal(
+      item.semanticComplete,
+      entry.blockingReason === null,
+      entry.scenarioId,
+    );
+    assert.equal(
+      item.blockingReason,
+      entry.blockingReason ?? undefined,
+      entry.scenarioId,
+    );
+    if (entry.blockingReason !== null) {
+      assert.equal(item.fragmentId, null, entry.scenarioId);
+      assert.equal(result.envelope.fragments.length, 0, entry.scenarioId);
+    }
     assert.equal(item.complete, false, entry.scenarioId);
     assert.equal(item.persisted, false, entry.scenarioId);
     assert.equal(item.executable, false, entry.scenarioId);
@@ -829,6 +845,7 @@ test("preserves legitimate negative condition operators and the does-not-skip ap
       operatorHint: "<=",
       value: "100",
       route: "Finance",
+      blockingReason: null,
     },
     {
       caseId: "does-not-skip",
@@ -838,6 +855,7 @@ test("preserves legitimate negative condition operators and the does-not-skip ap
       operatorHint: "=",
       value: "Retrospective status",
       route: "does not skip approval",
+      blockingReason: "unsupported_semantics_not_executable",
     },
   ];
   const sourceMessages = Object.fromEntries(
@@ -869,7 +887,23 @@ test("preserves legitimate negative condition operators and the does-not-skip ap
     ),
   });
   assert.equal(result.review.items.length, cases.length);
-  assert.ok(result.review.items.every((item) => item.semanticComplete));
+  for (const [itemIndex, entry] of cases.entries()) {
+    const item = result.review.items.find((candidate) =>
+      candidate.providerItemIndexes.includes(itemIndex)
+    );
+    assert.ok(item, entry.caseId);
+    const expectedBlockingReason = entry.blockingReason ?? null;
+    assert.equal(
+      item.semanticComplete,
+      expectedBlockingReason === null,
+      entry.caseId,
+    );
+    assert.equal(
+      item.blockingReason,
+      expectedBlockingReason ?? undefined,
+      entry.caseId,
+    );
+  }
 });
 
 test("verifies closed semantic aliases exercised by the fixed English, Traditional Chinese, and Simplified Chinese corpus", () => {
@@ -913,7 +947,10 @@ test("verifies closed semantic aliases exercised by the fixed English, Tradition
     attachmentCase("EN-07-csv", "Require a data inventory CSV", "data inventory", "CSV", "attachment", "Require", "true"),
     attachmentCase("EN-03-image", "An optional image may show the proposed asset", "proposed asset", "image", "attachment", "optional", "false"),
     attachmentCase("EN-05-text", "Require one editable contract file as text", "editable contract file", "text", "attachment", "Require", "true"),
-    attachmentCase("EN-08-proof", "A retrospective request must also include proof of instruction", "proof of instruction", "proof", "attachment", "must also include", "true"),
+    {
+      ...attachmentCase("EN-08-proof", "A retrospective request must also include proof of instruction", "proof of instruction", "proof", "attachment", "must also include", "true"),
+      blockingReason: "unsupported_semantics_not_executable",
+    },
     attachmentCase("EN-01-native", "Add a native justification form", "justification form", "native", "form", "Add", "true"),
     stageCase("EN-03-endorses", "Department Head endorses", "Department Head", "endorses", "approval"),
     stageCase("EN-02-compares", "the system compares invoice totals", "system", "compares", "review"),
@@ -938,7 +975,7 @@ test("verifies closed semantic aliases exercised by the fixed English, Tradition
     stageCase("TC-check", "HR 核對假期結餘", "HR", "核對", "review"),
     stageCase("TC-endorse", "商務總監認可", "商務總監", "認可", "approval"),
     stageCase("TC-confirm", "地盤工程師確認完成量", "地盤工程師", "確認", "approval"),
-    conditionCase("TC-over", "差異超過百分之五退回補正", "差異", "超過", ">", "百分之五", "補正"),
+    { ...conditionCase("TC-over", "差異超過百分之五退回補正", "差異", "超過", ">", "百分之五", "補正"), blockingReason: "unsupported_semantics_not_executable" },
     conditionCase("TC-not-over", "總額不超過港幣二萬元完成", "總額", "不超過", "<=", "二萬元", "完成"),
     notificationCase("TC-assignment", "直接相關人士獲指派", "直接相關人士", "獲指派", "stage_assigned"),
     notificationCase("TC-rejection", "直接相關人士拒絕", "直接相關人士", "拒絕", "request_rejected"),
@@ -956,7 +993,7 @@ test("verifies closed semantic aliases exercised by the fixed English, Tradition
     stageCase("SC-check", "财务经理核对预算", "财务经理", "核对", "review"),
     stageCase("SC-endorse", "销售总监认可", "销售总监", "认可", "approval"),
     stageCase("SC-confirm", "部门主管确认事实", "部门主管", "确认", "approval"),
-    conditionCase("SC-over", "成本增加超过港币一百万元走额外审批", "成本增加", "超过", ">", "一百万元", "额外审批"),
+    { ...conditionCase("SC-over", "成本增加超过港币一百万元走额外审批", "成本增加", "超过", ">", "一百万元", "额外审批"), blockingReason: "unsupported_semantics_not_executable" },
     conditionCase("SC-not-over", "申请额度不超过港币一百万元由财务经理批准", "申请额度", "不超过", "<=", "一百万元", "财务经理"),
     notificationCase("SC-assignment", "直接相关人员分配", "直接相关人员", "分配", "stage_assigned"),
     notificationCase("SC-rejection", "直接相关人员拒绝", "直接相关人员", "拒绝", "request_rejected"),
@@ -977,7 +1014,20 @@ test("verifies closed semantic aliases exercised by the fixed English, Tradition
   for (const [itemIndex, entry] of cases.entries()) {
     const assembled = result.review.items.find((item) => item.providerItemIndexes.includes(itemIndex));
     assert.ok(assembled, `${entry.caseId}: ${JSON.stringify(result.review.rejections.filter((rejection) => rejection.itemIndex === itemIndex))}`);
-    assert.equal(assembled.semanticComplete, true, entry.caseId);
+    const expectedBlockingReason = entry.blockingReason ?? null;
+    assert.equal(
+      assembled.semanticComplete,
+      expectedBlockingReason === null,
+      entry.caseId,
+    );
+    assert.equal(
+      assembled.blockingReason,
+      expectedBlockingReason ?? undefined,
+      entry.caseId,
+    );
+    if (expectedBlockingReason !== null) {
+      assert.equal(assembled.fragmentId, null, entry.caseId);
+    }
     assert.equal(assembled.persisted, false, entry.caseId);
     assert.equal(assembled.executable, false, entry.caseId);
   }
@@ -987,28 +1037,28 @@ test("audits a bounded semantic operator for every fixed condition corpus entry 
   const scenariosById = new Map(templateCopilotQualificationScenarios.map((scenario) => [scenario.id, scenario]));
   const audit = [
     { scenarioId: "EN-01", field: "total amount", operator: "below", operatorHint: "<", value: "HKD 50,000", route: "complete", routeHint: "complete" },
-    { scenarioId: "EN-02", field: "invoice total", operator: "equals", operatorHint: "=", value: "PO total", route: "Finance Manager" },
-    { scenarioId: "EN-03", field: "Board FYI", operator: "above", operatorHint: ">", value: "HKD 2,000,000", route: "CFO" },
-    { scenarioId: "EN-04", field: "total", operator: "exceeds", operatorHint: ">", value: "HKD 10,000", route: "Department Head" },
+    { scenarioId: "EN-02", field: "invoice total", operator: "equals", operatorHint: "=", value: "PO total", route: "Finance Manager", blockingReason: "unsupported_semantics_not_executable" },
+    { scenarioId: "EN-03", field: "Board FYI", operator: "above", operatorHint: ">", value: "HKD 2,000,000", route: "Board FYI", blockingReason: "unsupported_semantics_not_executable" },
+    { scenarioId: "EN-04", field: "total", operator: "exceeds", operatorHint: ">", value: "HKD 10,000", route: "Department Head", blockingReason: "unsupported_semantics_not_executable" },
     { scenarioId: "EN-05", field: "personal-data choice", operator: "is Yes", operatorHint: "=", value: "Yes", route: "Data Protection" },
     { scenarioId: "EN-06", field: "High-risk visits", operator: "High-risk", operatorHint: "=", value: "High-risk", route: "Site Manager" },
     { scenarioId: "EN-07", field: "country", operator: "other than", operatorHint: "!=", value: "Hong Kong", valueOccurrence: 1, route: "Legal" },
     { scenarioId: "EN-08", field: "amount", operator: "at most", operatorHint: "<=", value: "HKD 100,000", route: "General Manager" },
-    { scenarioId: "TC-01", field: "註冊地", operator: "不在", operatorHint: "!=", value: "香港", route: "法務審查" },
-    { scenarioId: "TC-02", field: "病假日數", operator: "三日或以上", operatorHint: ">=", value: "三日", route: "醫生證明" },
+    { scenarioId: "TC-01", field: "註冊地或銀行所在地", operator: "註冊地或銀行所在地", operatorHint: "unsupported_predicate", value: "註冊地或銀行所在地", route: "法務審查", blockingReason: "unsupported_semantics_not_executable" },
+    { scenarioId: "TC-02", field: "病假日數", operator: "三日或以上", operatorHint: ">=", value: "三日", route: "醫生證明", blockingReason: "unsupported_semantics_not_executable" },
     { scenarioId: "TC-03", field: "估算合約額", operator: "超過", operatorHint: ">", value: "港幣一億元", route: "董事會主席" },
     { scenarioId: "TC-04", field: "高風險工序", operator: "高風險", operatorHint: "=", value: "高風險", route: "公司安全主管" },
-    { scenarioId: "TC-05", field: "差異", operator: "超過", operatorHint: ">", value: "百分之五", route: "退回分判商" },
-    { scenarioId: "TC-06", field: "期限", operator: "超過", operatorHint: ">", value: "九十日", route: "行政總裁" },
+    { scenarioId: "TC-05", field: "差異", operator: "超過", operatorHint: ">", value: "百分之五", route: "退回分判商", blockingReason: "unsupported_semantics_not_executable" },
+    { scenarioId: "TC-06", field: "高風險或期限超過九十日", operator: "高風險或期限超過九十日", operatorHint: "unsupported_predicate", value: "高風險或期限超過九十日", route: "行政總裁批准", blockingReason: "unsupported_semantics_not_executable" },
     { scenarioId: "TC-07", field: "費用", operator: "超過", operatorHint: ">", value: "港幣一萬元", route: "部門主管" },
     { scenarioId: "TC-08", field: "受限制區域", operator: "受限制區域", operatorHint: "=", value: "受限制區域", route: "資訊保安" },
     { scenarioId: "SC-01", field: "安全影响", operator: "为是", operatorHint: "=", value: "是", route: "安全评审" },
-    { scenarioId: "SC-02", field: "生产数据库", operator: "生产数据库", operatorHint: "=", value: "生产数据库", route: "数据负责人" },
+    { scenarioId: "SC-02", field: "生产数据库", operator: "生产数据库", operatorHint: "=", value: "生产数据库", route: "数据负责人", blockingReason: "unsupported_semantics_not_executable" },
     { scenarioId: "SC-03", field: "客户名称", operator: "为是", operatorHint: "=", value: "是", route: "客户经理" },
-    { scenarioId: "SC-04", field: "申请额度", operator: "不超过", operatorHint: "<=", value: "港币一百万元", route: "财务经理" },
-    { scenarioId: "SC-05", field: "含数据设备", operator: "含数据设备", operatorHint: "=", value: "含数据设备", route: "安全审批" },
-    { scenarioId: "SC-06", field: "严重程度", operator: "为高", operatorHint: "=", value: "高", route: "高级管理层" },
-    { scenarioId: "SC-07", field: "国际", operator: "国际", operatorHint: "=", value: "国际", route: "HR" },
+    { scenarioId: "SC-04", field: "申请额度", operator: "不超过", operatorHint: "<=", value: "港币一百万元", route: "财务经理", blockingReason: "compound_predicate_not_executable" },
+    { scenarioId: "SC-05", field: "含数据设备", operator: "含数据设备", operatorHint: "=", value: "含数据设备", route: "安全审批和清除证明", blockingReason: "unsupported_semantics_not_executable" },
+    { scenarioId: "SC-06", field: "严重程度为高或需要监管报告", operator: "严重程度为高或需要监管报告", operatorHint: "unsupported_predicate", value: "严重程度为高或需要监管报告", route: "高级管理层批准", blockingReason: "unsupported_semantics_not_executable" },
+    { scenarioId: "SC-07", field: "国际", operator: "国际", operatorHint: "=", value: "国际", route: "HR 和安全", blockingReason: "unsupported_semantics_not_executable" },
     { scenarioId: "SC-08", field: "有关联人士", operator: "有关联人士", operatorHint: "=", value: "有关联人士", route: "独立高管" },
   ];
   assert.deepEqual(
@@ -1018,7 +1068,7 @@ test("audits a bounded semantic operator for every fixed condition corpus entry 
 
   const variants = [
     { caseId: "EN-not-in", text: "country not in Hong Kong routes to Legal", field: "country", operator: "not in", operatorHint: "!=", value: "Hong Kong", route: "Legal" },
-    { caseId: "TC-or-above", text: scenariosById.get("TC-02").conditions, field: "病假日數", operator: "或以上", operatorHint: ">=", value: "三日", route: "醫生證明" },
+    { caseId: "TC-or-above", text: scenariosById.get("TC-02").conditions, field: "病假日數", operator: "或以上", operatorHint: ">=", value: "三日", route: "醫生證明", blockingReason: "unsupported_semantics_not_executable" },
     { caseId: "TC-declared-conflict", text: scenariosById.get("TC-01").conditions, field: "利益衝突", operator: "申報有利益衝突", operatorHint: "=", value: "利益衝突", route: "高級管理層" },
     { caseId: "SC-declared-conflict", text: "申报有利益冲突时增加高级管理层审批", field: "利益冲突", operator: "有利益冲突", operatorHint: "=", value: "利益冲突", route: "高级管理层" },
     { caseId: "TC-related-party", text: "有關聯人士時增加獨立高管審批", field: "關聯人士", operator: "有關聯人士", operatorHint: "=", value: "關聯人士", route: "獨立高管" },
@@ -1059,7 +1109,19 @@ test("audits a bounded semantic operator for every fixed condition corpus entry 
   for (const [itemIndex, entry] of cases.entries()) {
     const assembled = result.review.items.find((item) => item.providerItemIndexes.includes(itemIndex));
     assert.ok(assembled, entry.caseId);
-    assert.equal(assembled.semanticComplete, true, entry.caseId);
+    const expectedBlockingReason = entry.blockingReason ?? null;
+    if (expectedBlockingReason !== null) {
+      assert.equal(assembled.semanticComplete, false, entry.caseId);
+      assert.equal(assembled.complete, false, entry.caseId);
+      assert.equal(assembled.fragmentId, null, entry.caseId);
+      assert.equal(
+        assembled.blockingReason,
+        expectedBlockingReason,
+        entry.caseId,
+      );
+    } else {
+      assert.equal(assembled.semanticComplete, true, entry.caseId);
+    }
     assert.deepEqual(assembled.semanticValue.field, [entry.field], entry.caseId);
     assert.deepEqual(assembled.semanticValue.operator, [entry.operator], entry.caseId);
     assert.deepEqual(assembled.semanticValue.value, [entry.value], entry.caseId);
@@ -1575,6 +1637,12 @@ test("blocks condition routes spliced from unrelated clauses", () => {
         "Amount exceeds 100. Country policy sends the file to Legal approval.",
       route: "Legal",
     },
+    {
+      caseId: "same-hard-cross-predicate",
+      text:
+        "Amount exceeds 100 routes to Finance, if Country equals US routes to Legal.",
+      route: "Legal",
+    },
   ];
   for (const [itemIndex, entry] of cases.entries()) {
     const messageId = `message-condition-route-affinity-${entry.caseId}`;
@@ -1604,6 +1672,138 @@ test("blocks condition routes spliced from unrelated clauses", () => {
     assert.equal(item.fragmentId, null, entry.caseId);
     assert.equal(result.envelope.fragments.length, 0, entry.caseId);
   }
+});
+
+test("blocks otherwise routes from unrelated lexical default entities", () => {
+  const messageId = "message-condition-otherwise-entity-affinity-001";
+  const text =
+    "Amount exceeds 100 routes to Finance. Other countries route to Legal.";
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages: { [messageId]: text },
+    items: [located({
+      itemIndex: 0,
+      kind: "condition",
+      messageId,
+      text,
+      leaves: [
+        { role: "field", quote: "Amount" },
+        { role: "operator", quote: "exceeds", hint: ">" },
+        { role: "value", quote: "100" },
+        {
+          role: "matching_route",
+          quote: "Finance",
+          hint: "stage_reference",
+        },
+        {
+          role: "otherwise_route",
+          quote: "Legal",
+          hint: "stage_reference",
+        },
+      ],
+    })],
+  });
+  const item = result.review.items[0];
+  assert.ok(item, JSON.stringify(result.review.rejections));
+  assert.equal(item.semanticComplete, false);
+  assert.equal(item.fragmentId, null);
+  assert.equal(result.envelope.fragments.length, 0);
+});
+
+test("blocks a delayed unrelated outcome from completing a decision branch", () => {
+  const messageId = "message-condition-decision-delayed-outcome-001";
+  const text =
+    "Amount exceeds 100. If either Finance approver rejects the invitation, unrelated HR policy returns applications for correction.";
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages: { [messageId]: text },
+    items: [located({
+      itemIndex: 0,
+      kind: "condition",
+      messageId,
+      text,
+      leaves: [
+        { role: "field", quote: "Amount" },
+        { role: "operator", quote: "exceeds", hint: ">" },
+        { role: "value", quote: "100" },
+        {
+          role: "matching_route",
+          quote: "Finance approver",
+          hint: "stage_reference",
+        },
+      ],
+    })],
+  });
+  const item = result.review.items[0];
+  assert.ok(item, JSON.stringify(result.review.rejections));
+  assert.equal(item.semanticComplete, false);
+  assert.equal(item.complete, false);
+  assert.equal(item.fragmentId, null);
+  assert.equal(result.envelope.fragments.length, 0);
+});
+
+test("blocks a lexical default from a different high-risk entity", () => {
+  const messageId = "message-condition-default-high-risk-entity-001";
+  const text =
+    "High-risk expenses exceed 100 routes to Finance. Normal visits route to Legal.";
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages: { [messageId]: text },
+    items: [located({
+      itemIndex: 0,
+      kind: "condition",
+      messageId,
+      text,
+      leaves: [
+        { role: "field", quote: "High-risk expenses" },
+        { role: "operator", quote: "exceed", hint: ">" },
+        { role: "value", quote: "100" },
+        {
+          role: "matching_route",
+          quote: "Finance",
+          hint: "stage_reference",
+        },
+        {
+          role: "otherwise_route",
+          quote: "Legal",
+          hint: "stage_reference",
+        },
+      ],
+    })],
+  });
+  const item = result.review.items[0];
+  assert.ok(item, JSON.stringify(result.review.rejections));
+  assert.equal(item.semanticComplete, false);
+  assert.equal(item.complete, false);
+  assert.equal(item.fragmentId, null);
+  assert.equal(result.envelope.fragments.length, 0);
+});
+
+test("blocks participant decision wording without a workflow outcome", () => {
+  const messageId = "message-condition-decision-no-outcome-001";
+  const text =
+    "Amount exceeds 100. If either Finance approver rejects the invitation.";
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages: { [messageId]: text },
+    items: [located({
+      itemIndex: 0,
+      kind: "condition",
+      messageId,
+      text,
+      leaves: [
+        { role: "field", quote: "Amount" },
+        { role: "operator", quote: "exceeds", hint: ">" },
+        { role: "value", quote: "100" },
+        {
+          role: "matching_route",
+          quote: "Finance approver",
+          hint: "stage_reference",
+        },
+      ],
+    })],
+  });
+  const item = result.review.items[0];
+  assert.ok(item, JSON.stringify(result.review.rejections));
+  assert.equal(item.semanticComplete, false);
+  assert.equal(item.fragmentId, null);
+  assert.equal(result.envelope.fragments.length, 0);
 });
 
 test("keeps source-bound condition route forms valid", () => {
@@ -1637,6 +1837,37 @@ test("keeps source-bound condition route forms valid", () => {
       ],
     },
     {
+      caseId: "route-first-conditional",
+      text:
+        "Data Protection is required only when personal-data choice is Yes.",
+      leaves: [
+        { role: "field", quote: "personal-data choice" },
+        { role: "operator", quote: "is Yes", hint: "=" },
+        { role: "value", quote: "Yes" },
+        {
+          role: "matching_route",
+          quote: "Data Protection",
+          hint: "stage_reference",
+        },
+      ],
+    },
+    {
+      caseId: "decision-subject",
+      text:
+        "Use total amount at least 50,000 as the high-value branch. If either high-value approver rejects, return for correction.",
+      leaves: [
+        { role: "field", quote: "total amount" },
+        { role: "operator", quote: "at least", hint: ">=" },
+        { role: "value", quote: "50,000" },
+        {
+          role: "matching_route",
+          quote: "high-value approver",
+          hint: "stage_reference",
+        },
+      ],
+      blockingReason: "unsupported_semantics_not_executable",
+    },
+    {
       caseId: "explicit-default",
       text:
         "Amount exceeds 100 routes to Finance. Otherwise route to Legal.",
@@ -1657,7 +1888,7 @@ test("keeps source-bound condition route forms valid", () => {
       ],
     },
     {
-      caseId: "threshold-complement",
+      caseId: "matching-only-threshold-branch",
       text:
         "If amount is at most 100, route to Manager; Above 100 route to CEO.",
       leaves: [
@@ -1667,11 +1898,6 @@ test("keeps source-bound condition route forms valid", () => {
         {
           role: "matching_route",
           quote: "CEO",
-          hint: "stage_reference",
-        },
-        {
-          role: "otherwise_route",
-          quote: "Manager",
           hint: "stage_reference",
         },
       ],
@@ -1697,12 +1923,35 @@ test("keeps source-bound condition route forms valid", () => {
     cases.length,
     JSON.stringify(result.review.rejections),
   );
-  assert.ok(result.review.items.every((item) => item.semanticComplete));
-  assert.ok(result.review.items.every((item) => item.persisted === false));
-  assert.ok(result.review.items.every((item) => item.executable === false));
+  for (const [itemIndex, entry] of cases.entries()) {
+    const item = result.review.items.find((candidate) =>
+      candidate.providerItemIndexes.includes(itemIndex),
+    );
+    assert.ok(
+      item,
+      `${entry.caseId}: ${JSON.stringify(result.review.rejections)}`,
+    );
+    const expectedBlockingReason = entry.blockingReason ?? null;
+    assert.equal(
+      item.semanticComplete,
+      expectedBlockingReason === null,
+      `${entry.caseId}: ${JSON.stringify(result.review.rejections)}`,
+    );
+    assert.equal(
+      item.blockingReason,
+      expectedBlockingReason ?? undefined,
+      entry.caseId,
+    );
+    if (expectedBlockingReason !== null) {
+      assert.equal(item.complete, false, entry.caseId);
+      assert.equal(item.fragmentId, null, entry.caseId);
+    }
+    assert.equal(item.persisted, false, entry.caseId);
+    assert.equal(item.executable, false, entry.caseId);
+  }
 });
 
-test("keeps entity-local optionality, conditional attachments, explicit supplemental requirements, and condition routes valid", () => {
+test("holds conditional attachments while retaining ordinary supplemental requirements and condition routes", () => {
   const receiptId = "message-attachment-entity-local-001";
   const receiptText =
     "The receipt document is required when the optional comments field is used";
@@ -1770,9 +2019,30 @@ test("keeps entity-local optionality, conditional attachments, explicit suppleme
   });
 
   assert.equal(result.review.items.length, 4, JSON.stringify(result.review.rejections));
-  assert.ok(result.review.items.every((item) => item.semanticComplete));
+  const itemByProviderIndex = (itemIndex) =>
+    result.review.items.find((item) =>
+      item.providerItemIndexes.includes(itemIndex)
+    );
+  for (const itemIndex of [0, 1]) {
+    const item = itemByProviderIndex(itemIndex);
+    assert.ok(item, `conditional:${itemIndex}`);
+    assert.equal(item.semanticComplete, false, `conditional:${itemIndex}`);
+    assert.equal(
+      item.blockingReason,
+      "unsupported_semantics_not_executable",
+      `conditional:${itemIndex}`,
+    );
+    assert.equal(item.fragmentId, null, `conditional:${itemIndex}`);
+  }
+  for (const itemIndex of [2, 3]) {
+    const item = itemByProviderIndex(itemIndex);
+    assert.ok(item, `retained:${itemIndex}`);
+    assert.equal(item.semanticComplete, true, `retained:${itemIndex}`);
+    assert.equal(item.blockingReason, undefined, `retained:${itemIndex}`);
+  }
   assert.ok(result.review.items.every((item) => item.persisted === false));
   assert.ok(result.review.items.every((item) => item.executable === false));
+  assert.equal(result.envelope.fragments.length, 2);
 });
 
 test("keeps a Chinese route-only stage entity intact when its name begins with the character for local", () => {
@@ -1919,17 +2189,21 @@ test("blocks a Simplified Chinese notification event-recipient splice at 当", (
 test("allows only exact-field or bounded operator-led threshold carry-forward", () => {
   const englishId = "message-condition-carry-en-001";
   const englishText =
-    "If amount is at most HKD 100,000, General Manager is final. Above HKD 100,000 add CEO approval.";
+    "If amount is at most HKD 100,000, General Manager is the final approver. Above HKD 100,000 add CEO approval.";
   const traditionalId = "message-condition-carry-tc-001";
   const traditionalText =
     "若申報金額與核實金額差異超過百分之五，退回確認。若核實金額超過港幣五百萬元，增加財務總監批准。";
   const simplifiedId = "message-condition-carry-sc-001";
   const simplifiedText =
-    "申请额度不超过港币一百万元时由财务经理批准。超过一百万元由财务总监批准；超过五百万元再由行政总裁批准。";
+    "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元由财务总监批准；超过五百万元再由行政总裁批准。";
+  const localRiskId = "message-condition-carry-sc-002";
+  const localRiskText =
+    "本地低风险且总额不超过港币二万元，财务后完成。超过二万元增加部门主管。";
   const sourceMessages = {
     [englishId]: englishText,
     [traditionalId]: traditionalText,
     [simplifiedId]: simplifiedText,
+    [localRiskId]: localRiskText,
   };
   const result = assembleTemplateCopilotV3Review({
     sourceMessages,
@@ -1956,7 +2230,7 @@ test("allows only exact-field or bounded operator-led threshold carry-forward", 
         messageId: traditionalId,
         text: traditionalText,
         leaves: [
-          { role: "field", quote: "核實金額" },
+          { role: "field", quote: "核實金額", occurrence: 1 },
           { role: "operator", quote: "超過", occurrence: 1, hint: ">" },
           { role: "value", quote: "五百萬元" },
           {
@@ -1982,13 +2256,261 @@ test("allows only exact-field or bounded operator-led threshold carry-forward", 
           },
         ],
       }),
+      located({
+        itemIndex: 3,
+        kind: "condition",
+        messageId: localRiskId,
+        text: localRiskText,
+        leaves: [
+          { role: "field", quote: "总额" },
+          { role: "operator", quote: "超过", occurrence: 1, hint: ">" },
+          { role: "value", quote: "二万元", occurrence: 1 },
+          {
+            role: "matching_route",
+            quote: "部门主管",
+            hint: "stage_reference",
+          },
+        ],
+      }),
     ],
   });
 
-  assert.equal(result.review.items.length, 3, JSON.stringify(result.review.rejections));
-  assert.ok(result.review.items.every((item) => item.semanticComplete));
+  assert.equal(result.review.items.length, 4, JSON.stringify(result.review.rejections));
+  for (const itemIndex of [0, 1, 2, 3]) {
+    const item = result.review.items.find((candidate) =>
+      candidate.providerItemIndexes.includes(itemIndex)
+    );
+    assert.ok(item, `carry-forward:${itemIndex}`);
+    assert.equal(
+      item.semanticComplete,
+      true,
+      `carry-forward:${itemIndex}:${item.blockingReason ?? "unblocked"}:${JSON.stringify(result.review.rejections)}`,
+    );
+  }
   assert.ok(result.review.items.every((item) => item.persisted === false));
   assert.ok(result.review.items.every((item) => item.executable === false));
+});
+
+test("direct assembly rejects malformed carried thresholds and invented otherwise routes", () => {
+  const cases = [
+    {
+      caseId: "extra-first-subject",
+      text:
+        "申请额度不超过港币一百万元且国家额度超过二百万元由财务经理批准。超过一百万元由财务总监批准。",
+      field: "申请额度",
+      operator: "超过",
+      operatorOccurrence: 2,
+      value: "一百万元",
+      valueOccurrence: 1,
+      route: "财务总监批准",
+    },
+    {
+      caseId: "extra-first-policy",
+      text:
+        "申请额度不超过港币一百万元且国家政策已更新由财务经理批准。超过一百万元由财务总监批准。",
+      field: "申请额度",
+      operator: "超过",
+      operatorOccurrence: 1,
+      value: "一百万元",
+      valueOccurrence: 1,
+      route: "财务总监批准",
+    },
+    {
+      caseId: "extra-middle-comparison",
+      text:
+        "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元且超过二百万元由财务总监批准；超过五百万元再由行政总裁批准。",
+      field: "申请额度",
+      operator: "超过",
+      operatorOccurrence: 3,
+      value: "五百万元",
+      route: "行政总裁批准",
+    },
+    {
+      caseId: "extra-middle-subject",
+      text:
+        "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元且国家额度超过二百万元由财务总监批准；超过五百万元再由行政总裁批准。",
+      field: "申请额度",
+      operator: "超过",
+      operatorOccurrence: 3,
+      value: "五百万元",
+      route: "行政总裁批准",
+    },
+    {
+      caseId: "extra-target-tier-1-predicate",
+      text:
+        "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元且国家风险也低时由财务总监批准；超过五百万元再由行政总裁批准。",
+      field: "申请额度",
+      operator: "超过",
+      operatorOccurrence: 1,
+      value: "一百万元",
+      valueOccurrence: 1,
+      route: "财务总监批准",
+    },
+    {
+      caseId: "extra-target-tier-2-predicate",
+      text:
+        "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元由财务总监批准；超过五百万元且国家风险也低时再由行政总裁批准。",
+      field: "申请额度",
+      operator: "超过",
+      operatorOccurrence: 2,
+      value: "五百万元",
+      route: "行政总裁批准",
+    },
+    {
+      caseId: "overbroad-value",
+      text:
+        "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。",
+      field: "申请额度",
+      operator: "不超过",
+      operatorHint: "<=",
+      value: "一百万元且风险低时可在",
+      route: "财务经理批准后完成",
+    },
+    {
+      caseId: "overbroad-route",
+      text:
+        "申请额度超过港币一百万元由国家风险也低时由财务经理批准。",
+      field: "申请额度",
+      operator: "超过",
+      value: "一百万元",
+      route: "国家风险也低时由财务经理批准",
+    },
+    {
+      caseId: "missing-tier-continuation",
+      text:
+        "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元由财务总监批准；超过五百万元由行政总裁批准。",
+      field: "申请额度",
+      operator: "超过",
+      operatorOccurrence: 2,
+      value: "五百万元",
+      route: "行政总裁批准",
+    },
+    {
+      caseId: "audit-gap",
+      text:
+        "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元由财务总监批准；保留审计记录；超过五百万元再由行政总裁批准。",
+      field: "申请额度",
+      operator: "超过",
+      operatorOccurrence: 2,
+      value: "五百万元",
+      route: "行政总裁批准",
+    },
+    {
+      caseId: "reporting-tail",
+      text:
+        "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元由财务总监批准；超过五百万元再由行政总裁批准被记录。",
+      field: "申请额度",
+      operator: "超过",
+      operatorOccurrence: 2,
+      value: "五百万元",
+      route: "行政总裁批准",
+    },
+    {
+      caseId: "duplicate-target-operator",
+      text:
+        "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元由财务总监批准；超过且超过五百万元再由行政总裁批准。",
+      field: "申请额度",
+      operator: "超过",
+      operatorOccurrence: 2,
+      value: "五百万元",
+      route: "行政总裁批准",
+    },
+    {
+      caseId: "duplicate-target-value",
+      text:
+        "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元由财务总监批准；超过五百万元和五百万元再由行政总裁批准。",
+      field: "申请额度",
+      operator: "超过",
+      operatorOccurrence: 2,
+      value: "五百万元",
+      route: "行政总裁批准",
+    },
+    {
+      caseId: "numeric-prefix",
+      text:
+        "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元由财务总监批准；超过一千五百万元再由行政总裁批准。",
+      field: "申请额度",
+      operator: "超过",
+      operatorOccurrence: 2,
+      value: "五百万元",
+      route: "行政总裁批准",
+    },
+    {
+      caseId: "invented-otherwise-sc04",
+      text:
+        "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元由财务总监批准。",
+      field: "申请额度",
+      operator: "超过",
+      operatorOccurrence: 1,
+      value: "一百万元",
+      valueOccurrence: 1,
+      route: "财务总监批准",
+      otherwise: "财务经理批准后完成",
+    },
+    {
+      caseId: "invented-otherwise-sc07",
+      text:
+        "本地低风险且总额不超过港币二万元，财务后完成。超过二万元增加部门主管。",
+      field: "总额",
+      operator: "超过",
+      operatorOccurrence: 1,
+      value: "二万元",
+      valueOccurrence: 1,
+      route: "部门主管",
+      otherwise: "财务后完成",
+    },
+  ];
+
+  for (const [itemIndex, entry] of cases.entries()) {
+    const messageId = `condition-carry-attack:${entry.caseId}`;
+    const leaves = [
+      { role: "field", quote: entry.field },
+      {
+        role: "operator",
+        quote: entry.operator,
+        occurrence: entry.operatorOccurrence,
+        hint: entry.operatorHint ?? ">",
+      },
+      {
+        role: "value",
+        quote: entry.value,
+        occurrence: entry.valueOccurrence ?? 0,
+      },
+      {
+        role: "matching_route",
+        quote: entry.route,
+        hint: "stage_reference",
+      },
+      ...(
+        entry.otherwise
+          ? [{
+            role: "otherwise_route",
+            quote: entry.otherwise,
+            hint: "stage_reference",
+          }]
+          : []
+      ),
+    ];
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: { [messageId]: entry.text },
+      items: [located({
+        itemIndex,
+        kind: "condition",
+        messageId,
+        text: entry.text,
+        leaves,
+      })],
+    });
+    const item = result.review.items[0];
+    assert.ok(
+      item,
+      `${entry.caseId}: ${JSON.stringify(result.review.rejections)}`,
+    );
+    assert.equal(item.semanticComplete, false, entry.caseId);
+    assert.equal(item.complete, false, entry.caseId);
+    assert.equal(item.fragmentId, null, entry.caseId);
+    assert.equal(result.envelope.fragments.length, 0, entry.caseId);
+  }
 });
 
 test("does not carry a threshold field into a clause that names a different entity", () => {

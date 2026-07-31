@@ -18,9 +18,16 @@ import { answersForScenario } from "./template-copilot-qualification-scenarios.m
 import { templateCopilotV3LiveSemanticScoringContract } from "./template-copilot-v3-live-semantic-scoring.mjs";
 
 export const templateCopilotV3QualificationRunnerVersion =
-  "template-copilot-v3-live-semantic-qualification.1";
+  "template-copilot-v3-live-semantic-qualification.2";
 export const templateCopilotV3QualificationExpectedScenarioCount = 24;
-export const templateCopilotV3QualificationExpectedLocaleCount = 8;
+export const templateCopilotV3QualificationExpectedGovernedHoldCount = 64;
+export const templateCopilotV3QualificationExpectedLocaleCount = 3;
+export const templateCopilotV3QualificationExpectedScenariosPerLocale = 8;
+if (
+  templateCopilotV3QualificationExpectedLocaleCount *
+    templateCopilotV3QualificationExpectedScenariosPerLocale !==
+  templateCopilotV3QualificationExpectedScenarioCount
+) throw new Error("The qualification locale distribution is inconsistent.");
 export const templateCopilotV3QualificationBaselineModel =
   "qwen/qwen3.5-35b-a3b";
 export const templateCopilotV3QualificationHardScenarioIds = Object.freeze([
@@ -44,6 +51,7 @@ export const templateCopilotV3QualificationObservedMetricKeys = Object.freeze([
   "attachmentEntityCount",
   "stageEntityCount",
   "conditionEntityCount",
+  "governedSemanticHoldCount",
 ]);
 if (
   JSON.stringify(templateCopilotV3QualificationObservedMetricKeys) !==
@@ -83,6 +91,14 @@ export const templateCopilotV3QualificationFactIds = Object.freeze([
   "notifications.rules",
 ]);
 const qualificationFactIdSet = new Set(templateCopilotV3QualificationFactIds);
+const qualificationItemFactIdSet = new Set(
+  templateCopilotV3LiveSemanticScoringContract.itemFactIds,
+);
+const qualificationSemanticFactIdSet = new Set(
+  templateCopilotV3QualificationFactIds.filter(
+    (factId) => !qualificationItemFactIdSet.has(factId),
+  ),
+);
 if (
   JSON.stringify(templateCopilotV3QualificationFactIds) !==
   JSON.stringify(templateCopilotV3LiveSemanticScoringContract.expectedFactIds)
@@ -103,12 +119,86 @@ const providerRejectionCodeSet = new Set(
   templateCopilotV3ProviderQuoteRejectionCodes,
 );
 const reviewRejectionCodeSet = new Set(templateCopilotV3ReviewRejectionCodes);
+const qualificationGovernedHoldKeySet = new Set([
+  "factId",
+  "blockingReason",
+]);
+const qualificationGovernedHoldReasonSet = new Set([
+  "compound_predicate_not_executable",
+  "unsupported_semantics_not_executable",
+]);
+const qualificationExpectedGovernanceByScenario =
+  templateCopilotV3LiveSemanticScoringContract.expectedGovernedHoldInventoryByScenario;
+const qualificationExpectedScenarioIds = Object.freeze(
+  Object.keys(qualificationExpectedGovernanceByScenario).sort((left, right) =>
+    left.localeCompare(right, "en"),
+  ),
+);
+if (
+  !Object.isFrozen(qualificationExpectedGovernanceByScenario) ||
+  qualificationExpectedScenarioIds.length !==
+    templateCopilotV3QualificationExpectedScenarioCount ||
+  qualificationExpectedScenarioIds.some((scenarioId) => {
+    const expected = qualificationExpectedGovernanceByScenario[scenarioId];
+    return (
+      !isRecord(expected) ||
+      !Object.isFrozen(expected) ||
+      !qualificationLocales.includes(expected.language) ||
+      !Array.isArray(expected.governedHolds) ||
+      !Object.isFrozen(expected.governedHolds) ||
+      expected.governedHolds.some(
+        (hold) =>
+          !isRecord(hold) ||
+          !Object.isFrozen(hold) ||
+          !sameKeySet(hold, qualificationGovernedHoldKeySet) ||
+          !qualificationGovernedHoldReasonSet.has(hold.blockingReason) ||
+          !qualificationItemFactIdSet.has(hold.factId) ||
+          !governedHoldFactReasonAllowed(hold.factId, hold.blockingReason),
+      )
+    );
+  }) ||
+  qualificationExpectedScenarioIds.reduce(
+    (total, scenarioId) =>
+      total +
+      qualificationExpectedGovernanceByScenario[scenarioId].governedHolds
+        .length,
+    0,
+  ) !== templateCopilotV3QualificationExpectedGovernedHoldCount ||
+  qualificationLocales.some(
+    (language) =>
+      qualificationExpectedScenarioIds.filter(
+        (scenarioId) =>
+          qualificationExpectedGovernanceByScenario[scenarioId].language ===
+          language,
+      ).length !== templateCopilotV3QualificationExpectedScenariosPerLocale,
+  )
+) {
+  throw new Error("The qualification governed-hold inventory is inconsistent.");
+}
+const executableDraftBlockerCodes = Object.freeze([
+  "governed_semantics_not_executable",
+  "compiled_draft_validation_not_evaluated",
+  "workflow_simulation_not_evaluated",
+  "save_reload_fidelity_not_evaluated",
+]);
+const activationBlockerCodes = Object.freeze([
+  "executable_draft_gate_not_passed",
+  "authenticated_preview_not_qualified",
+]);
+const pilotBlockerCodes = Object.freeze([
+  "activation_gate_not_passed",
+  "formal_corporate_pilot_not_started",
+]);
 const qualificationScorerResultKeySet = new Set([
   "passed",
   "failures",
+  "sourceCapturePassed",
+  "captureFailures",
+  "governedHolds",
   "batchGate",
   "candidateCount",
   "acceptedProjectionCount",
+  "blockedSemanticItemCount",
   "semanticCompleteItemCount",
   "completeItemCount",
   "semanticFactCount",
@@ -133,6 +223,7 @@ const qualificationScorerResultKeySet = new Set([
 const qualificationScorerCountFields = Object.freeze([
   "candidateCount",
   "acceptedProjectionCount",
+  "blockedSemanticItemCount",
   "semanticCompleteItemCount",
   "completeItemCount",
   "semanticFactCount",
@@ -161,6 +252,9 @@ const qualificationBatchGateKeySet = new Set([
 const qualificationScenarioSemanticsKeySet = new Set([
   "passed",
   "failures",
+  "sourceCapturePassed",
+  "captureFailures",
+  "governedHolds",
   "observed",
 ]);
 const qualificationQuarantineReasonSet = new Set(
@@ -278,6 +372,7 @@ export async function runTemplateCopilotV3LiveSemanticQualification({
       expectedScenarioCount:
         templateCopilotV3QualificationExpectedScenarioCount,
       expectedLocaleCount: templateCopilotV3QualificationExpectedLocaleCount,
+      expectedScenariosPerLocale: templateCopilotV3QualificationExpectedScenariosPerLocale,
       scenarioCount: scenarios.length,
       fullScenarioSetSelected,
       batchIds: [...templateCopilotV3ProviderQuoteBatchIds],
@@ -471,6 +566,14 @@ export async function runTemplateCopilotV3LiveSemanticQualificationScenario({
   const projectionRejections = Array.isArray(assembly?.review?.rejections)
     ? assembly.review.rejections
     : [];
+  const projectionIntegrity = inspectSemanticProjection(
+    assembly?.review,
+    acceptedItems.length,
+  );
+  const semanticCapture = sanitizeSemanticResult(
+    semantic,
+    projectionIntegrity,
+  );
   return {
     id: item.id,
     language: item.language,
@@ -497,65 +600,87 @@ export async function runTemplateCopilotV3LiveSemanticQualificationScenario({
         safeCode(entry?.code, reviewRejectionCodeSet),
       ),
     },
-    semanticFidelity: sanitizeSemanticResult(semantic),
+    semanticCapture,
+    executableDraft: executableDraftGateFor(
+      semanticCapture.governedHoldCount,
+      1,
+    ),
     durationMs: elapsedMs(startedAt, now()),
   };
 }
 
 export function summarizeQualification(report) {
   const scenarios = report.scenarios;
-  const batchCount = scenarios.reduce(
-    (total, item) => total + item.batchCount,
-    0,
+  const sumScenario = (select) =>
+    scenarios.reduce((total, item) => total + select(item), 0);
+  const batchCount = sumScenario((item) => item.batchCount);
+  const successfulBatchCount = sumScenario(
+    (item) => item.successfulBatchCount,
   );
-  const successfulBatchCount = scenarios.reduce(
-    (total, item) => total + item.successfulBatchCount,
-    0,
+  const providerRequestCount = sumScenario((item) =>
+    item.batches.reduce(
+      (total, batch) => total + batch.providerRequestCount,
+      0,
+    ),
   );
-  const providerRequestCount = scenarios.reduce(
-    (total, item) =>
-      total +
-      item.batches.reduce(
-        (batchTotal, batch) => batchTotal + batch.providerRequestCount,
-        0,
-      ),
-    0,
+  const providerRequestSuccessCount = sumScenario((item) =>
+    item.batches.reduce(
+      (total, batch) => total + batch.providerRequestSuccessCount,
+      0,
+    ),
   );
-  const providerRequestSuccessCount = scenarios.reduce(
-    (total, item) =>
-      total +
-      item.batches.reduce(
-        (batchTotal, batch) => batchTotal + batch.providerRequestSuccessCount,
-        0,
-      ),
-    0,
+  const providerRequestFailureCount = sumScenario((item) =>
+    item.batches.reduce(
+      (total, batch) => total + batch.providerRequestFailureCount,
+      0,
+    ),
   );
-  const providerRequestFailureCount = scenarios.reduce(
-    (total, item) =>
-      total +
-      item.batches.reduce(
-        (batchTotal, batch) => batchTotal + batch.providerRequestFailureCount,
-        0,
-      ),
-    0,
-  );
-  const semanticPassCount = scenarios.filter(
+  const sourceCapturePassCount = scenarios.filter(
     (item) =>
-      item.semanticFidelity?.resultValid === true &&
-      item.semanticFidelity?.passed === true,
+      item.semanticCapture?.resultValid === true &&
+      item.semanticCapture?.passed === true,
   ).length;
+  const governedHoldCount = sumScenario(
+    (item) => item.semanticCapture?.governedHoldCount || 0,
+  );
+  const executableDraftPassCount = scenarios.filter(
+    (item) => item.executableDraft?.passed === true,
+  ).length;
+  const inventoryMatchedScenarioCount = scenarios.filter(
+    scenarioMatchesExpectedGovernedHoldInventory,
+  ).length;
+  const selectedScenarioIds = scenarios.map((item) => item.id);
+  const selectedScenarioIdSet = new Set(selectedScenarioIds);
+  const selectedScenarioIdentityAndInventoryPassed =
+    selectedScenarioIdSet.size === scenarios.length &&
+    inventoryMatchedScenarioCount === scenarios.length;
+  const fullScenarioIdentitySetPassed =
+    selectedScenarioIdentityAndInventoryPassed &&
+    scenarios.length === qualificationExpectedScenarioIds.length &&
+    qualificationExpectedScenarioIds.every((scenarioId) =>
+      selectedScenarioIdSet.has(scenarioId),
+    );
   const strictBatchScenarioCount = scenarios.filter(scenarioBatchesPass).length;
   const languageSummaries = Object.fromEntries(
     qualificationLocales.map((language) => {
       const matching = scenarios.filter((item) => item.language === language);
+      const sourceCaptureMatching = matching.filter(
+        (item) =>
+          item.semanticCapture?.resultValid === true &&
+          item.semanticCapture?.passed === true,
+      );
       return [
         language,
         {
           scenarioCount: matching.length,
-          semanticPassCount: matching.filter(
-            (item) =>
-              item.semanticFidelity?.resultValid === true &&
-              item.semanticFidelity?.passed === true,
+          sourceCapturePassCount: sourceCaptureMatching.length,
+          governedHoldCount: sourceCaptureMatching.reduce(
+            (total, item) =>
+              total + (item.semanticCapture?.governedHoldCount || 0),
+            0,
+          ),
+          executableDraftPassCount: matching.filter(
+            (item) => item.executableDraft?.passed === true,
           ).length,
           successfulBatchCount: matching.reduce(
             (total, item) => total + item.successfulBatchCount,
@@ -570,7 +695,7 @@ export function summarizeQualification(report) {
     }),
   );
   const expectedSelectedBatchCount = scenarios.length * 2;
-  const selectedGatePassed =
+  const selectedCapturePassed =
     scenarios.length > 0 &&
     batchCount === expectedSelectedBatchCount &&
     successfulBatchCount === expectedSelectedBatchCount &&
@@ -578,9 +703,10 @@ export function summarizeQualification(report) {
     providerRequestSuccessCount === expectedSelectedBatchCount &&
     providerRequestFailureCount === 0 &&
     strictBatchScenarioCount === scenarios.length &&
-    semanticPassCount === scenarios.length &&
+    sourceCapturePassCount === scenarios.length &&
+    selectedScenarioIdentityAndInventoryPassed &&
     report.metadata.sourceEndCheckPassed === true;
-  const fullGatePassed =
+  const fullCorpusCapturePassed =
     report.metadata.fullScenarioSetSelected === true &&
     report.metadata.sourceEndCheckPassed === true &&
     report.metadata.selectionMode === "full" &&
@@ -599,26 +725,73 @@ export function summarizeQualification(report) {
     report.metadata.providerRoute?.privacyMode === "zdr" &&
     report.metadata.providerRoute?.model === report.metadata.model &&
     scenarios.length === templateCopilotV3QualificationExpectedScenarioCount &&
-    selectedGatePassed &&
+    fullScenarioIdentitySetPassed &&
+    selectedCapturePassed &&
+    governedHoldCount ===
+      templateCopilotV3QualificationExpectedGovernedHoldCount &&
     qualificationLocales.every((language) => {
       const summary = languageSummaries[language];
       return (
         summary.scenarioCount ===
-          templateCopilotV3QualificationExpectedLocaleCount &&
-        summary.semanticPassCount ===
-          templateCopilotV3QualificationExpectedLocaleCount &&
+          templateCopilotV3QualificationExpectedScenariosPerLocale &&
+        summary.sourceCapturePassCount ===
+          templateCopilotV3QualificationExpectedScenariosPerLocale &&
+        summary.executableDraftPassCount === 0 &&
         summary.successfulBatchCount ===
-          templateCopilotV3QualificationExpectedLocaleCount * 2 &&
+          templateCopilotV3QualificationExpectedScenariosPerLocale * 2 &&
         summary.batchCount ===
-          templateCopilotV3QualificationExpectedLocaleCount * 2
+          templateCopilotV3QualificationExpectedScenariosPerLocale * 2
       );
     });
-  return {
-    passed: fullGatePassed,
-    fullGatePassed,
-    selectedGatePassed,
-    scenarioPassCount: semanticPassCount,
+  const semanticCaptureGate = {
+    evaluated: true,
+    passed: selectedCapturePassed,
+    fullCorpusPassed: fullCorpusCapturePassed,
+    scenarioPassCount: sourceCapturePassCount,
     scenarioCount: scenarios.length,
+    identityAndLocalePassed:
+      selectedScenarioIdSet.size === scenarios.length &&
+      scenarios.every((item) => {
+        const expected = qualificationExpectedGovernanceByScenario[item.id];
+        return expected?.language === item.language;
+      }),
+    inventoryMatchedScenarioCount,
+    governedHoldCount,
+    expectedFullCorpusGovernedHoldCount:
+      templateCopilotV3QualificationExpectedGovernedHoldCount,
+    failedScenarioIds: [
+      ...new Set(
+        scenarios
+          .filter(
+            (item) =>
+              item.semanticCapture?.passed !== true ||
+              !scenarioMatchesExpectedGovernedHoldInventory(item),
+          )
+          .map((item) => item.id),
+      ),
+    ].sort(),
+  };
+  const executableDraftGate = executableDraftGateFor(
+    governedHoldCount,
+    scenarios.length,
+  );
+  const activationGate = unevaluatedGate(
+    activationBlockerCodes,
+    scenarios.length,
+  );
+  const pilotGate = unevaluatedGate(pilotBlockerCodes, scenarios.length);
+  return {
+    passed: false,
+    fullGatePassed: false,
+    selectedGatePassed: false,
+    semanticCaptureGate,
+    executableDraftGate,
+    activationGate,
+    pilotGate,
+    scenarioPassCount: sourceCapturePassCount,
+    scenarioCount: scenarios.length,
+    governedHoldCount,
+    executableDraftPassCount,
     successfulBatchCount,
     batchCount,
     providerRequestCount,
@@ -626,9 +799,27 @@ export function summarizeQualification(report) {
     providerRequestFailureCount,
     strictBatchScenarioCount,
     languageSummaries,
-    failedScenarioIds: scenarios
-      .filter((item) => !item.semanticFidelity.passed)
-      .map((item) => item.id),
+    failedScenarioIds: semanticCaptureGate.failedScenarioIds,
+  };
+}
+
+function executableDraftGateFor(governedHoldCount, scenarioCount) {
+  const blockerCodes =
+    governedHoldCount > 0
+      ? executableDraftBlockerCodes
+      : executableDraftBlockerCodes.filter(
+          (code) => code !== "governed_semantics_not_executable",
+        );
+  return unevaluatedGate(blockerCodes, scenarioCount);
+}
+
+function unevaluatedGate(blockerCodes, scenarioCount) {
+  return {
+    evaluated: false,
+    passed: false,
+    scenarioPassCount: 0,
+    scenarioCount,
+    blockerCodes: [...blockerCodes],
   };
 }
 
@@ -678,7 +869,7 @@ function createScenarioSourceAuthority(item) {
   });
 }
 
-function sanitizeSemanticResult(semantic) {
+function sanitizeSemanticResult(semantic, projectionIntegrity) {
   const record = isRecord(semantic) ? semantic : {};
   const rootShapeValid = sameKeySet(record, qualificationScorerResultKeySet);
   const scorerPassedValid = typeof record.passed === "boolean";
@@ -687,6 +878,16 @@ function sanitizeSemanticResult(semantic) {
     Array.isArray(record.failures) &&
     record.failures.every((value) => typeof value === "string");
   const failures = failuresValid ? record.failures : [];
+  const sourceCapturePassedValid =
+    typeof record.sourceCapturePassed === "boolean";
+  const sourceCapturePassed = sourceCapturePassedValid
+    ? record.sourceCapturePassed
+    : false;
+  const captureFailuresValid =
+    Array.isArray(record.captureFailures) &&
+    record.captureFailures.every((value) => typeof value === "string");
+  const captureFailures = captureFailuresValid ? record.captureFailures : [];
+  const governedHoldsResult = sanitizeGovernedHolds(record.governedHolds);
   const factIdsValid =
     Array.isArray(record.factIds) &&
     record.factIds.every(
@@ -738,6 +939,22 @@ function sanitizeSemanticResult(semantic) {
   const scenarioFailures = scenarioFailuresValid
     ? scenarioSemantics.failures
     : [];
+  const scenarioSourceCapturePassedValid =
+    typeof scenarioSemantics.sourceCapturePassed === "boolean";
+  const scenarioSourceCapturePassed = scenarioSourceCapturePassedValid
+    ? scenarioSemantics.sourceCapturePassed
+    : false;
+  const scenarioCaptureFailuresValid =
+    Array.isArray(scenarioSemantics.captureFailures) &&
+    scenarioSemantics.captureFailures.every(
+      (value) => typeof value === "string",
+    );
+  const scenarioCaptureFailures = scenarioCaptureFailuresValid
+    ? scenarioSemantics.captureFailures
+    : [];
+  const scenarioGovernedHoldsResult = sanitizeGovernedHolds(
+    scenarioSemantics.governedHolds,
+  );
   const observedResult = sanitizeObserved(scenarioSemantics.observed);
   const countsValid = qualificationScorerCountFields.every((field) =>
     isNonnegativeInteger(record[field]),
@@ -769,68 +986,133 @@ function sanitizeSemanticResult(semantic) {
       counts.semanticCompleteItemCount + counts.semanticFactCount &&
     counts.completeItemCount <= counts.semanticCompleteItemCount &&
     counts.semanticCompleteItemCount <= counts.rawItemCount &&
+    counts.blockedSemanticItemCount <= counts.rawItemCount &&
+    counts.semanticCompleteItemCount + counts.blockedSemanticItemCount <=
+      counts.rawItemCount &&
+    governedHoldsResult.valid &&
+    scenarioGovernedHoldsResult.valid &&
+    counts.blockedSemanticItemCount === governedHoldsResult.value.length &&
+    counts.blockedSemanticItemCount === scenarioGovernedHoldsResult.value.length &&
+    counts.blockedSemanticItemCount ===
+      observedResult.value.governedSemanticHoldCount &&
     counts.semanticFactCount <=
       counts.rawScalarFactCount + counts.rawPolicyItemCount &&
     counts.acceptedProjectionCount <= counts.candidateCount &&
-    counts.distinctFactCount <= counts.acceptedProjectionCount;
+    counts.distinctFactCount <=
+      counts.acceptedProjectionCount + counts.blockedSemanticItemCount;
+  const projectionCountsMatch =
+    projectionIntegrity.valid &&
+    counts.candidateCount === projectionIntegrity.candidateCount &&
+    counts.acceptedProjectionCount ===
+      projectionIntegrity.acceptedProjectionCount &&
+    counts.blockedSemanticItemCount ===
+      projectionIntegrity.blockedSemanticItemCount &&
+    counts.semanticCompleteItemCount ===
+      projectionIntegrity.semanticCompleteItemCount &&
+    counts.completeItemCount === projectionIntegrity.completeItemCount &&
+    counts.semanticFactCount === projectionIntegrity.semanticFactCount &&
+    counts.rawItemCount === projectionIntegrity.rawItemCount &&
+    counts.rawScalarFactCount === projectionIntegrity.rawScalarFactCount &&
+    counts.rawPolicyItemCount === projectionIntegrity.rawPolicyItemCount &&
+    counts.distinctFactCount === projectionIntegrity.distinctFactCount &&
+    counts.evidenceLeafCount === projectionIntegrity.evidenceLeafCount &&
+    counts.rejectedProjectionCount ===
+      projectionIntegrity.rejectedProjectionCount &&
+    counts.conflictCount === projectionIntegrity.conflictCount &&
+    sameStringArray(factIds, projectionIntegrity.factIds) &&
+    sameGovernedHoldInventory(
+      governedHoldsResult.value,
+      projectionIntegrity.governedHolds,
+    );
   const exactFactUniverse =
     factIds.length === templateCopilotV3QualificationFactIds.length &&
     templateCopilotV3QualificationFactIds.every((factId) =>
       factIds.includes(factId),
     );
   const passingCoverageValid =
-    !scorerPassed ||
+    !sourceCapturePassed ||
     (exactFactUniverse &&
       counts.distinctFactCount ===
         templateCopilotV3QualificationFactIds.length &&
       counts.evidenceLeafCount > 0 &&
       observedResult.value.factCount === counts.distinctFactCount);
-  const scorerOutcomeConsistent =
-    scorerPassedValid && scorerPassed === (failures.length === 0);
-  const scenarioOutcomeConsistent =
+  const scorerCompatibilityConsistent =
+    scorerPassedValid &&
+    sourceCapturePassedValid &&
+    scorerPassed === sourceCapturePassed &&
+    failuresValid &&
+    captureFailuresValid &&
+    sameStringArray(failures, captureFailures);
+  const scenarioCompatibilityConsistent =
     scenarioPassedValid &&
-    scenarioPassed === (scenarioFailures.length === 0);
+    scenarioSourceCapturePassedValid &&
+    scenarioPassed === scenarioSourceCapturePassed &&
+    scenarioFailuresValid &&
+    scenarioCaptureFailuresValid &&
+    sameStringArray(scenarioFailures, scenarioCaptureFailures);
+  const governedHoldInventoryConsistent =
+    sameGovernedHoldInventory(
+      governedHoldsResult.value,
+      scenarioGovernedHoldsResult.value,
+    );
   const shapeValid =
     rootShapeValid &&
-    scorerPassedValid &&
-    scorerOutcomeConsistent &&
-    failuresValid &&
+    scorerCompatibilityConsistent &&
+    sourceCapturePassedValid &&
+    captureFailuresValid &&
+    governedHoldsResult.valid &&
     factIdsValid &&
     forbiddenHitsValid &&
     countsValid &&
     countRelationshipsValid &&
+    projectionCountsMatch &&
     quarantineReasonCountsValid &&
     manifestIdentityValid &&
     counts.distinctFactCount === factIds.length &&
     batchGateShapeValid &&
     scenarioShapeValid &&
-    scenarioPassedValid &&
-    scenarioOutcomeConsistent &&
-    scenarioFailuresValid &&
+    scenarioCompatibilityConsistent &&
+    scenarioSourceCapturePassedValid &&
+    scenarioCaptureFailuresValid &&
+    scenarioGovernedHoldsResult.valid &&
+    governedHoldInventoryConsistent &&
     observedResult.valid &&
     passingCoverageValid;
-  const zeroFailureSignals =
+  const sourceCaptureSignalsClear =
     shapeValid &&
-    failures.length === 0 &&
+    captureFailures.length === 0 &&
     batchGatePassed &&
     counts.evidenceFailureCount === 0 &&
     forbiddenHits.length === 0 &&
     counts.quarantineHitCount === 0 &&
     counts.unsafeQuoteCount === 0 &&
     counts.defaultOrUnknownExtraCount === 0 &&
-    scenarioPassed === true &&
-    scenarioFailures.length === 0;
+    scenarioSourceCapturePassed === true &&
+    scenarioCaptureFailures.length === 0;
   const resultValid =
-    shapeValid && batchGatePassed && scorerPassed === zeroFailureSignals;
+    shapeValid &&
+    batchGatePassed &&
+    sourceCapturePassed === sourceCaptureSignalsClear;
   return {
     resultValid,
-    passed: resultValid && scorerPassed && zeroFailureSignals,
+    passed:
+      resultValid && sourceCapturePassed && sourceCaptureSignalsClear,
     failureCount:
-      failures.length + scenarioFailures.length + (resultValid ? 0 : 1),
-    failureFingerprints: [...failures, ...scenarioFailures]
+      captureFailures.length +
+      scenarioCaptureFailures.length +
+      (resultValid ? 0 : 1),
+    failureFingerprints: [...captureFailures, ...scenarioCaptureFailures]
       .map(fingerprint)
       .sort(),
     candidateCount: counts.candidateCount,
+    governedHoldCount: governedHoldsResult.value.length,
+    governedHolds: governedHoldsResult.value,
+    blockerCodes: [
+      ...new Set(
+        governedHoldsResult.value.map((entry) => entry.blockingReason),
+      ),
+    ].sort(),
+    blockedSemanticItemCount: counts.blockedSemanticItemCount,
     semanticCompleteItemCount: counts.semanticCompleteItemCount,
     completeItemCount: counts.completeItemCount,
     distinctFactCount: counts.distinctFactCount,
@@ -843,6 +1125,222 @@ function sanitizeSemanticResult(semantic) {
     rejectedProjectionCount: counts.rejectedProjectionCount,
     observed: observedResult.value,
   };
+}
+
+function inspectSemanticProjection(projection, acceptedProviderItemCount) {
+  const invalid = {
+    valid: false,
+    candidateCount: 0,
+    acceptedProjectionCount: 0,
+    blockedSemanticItemCount: 0,
+    semanticCompleteItemCount: 0,
+    completeItemCount: 0,
+    semanticFactCount: 0,
+    rawItemCount: 0,
+    rawScalarFactCount: 0,
+    rawPolicyItemCount: 0,
+    distinctFactCount: 0,
+    factIds: [],
+    evidenceLeafCount: 0,
+    rejectedProjectionCount: 0,
+    conflictCount: 0,
+    governedHolds: [],
+  };
+  if (!isRecord(projection)) return invalid;
+  const collectionNames = [
+    "items",
+    "scalarFacts",
+    "policyItems",
+    "conflicts",
+    "rejections",
+  ];
+  if (collectionNames.some((name) => !Array.isArray(projection[name]))) {
+    return invalid;
+  }
+
+  const rawItems = projection.items;
+  const rawScalarFacts = projection.scalarFacts;
+  const rawPolicyItems = projection.policyItems;
+  let valid = true;
+  const semanticItems = [];
+  const blockedSemanticItems = [];
+  for (const entry of rawItems) {
+    if (
+      !isRecord(entry) ||
+      !qualificationItemFactIdSet.has(entry.factId) ||
+      typeof entry.semanticComplete !== "boolean" ||
+      typeof entry.complete !== "boolean" ||
+      !Array.isArray(entry.bindings) ||
+      !Array.isArray(entry.semanticLeaves) ||
+      !Array.isArray(entry.relationships)
+    ) {
+      valid = false;
+      continue;
+    }
+    if (entry.semanticComplete === true) {
+      semanticItems.push(entry);
+    } else if (isGovernedSemanticHold(entry)) {
+      blockedSemanticItems.push(entry);
+    }
+  }
+
+  const semanticFacts = [];
+  for (const entry of [...rawScalarFacts, ...rawPolicyItems]) {
+    if (
+      !isRecord(entry) ||
+      !qualificationSemanticFactIdSet.has(entry.factId) ||
+      !Array.isArray(entry.leaves)
+    ) {
+      valid = false;
+      continue;
+    }
+    semanticFacts.push(entry);
+  }
+  const candidateCount =
+    rawItems.length + rawScalarFacts.length + rawPolicyItems.length;
+  if (candidateCount > acceptedProviderItemCount) {
+    valid = false;
+  }
+  const factIds = [
+    ...new Set([
+      ...semanticItems.map((entry) => entry.factId),
+      ...blockedSemanticItems.map((entry) => entry.factId),
+      ...semanticFacts.map((entry) => entry.factId),
+    ]),
+  ].sort();
+  return {
+    valid,
+    candidateCount,
+    acceptedProjectionCount: semanticItems.length + semanticFacts.length,
+    blockedSemanticItemCount: blockedSemanticItems.length,
+    semanticCompleteItemCount: semanticItems.length,
+    completeItemCount: rawItems.filter(
+      (entry) => isRecord(entry) && entry.complete === true,
+    ).length,
+    semanticFactCount: semanticFacts.length,
+    rawItemCount: rawItems.length,
+    rawScalarFactCount: rawScalarFacts.length,
+    rawPolicyItemCount: rawPolicyItems.length,
+    distinctFactCount: factIds.length,
+    factIds,
+    evidenceLeafCount:
+      semanticItems.reduce(
+        (total, entry) =>
+          total +
+          entry.bindings.length +
+          entry.semanticLeaves.length +
+          entry.relationships.length,
+        0,
+      ) +
+      semanticFacts.reduce(
+        (total, entry) => total + 1 + entry.leaves.length,
+        0,
+      ),
+    rejectedProjectionCount: projection.rejections.length,
+    conflictCount: projection.conflicts.length,
+    governedHolds: sortGovernedHolds(
+      blockedSemanticItems.map(governedHoldForEntry),
+    ),
+  };
+}
+
+function isGovernedSemanticHold(entry) {
+  if (
+    entry.semanticComplete !== false ||
+    entry.complete !== false ||
+    entry.fragmentId !== null ||
+    entry.persisted !== false ||
+    entry.executable !== false
+  ) {
+    return false;
+  }
+  if (entry.factId === "workflow.conditions") {
+    return [
+      "compound_predicate_not_executable",
+      "unsupported_semantics_not_executable",
+    ].includes(entry.blockingReason);
+  }
+  if (entry.factId === "attachments.requirements") {
+    return entry.blockingReason === "unsupported_semantics_not_executable";
+  }
+  return (
+    entry.factId === "workflow.stages" &&
+    entry.blockingReason === "unsupported_semantics_not_executable" &&
+    entry.semanticLeaves.some(
+      (leaf) =>
+        isRecord(leaf) &&
+        leaf.role === "kind" &&
+        leaf.advisoryHint === "record_update",
+    )
+  );
+}
+
+function governedHoldForEntry(entry) {
+  return {
+    factId: entry.factId,
+    blockingReason: entry.blockingReason,
+  };
+}
+
+function sanitizeGovernedHolds(value) {
+  if (!Array.isArray(value)) return { valid: false, value: [] };
+  const governedHolds = [];
+  for (const entry of value) {
+    if (
+      !isRecord(entry) ||
+      !sameKeySet(entry, qualificationGovernedHoldKeySet) ||
+      !qualificationGovernedHoldReasonSet.has(entry.blockingReason) ||
+      !qualificationItemFactIdSet.has(entry.factId) ||
+      !governedHoldFactReasonAllowed(entry.factId, entry.blockingReason)
+    ) {
+      return { valid: false, value: [] };
+    }
+    governedHolds.push({
+      factId: entry.factId,
+      blockingReason: entry.blockingReason,
+    });
+  }
+  return { valid: true, value: sortGovernedHolds(governedHolds) };
+}
+
+function governedHoldFactReasonAllowed(factId, blockingReason) {
+  if (factId === "workflow.conditions") {
+    return qualificationGovernedHoldReasonSet.has(blockingReason);
+  }
+  return (
+    ["attachments.requirements", "workflow.stages"].includes(factId) &&
+    blockingReason === "unsupported_semantics_not_executable"
+  );
+}
+
+function sortGovernedHolds(governedHolds) {
+  return [...governedHolds].sort((left, right) => {
+    const factComparison = left.factId.localeCompare(right.factId, "en");
+    if (factComparison !== 0) return factComparison;
+    return left.blockingReason.localeCompare(right.blockingReason, "en");
+  });
+}
+
+function sameGovernedHoldInventory(left, right) {
+  return (
+    JSON.stringify(sortGovernedHolds(left)) ===
+    JSON.stringify(sortGovernedHolds(right))
+  );
+}
+
+function scenarioMatchesExpectedGovernedHoldInventory(item) {
+  if (!isRecord(item) || !isRecord(item.semanticCapture)) return false;
+  const expected = qualificationExpectedGovernanceByScenario[item.id];
+  return (
+    isRecord(expected) &&
+    item.language === expected.language &&
+    Array.isArray(item.semanticCapture.governedHolds) &&
+    item.semanticCapture.governedHoldCount === expected.governedHolds.length &&
+    sameGovernedHoldInventory(
+      item.semanticCapture.governedHolds,
+      expected.governedHolds,
+    )
+  );
 }
 
 function sanitizeObserved(observed) {

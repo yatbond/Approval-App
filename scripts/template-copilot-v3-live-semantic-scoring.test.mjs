@@ -6,6 +6,7 @@ import {
   templateCopilotV3SemanticProjectionId,
 } from "../src/lib/template-copilot-v3-review-assembly.ts";
 import {
+  templateCopilotV3FragmentId,
   templateCopilotV3SourceSpanId,
   validateTemplateCopilotV3SourceSpan,
 } from "../src/lib/template-copilot-v3-evidence.ts";
@@ -191,6 +192,7 @@ const stageKindAliases = {
     "核对",
   ],
   submission: ["submits", "submission", "submit", "提交", "呈交"],
+  record_update: ["updates", "updated", "update", "更新"],
   for_information: [
     "for information",
     "informational",
@@ -212,8 +214,24 @@ const parallelAliases = [
   "同时",
 ];
 
+function expectedGovernedHoldCount(id) {
+  const manifest = templateCopilotV3SemanticScenarioManifest(id);
+  assert.ok(manifest, `Missing manifest ${id}`);
+  return (
+    manifest.attachments.filter(
+      (entry) => !["required", "optional"].includes(entry.requirementMode),
+    ).length +
+    manifest.stages.filter((entry) => entry.kind === "record_update").length +
+    manifest.conditions.filter(
+      (entry) => entry.predicateContext.executionMode !== "structured",
+    ).length
+  );
+}
+
+
 for (const item of templateCopilotQualificationScenarios) {
-  test(`actual fixed source qualifies ${item.id}`, () => {
+  const expectedHoldCount = expectedGovernedHoldCount(item.id);
+  test(`actual fixed source captures ${item.id} with governed holds`, () => {
     const fixture = makeActualFixture(item);
     const result = scoreTemplateCopilotV3LiveSemantic(fixture);
     const unresolved = fixture.projection.items.flatMap((entry, index) =>
@@ -232,10 +250,7 @@ for (const item of templateCopilotQualificationScenarios) {
             },
           ],
     );
-    assert.equal(
-      result.passed,
-      true,
-      [
+    const diagnostics = [
         result.failures.join(" | "),
         `unresolved=${JSON.stringify(unresolved)}`,
         `stages=${JSON.stringify(
@@ -250,8 +265,53 @@ for (const item of templateCopilotQualificationScenarios) {
             })),
         )}`,
         `rejections=${JSON.stringify(fixture.projection.rejections)}`,
-      ].join("\n"),
+      ].join("\n");
+    assert.equal(result.passed, true, diagnostics);
+    assert.equal(result.sourceCapturePassed, true, diagnostics);
+    assert.deepEqual(result.captureFailures, [], diagnostics);
+    assert.equal(result.scenarioSemantics.passed, true, diagnostics);
+    assert.equal(result.scenarioSemantics.sourceCapturePassed, true, diagnostics);
+    assert.deepEqual(result.scenarioSemantics.captureFailures, [], diagnostics);
+    const blockedItems = fixture.projection.items.filter(
+      (entry) => entry.blockingReason !== undefined,
     );
+    assert.equal(blockedItems.length, expectedHoldCount, diagnostics);
+    assert.equal(result.blockedSemanticItemCount, expectedHoldCount, diagnostics);
+    assert.equal(
+      result.scenarioSemantics.observed.governedSemanticHoldCount,
+      expectedHoldCount,
+    );
+    assert.equal(result.failures.length, 0, diagnostics);
+    assert.equal(result.governedHolds.length, expectedHoldCount, diagnostics);
+    for (const blocked of blockedItems) {
+      assert.ok(
+        [
+          "compound_predicate_not_executable",
+          "unsupported_semantics_not_executable",
+        ].includes(blocked.blockingReason),
+      );
+      assert.deepEqual(
+        {
+          complete: blocked.complete,
+          semanticComplete: blocked.semanticComplete,
+          fragmentId: blocked.fragmentId,
+          persisted: blocked.persisted,
+          executable: blocked.executable,
+        },
+        {
+          complete: false,
+          semanticComplete: false,
+          fragmentId: null,
+          persisted: false,
+          executable: false,
+        },
+      );
+      assert.ok([
+        "workflow.conditions",
+        "attachments.requirements",
+        "workflow.stages",
+      ].includes(blocked.factId));
+    }
     assert.equal(result.distinctFactCount, 16);
     assert.equal(result.batchGate.passedBatchCount, 2);
     assert.equal(result.evidenceFailureCount, 0);
@@ -279,6 +339,109 @@ for (const item of templateCopilotQualificationScenarios) {
   });
 }
 
+test("fixed corpus has 24 source-capture passes and 64 explicit governed holds", () => {
+  const expectedInventory =
+    templateCopilotV3LiveSemanticScoringContract.expectedGovernedHoldInventoryByScenario;
+  assert.equal(Object.isFrozen(expectedInventory), true);
+  assert.deepEqual(
+    Object.keys(expectedInventory).sort(),
+    templateCopilotQualificationScenarios.map((item) => item.id).sort(),
+  );
+  const results = templateCopilotQualificationScenarios.map((item) => ({
+    id: item.id,
+    result: scoreTemplateCopilotV3LiveSemantic(makeActualFixture(item)),
+  }));
+  for (const { id, result } of results) {
+    const expected = expectedInventory[id];
+    assert.equal(Object.isFrozen(expected), true, id);
+    assert.equal(Object.isFrozen(expected.governedHolds), true, id);
+    assert.ok(
+      expected.governedHolds.every((hold) => Object.isFrozen(hold)),
+      id,
+    );
+    assert.deepEqual(result.governedHolds, expected.governedHolds, id);
+  }
+  assert.throws(
+    () => expectedInventory["EN-01"].governedHolds.push({}),
+    TypeError,
+  );
+  assert.equal(results.filter(({ result }) => result.sourceCapturePassed).length, 24);
+  assert.deepEqual(
+    results.filter(({ result }) => !result.sourceCapturePassed).map(({ id }) => id),
+    [],
+  );
+  assert.equal(
+    results.reduce(
+      (total, { result }) => total + result.blockedSemanticItemCount,
+      0,
+    ),
+    64,
+  );
+  assert.equal(
+    results.reduce((total, { result }) => total + result.captureFailures.length, 0),
+    0,
+  );
+  assert.equal(
+    results.reduce((total, { result }) => total + result.governedHolds.length, 0),
+    64,
+  );
+  assert.equal(results.filter(({ result }) => !result.passed).length, 0);
+});
+
+test("TC-07 record update remains an explicit non-executable governed hold", () => {
+  const fixture = makeActualFixture(scenario("TC-07"));
+  const result = scoreTemplateCopilotV3LiveSemantic(fixture);
+  const recordUpdate = itemByFact(
+    fixture,
+    "workflow.stages",
+    (entry) =>
+      entry.semanticLeaves.some(
+        (leaf) =>
+          leaf.role === "kind" && leaf.advisoryHint === "record_update",
+      ),
+  );
+
+  assert.equal(roleText(recordUpdate, "participant"), "HR");
+  assert.equal(
+    recordUpdate.blockingReason,
+    "unsupported_semantics_not_executable",
+  );
+  assert.equal(result.evidenceFailureCount, 0);
+  assert.equal(result.blockedSemanticItemCount, 4);
+  assert.equal(
+    result.scenarioSemantics.observed.governedSemanticHoldCount,
+    4,
+  );
+  assert.equal(result.scenarioSemantics.observed.stageEntityCount, 6);
+  assert.equal(result.scenarioSemantics.observed.approvalNodes, 4);
+  assert.equal(result.scenarioSemantics.observed.fyiRecipients, 1);
+  assert.ok(
+    result.governedHolds.some(
+      (hold) =>
+        hold.factId === "workflow.stages" &&
+        hold.blockingReason === "unsupported_semantics_not_executable",
+    ),
+  );
+
+  const dishonestFixture = makeActualFixture(scenario("TC-07"));
+  const dishonestRecordUpdate = itemByFact(
+    dishonestFixture,
+    "workflow.stages",
+    (entry) =>
+      entry.semanticLeaves.some(
+        (leaf) =>
+          leaf.role === "kind" && leaf.advisoryHint === "record_update",
+      ),
+  );
+  delete dishonestRecordUpdate.blockingReason;
+  dishonestRecordUpdate.semanticComplete = true;
+  dishonestRecordUpdate.reviewItemId =
+    templateCopilotV3ReviewItemId(dishonestRecordUpdate);
+  assert.match(
+    scoreTemplateCopilotV3LiveSemantic(dishonestFixture).failures.join("\n"),
+    /record-update action|semantically complete governed stage/i,
+  );
+});
 test("fixed manifests are complete, fingerprinted, and role scoped", () => {
   assert.equal(
     Object.keys(templateCopilotV3SemanticScenarioManifests).length,
@@ -286,7 +449,7 @@ test("fixed manifests are complete, fingerprinted, and role scoped", () => {
   );
   assert.equal(
     templateCopilotV3SemanticManifestVersion,
-    "template-copilot-v3-semantic-manifests.4",
+    "template-copilot-v3-semantic-manifests.11",
   );
   assert.equal(
     templateCopilotV3LiveSemanticScoringContract.manifestCorpusFingerprint,
@@ -331,7 +494,26 @@ test("fixed manifests are complete, fingerprinted, and role scoped", () => {
           entry.field &&
           entry.operator.term &&
           entry.value &&
-          entry.matchingRoute.term,
+          entry.matchingRoute.term &&
+          Array.isArray(entry.predicateContext?.beforeField) &&
+          Array.isArray(
+            entry.predicateContext?.betweenValueAndMatchingRoute,
+          ) &&
+          [
+            "withinField",
+            "withinValue",
+            "unsupportedOutcome",
+            "unsupportedMeaning",
+          ].every((position) =>
+            Array.isArray(entry.predicateContext?.[position])
+          ) &&
+          [
+            "structured",
+            "compound_predicate_not_executable",
+            "unsupported_semantics_not_executable",
+          ].includes(
+            entry.predicateContext?.executionMode,
+          ),
       ),
     );
     assert.equal(
@@ -356,17 +538,19 @@ test("fixed manifests are complete, fingerprinted, and role scoped", () => {
             (stage) => stage.participant === routeNode.routeTerm,
           ),
         );
-        const condition = manifest.conditions.find(
-          (entry) => entry.field === routeNode.conditionField,
-        );
-        const route =
-          routeNode.routeRole === "matching_route"
-            ? condition?.matchingRoute
-            : condition?.otherwiseRoute;
-        return (
-          route?.term === routeNode.routeTerm &&
-          route.hint === "stage_reference"
-        );
+        return manifest.conditions.some((entry) => {
+          if (entry.field !== routeNode.conditionField) return false;
+          if (entry.predicateContext.executionMode !== "structured")
+            return false;
+          const route =
+            routeNode.routeRole === "matching_route"
+              ? entry.matchingRoute
+              : entry.otherwiseRoute;
+          return (
+            route?.term === routeNode.routeTerm &&
+            route.hint === "stage_reference"
+          );
+        });
       }),
     );
   }
@@ -401,29 +585,216 @@ test("fixed manifests are complete, fingerprinted, and role scoped", () => {
     templateCopilotV3SemanticScenarioManifest("SC-07").attachments.find(
       (attachment) => attachment.label === "护照资料页",
     ).requirementMode,
-    "optional",
+    "optional_conditional",
   );
   const sc07 = templateCopilotV3SemanticScenarioManifest("SC-07");
+  const sc04 = templateCopilotV3SemanticScenarioManifest("SC-04");
+  const en04 = templateCopilotV3SemanticScenarioManifest("EN-04");
+  const en08 = templateCopilotV3SemanticScenarioManifest("EN-08");
+  const tc03 = templateCopilotV3SemanticScenarioManifest("TC-03");
+  const noGo = tc03.conditions.find((entry) => entry.field === "No-Go");
+  assert.ok(noGo);
+  assert.equal(
+    noGo.predicateContext.executionMode,
+    "unsupported_semantics_not_executable",
+  );
+  assert.deepEqual(noGo.predicateContext.unsupportedOutcome, [
+    "直接結束並記錄原因",
+  ]);
+  assert.deepEqual(noGo.predicateContext.unsupportedMeaning, [
+    "No-Go 直接結束並記錄原因",
+  ]);
+  assert.deepEqual(
+    en08.conditions.slice(0, 2).map((entry) => entry.otherwiseRoute ?? null),
+    [null, null],
+  );
   assert.ok(!sc07.stages.some((stage) => stage.participant === "部门主管"));
-  assert.deepEqual(sc07.routeOnlyApprovalNodes, [
+  assert.deepEqual(sc07.routeOnlyApprovalNodes, []);
+  const summarizeCondition = (entry) => ({
+    field: entry.field,
+    operator: entry.operator.term,
+    operatorHint: entry.operator.hint,
+    value: entry.value,
+    matchingRoute: entry.matchingRoute.term,
+    otherwiseRoute: entry.otherwiseRoute?.term ?? null,
+    predicateContext: {
+      beforeField: entry.predicateContext.beforeField,
+      betweenValueAndMatchingRoute:
+        entry.predicateContext.betweenValueAndMatchingRoute,
+      executionMode: entry.predicateContext.executionMode,
+    },
+  });
+  assert.deepEqual(en04.conditions.map(summarizeCondition), [
     {
-      conditionField: "总额",
-      routeRole: "matching_route",
-      routeTerm: "部门主管",
+      field: "total",
+      operator: "exceeds",
+      operatorHint: ">",
+      value: "10,000",
+      matchingRoute: "Department Head",
+      otherwiseRoute: "Finance",
+      predicateContext: {
+        beforeField: [],
+        betweenValueAndMatchingRoute: [" or a receipt is missing, add "],
+        executionMode: "unsupported_semantics_not_executable",
+      },
+    },
+  ]);
+  assert.deepEqual(sc04.conditions.map(summarizeCondition), [
+    {
+      field: "申请额度",
+      operator: "不超过",
+      operatorHint: "<=",
+      value: "一百万元",
+      matchingRoute: "财务经理批准后完成",
+      otherwiseRoute: null,
+      predicateContext: {
+        beforeField: [],
+        betweenValueAndMatchingRoute: ["且风险低时可在"],
+        executionMode: "unsupported_semantics_not_executable",
+      },
+    },
+    {
+      field: "申请额度",
+      operator: "超过",
+      operatorHint: ">",
+      value: "一百万元",
+      matchingRoute: "财务总监批准",
+      otherwiseRoute: null,
+      predicateContext: {
+        beforeField: [],
+        betweenValueAndMatchingRoute: [],
+        executionMode: "unsupported_semantics_not_executable",
+      },
+    },
+    {
+      field: "申请额度",
+      operator: "超过",
+      operatorHint: ">",
+      value: "五百万元",
+      matchingRoute: "行政总裁批准",
+      otherwiseRoute: null,
+      predicateContext: {
+        beforeField: [],
+        betweenValueAndMatchingRoute: [],
+        executionMode: "unsupported_semantics_not_executable",
+      },
+    },
+  ]);
+  assert.deepEqual(sc07.conditions.map(summarizeCondition), [
+    {
+      field: "总额",
+      operator: "不超过",
+      operatorHint: "<=",
+      value: "二万元",
+      matchingRoute: "财务后完成",
+      otherwiseRoute: null,
+      predicateContext: {
+        beforeField: ["本地低风险且"],
+        betweenValueAndMatchingRoute: [],
+        executionMode: "unsupported_semantics_not_executable",
+      },
+    },
+    {
+      field: "总额",
+      operator: "超过",
+      operatorHint: ">",
+      value: "二万元",
+      matchingRoute: "部门主管",
+      otherwiseRoute: null,
+      predicateContext: {
+        beforeField: [],
+        betweenValueAndMatchingRoute: [],
+        executionMode: "unsupported_semantics_not_executable",
+      },
+    },
+    {
+      field: "国际或高风险",
+      operator: "国际或高风险",
+      operatorHint: "unsupported_predicate",
+      value: "国际或高风险",
+      matchingRoute: "HR 和安全",
+      otherwiseRoute: null,
+      predicateContext: {
+        beforeField: [],
+        betweenValueAndMatchingRoute: [],
+        executionMode: "unsupported_semantics_not_executable",
+      },
     },
   ]);
 });
 
-test("semantic review completeness remains non-executable and strict-incomplete", () => {
-  const fixture = makeActualFixture(scenario("EN-01"));
+test("semantic review completeness remains non-executable and cannot override governed holds", () => {
+  const fixture = makeActualFixture(scenario("TC-01"));
   const result = scoreTemplateCopilotV3LiveSemantic(fixture);
-  assert.equal(result.passed, true, result.failures.join(" | "));
+  assert.equal(result.sourceCapturePassed, true);
+  assert.deepEqual(result.captureFailures, []);
+  assert.equal(result.governedHolds.length, 1);
   const incomplete = fixture.projection.items.filter(
     (entry) => entry.semanticComplete && !entry.complete,
   );
   assert.ok(incomplete.length > 0);
   assert.ok(incomplete.every((entry) => !entry.persisted && !entry.executable));
   assert.ok(result.semanticCompleteItemCount > result.completeItemCount);
+});
+
+test("cross-slot added stages honor explicit final and before-target source clauses", () => {
+  for (const [id, addedParticipant, finalParticipant] of [
+    ["TC-05", "財務總監", "商務總監"],
+    ["SC-06", "高级管理层", "流程负责人"],
+  ]) {
+    const fixture = makeActualFixture(scenario(id));
+    const rawParticipants = fixture.projection.items
+      .filter(
+        (entry) =>
+          entry.factId === "workflow.stages" &&
+          !entry.semanticLeaves.some(
+            (leaf) =>
+              leaf.role === "kind" &&
+              leaf.advisoryHint === "for_information",
+          ),
+      )
+      .map((entry) => roleText(entry, "participant"));
+    assert.ok(
+      rawParticipants.indexOf(finalParticipant) <
+        rawParticipants.indexOf(addedParticipant),
+      `${id} fixture must retain raw cross-slot source order`,
+    );
+    assert.doesNotMatch(
+      scoreTemplateCopilotV3LiveSemantic(fixture).failures.join("\n"),
+      /Governed stage order/u,
+    );
+  }
+
+  const changedOrdinaryOrder = makeActualFixture(scenario("TC-05"));
+  const ordinaryIndexes = changedOrdinaryOrder.projection.items.flatMap(
+    (entry, index) =>
+      entry.factId === "workflow.stages" &&
+      ["地盤工程師", "項目工料測量師"].includes(
+        roleText(entry, "participant"),
+      )
+        ? [index]
+        : [],
+  );
+  assert.equal(ordinaryIndexes.length, 2);
+  [
+    changedOrdinaryOrder.projection.items[ordinaryIndexes[0]],
+    changedOrdinaryOrder.projection.items[ordinaryIndexes[1]],
+  ] = [
+    changedOrdinaryOrder.projection.items[ordinaryIndexes[1]],
+    changedOrdinaryOrder.projection.items[ordinaryIndexes[0]],
+  ];
+  assert.match(
+    scoreTemplateCopilotV3LiveSemantic(changedOrdinaryOrder).failures.join("\n"),
+    /Governed stage order/u,
+  );
+
+  assert.doesNotMatch(
+    scoreTemplateCopilotV3LiveSemantic(
+      makeActualFixture(scenario("EN-04")),
+    ).failures.join("\n"),
+    /Governed stage order/u,
+    "an explicit before-target clause must position the added stage",
+  );
 });
 
 test("stage order, participant role, parallel topology, and FYI recipient are exact", () => {
@@ -494,7 +865,7 @@ test("stage order, participant role, parallel topology, and FYI recipient are ex
 test("attachment roles are one-to-one and exact per entity", () => {
   for (const [id, role, expected] of [
     ["EN-01", "format", /format (?:meaning|observations)/i],
-    ["EN-01", "maximum_quantity", /maximum_quantity (?:meaning|observations)/i],
+    ["EN-01", "conditional_quantity_increment", /conditional_quantity_increment (?:meaning|observations)/i],
     [
       "TC-01",
       "maximum_file_size_mb",
@@ -518,6 +889,23 @@ test("attachment roles are one-to-one and exact per entity", () => {
       failureText,
     );
   }
+  const retagged = makeActualFixture(scenario("EN-01"));
+  const supplier = itemByFact(
+    retagged,
+    "attachments.requirements",
+    (entry) =>
+      roleText(entry, "conditional_quantity_increment").includes("two more"),
+  );
+  const increment = supplier.semanticLeaves.find(
+    (leaf) => leaf.role === "conditional_quantity_increment",
+  );
+  assert.ok(increment);
+  increment.role = "maximum_quantity";
+  syncSemanticItem(supplier);
+  assert.match(
+    scoreTemplateCopilotV3LiveSemantic(retagged).failures.join("\n"),
+    /conditional_quantity_increment|maximum_quantity/i,
+  );
 });
 
 test("condition operator, value, and each bound route are exact", () => {
@@ -546,6 +934,361 @@ test("condition operator, value, and each bound route are exact", () => {
   assert.match(
     scoreTemplateCopilotV3LiveSemantic(noOtherwise).failures.join("\n"),
     /conditions entity was omitted|otherwise_route/i,
+  );
+});
+
+test("condition currency is an exact source-grounded role separate from value", () => {
+  const fixture = makeActualFixture(scenario("EN-08"));
+  const amountConditions = fixture.projection.items.filter(
+    (entry) =>
+      entry.factId === "workflow.conditions" &&
+      roleText(entry, "field") === "amount",
+  );
+  assert.equal(amountConditions.length, 2);
+  assert.deepEqual(
+    amountConditions.map((entry) => roleText(entry, "currency")),
+    ["HKD", "HKD"],
+  );
+
+  const omitted = makeActualFixture(scenario("EN-08"), {
+    omitCurrencyForOperator: "at most",
+  });
+  const omittedCurrencyCondition = omitted.projection.items.find(
+    (entry) =>
+      entry.factId === "workflow.conditions" &&
+      roleText(entry, "operator") === "at most",
+  );
+  assert.ok(omittedCurrencyCondition);
+  assert.match(
+    scoreTemplateCopilotV3LiveSemantic(omitted).failures.join("\n"),
+    /currency (?:meaning|observations)|reviewed governed reason/iu,
+  );
+});
+
+test("currency affinity prefers a branch-local quote and rejects stale carry", () => {
+  const wrongLocal = makeActualFixture(scenario("EN-08"), {
+    priorCurrencyForMatchingRoute: "CEO approval",
+  });
+  assert.match(
+    scoreTemplateCopilotV3LiveSemantic(wrongLocal).failures.join("\n"),
+    /currency is not grounded in its numeric value clause or source field carry-forward/iu,
+    "an earlier HKD quote must not override the branch-local HKD quote",
+  );
+
+  const compatibleCarry = scoreTemplateCopilotV3LiveSemantic(
+    makeActualFixture(scenario("SC-04")),
+  );
+  assert.doesNotMatch(
+    compatibleCarry.failures.join("\n"),
+    /currency is not grounded/iu,
+    "a source field and currency may carry through compatible threshold clauses",
+  );
+
+  const staleCarry = makeActualFixture(scenario("SC-04"), {
+    conditionsSourceTransform: (text) =>
+      text.replace(
+        "。超过一百万元",
+        "。其他币种 USD 适用。超过一百万元",
+      ),
+  });
+  assert.match(
+    scoreTemplateCopilotV3LiveSemantic(staleCarry).failures.join("\n"),
+    /currency is not grounded in its numeric value clause or source field carry-forward/iu,
+    "a competing intervening currency must terminate carry-forward",
+  );
+});
+
+test("a source-valid route superset cannot satisfy an exact condition route", () => {
+  const fixture = makeActualFixture(scenario("SC-03"));
+  const condition = itemByFact(
+    fixture,
+    "workflow.conditions",
+    (entry) => roleText(entry, "matching_route") === "当地合规审查",
+  );
+  const routeLeaf = condition.semanticLeaves.find(
+    (leaf) => leaf.role === "matching_route",
+  );
+  assert.ok(routeLeaf);
+  const oldSpanId = routeLeaf.sourceSpan.spanId;
+  const messageId = routeLeaf.sourceSpan.messageId;
+  const text = fixture.sourceMessages[messageId];
+  const expandedSpan = span(messageId, text, "增加当地合规审查");
+
+  routeLeaf.quote = expandedSpan.exactText;
+  routeLeaf.sourceSpan = structuredClone(expandedSpan);
+  condition.sourceSpans = condition.sourceSpans
+    .map((sourceSpan) =>
+      sourceSpan.spanId === oldSpanId
+        ? structuredClone(expandedSpan)
+        : sourceSpan,
+    )
+    .sort(
+      (left, right) =>
+        left.startCodePoint - right.startCodePoint ||
+        left.endCodePoint - right.endCodePoint,
+    );
+  condition.bindings = condition.bindings.map((binding) => ({
+    ...binding,
+    spanIds: binding.spanIds.map((spanId) =>
+      spanId === oldSpanId ? expandedSpan.spanId : spanId,
+    ),
+  }));
+  condition.value = {
+    ...condition.value,
+    matchingRoute: "stage:增加当地合规审查",
+  };
+
+  const fragment = fixture.envelope.fragments.find(
+    (entry) => entry.fragmentId === condition.fragmentId,
+  );
+  assert.ok(fragment);
+  fragment.value = structuredClone(condition.value);
+  fragment.bindings = structuredClone(condition.bindings);
+  fragment.fragmentId = templateCopilotV3FragmentId(fragment);
+  condition.fragmentId = fragment.fragmentId;
+  fixture.envelope.sourceSpans = fixture.envelope.sourceSpans
+    .map((sourceSpan) =>
+      sourceSpan.spanId === oldSpanId
+        ? structuredClone(expandedSpan)
+        : sourceSpan,
+    )
+    .sort(
+      (left, right) =>
+        left.messageId.localeCompare(right.messageId) ||
+        left.startCodePoint - right.startCodePoint ||
+        left.endCodePoint - right.endCodePoint,
+    );
+  syncSemanticItem(condition);
+
+  const result = scoreTemplateCopilotV3LiveSemantic(fixture);
+  assert.equal(result.passed, false);
+  assert.equal(result.evidenceFailureCount, 0, result.failures.join(" | "));
+  assert.match(
+    result.failures.join("\n"),
+    /conditions entity was omitted|matching_route meaning/i,
+  );
+});
+
+test("compound blocking authority is identity-bound and remains valid with no missing paths", () => {
+  const authorityFixture = makeActualFixture(scenario("EN-02"));
+  const authorityItem = itemByFact(
+    authorityFixture,
+    "workflow.conditions",
+    (entry) =>
+      entry.blockingReason === "compound_predicate_not_executable",
+  );
+  const originalId = authorityItem.reviewItemId;
+  const altered = structuredClone(authorityItem);
+  delete altered.blockingReason;
+  altered.semanticComplete = true;
+  assert.notEqual(templateCopilotV3ReviewItemId(altered), originalId);
+
+  authorityItem.semanticComplete = true;
+  delete authorityItem.blockingReason;
+  const authorityResult =
+    scoreTemplateCopilotV3LiveSemantic(authorityFixture);
+  assert.match(
+    authorityResult.failures.join("\n"),
+    /reviewItemId is not the canonical evidence identity/i,
+  );
+
+  const completeFixture = makeActualFixture(scenario("EN-02"));
+  const completeBlockedItem = itemByFact(
+    completeFixture,
+    "workflow.conditions",
+    (entry) =>
+      entry.blockingReason === "compound_predicate_not_executable",
+  );
+  completeBlockedItem.missingPaths = [];
+  completeBlockedItem.complete = false;
+  completeBlockedItem.reviewItemId =
+    templateCopilotV3ReviewItemId(completeBlockedItem);
+  const completeResult =
+    scoreTemplateCopilotV3LiveSemantic(completeFixture);
+  assert.equal(
+    completeResult.evidenceFailureCount,
+    0,
+    completeResult.failures.join(" | "),
+  );
+  assert.equal(completeResult.blockedSemanticItemCount, 1);
+  assert.deepEqual(completeResult.failures, []);
+  assert.deepEqual(completeResult.governedHolds, [
+    {
+      factId: "workflow.conditions",
+      blockingReason: "compound_predicate_not_executable",
+    },
+  ]);
+});
+
+test("semantic role assignments are review identity-bound", () => {
+  const fixture = makeActualFixture(scenario("EN-01"));
+  const condition = fixture.projection.items.find(
+    (entry) =>
+      entry.factId === "workflow.conditions" &&
+      entry.semanticLeaves.some((leaf) => leaf.role === "field") &&
+      entry.semanticLeaves.some((leaf) => leaf.role === "value"),
+  );
+  assert.ok(condition);
+  const originalId = condition.reviewItemId;
+  const swapFieldAndValue = (observation) => ({
+    ...observation,
+    role:
+      observation.role === "field"
+        ? "value"
+        : observation.role === "value"
+          ? "field"
+          : observation.role,
+  });
+  condition.semanticLeaves = condition.semanticLeaves.map(swapFieldAndValue);
+  condition.semanticObservations =
+    condition.semanticObservations.map(swapFieldAndValue);
+  const originalFieldValues = condition.semanticValue.field;
+  const originalValueValues = condition.semanticValue.value;
+  condition.semanticValue = {
+    ...condition.semanticValue,
+    field: originalValueValues,
+    value: originalFieldValues,
+  };
+
+  assert.notEqual(
+    templateCopilotV3ReviewItemId(condition),
+    originalId,
+    "semantic role reassignment must invalidate the stored authority identity",
+  );
+  const result = scoreTemplateCopilotV3LiveSemantic(fixture);
+  assert.match(
+    result.failures.join("\n"),
+    /reviewItemId is not the canonical evidence identity/i,
+  );
+});
+
+test("condition predicate context is bound to its exact source position", () => {
+  const fixture = makeActualFixture(scenario("SC-04"));
+  const lowRisk = itemByFact(
+    fixture,
+    "workflow.conditions",
+    (entry) =>
+      roleText(entry, "operator").includes("不超过") &&
+      roleText(entry, "matching_route").includes("财务经理"),
+  );
+  const higherAmount = itemByFact(
+    fixture,
+    "workflow.conditions",
+    (entry) =>
+      roleText(entry, "operator").includes("超过") &&
+      roleText(entry, "value").includes("一百万元") &&
+      roleText(entry, "matching_route").includes("财务总监批准"),
+  );
+  const transplantedValue = higherAmount.semanticLeaves.find(
+    (leaf) => leaf.role === "value",
+  );
+  replaceSemanticLeaf(lowRisk, "value", transplantedValue, null);
+
+  const referencedSpanIds = new Set([
+    ...lowRisk.semanticLeaves.map((leaf) => leaf.sourceSpan.spanId),
+    ...lowRisk.relationships.map(
+      (relationship) => relationship.sourceSpan.spanId,
+    ),
+    ...lowRisk.bindings.flatMap((binding) => binding.spanIds),
+  ]);
+  lowRisk.sourceSpans = lowRisk.sourceSpans.filter((sourceSpan) =>
+    referencedSpanIds.has(sourceSpan.spanId),
+  );
+  if (
+    !lowRisk.sourceSpans.some(
+      (sourceSpan) => sourceSpan.spanId === transplantedValue.sourceSpan.spanId,
+    )
+  ) {
+    lowRisk.sourceSpans.push(structuredClone(transplantedValue.sourceSpan));
+  }
+  lowRisk.sourceSpans.sort(
+    (left, right) =>
+      left.startCodePoint - right.startCodePoint ||
+      left.endCodePoint - right.endCodePoint,
+  );
+  const replacementIsAnchored = lowRisk.sourceAnchors.some(
+    (anchor) =>
+      anchor.messageId === transplantedValue.sourceSpan.messageId &&
+      anchor.startCodePoint <= transplantedValue.sourceSpan.startCodePoint &&
+      anchor.endCodePoint >= transplantedValue.sourceSpan.endCodePoint,
+  );
+  if (!replacementIsAnchored) {
+    const replacementAnchor = higherAmount.sourceAnchors.find(
+      (anchor) =>
+        anchor.messageId === transplantedValue.sourceSpan.messageId &&
+        anchor.startCodePoint <= transplantedValue.sourceSpan.startCodePoint &&
+        anchor.endCodePoint >= transplantedValue.sourceSpan.endCodePoint,
+    );
+    assert.ok(replacementAnchor);
+    lowRisk.sourceAnchors.push(structuredClone(replacementAnchor));
+  }
+  syncSemanticItem(lowRisk);
+
+  assert.match(
+    scoreTemplateCopilotV3LiveSemantic(fixture).failures.join("\n"),
+    /predicate context between value and matching route is not exact/i,
+  );
+});
+
+test("condition prefix context cannot be transplanted within its source slot", () => {
+  const fixture = makeActualFixture(scenario("SC-07"));
+  const localLowRisk = itemByFact(
+    fixture,
+    "workflow.conditions",
+    (entry) =>
+      roleText(entry, "operator").includes("不超过") &&
+      roleText(entry, "matching_route").includes("完成"),
+  );
+  const messageId = "SC-07:conditions_exceptions";
+  const originalText = fixture.sourceMessages[messageId];
+  const appendedStartCodeUnit = originalText.length + 1;
+  const modifiedText = `${originalText} 总额。`;
+  fixture.sourceMessages[messageId] = modifiedText;
+  const transplantedField = semanticLeaf(
+    "field",
+    spanAt(
+      messageId,
+      modifiedText,
+      "总额",
+      appendedStartCodeUnit,
+    ),
+    null,
+  );
+  replaceSemanticLeaf(localLowRisk, "field", transplantedField, null);
+
+  const referencedSpanIds = new Set([
+    ...localLowRisk.semanticLeaves.map((leaf) => leaf.sourceSpan.spanId),
+    ...localLowRisk.relationships.map(
+      (relationship) => relationship.sourceSpan.spanId,
+    ),
+    ...localLowRisk.bindings.flatMap((binding) => binding.spanIds),
+  ]);
+  localLowRisk.sourceSpans = localLowRisk.sourceSpans.filter((sourceSpan) =>
+    referencedSpanIds.has(sourceSpan.spanId),
+  );
+  if (
+    !localLowRisk.sourceSpans.some(
+      (sourceSpan) =>
+        sourceSpan.spanId === transplantedField.sourceSpan.spanId,
+    )
+  ) {
+    localLowRisk.sourceSpans.push(
+      structuredClone(transplantedField.sourceSpan),
+    );
+  }
+  localLowRisk.sourceAnchors.push(
+    spanAt(
+      messageId,
+      modifiedText,
+      "总额",
+      appendedStartCodeUnit,
+    ),
+  );
+  syncSemanticItem(localLowRisk);
+
+  assert.match(
+    scoreTemplateCopilotV3LiveSemantic(fixture).failures.join("\n"),
+    /predicate context before field is not exact and adjacent/i,
   );
 });
 
@@ -685,7 +1428,10 @@ test("strict envelope, version, fragment, source, kind, role, slot, and batch au
 
 test("shared quarantine rejects the live hostile probe but retains legitimate quotation meaning", () => {
   const safe = makeActualFixture(scenario("EN-01"));
-  assert.equal(scoreTemplateCopilotV3LiveSemantic(safe).passed, true);
+  const safeResult = scoreTemplateCopilotV3LiveSemantic(safe);
+  assert.equal(safeResult.sourceCapturePassed, true);
+  assert.equal(safeResult.evidenceFailureCount, 0);
+  assert.equal(safeResult.blockedSemanticItemCount, 2);
   assert.ok(
     safe.projection.items.some(
       (entry) =>
@@ -941,6 +1687,9 @@ test("conditional attachment requirements retain their exact source clause", () 
 
 test("attachment clause affinity cannot inherit a sibling generic format", () => {
   const fixture = makeActualFixture(scenario("SC-02"));
+  const baseline = scoreTemplateCopilotV3LiveSemantic(
+    structuredClone(fixture),
+  );
   const manifest = templateCopilotV3SemanticScenarioManifest("SC-02");
   const contract = manifest.attachments.find(
     (attachment) => attachment.label === "事故或故障工单",
@@ -961,16 +1710,20 @@ test("attachment clause affinity cannot inherit a sibling generic format", () =>
   ];
   incidentTicket.reviewItemId = templateCopilotV3ReviewItemId(incidentTicket);
   const result = scoreTemplateCopilotV3LiveSemantic(fixture);
-  assert.equal(result.passed, true, result.failures.join(" | "));
+  assert.deepEqual(result.failures, baseline.failures);
 });
 
 test("FYI, workflow-notification, route-only, and parallel metrics report observed semantics", () => {
   const baselineFixture = makeActualFixture(scenario("EN-01"));
   const baseline = scoreTemplateCopilotV3LiveSemantic(baselineFixture);
-  assert.equal(baseline.passed, true, baseline.failures.join(" | "));
+  assert.equal(baseline.sourceCapturePassed, true);
   assert.equal(baseline.scenarioSemantics.observed.fyiRecipients, 0);
   assert.equal(baseline.scenarioSemantics.observed.notificationRules, 7);
   assert.equal(baseline.scenarioSemantics.observed.parallelStageCount, 2);
+  assert.equal(
+    baseline.scenarioSemantics.observed.governedSemanticHoldCount,
+    2,
+  );
 
   const parallelFixture = makeActualFixture(scenario("EN-01"));
   const finance = itemByFact(parallelFixture, "workflow.stages", (entry) =>
@@ -984,11 +1737,25 @@ test("FYI, workflow-notification, route-only, and parallel metrics report observ
 
   const routeFixture = makeActualFixture(scenario("SC-07"));
   const routeResult = scoreTemplateCopilotV3LiveSemantic(routeFixture);
-  assert.equal(routeResult.passed, true, routeResult.failures.join(" | "));
-  assert.equal(routeResult.scenarioSemantics.observed.approvalNodes, 5);
+  assert.equal(routeResult.sourceCapturePassed, true);
+  assert.equal(routeResult.blockedSemanticItemCount, 5);
+  assert.equal(
+    routeResult.scenarioSemantics.observed.governedSemanticHoldCount,
+    5,
+  );
+  assert.equal(routeResult.scenarioSemantics.observed.conditionNodes, 0);
+  assert.equal(routeResult.scenarioSemantics.observed.conditionEntityCount, 0);
+  assert.equal(routeResult.scenarioSemantics.observed.approvalNodes, 4);
 });
 
-function makeActualFixture(item) {
+function makeActualFixture(
+  item,
+  {
+    omitCurrencyForOperator = null,
+    priorCurrencyForMatchingRoute = null,
+    conditionsSourceTransform = null,
+  } = {},
+) {
   const manifest = templateCopilotV3SemanticScenarioManifest(item.id);
   assert.ok(manifest, `Missing manifest ${item.id}`);
   const sourceMessages = {};
@@ -1000,6 +1767,12 @@ function makeActualFixture(item) {
       );
       assert.equal(quarantined.summary.quarantinedBlockCount, 1);
       text = quarantined.text;
+    }
+    if (
+      slot === "conditions_exceptions" &&
+      typeof conditionsSourceTransform === "function"
+    ) {
+      text = conditionsSourceTransform(text);
     }
     sourceMessages[`${item.id}:${slot}`] = text;
   }
@@ -1176,7 +1949,12 @@ function makeActualFixture(item) {
         {
           role: "required",
           ...requiredLeaf,
-          hint: requirement.required ? "true" : "false",
+          hint:
+            requirement.requirementMode === "required"
+              ? "true"
+              : requirement.requirementMode === "optional"
+                ? "false"
+                : requirement.requirementMode,
         },
         ...evidenceLeaves,
       ],
@@ -1251,8 +2029,23 @@ function makeActualFixture(item) {
       conditionText,
       rule,
       `${item.id} condition ${rule.field} ${rule.value}`,
+      {
+        currencyRangeMode:
+          priorCurrencyForMatchingRoute === rule.matchingRoute.term
+            ? "prior_only"
+            : "nearest",
+      },
     );
-    add("condition", "conditions_exceptions", rule.field, conditionLeaves);
+    const suppliedConditionLeaves =
+      omitCurrencyForOperator === rule.operator.term
+        ? conditionLeaves.filter((leaf) => leaf.role !== "currency")
+        : conditionLeaves;
+    add(
+      "condition",
+      "conditions_exceptions",
+      rule.field,
+      suppliedConditionLeaves,
+    );
   }
 
   for (const notification of manifest.notificationRules) {
@@ -1399,7 +2192,12 @@ function sourceClauseRanges(text) {
   return ranges;
 }
 
-function locateConditionEvidenceLeaves(text, rule, label) {
+function locateConditionEvidenceLeaves(
+  text,
+  rule,
+  label,
+  { currencyRangeMode = "nearest" } = {},
+) {
   const clauses = sourceClauseRanges(text);
   let governingCandidates = clauses.filter((range) => {
     const clause = text.slice(range.startCodeUnit, range.endCodeUnit);
@@ -1437,6 +2235,19 @@ function locateConditionEvidenceLeaves(text, rule, label) {
     operator.startCodeUnit,
     `${label} value`,
   );
+  const currency = rule.currency
+    ? findTermInRangesNear(
+        text,
+        clauses.filter((range) =>
+          currencyRangeMode === "prior_only"
+            ? range.endCodeUnit <= governing.startCodeUnit
+            : range.startCodeUnit <= governing.startCodeUnit,
+        ),
+        rule.currency.term,
+        value.startCodeUnit,
+        `${label} currency`,
+      )
+    : null;
   const matchingRoute = findTermInRangesNear(
     text,
     clauses,
@@ -1461,10 +2272,11 @@ function locateConditionEvidenceLeaves(text, rule, label) {
     { role: "field", ...field },
     { ...rule.operator, ...operator },
     { role: "value", ...value },
+    ...(currency ? [{ ...rule.currency, ...currency }] : []),
     { ...rule.matchingRoute, ...matchingRoute },
   ];
   if (rule.otherwiseRoute) {
-    const otherwiseRoute = findTermInRangesNear(
+    const otherwiseRoute = findOtherwiseRouteTerm(
       text,
       clauses,
       rule.otherwiseRoute.term,
@@ -1475,6 +2287,36 @@ function locateConditionEvidenceLeaves(text, rule, label) {
   }
   return leaves;
 }
+function findOtherwiseRouteTerm(text, clauses, term, pivot, label) {
+  const candidates = clauses.flatMap((range) =>
+    literalOffsets(text, term)
+      .filter(
+        (startCodeUnit) =>
+          startCodeUnit >= range.startCodeUnit &&
+          startCodeUnit < range.endCodeUnit,
+      )
+      .map((startCodeUnit) => ({
+        term: text.slice(startCodeUnit, startCodeUnit + term.length),
+        startCodeUnit,
+        deictic: /^(?:otherwise|else)\b/u.test(
+          normalizeFixtureText(
+            text.slice(range.startCodeUnit, range.endCodeUnit),
+          ),
+        ),
+      }))
+  );
+  const deictic = candidates.filter((candidate) => candidate.deictic);
+  const pool = deictic.length === 1 ? deictic : candidates;
+  pool.sort(
+    (left, right) =>
+      Math.abs(left.startCodeUnit - pivot) -
+        Math.abs(right.startCodeUnit - pivot) ||
+      left.startCodeUnit - right.startCodeUnit,
+  );
+  assert.ok(pool[0], `Missing exact ${label}`);
+  return pool[0];
+}
+
 function findAliasInClauseNear(text, aliases, pivot, label) {
   const boundaryPattern = /[.!?。！？；;\n]/u;
   let clauseStart = 0;

@@ -105,6 +105,17 @@ test("the prompt demands complete entity coverage and source-language fidelity",
     assert.match(prompt, /one semantic entity per item/u);
     assert.match(prompt, /smallest unique contiguous exact source passage/u);
     assert.match(prompt, /occurs exactly once inside the item quote/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-5/u);
+    assert.match(
+      prompt,
+      /threshold operator or value quote may repeat only in adjacent affirmative threshold branches/u,
+    );
+    assert.match(prompt, /one matching-only condition item for each stated threshold branch/u);
+    assert.match(prompt, /do not emit an otherwise_route unless the source explicitly states a default branch/u);
+    assert.match(prompt, /Never convert a prior narrower, conjunctive, risk-qualified, or context-qualified threshold branch into an otherwise_route/u);
+    assert.match(prompt, /closed Chinese two-branch or three-branch threshold chain/u);
+    assert.match(prompt, /third threshold branch must explicitly continue with 再由, 再經, or 再经/u);
+    assert.match(prompt, /Emit no offsets or occurrence numbers/u);
     assert.match(prompt, /separately named request field/u);
     assert.match(prompt, /matching route, otherwise route/u);
     assert.match(prompt, /notification event, recipient, channel/u);
@@ -113,6 +124,8 @@ test("the prompt demands complete entity coverage and source-language fidelity",
       /quotation, quoted text, or proof that an employee or vendor followed named instructions/u,
     );
     assert.match(prompt, /Hints are advisory, language-independent tokens/u);
+    assert.match(prompt, /conditional_quantity_increment for the exact added quantity/u);
+    assert.match(prompt, /Never encode a conditional increment as maximum_quantity/u);
     assert.match(prompt, /otherwise omit that leaf, not the whole item/u);
     assert.match(prompt, /Emit every independently supported leaf/u);
     assert.match(prompt, /omit only an incomplete or uncertain leaf/u);
