@@ -15,6 +15,7 @@ import {
 } from "./template-copilot-ledger.ts";
 import {
   reconcileTemplateCopilotPlanCoverage,
+  templateCopilotLocaleSchema,
   templateCopilotLocaleNames,
   templateCopilotPlanV1Schema,
 } from "./template-copilot-plan.ts";
@@ -46,6 +47,19 @@ import {
   classifyTemplateCopilotProviderRequestOutcome,
   type TemplateCopilotProviderRequestObservation,
 } from "./template-copilot-provider-request-tracker.ts";
+import {
+  formatTemplateCopilotV3ProviderQuoteBatch,
+  locateTemplateCopilotV3ProviderQuotes,
+  templateCopilotV3ProviderQuoteBatches,
+  templateCopilotV3ProviderQuoteContractVersion,
+  TemplateCopilotV3ProviderQuoteTransportError,
+  type TemplateCopilotV3ProviderQuoteBatchId,
+  type TemplateCopilotV3ProviderQuoteSourceSlot,
+} from "./template-copilot-v3-provider-quotes.ts";
+import {
+  buildTemplateCopilotV3ProviderQuoteDeveloperPrompt,
+} from "./template-copilot-v3-provider-prompt.ts";
+import { requestTemplateCopilotV3ProviderQuoteOutput } from "./template-copilot-v3-provider-request.ts";
 
 export class TemplateCopilotConfigurationError extends Error {
   constructor(message: string) {
@@ -391,6 +405,49 @@ async function requestStructuredOutput<T>({
   }
 }
 
+async function requestTemplateCopilotV3RawProviderOutput({
+  configured,
+  schemaName,
+  developerText,
+  userText,
+  failureMessage,
+}: {
+  configured: TemplateCopilotAiConfiguration;
+  schemaName: string;
+  developerText: string;
+  userText: string;
+  failureMessage: string;
+}) {
+  try {
+    return await requestTemplateCopilotV3ProviderQuoteOutput({
+      configured,
+      schemaName,
+      developerText,
+      userText,
+      requestOptions: boundedProviderRequestOptions(),
+    });
+  } catch (error) {
+    if (error instanceof TemplateCopilotV3ProviderQuoteTransportError) {
+      throw new TemplateCopilotModelError(failureMessage, {
+        reasonCode: error.reasonCode,
+      });
+    }
+    const decodeFailure =
+      classifyTemplateCopilotStructuredDecodeFailure(error);
+    if (decodeFailure) {
+      throw new TemplateCopilotModelError(failureMessage, {
+        reasonCode: decodeFailure.reasonCode,
+        issuePaths: [...decodeFailure.issuePaths],
+      });
+    }
+    throw new TemplateCopilotModelError(
+      "The Copilot model is temporarily unavailable.",
+      {
+        reasonCode: classifyTemplateCopilotProviderFailureReasonCode(error),
+      },
+    );
+  }
+}
 export async function extractTemplateCopilotTurn({
   ledger,
   currentSection,
@@ -434,6 +491,82 @@ export async function extractTemplateCopilotTurn({
         : result,
     model: configured.model,
   };
+}
+
+/**
+ * Isolated quote-only extraction for qualification and compiler development.
+ * Existing application routes deliberately do not import this function. The
+ * provider can label exact text, while the server retains all source identity,
+ * coordinates, validation, and assembly authority.
+ */
+export async function extractTemplateCopilotV3QuoteBatch({
+  batchId,
+  sourceSlots,
+  locale,
+  observeProviderRequest,
+}: Readonly<{
+  batchId: TemplateCopilotV3ProviderQuoteBatchId;
+  sourceSlots: readonly TemplateCopilotV3ProviderQuoteSourceSlot[];
+  locale: "en" | "zh-Hant" | "zh-Hans";
+  observeProviderRequest?: (
+    observation: TemplateCopilotProviderRequestObservation,
+  ) => void;
+}>) {
+  const validatedLocale = templateCopilotLocaleSchema.parse(locale);
+  const userText = formatTemplateCopilotV3ProviderQuoteBatch({
+    batchId,
+    sourceSlots,
+  });
+  let configured: TemplateCopilotAiConfiguration;
+  try {
+    configured = aiConfiguration();
+  } catch (error) {
+    throw classifyTemplateCopilotV2ProviderFailure(error);
+  }
+
+  const startedAt = Date.now();
+  try {
+    const output = await requestTemplateCopilotV3RawProviderOutput({
+      configured,
+      schemaName: "template_copilot_v3_provider_quotes",
+      developerText: buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
+        batchId,
+        locale: validatedLocale,
+      }),
+      userText,
+      failureMessage:
+        "The Copilot could not safely extract source-backed quotes.",
+    });
+    const located = locateTemplateCopilotV3ProviderQuotes({
+      batchId,
+      sourceSlots,
+      output,
+    });
+    safelyObserveProviderRequest(observeProviderRequest, {
+      outcome: "success",
+      latencyMs: Date.now() - startedAt,
+    });
+    return Object.freeze({
+      model: configured.model,
+      batch: Object.freeze({
+        contractVersion:
+          templateCopilotV3ProviderQuoteContractVersion,
+        batchId,
+        locale: validatedLocale,
+        sourceSlots: Object.freeze([
+          ...templateCopilotV3ProviderQuoteBatches[batchId].slots,
+        ]),
+      }),
+      accepted: located.accepted,
+      rejected: located.rejected,
+    });
+  } catch (error) {
+    safelyObserveProviderRequest(observeProviderRequest, {
+      outcome: classifyTemplateCopilotProviderRequestOutcome(error),
+      latencyMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
 }
 
 /**
