@@ -1112,6 +1112,9 @@ const templateCopilotV3ProviderQuoteWholeSlotRejectionDetailSuffixes =
 export const templateCopilotV3ProviderQuoteBatchLocalRejectionDetails =
   Object.freeze([
     "attachment:format_requires_label",
+    "condition:no_bypass_policy",
+    "condition:no_bypass_otherwise_route",
+    "condition:no_bypass_route_hint",
     ...new Set(
       Object.values(
         templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind,
@@ -2103,7 +2106,94 @@ function validateBatchLocalItemPolicy({
       detail: "attachment:format_requires_label",
     };
   }
+  if (
+    batchId === "routing_conditions_exceptions" &&
+    item.kind === "condition"
+  ) {
+    const noBypassRoutes = item.leaves.filter(
+      (leaf) =>
+        (leaf.role === "matching_route" || leaf.role === "otherwise_route") &&
+        templateCopilotV3NoBypassRouteLanguage(leaf.quote) !== null,
+    );
+    if (noBypassRoutes.some((leaf) => leaf.role === "otherwise_route")) {
+      return {
+        code: "item_schema_invalid",
+        detail: "condition:no_bypass_otherwise_route",
+      };
+    }
+    const matchingRoute = noBypassRoutes.find(
+      (leaf) => leaf.role === "matching_route",
+    );
+    if (
+      matchingRoute && matchingRoute.hint !== "unsupported_outcome"
+    ) {
+      return {
+        code: "item_schema_invalid",
+        detail: "condition:no_bypass_route_hint",
+      };
+    }
+    if (
+      matchingRoute &&
+      templateCopilotV3ConditionHasBooleanOptionOrAccessField(item) &&
+      !templateCopilotV3ConditionHasExplicitAffirmativeBooleanPredicate(item)
+    ) {
+      return {
+        code: "item_schema_invalid",
+        detail: "condition:no_bypass_policy",
+      };
+    }
+  }
   return null;
+}
+
+function templateCopilotV3ConditionHasBooleanOptionOrAccessField(
+  item: TemplateCopilotV3ProviderQuoteItem,
+) {
+  const field = item.leaves.find((leaf) => leaf.role === "field");
+  if (!field) return false;
+  const normalized = templateCopilotV3NormalizeLexicalText(field.quote);
+  return /(?:^| )(?:option|access)(?:$| )|选项|選項|访问|訪問|存取/u.test(
+    normalized,
+  );
+}
+
+function templateCopilotV3NoBypassRouteLanguage(
+  value: string,
+): "english" | "cjk" | null {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  if (
+    /^(?:不能|不得|不可).{0,12}(?:跳过|跳過)(?:审批|審批|批准)?$/u.test(
+      normalized,
+    )
+  ) {
+    return "cjk";
+  }
+  if (
+    /^(?:(?:does?|did) not|cannot|can not|must not|may not) (?:skip|bypass)(?: (?:approval|review))?$/u.test(
+      normalized,
+    )
+  ) {
+    return "english";
+  }
+  return null;
+}
+
+function templateCopilotV3ConditionHasExplicitAffirmativeBooleanPredicate(
+  item: TemplateCopilotV3ProviderQuoteItem,
+) {
+  const operator = item.leaves.find((leaf) => leaf.role === "operator");
+  const value = item.leaves.find((leaf) => leaf.role === "value");
+  if (operator?.hint !== "=" || !value) return false;
+  const normalizedOperator = templateCopilotV3NormalizeLexicalText(
+    operator.quote,
+  );
+  const normalizedValue = templateCopilotV3NormalizeLexicalText(value.quote);
+  return (
+    /^(?:is|equals?|为是|為是|等于|等於|=)$/u.test(normalizedOperator) &&
+    /^(?:是|yes|true|selected|enabled|选中|選中|已选|已選|启用|啟用)$/u.test(
+      normalizedValue,
+    )
+  );
 }
 
 function validateBatchLocalWholeSlotItem({

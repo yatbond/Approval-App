@@ -47,6 +47,11 @@ test("the prompt exposes exactly the closed quote batches", () => {
       batchId: "routing_conditions_exceptions",
       locale: "en",
     });
+  const routingConditionsSimplified =
+    buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
+      batchId: "routing_conditions_exceptions",
+      locale: "zh-Hans",
+    });
 
   assert.deepEqual(Object.keys(templateCopilotV3ProviderQuoteBatches), [
     "structure",
@@ -161,13 +166,64 @@ test("the prompt exposes exactly the closed quote batches", () => {
   );
   assert.doesNotMatch(routingStages, /condition=field\+operator/u);
   assert.match(routingConditions, /batch routing_conditions_exceptions/u);
-  assert.match(routingConditions, /condition=field\+operator/u);
-  assert.match(routingConditions, /rejection behavior/u);
   assert.match(
     routingConditions,
-    /set the rejection singleton once for all conditions_exceptions text/u,
+    /Condition core: exact field\+operator\+value\+matching_route/u,
   );
-  assert.match(routingConditions, /Do not create stage entities/u);
+  assert.match(routingConditions, /rejection intent/u);
+  assert.match(
+    routingConditions,
+    /Extract explicit contingent condition branches/u,
+  );
+  assert.doesNotMatch(
+    routingConditions,
+    /Extract affirmative condition branches/u,
+  );
+  assert.match(
+    routingConditions,
+    /set rejection once for all conditions_exceptions text/u,
+  );
+  assert.match(
+    routingConditions,
+    /their buckets are exclusive/u,
+  );
+  assert.match(
+    routingConditions,
+    /No-bypass is non-executable/u,
+  );
+  assert.match(
+    routingConditions,
+    /Rejection\/return-for-modification is rejection only/u,
+  );
+  assert.match(
+    routingConditions,
+    /condition leaves never cross a hard clause or sentence/u,
+  );
+  assert.match(
+    routingConditions,
+    /matching_route is this clause's contingent target/u,
+  );
+  assert.match(
+    routingConditions,
+    /generic extra approval\/額外審批\/额外审批=>unsupported_outcome/u,
+  );
+  assert.match(
+    routingConditions,
+    /return_for_correction only when this branch routes correction/u,
+  );
+  assert.match(
+    routingConditions,
+    /Retrospective \+ status.*matching_route=no-bypass text\/unsupported_outcome, no otherwise_route/u,
+  );
+  assert.match(
+    routingConditions,
+    /Boolean option\/access label without yes\/true\/selected .* is policy only; omit it/u,
+  );
+  assert.match(
+    routingConditions,
+    /Never use complete\/return_for_correction for no-bypass/u,
+  );
+  assert.match(routingConditions, /Do not create stages, visibility, or notifications/u);
   assert.doesNotMatch(routingConditions, /stage=label\+kind/u);
 
   for (const prompt of [
@@ -307,6 +363,10 @@ test("the prompt exposes exactly the closed quote batches", () => {
     routingConditions.length <= 4_800,
     `routing conditions prompt: ${routingConditions.length}`,
   );
+  assert.ok(
+    routingConditionsSimplified.length <= 4_800,
+    `simplified routing conditions prompt: ${routingConditionsSimplified.length}`,
+  );
   assert.ok(policy.length <= 4_900, `policy prompt: ${policy.length}`);
 });
 
@@ -392,7 +452,7 @@ test("the prompt demands complete entity coverage and source-language fidelity",
       /add adjacent exact source text until unique, or omit/u,
     );
     assert.match(prompt, /Copy leaf.quote verbatim/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-20/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-21/u);
     assert.match(
       prompt,
       /quotations, quoted text, or proof that an employee or vendor followed named instructions/u,

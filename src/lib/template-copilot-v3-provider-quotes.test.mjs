@@ -321,6 +321,21 @@ test("whole-slot kinds expose and accept only their pinned semantic roles", () =
       "attachment:format_requires_label",
     ),
   );
+  assert.ok(
+    templateCopilotV3ProviderQuoteBatchLocalRejectionDetails.includes(
+      "condition:no_bypass_policy",
+    ),
+  );
+  assert.ok(
+    templateCopilotV3ProviderQuoteBatchLocalRejectionDetails.includes(
+      "condition:no_bypass_otherwise_route",
+    ),
+  );
+  assert.ok(
+    templateCopilotV3ProviderQuoteBatchLocalRejectionDetails.includes(
+      "condition:no_bypass_route_hint",
+    ),
+  );
   for (const kind of wholeSlotKinds) {
     for (const suffix of [
       "whole_slot_quote",

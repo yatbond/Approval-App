@@ -10,7 +10,7 @@ import {
 } from "./template-copilot-v3-provider-quotes.ts";
 
 export const templateCopilotV3ProviderPromptVersion =
-  "template-copilot-v3-provider-quotes-20" as const;
+  "template-copilot-v3-provider-quotes-21" as const;
 
 const localeInstruction = Object.freeze({
   en: "Preserve the source language and orthography exactly.",
@@ -63,13 +63,14 @@ const batchInstructions = Object.freeze({
     "Never convert an ordinary route target, final or completion reference, rejection actor, or already-declared participant into another stage. Do not create conditions, threshold routes, or rejection routes in this batch.",
   ],
   routing_conditions_exceptions: [
-    "Extract only condition and exception evidence: conditions, matching routes, explicit default routes, and rejection behavior. Preserve every separately stated branch and rejection rule.",
-    "Rejection if present: set the rejection singleton once for all conditions_exceptions text. The server binds its full source; emit no rejection leaves or local rejection clause.",
-    "Complete core per condition (all roles in ONE item): condition=field+operator+value+matching_route. Omit a condition whose core cannot be quoted exactly; add optional roles only when sourced.",
-    "For a threshold chain, emit one matching-only condition per stated branch and otherwise_route only for an explicit terminal default. Never convert a narrower, conjunctive, risk-qualified, or context-qualified branch into otherwise_route; never infer branches, thresholds, routes, or defaults.",
-    "An operator or value quote may repeat only in adjacent affirmative threshold branches. A numeric value may repeat only immediately after the item's unique comparison operator, separated only by whitespace or HKD. An otherwise_route may repeat only when one occurrence is the terminal target of an explicit affirmative default-routing clause. The server rejects other repeats; emit no offsets or occurrence numbers.",
-    "In a closed Chinese two-branch or three-branch threshold chain, a later matching-only item may carry the first branch's field but must quote its branch's exact operator and value. A third branch must continue with 再由, 再經, or 再经.",
-    "Do not create stage entities, stage-local visibility, or notifications in this batch; route targets remain condition or rejection leaves.",
+    "Extract explicit contingent condition branches and one rejection intent; their buckets are exclusive.",
+    "If rejection exists, set rejection once for all conditions_exceptions text; no q/leaves. Rejection/return-for-modification is rejection only; condition leaves never cross a hard clause or sentence.",
+    "Condition core: exact field+operator+value+matching_route in one hard clause. No-bypass is non-executable. Emit it only when a separately stated state/value qualifies a field (for example, Retrospective + status): matching_route=no-bypass text/unsupported_outcome, no otherwise_route. A Boolean option/access label without yes/true/selected (for example, 紧急选项不能跳过审批) is policy only; omit it. Never use complete/return_for_correction for no-bypass.",
+    "matching_route is this clause's contingent target, never blocking text or separate rejection. Named stage/participant=>stage_reference; generic extra approval/額外審批/额外审批=>unsupported_outcome; return_for_correction only when this branch routes correction.",
+    "Thresholds: one condition per explicit branch; otherwise_route only for an explicit terminal default. Never infer or widen qualified branches.",
+    "Repeat operator/value only in adjacent threshold branches; a numeric value directly follows its unique operator (optional whitespace/HKD). Reuse a target only for an explicit terminal default. No offsets.",
+    "In a closed Chinese 2/3-branch threshold chain, a later item may reuse the first field but quotes its own operator/value; a third branch requires 再由/再經/再经.",
+    "Do not create stages, visibility, or notifications; route targets remain condition or rejection leaves.",
   ],
   policy_context: [
     "Extract context: workflow name, purpose, and scope; collaboration, correction, timing, escalation, notifications, governance, and retention. Do not emit visibility in this batch.",

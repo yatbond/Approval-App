@@ -72,6 +72,41 @@ function formalWire(batchId, overrides = {}) {
   return { v: 3, b: { ...buckets, ...overrides } };
 }
 
+function cjkNoBypassCondition({
+  routeHint = "unsupported_outcome",
+  explicitPredicate = false,
+} = {}) {
+  return explicitPredicate
+    ? {
+        q: "紧急选项为是时不得跳过审批",
+        l: [
+          { r: "field", q: "紧急选项", h: null },
+          { r: "operator", q: "为是", h: "=" },
+          { r: "value", q: "是", h: null },
+          {
+            r: "matching_route",
+            q: "不得跳过审批",
+            h: routeHint,
+          },
+        ],
+        a: 0,
+      }
+    : {
+        q: "紧急选项不能跳过审批",
+        l: [
+          { r: "field", q: "紧急选项", h: null },
+          { r: "operator", q: "紧急", h: "=" },
+          { r: "value", q: "紧急选项", h: null },
+          {
+            r: "matching_route",
+            q: "不能跳过审批",
+            h: routeHint,
+          },
+        ],
+        a: 0,
+      };
+}
+
 function fakeConfiguration(
   protocol,
   raw,
@@ -618,6 +653,314 @@ test("rejection is a singleton intent bound to the complete conditions source", 
       hint: "return_for_correction",
     }],
   );
+});
+
+test("SC-01 conditions stay disjoint from no-bypass and rejection policy", () => {
+  const conditions =
+    "安全影响为是时安全评审必须阻塞流程。成本增加超过港币一百万元走额外审批。紧急选项不能跳过审批。任何拒绝退回修改。";
+  const source = templateCopilotV3ProviderQuoteBatches
+    .routing_conditions_exceptions.slots.map((slot) => ({
+      slot,
+      messageId: `message:sc01-condition-contract:${slot}`,
+      text: conditions,
+    }));
+  const expanded = expandTemplateCopilotV3ProviderQuoteWire({
+    batchId: "routing_conditions_exceptions",
+    output: formalWire("routing_conditions_exceptions", {
+      condition: [
+        {
+          q: "安全影响为是时安全评审必须阻塞流程",
+          l: [
+            { r: "field", q: "安全影响", h: null },
+            { r: "operator", q: "为是", h: "=" },
+            { r: "value", q: "是", h: null },
+            {
+              r: "matching_route",
+              q: "安全评审",
+              h: "stage_reference",
+            },
+          ],
+          a: 0,
+        },
+        {
+          q: "成本增加超过港币一百万元走额外审批",
+          l: [
+            { r: "field", q: "成本增加", h: null },
+            { r: "operator", q: "超过", h: ">" },
+            { r: "value", q: "一百万元", h: null },
+            { r: "currency", q: "港币", h: null },
+            {
+              r: "matching_route",
+              q: "额外审批",
+              h: "unsupported_outcome",
+            },
+          ],
+          a: 0,
+        },
+        cjkNoBypassCondition(),
+      ],
+      rejection: { a: 0 },
+    }),
+  });
+  const located = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions_exceptions",
+    sourceSlots: source,
+    output: expanded,
+  });
+
+  assert.deepEqual(located.rejected, [{
+    itemIndex: 2,
+    code: "item_schema_invalid",
+    detail: "condition:no_bypass_policy",
+  }]);
+  const conditionItems = located.accepted.filter(
+    (entry) => entry.kind === "condition",
+  );
+  assert.deepEqual(
+    conditionItems.map((entry) => entry.anchor.exactText),
+    [
+      "安全影响为是时安全评审必须阻塞流程",
+      "成本增加超过港币一百万元走额外审批",
+    ],
+  );
+  assert.equal(
+    conditionItems[0].leaves.find(
+      (leaf) => leaf.role === "matching_route",
+    )?.hint,
+    "stage_reference",
+  );
+  assert.equal(
+    conditionItems[1].leaves.find(
+      (leaf) => leaf.role === "matching_route",
+    )?.hint,
+    "unsupported_outcome",
+  );
+  assert.equal(
+    conditionItems.some(
+      (entry) =>
+        entry.anchor.exactText.includes("不能跳过") ||
+        entry.anchor.exactText.includes("拒绝退回"),
+    ),
+    false,
+  );
+  const rejection = located.accepted.find(
+    (entry) => entry.kind === "rejection",
+  );
+  assert.equal(rejection?.anchor.exactText, conditions);
+  assert.equal(rejection?.leaves[0]?.sourceSpan.exactText, conditions);
+});
+
+test("EN-08 explicit state no-bypass condition remains a governed item", () => {
+  const conditions =
+    "Retrospective status does not skip approval. Any rejection creates a correction loop.";
+  const source = templateCopilotV3ProviderQuoteBatches
+    .routing_conditions_exceptions.slots.map((slot) => ({
+      slot,
+      messageId: `message:en08-no-bypass:${slot}`,
+      text: conditions,
+    }));
+  const expanded = expandTemplateCopilotV3ProviderQuoteWire({
+    batchId: "routing_conditions_exceptions",
+    output: formalWire("routing_conditions_exceptions", {
+      condition: [{
+        q: "Retrospective status does not skip approval",
+        l: [
+          { r: "field", q: "Retrospective status", h: null },
+          { r: "operator", q: "Retrospective", h: "=" },
+          { r: "value", q: "Retrospective status", h: null },
+          {
+            r: "matching_route",
+            q: "does not skip approval",
+            h: "unsupported_outcome",
+          },
+        ],
+        a: 0,
+      }],
+    }),
+  });
+  const located = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions_exceptions",
+    sourceSlots: source,
+    output: expanded,
+  });
+
+  assert.deepEqual(located.rejected, []);
+  assert.equal(located.accepted.length, 1);
+  assert.equal(located.accepted[0]?.kind, "condition");
+  assert.equal(
+    located.accepted[0]?.leaves.find(
+      (leaf) => leaf.role === "matching_route",
+    )?.hint,
+    "unsupported_outcome",
+  );
+});
+
+test("no-bypass routes reject executable hints but retain explicit CJK predicates", () => {
+  for (const routeHint of ["complete", "return_for_correction"]) {
+    const conditions = "紧急选项不能跳过审批。";
+    const source = templateCopilotV3ProviderQuoteBatches
+      .routing_conditions_exceptions.slots.map((slot) => ({
+        slot,
+        messageId: `message:no-bypass-hint:${routeHint}:${slot}`,
+        text: conditions,
+      }));
+    const located = locateTemplateCopilotV3ProviderQuotes({
+      batchId: "routing_conditions_exceptions",
+      sourceSlots: source,
+      output: expandTemplateCopilotV3ProviderQuoteWire({
+        batchId: "routing_conditions_exceptions",
+        output: formalWire("routing_conditions_exceptions", {
+          condition: [cjkNoBypassCondition({ routeHint })],
+        }),
+      }),
+    });
+    assert.deepEqual(located.accepted, [], routeHint);
+    assert.deepEqual(located.rejected, [{
+      itemIndex: 0,
+      code: "item_schema_invalid",
+      detail: "condition:no_bypass_route_hint",
+    }], routeHint);
+  }
+
+  const englishBareText = "Emergency option cannot skip approval.";
+  const englishBareSource = templateCopilotV3ProviderQuoteBatches
+    .routing_conditions_exceptions.slots.map((slot) => ({
+      slot,
+      messageId: `message:no-bypass-english-bare:${slot}`,
+      text: englishBareText,
+    }));
+  const englishBare = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions_exceptions",
+    sourceSlots: englishBareSource,
+    output: expandTemplateCopilotV3ProviderQuoteWire({
+      batchId: "routing_conditions_exceptions",
+      output: formalWire("routing_conditions_exceptions", {
+        condition: [{
+          q: "Emergency option cannot skip approval",
+          l: [
+            { r: "field", q: "Emergency option", h: null },
+            { r: "operator", q: "Emergency", h: "=" },
+            { r: "value", q: "Emergency option", h: null },
+            {
+              r: "matching_route",
+              q: "cannot skip approval",
+              h: "unsupported_outcome",
+            },
+          ],
+          a: 0,
+        }],
+      }),
+    }),
+  });
+  assert.deepEqual(englishBare.accepted, []);
+  assert.deepEqual(englishBare.rejected, [{
+    itemIndex: 0,
+    code: "item_schema_invalid",
+    detail: "condition:no_bypass_policy",
+  }]);
+
+  const otherwiseText =
+    "Amount above 100 routes to Finance; otherwise does not skip approval.";
+  const otherwiseSource = templateCopilotV3ProviderQuoteBatches
+    .routing_conditions_exceptions.slots.map((slot) => ({
+      slot,
+      messageId: `message:no-bypass-otherwise:${slot}`,
+      text: otherwiseText,
+    }));
+  const otherwise = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions_exceptions",
+    sourceSlots: otherwiseSource,
+    output: expandTemplateCopilotV3ProviderQuoteWire({
+      batchId: "routing_conditions_exceptions",
+      output: formalWire("routing_conditions_exceptions", {
+        condition: [{
+          q: "Amount above 100 routes to Finance; otherwise does not skip approval",
+          l: [
+            { r: "field", q: "Amount", h: null },
+            { r: "operator", q: "above", h: ">" },
+            { r: "value", q: "100", h: null },
+            {
+              r: "matching_route",
+              q: "Finance",
+              h: "stage_reference",
+            },
+            {
+              r: "otherwise_route",
+              q: "does not skip approval",
+              h: "unsupported_outcome",
+            },
+          ],
+          a: 0,
+        }],
+      }),
+    }),
+  });
+  assert.deepEqual(otherwise.accepted, []);
+  assert.deepEqual(otherwise.rejected, [{
+    itemIndex: 0,
+    code: "item_schema_invalid",
+    detail: "condition:no_bypass_otherwise_route",
+  }]);
+
+  const explicitConditions = "紧急选项为是时不得跳过审批。";
+  const explicitSource = templateCopilotV3ProviderQuoteBatches
+    .routing_conditions_exceptions.slots.map((slot) => ({
+      slot,
+      messageId: `message:no-bypass-explicit:${slot}`,
+      text: explicitConditions,
+    }));
+  const explicit = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions_exceptions",
+    sourceSlots: explicitSource,
+    output: expandTemplateCopilotV3ProviderQuoteWire({
+      batchId: "routing_conditions_exceptions",
+      output: formalWire("routing_conditions_exceptions", {
+        condition: [cjkNoBypassCondition({ explicitPredicate: true })],
+      }),
+    }),
+  });
+  assert.deepEqual(explicit.rejected, []);
+  assert.equal(explicit.accepted.length, 1);
+  assert.equal(
+    explicit.accepted[0]?.leaves.find(
+      (leaf) => leaf.role === "matching_route",
+    )?.hint,
+    "unsupported_outcome",
+  );
+
+  const explicitEnglishText =
+    "Emergency option is true: cannot skip approval.";
+  const explicitEnglishSource = templateCopilotV3ProviderQuoteBatches
+    .routing_conditions_exceptions.slots.map((slot) => ({
+      slot,
+      messageId: `message:no-bypass-explicit-en:${slot}`,
+      text: explicitEnglishText,
+    }));
+  const explicitEnglish = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions_exceptions",
+    sourceSlots: explicitEnglishSource,
+    output: expandTemplateCopilotV3ProviderQuoteWire({
+      batchId: "routing_conditions_exceptions",
+      output: formalWire("routing_conditions_exceptions", {
+        condition: [{
+          q: "Emergency option is true: cannot skip approval",
+          l: [
+            { r: "field", q: "Emergency option", h: null },
+            { r: "operator", q: "is", h: "=" },
+            { r: "value", q: "true", h: null },
+            {
+              r: "matching_route",
+              q: "cannot skip approval",
+              h: "unsupported_outcome",
+            },
+          ],
+          a: 0,
+        }],
+      }),
+    }),
+  });
+  assert.deepEqual(explicitEnglish.rejected, []);
+  assert.equal(explicitEnglish.accepted.length, 1);
 });
 
 test("server-bound whole slots reject overlimit evidence without losing siblings", () => {
