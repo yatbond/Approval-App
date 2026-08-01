@@ -102,13 +102,20 @@ test("quote batches cover the nine slots with deliberate routing reference overl
     ],
   );
   assert.deepEqual(
-    templateCopilotV3ProviderQuoteBatches.routing_conditions_exceptions.slots,
+    templateCopilotV3ProviderQuoteBatches.routing_conditions.slots,
     ["conditions_exceptions"],
   );
   assert.deepEqual(
-    templateCopilotV3ProviderQuoteBatches.routing_conditions_exceptions
-      .allowedKinds,
-    ["condition", "rejection"],
+    templateCopilotV3ProviderQuoteBatches.routing_conditions.allowedKinds,
+    ["condition"],
+  );
+  assert.deepEqual(
+    templateCopilotV3ProviderQuoteBatches.routing_rejection.slots,
+    ["conditions_exceptions"],
+  );
+  assert.deepEqual(
+    templateCopilotV3ProviderQuoteBatches.routing_rejection.allowedKinds,
+    ["rejection"],
   );
   assert.deepEqual(
     templateCopilotV3ProviderQuoteBatches.policy_context.slots,
@@ -123,13 +130,18 @@ test("quote batches cover the nine slots with deliberate routing reference overl
   const formalSlotUses = [
     ...templateCopilotV3ProviderQuoteBatches.intake_documents.slots,
     ...templateCopilotV3ProviderQuoteBatches.routing_stages_participants.slots,
-    ...templateCopilotV3ProviderQuoteBatches.routing_conditions_exceptions.slots,
+    ...templateCopilotV3ProviderQuoteBatches.routing_conditions.slots,
+    ...templateCopilotV3ProviderQuoteBatches.routing_rejection.slots,
     ...templateCopilotV3ProviderQuoteBatches.policy_context.slots,
   ];
   assert.deepEqual(new Set(formalSlotUses), new Set(templateCopilotV3ProviderQuoteSlots));
   assert.deepEqual(
     formalSlotUses.filter((slot) => slot === "conditions_exceptions"),
-    ["conditions_exceptions", "conditions_exceptions"],
+    [
+      "conditions_exceptions",
+      "conditions_exceptions",
+      "conditions_exceptions",
+    ],
   );
 
   const sources = sourceSlots("structure", {
@@ -292,7 +304,8 @@ test("whole-slot kinds expose and accept only their pinned semantic roles", () =
       routing_stages_participants: {
         visibility: { role: "rule", hint: null },
       },
-      routing_conditions_exceptions: {
+      routing_conditions: {},
+      routing_rejection: {
         rejection: { role: "mode", hint: "return_for_correction" },
       },
       policy_context: {
@@ -777,8 +790,8 @@ test("stage routing captures condition-added stages while conditions stay kind-c
   );
 
   const conditionsResult = locateTemplateCopilotV3ProviderQuotes({
-    batchId: "routing_conditions_exceptions",
-    sourceSlots: sourceSlots("routing_conditions_exceptions", {
+    batchId: "routing_conditions",
+    sourceSlots: sourceSlots("routing_conditions", {
       conditions_exceptions: "If urgent, add Legal reviewer.",
     }),
     output: output([stage]),
@@ -801,9 +814,13 @@ test("provider guidance uses required kind buckets for every formal schema", () 
       bytes: 6_151,
       sha256: "7024d74220e4a5a8f37175cf4ec06a8bf1a81c6dd2d015182b87b04b6143b429",
     },
-    routing_conditions_exceptions: {
-      bytes: 3_624,
-      sha256: "9f1d6f5d843a77a255f4f19e3b9778f47f4637fc34d50559e9cb7a2f7dd90209",
+    routing_conditions: {
+      bytes: 3_331,
+      sha256: "a91f8f04953edf029b9d03c384e7ac234dd94e48a51764aed8a5d4fba8119284",
+    },
+    routing_rejection: {
+      bytes: 539,
+      sha256: "ef4a9902c2c21946f3e6ac32a35426813ed151e0e3a3c3ca370b0c4f9a91d435",
     },
     policy_context: {
       bytes: 5_626,
@@ -968,7 +985,9 @@ test("provider guidance uses required kind buckets for every formal schema", () 
       );
     }
     assert.ok(
-      singletonCount + repeatableCeilingTotal >= limits.maximumItems,
+      singletonCount + repeatableCeilingTotal >= limits.maximumItems ||
+        (repeatableCeilingTotal === 0 &&
+          singletonCount + 1 === limits.maximumItems),
       `${batchId}:bucket-ceilings-cover-aggregate`,
     );
     assert.doesNotMatch(serialized, /"k":/u);
@@ -976,7 +995,8 @@ test("provider guidance uses required kind buckets for every formal schema", () 
     const schemaCeiling = {
       intake_documents: 6_900,
       routing_stages_participants: 6_500,
-      routing_conditions_exceptions: 4_300,
+      routing_conditions: 4_000,
+      routing_rejection: 1_000,
       policy_context: 10_600,
     }[batchId];
     assert.ok(

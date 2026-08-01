@@ -33,7 +33,7 @@ import {
 import { templateCopilotV3LiveSemanticScoringContract } from "./template-copilot-v3-live-semantic-scoring.mjs";
 
 export const templateCopilotV3QualificationRunnerVersion =
-  "template-copilot-v3-live-semantic-qualification.12";
+  "template-copilot-v3-live-semantic-qualification.13";
 export const templateCopilotV3QualificationExpectedScenarioCount = 24;
 export const templateCopilotV3QualificationExpectedGovernedHoldCount = 64;
 export const templateCopilotV3QualificationExpectedLocaleCount = 3;

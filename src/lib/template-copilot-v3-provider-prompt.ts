@@ -10,7 +10,7 @@ import {
 } from "./template-copilot-v3-provider-quotes.ts";
 
 export const templateCopilotV3ProviderPromptVersion =
-  "template-copilot-v3-provider-quotes-21" as const;
+  "template-copilot-v3-provider-quotes-22" as const;
 
 const localeInstruction = Object.freeze({
   en: "Preserve the source language and orthography exactly.",
@@ -62,15 +62,19 @@ const batchInstructions = Object.freeze({
     "One stage per named participant+kind; require participant. No extra group, shared action, route, condition, or alias. Repeat only for another explicit kind. Then one visibility intent. Use notification=[] unless stages_participants explicitly says notify/通知 and names both event and recipient; view, see, visibility, approval, and assignment facts are not notifications.",
     "Never convert an ordinary route target, final or completion reference, rejection actor, or already-declared participant into another stage. Do not create conditions, threshold routes, or rejection routes in this batch.",
   ],
-  routing_conditions_exceptions: [
-    "Extract explicit contingent condition branches and one rejection intent; their buckets are exclusive.",
-    "If rejection exists, set rejection once for all conditions_exceptions text; no q/leaves. Rejection/return-for-modification is rejection only; condition leaves never cross a hard clause or sentence.",
+  routing_conditions: [
+    "Extract explicit contingent condition branches only. Rejection, failure-return, and return-for-modification clauses are not conditions; omit them. Condition leaves never cross a hard clause or sentence.",
     "Condition core: exact field+operator+value+matching_route in one hard clause. No-bypass is non-executable. Emit it only when a separately stated state/value qualifies a field (for example, Retrospective + status): matching_route=no-bypass text/unsupported_outcome, no otherwise_route. A Boolean option/access label without yes/true/selected (for example, 紧急选项不能跳过审批) is policy only; omit it. Never use complete/return_for_correction for no-bypass.",
     "matching_route is this clause's contingent target, never blocking text or separate rejection. Named stage/participant=>stage_reference; generic extra approval/額外審批/额外审批=>unsupported_outcome; return_for_correction only when this branch routes correction.",
     "Thresholds: one condition per explicit branch; otherwise_route only for an explicit terminal default. Never infer or widen qualified branches.",
     "Repeat operator/value only in adjacent threshold branches; a numeric value directly follows its unique operator (optional whitespace/HKD). Reuse a target only for an explicit terminal default. No offsets.",
     "In a closed Chinese 2/3-branch threshold chain, a later item may reuse the first field but quotes its own operator/value; a third branch requires 再由/再經/再经.",
-    "Do not create stages, visibility, or notifications; route targets remain condition or rejection leaves.",
+    "Do not create rejection, stages, visibility, or notifications; route targets remain condition leaves.",
+  ],
+  routing_rejection: [
+    "Extract only one rejection-return intent from conditions_exceptions. Set rejection once only when an explicit rejection, validation failure, or modification request returns for correction or modification; otherwise use null.",
+    "The rejection intent has no q or leaves. The server binds the full authorized source slot and independently requires a closed explicit return/correction clause.",
+    "Do not treat a contingent condition route, completion, blocking rule, missing document, no-bypass policy, notification, or ordinary modification requirement as rejection. Do not create conditions, stages, visibility, or notifications.",
   ],
   policy_context: [
     "Extract context: workflow name, purpose, and scope; collaboration, correction, timing, escalation, notifications, governance, and retention. Do not emit visibility in this batch.",

@@ -43,19 +43,26 @@ const legacyRoutingExecutionKinds = new Set(
 const routingStageParticipantKinds = new Set(
   templateCopilotV3ProviderQuoteBatches.routing_stages_participants.allowedKinds,
 );
-const routingConditionExceptionKinds = new Set(
-  templateCopilotV3ProviderQuoteBatches.routing_conditions_exceptions
-    .allowedKinds,
+const routingConditionKinds = new Set(
+  templateCopilotV3ProviderQuoteBatches.routing_conditions.allowedKinds,
 );
+const routingRejectionKinds = new Set(
+  templateCopilotV3ProviderQuoteBatches.routing_rejection.allowedKinds,
+);
+const routingConditionExceptionKinds = new Set([
+  ...routingConditionKinds,
+  ...routingRejectionKinds,
+]);
 const legacyRoutingExecutionSlots = new Set(
   templateCopilotV3ProviderQuoteBatches.routing_execution.slots,
 );
 const routingStageParticipantSlots = new Set(
   templateCopilotV3ProviderQuoteBatches.routing_stages_participants.slots,
 );
-const routingConditionExceptionSlots = new Set(
-  templateCopilotV3ProviderQuoteBatches.routing_conditions_exceptions.slots,
-);
+const routingConditionExceptionSlots = new Set([
+  ...templateCopilotV3ProviderQuoteBatches.routing_conditions.slots,
+  ...templateCopilotV3ProviderQuoteBatches.routing_rejection.slots,
+]);
 
 test("all 24 manifests route exactly one authoritative visibility source", () => {
   const countsBySlot = new Map();
@@ -329,7 +336,11 @@ function expectedGovernedHoldCount(id) {
   );
 }
 
-test("the four formal batches reconstruct the legacy structure kind inventory", () => {
+test("the five formal batches reconstruct the legacy structure kind inventory", () => {
+  assert.deepEqual(
+    [...routingConditionKinds].filter((kind) => routingRejectionKinds.has(kind)),
+    [],
+  );
   const intakeRoutingOverlap = [...intakeDocumentKinds].filter((kind) =>
     legacyRoutingExecutionKinds.has(kind),
   );
@@ -393,9 +404,13 @@ test("stage batch reaches every condition-added stage without widening condition
     );
     assert.ok(stageBatch, `${item.id} missing stage batch`);
     const conditionsBatch = fixture.batches.find(
-      (batch) => batch.id === "routing_conditions_exceptions",
+      (batch) => batch.id === "routing_conditions",
     );
     assert.ok(conditionsBatch, `${item.id} missing conditions batch`);
+    const rejectionBatch = fixture.batches.find(
+      (batch) => batch.id === "routing_rejection",
+    );
+    assert.ok(rejectionBatch, `${item.id} missing rejection batch`);
     const rejectionCount = [
       ...fixture.projection.scalarFacts,
       ...fixture.projection.policyItems,
@@ -413,8 +428,13 @@ test("stage batch reaches every condition-added stage without widening condition
     );
     assert.equal(
       conditionsBatch.acceptedItemCount,
-      manifest.conditions.length + rejectionCount,
-      `${item.id} conditions batch must remain condition/rejection only`,
+      manifest.conditions.length,
+      `${item.id} conditions batch must remain condition only`,
+    );
+    assert.equal(
+      rejectionBatch.acceptedItemCount,
+      rejectionCount,
+      `${item.id} rejection batch must remain rejection only`,
     );
 
     conditionAddedStageCount += conditionAddedStages.length;
@@ -513,7 +533,10 @@ for (const item of templateCopilotQualificationScenarios) {
       ].includes(blocked.factId));
     }
     assert.equal(result.distinctFactCount, 16);
-    assert.equal(result.batchGate.passedBatchCount, 4);
+    assert.equal(
+      result.batchGate.passedBatchCount,
+      templateCopilotV3ProviderQuoteBatchIds.length,
+    );
     assert.equal(result.evidenceFailureCount, 0);
     assert.equal(
       result.candidateCount,
@@ -2304,9 +2327,8 @@ function makeActualFixture(
   const routingStageParticipantCount = countForFormalBatch(
     "routing_stages_participants",
   );
-  const routingConditionExceptionCount = countForFormalBatch(
-    "routing_conditions_exceptions",
-  );
+  const routingConditionCount = countForFormalBatch("routing_conditions");
+  const routingRejectionCount = countForFormalBatch("routing_rejection");
   const policyCount = countForFormalBatch("policy_context");
   return structuredClone({
     item,
@@ -2320,9 +2342,10 @@ function makeActualFixture(
         routingStageParticipantCount,
       ),
       cleanBatch(
-        "routing_conditions_exceptions",
-        routingConditionExceptionCount,
+        "routing_conditions",
+        routingConditionCount,
       ),
+      cleanBatch("routing_rejection", routingRejectionCount),
       cleanBatch("policy_context", policyCount),
     ],
   });

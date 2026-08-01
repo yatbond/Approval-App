@@ -69,10 +69,15 @@ export const templateCopilotV3ProviderQuoteBatchGenerationLimits =
       maximumLeavesPerItem: 8,
       maximumCompletionTokens: 2_048,
     }),
-    routing_conditions_exceptions: Object.freeze({
-      maximumItems: 5,
+    routing_conditions: Object.freeze({
+      maximumItems: 4,
       maximumLeavesPerItem: 10,
-      maximumCompletionTokens: 1_536,
+      maximumCompletionTokens: 1_280,
+    }),
+    routing_rejection: Object.freeze({
+      maximumItems: 2,
+      maximumLeavesPerItem: 1,
+      maximumCompletionTokens: 256,
     }),
     policy_context: Object.freeze({
       maximumItems: 15,
@@ -199,7 +204,8 @@ export type TemplateCopilotV3ProviderQuoteSlot =
 export const templateCopilotV3ProviderQuoteBatchIds = [
   "intake_documents",
   "routing_stages_participants",
-  "routing_conditions_exceptions",
+  "routing_conditions",
+  "routing_rejection",
   "policy_context",
 ] as const;
 export const templateCopilotV3ProviderQuoteSupportedBatchIds = [
@@ -298,8 +304,10 @@ const routingStageParticipantKinds = Object.freeze([
   "visibility",
   "notification",
 ] as const satisfies readonly TemplateCopilotV3ProviderQuoteKind[]);
-const routingConditionExceptionKinds = Object.freeze([
+const routingConditionKinds = Object.freeze([
   "condition",
+] as const satisfies readonly TemplateCopilotV3ProviderQuoteKind[]);
+const routingRejectionKinds = Object.freeze([
   "rejection",
 ] as const satisfies readonly TemplateCopilotV3ProviderQuoteKind[]);
 const policyContextKinds = Object.freeze([
@@ -350,10 +358,15 @@ export const templateCopilotV3ProviderQuoteBatches = Object.freeze({
     ] as const),
     allowedKinds: routingStageParticipantKinds,
   }),
-  routing_conditions_exceptions: Object.freeze({
-    batchId: "routing_conditions_exceptions" as const,
+  routing_conditions: Object.freeze({
+    batchId: "routing_conditions" as const,
     slots: Object.freeze(["conditions_exceptions"] as const),
-    allowedKinds: routingConditionExceptionKinds,
+    allowedKinds: routingConditionKinds,
+  }),
+  routing_rejection: Object.freeze({
+    batchId: "routing_rejection" as const,
+    slots: Object.freeze(["conditions_exceptions"] as const),
+    allowedKinds: routingRejectionKinds,
   }),
   policy_context: Object.freeze({
     batchId: "policy_context" as const,
@@ -448,8 +461,10 @@ export const templateCopilotV3ProviderQuoteAllowedSlotsByBatchAndKind =
       ] as const),
       notification: Object.freeze(["stages_participants"] as const),
     }),
-    routing_conditions_exceptions: Object.freeze({
+    routing_conditions: Object.freeze({
       condition: Object.freeze(["conditions_exceptions"] as const),
+    }),
+    routing_rejection: Object.freeze({
       rejection: Object.freeze(["conditions_exceptions"] as const),
     }),
     policy_context: Object.freeze({
@@ -1026,7 +1041,8 @@ export const templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind =
     routing_stages_participants: Object.freeze({
       visibility: Object.freeze({ role: "rule" as const, hint: null }),
     }),
-    routing_conditions_exceptions: Object.freeze({
+    routing_conditions: Object.freeze({}),
+    routing_rejection: Object.freeze({
       rejection: Object.freeze({
         role: "mode" as const,
         hint: "return_for_correction",
@@ -1082,9 +1098,10 @@ export const templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind =
       stage: 9,
       notification: 2,
     }),
-    routing_conditions_exceptions: Object.freeze({
+    routing_conditions: Object.freeze({
       condition: 4,
     }),
+    routing_rejection: Object.freeze({}),
     policy_context: Object.freeze({
       notification: 7,
     }),
@@ -1115,6 +1132,8 @@ export const templateCopilotV3ProviderQuoteBatchLocalRejectionDetails =
     "condition:no_bypass_policy",
     "condition:no_bypass_otherwise_route",
     "condition:no_bypass_route_hint",
+    "condition:rejection_policy_clause",
+    "rejection:explicit_return_correction_not_found",
     ...new Set(
       Object.values(
         templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind,
@@ -2107,9 +2126,15 @@ function validateBatchLocalItemPolicy({
     };
   }
   if (
-    batchId === "routing_conditions_exceptions" &&
+    batchId === "routing_conditions" &&
     item.kind === "condition"
   ) {
+    if (templateCopilotV3ContainsExplicitReturnCorrectionPolicy(item.quote)) {
+      return {
+        code: "item_schema_invalid",
+        detail: "condition:rejection_policy_clause",
+      };
+    }
     const noBypassRoutes = item.leaves.filter(
       (leaf) =>
         (leaf.role === "matching_route" || leaf.role === "otherwise_route") &&
@@ -2241,7 +2266,189 @@ function validateBatchLocalWholeSlotItem({
       detail: `${item.kind}:whole_slot_leaf_quote`,
     };
   }
+  if (
+    batchId === "routing_rejection" &&
+    item.kind === "rejection" &&
+    !templateCopilotV3ContainsExplicitReturnCorrectionPolicy(source.text)
+  ) {
+    return {
+      code: "item_schema_invalid",
+      detail: "rejection:explicit_return_correction_not_found",
+    };
+  }
   return null;
+}
+
+function templateCopilotV3ContainsExplicitReturnCorrectionPolicy(value: string) {
+  const clauses: string[] = [];
+  let start = 0;
+  for (let index = 0; index <= value.length; index += 1) {
+    if (
+      index === value.length ||
+      templateCopilotV3HardClauseSeparator(value[index])
+    ) {
+      const clause = value.slice(start, index).trim();
+      if (clause.length > 0) clauses.push(clause);
+      start = index + 1;
+    }
+  }
+  return clauses.some(
+    (clause, index) =>
+      templateCopilotV3ExplicitReturnCorrectionClause(clause) &&
+      !templateCopilotV3PrecedingSectionDeniesReturnCorrectionAuthority(
+        clauses,
+        index,
+      ) &&
+      !templateCopilotV3FollowingSectionDeniesReturnCorrectionAuthority(
+        clauses,
+        index,
+      ),
+  );
+}
+
+function templateCopilotV3PrecedingSectionDeniesReturnCorrectionAuthority(
+  clauses: readonly string[],
+  endIndex: number,
+) {
+  let denied = false;
+  for (let index = 0; index < endIndex; index += 1) {
+    if (templateCopilotV3ClauseClaimsCurrentAuthority(clauses[index])) {
+      denied = false;
+    } else if (
+      templateCopilotV3ClauseRevokesPrecedingReturnCorrectionAuthority(
+        clauses[index],
+      ) &&
+      !templateCopilotV3ClauseEndsAuthorityHeadingDelimiter(clauses[index])
+    ) {
+      continue;
+    } else if (
+      templateCopilotV3AdjacentClauseDeniesReturnCorrectionAuthority(
+        clauses[index],
+      )
+    ) {
+      denied = true;
+    }
+  }
+  return denied;
+}
+
+function templateCopilotV3ClauseEndsAuthorityHeadingDelimiter(value: string) {
+  return /[:：]$/u.test(templateCopilotV3NormalizeLexicalText(value));
+}
+
+function templateCopilotV3FollowingSectionDeniesReturnCorrectionAuthority(
+  clauses: readonly string[],
+  startIndex: number,
+) {
+  let authoritative = true;
+  for (let index = startIndex + 1; index < clauses.length; index += 1) {
+    if (templateCopilotV3ClauseClaimsCurrentAuthority(clauses[index])) {
+      authoritative = true;
+      continue;
+    }
+    if (
+      templateCopilotV3ClauseRevokesPrecedingReturnCorrectionAuthority(
+        clauses[index],
+      )
+    ) {
+      if (authoritative) return true;
+      continue;
+    }
+    if (
+      templateCopilotV3AdjacentClauseDeniesReturnCorrectionAuthority(
+        clauses[index],
+      )
+    ) {
+      authoritative = false;
+    }
+  }
+  return false;
+}
+
+function templateCopilotV3ClauseRevokesPrecedingReturnCorrectionAuthority(
+  value: string,
+) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return (
+    /^(?:(?:the\s+)?preceding\s+(?:statement|rule|policy|route)\s+(?:is\s+)?(?:false|invalid|disabled|deprecated|retired|historical|only\s+an?\s+example)|(?:(?:however,\s*)?this)\s+(?:is\s+)?not\s+part\s+of\s+(?:this|the\s+current|our)\s+(?:workflow|process|system)|(?:this|that|the)\s+(?:route|rule|policy)\s+(?:(?:is|was|has\s+been)\s+(?:prohibited|disabled|deprecated|retired|invalid)|(?:is|was)\s+no\s+longer\s+valid|(?:is|was)\s+not\s+part\s+of\s+(?:this|the\s+current|our)\s+(?:workflow|process|system))|do\s+not\s+(?:implement|use|apply|adopt)\s+(?:this|the)\s+(?:rule|route|policy))\s*[:：]?$/u.test(
+      normalized,
+    ) ||
+    /^(?:(?:前述|上述)(?:規則|规则|說法|说法|政策|陳述|陈述)(?:已)?(?:廢止|废止|停用|無效|无效|不正確|不正确|僅為示例|仅为示例)|(?:本|此|這|这|該|该)(?:規則|规则|路徑|路径|政策|說法|说法)(?:現已被|现已被|現已|现已|已被|已)?(?:停用|廢止|废止|禁用|無效|无效|不適用|不适用)|(?:此|這|这|該|该)?只是(?:舊|旧)(?:政策|規則|规则)\s*[，,]\s*(?:不適用|不适用)(?:於|于)?(?:本|當前|当前)(?:流程|工作流|系統|系统)|(?:不要|不得|禁止)(?:實施|实施|採用|采用|使用|套用)(?:此|本|該|该)?(?:規則|规则|路徑|路径|政策))\s*[：:]?$/u.test(
+      normalized,
+    )
+  );
+}
+
+function templateCopilotV3ClauseClaimsCurrentAuthority(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return (
+    /^(?:(?:current|active|in-force)\s+(?:(?:workflow|process|system)\s+)?(?:policy|rule|route|behavior|behaviour)|(?:this|our)\s+(?:workflow|process|system)(?:\s+(?:policy|rule|route))?)\s*[:：]?$/u.test(
+      normalized,
+    ) ||
+    /^(?:(?:本|此)(?:(?:流程|工作流|系統|系统)(?:(?:現行|现行)?(?:政策|規則|规则|路徑|路径))?|政策|規則|规则|路徑|路径)|(?:當前|当前|現行|现行)(?:政策|規則|规则|路徑|路径))\s*[：:]?$/u.test(
+      normalized,
+    )
+  );
+}
+
+function templateCopilotV3AdjacentClauseDeniesReturnCorrectionAuthority(
+  value: string,
+) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return (
+    /^(?:(?:for\s+)?(?:examples?|samples?|illustrations?)\s+only|historical\s+(?:behavior|behaviour|policy|rule)|(?:old|legacy|previous|retired)\s+(?:(?:workflow|process|system)(?:\s+(?:policy|rule|route))?|policy|rule|route)|(?:the\s+)?(?:following|preceding)\s+(?:statement|rule|policy|route)\s+(?:is\s+)?(?:false|invalid|disabled|deprecated|retired|historical|only\s+an?\s+example)|not\s+part\s+of\s+(?:this|the\s+current|our)\s+(?:workflow|process|system)|(?:(?:however,\s*)?this)\s+(?:is\s+)?not\s+part\s+of\s+(?:this|the\s+current|our)\s+(?:workflow|process|system)|(?:this|that|the)\s+(?:route|rule|policy)\s+(?:(?:is|was|has\s+been)\s+(?:prohibited|disabled|deprecated|retired|invalid)|(?:is|was)\s+no\s+longer\s+valid|(?:is|was)\s+not\s+part\s+of\s+(?:this|the\s+current|our)\s+(?:workflow|process|system))|do\s+not\s+(?:implement|use|apply|adopt)\s+(?:this|the)\s+(?:rule|route|policy))\s*[:：]?$/u.test(
+      normalized,
+    ) ||
+    /^(?:(?:僅|仅)(?:為|为|供|作)?(?:示例|例子|範例|范例)|(?:以下|下列|前述|上述)(?:規則|规则|說法|说法|政策|陳述|陈述)(?:已)?(?:廢止|废止|停用|無效|无效|不正確|不正确|僅為示例|仅为示例)|(?:舊|旧)(?:流程|工作流|系統|系统|政策|規則|规则)(?:規則|规则|行為|行为)?|(?:本|此|這|这|該|该)(?:規則|规则|路徑|路径|政策|說法|说法)(?:現已被|现已被|現已|现已|已被|已)?(?:停用|廢止|废止|禁用|無效|无效|不適用|不适用)|(?:此|這|这|該|该)?只是(?:舊|旧)(?:政策|規則|规则)\s*[，,]\s*(?:不適用|不适用)(?:於|于)?(?:本|當前|当前)(?:流程|工作流|系統|系统)|(?:不要|不得|禁止)(?:實施|实施|採用|采用|使用|套用)(?:此|本|該|该)?(?:規則|规则|路徑|路径|政策))\s*[：:]?$/u.test(
+      normalized,
+    )
+  );
+}
+
+const templateCopilotV3EnglishCorrectionActorSource = String.raw`(?:accounts\s+payable|requester|applicant|originator|submitter|employee|coordinator|preparer|responsible\s+person|(?:(?:contract|process|request|bid|action)\s+)?owner)`;
+const templateCopilotV3EnglishCorrectionPurposeSource =
+  String.raw`(?:correction|modification|amendment|resubmission)`;
+const templateCopilotV3EnglishReturnedObjectSource =
+  String.raw`(?:(?:the\s+)?(?:request|workflow|it)\s+)?`;
+const templateCopilotV3EnglishCorrectionTargetSource = String.raw`(?:to\s+(?:the\s+)?${templateCopilotV3EnglishCorrectionActorSource}(?:\s+for\s+${templateCopilotV3EnglishCorrectionPurposeSource})?|for\s+${templateCopilotV3EnglishCorrectionPurposeSource})`;
+const templateCopilotV3EnglishReturnActionSource = String.raw`(?:(?:(?:must|shall|will)\s+)?return(?:s|ed)?|(?:(?:is|are|was|were)|(?:must|shall|will)\s+be)\s+returned)\s+${templateCopilotV3EnglishReturnedObjectSource}(?:back\s+)?${templateCopilotV3EnglishCorrectionTargetSource}`;
+const templateCopilotV3EnglishSendBackActionSource = String.raw`(?:(?:(?:must|shall|will)\s+)?send(?:s)?|(?:(?:is|are|was|were)|(?:must|shall|will)\s+be)\s+sent)\s+${templateCopilotV3EnglishReturnedObjectSource}back\s+${templateCopilotV3EnglishCorrectionTargetSource}`;
+const templateCopilotV3EnglishCorrectionActionSource = String.raw`(?:${templateCopilotV3EnglishReturnActionSource}|${templateCopilotV3EnglishSendBackActionSource})`;
+const templateCopilotV3EnglishCurrentAuthoritySuffixSource =
+  String.raw`(?:\s+in\s+this\s+(?:workflow|process|system))?`;
+const templateCopilotV3EnglishDeclarativeReturnCorrectionClause = new RegExp(
+  String.raw`^(?:unlike\s+the\s+(?:old|legacy|previous)\s+(?:workflow|process|system),\s+)?(?:any\s+)?(?:rejection|validation\s+failure|modification\s+requests?)\s+(?:${templateCopilotV3EnglishCorrectionActionSource}|(?:(?:must|shall|will)\s+)?creates?\s+(?:a\s+)?correction\s+loop)${templateCopilotV3EnglishCurrentAuthoritySuffixSource}$`,
+  "u",
+);
+const templateCopilotV3EnglishConditionalReturnCorrectionClause = new RegExp(
+  String.raw`^if\s+(?:rejected|(?:either\s+)?(?:the\s+)?(?:[\p{L}\p{N}-]+\s+){0,4}approver\s+rejects(?:\s+(?:it|(?:the\s+)?request))?)\s*,\s+(?:(?:it|(?:the\s+)?(?:request|workflow))\s+)?${templateCopilotV3EnglishCorrectionActionSource}${templateCopilotV3EnglishCurrentAuthoritySuffixSource}$`,
+  "u",
+);
+const templateCopilotV3CjkCorrectionActorSource = String.raw`(?:申請人|申请人|員工|员工|編製人|编制人|投標負責人|投标负责人|措施負責人|措施负责人|負責人|负责人|協調員|协调员|擁有人|拥有人|提交人|發起人|发起人)`;
+const templateCopilotV3CjkCorrectionPurposeSource =
+  String.raw`(?:補正|补正|修正|修改)`;
+const templateCopilotV3CjkCorrectionTargetSource = String.raw`(?:${templateCopilotV3CjkCorrectionPurposeSource}|${templateCopilotV3CjkCorrectionActorSource}(?:${templateCopilotV3CjkCorrectionPurposeSource})?)`;
+const templateCopilotV3CjkReviewedSuffixSource = String.raw`(?:\s*[，,]\s*(?:舊版本保留於歷史|旧版本保留于历史|逾期未補證書要提醒|逾期未补证书要提醒|不應新建無關申請|不应新建无关申请))?`;
+const templateCopilotV3CjkReturnCorrectionClause = new RegExp(
+  String.raw`^(?:任何)?(?:被)?(?:拒絕|拒绝|修改要求|驗證失敗|验证失败)(?:都|會|会|須|须|必須|必须|應|应|則|则)?(?:退回|返回)\s*(?:給|给|至|到)?\s*${templateCopilotV3CjkCorrectionTargetSource}${templateCopilotV3CjkReviewedSuffixSource}$`,
+  "u",
+);
+const templateCopilotV3CjkAffirmativeContrastReturnCorrectionClause =
+  new RegExp(
+    String.raw`^不[僅仅](?:只是)?(?:拒絕|拒绝)\s*[，,]\s*(?:還|还)(?:會|会)?(?:退回|返回)\s*(?:給|给|至|到)?\s*${templateCopilotV3CjkCorrectionTargetSource}${templateCopilotV3CjkReviewedSuffixSource}$`,
+    "u",
+  );
+
+function templateCopilotV3ExplicitReturnCorrectionClause(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return (
+    templateCopilotV3EnglishDeclarativeReturnCorrectionClause.test(normalized) ||
+    templateCopilotV3EnglishConditionalReturnCorrectionClause.test(normalized) ||
+    templateCopilotV3CjkReturnCorrectionClause.test(normalized) ||
+    templateCopilotV3CjkAffirmativeContrastReturnCorrectionClause.test(
+      normalized,
+    )
+  );
 }
 
 function batchLocalWholeSlotPolicy(

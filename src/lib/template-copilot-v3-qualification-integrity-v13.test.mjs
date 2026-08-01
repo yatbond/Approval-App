@@ -8,7 +8,10 @@ import {
   templateCopilotV3QualificationObservedMetricKeys,
 } from "../../scripts/template-copilot-v3-live-semantic-qualification-runner.mjs";
 import { templateCopilotV3LiveSemanticScoringContract } from "../../scripts/template-copilot-v3-live-semantic-scoring.mjs";
-import { templateCopilotV3ProviderQuoteContractVersion } from "./template-copilot-v3-provider-quotes.ts";
+import {
+  templateCopilotV3ProviderQuoteBatchIds,
+  templateCopilotV3ProviderQuoteContractVersion,
+} from "./template-copilot-v3-provider-quotes.ts";
 
 test("v3 qualification rejects a fabricated scorer pass over an empty assembled projection", async () => {
   const report = await runTemplateCopilotV3LiveSemanticQualification({
@@ -88,17 +91,12 @@ function fabricatedPassingScore() {
     batchGate: {
       passed: true,
       failures: [],
-      passedBatchCount: 4,
-      batchCount: 4,
+      passedBatchCount: templateCopilotV3ProviderQuoteBatchIds.length,
+      batchCount: templateCopilotV3ProviderQuoteBatchIds.length,
       batchFailureCount: 0,
       providerRequestFailureCount: 0,
       failureCount: 0,
-      expectedBatchIds: [
-        "intake_documents",
-        "routing_stages_participants",
-        "routing_conditions_exceptions",
-        "policy_context",
-      ],
+      expectedBatchIds: [...templateCopilotV3ProviderQuoteBatchIds],
     },
     scenarioSemantics: {
       passed: true,

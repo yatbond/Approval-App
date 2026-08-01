@@ -44,13 +44,18 @@ test("the prompt exposes exactly the closed quote batches", () => {
     });
   const routingConditions =
     buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
-      batchId: "routing_conditions_exceptions",
+      batchId: "routing_conditions",
       locale: "en",
     });
   const routingConditionsSimplified =
     buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
-      batchId: "routing_conditions_exceptions",
+      batchId: "routing_conditions",
       locale: "zh-Hans",
+    });
+  const routingRejection =
+    buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
+      batchId: "routing_rejection",
+      locale: "en",
     });
 
   assert.deepEqual(Object.keys(templateCopilotV3ProviderQuoteBatches), [
@@ -58,7 +63,8 @@ test("the prompt exposes exactly the closed quote batches", () => {
     "intake_documents",
     "routing_execution",
     "routing_stages_participants",
-    "routing_conditions_exceptions",
+    "routing_conditions",
+    "routing_rejection",
     "policy_context",
   ]);
   assert.match(structure, /batch structure/u);
@@ -165,12 +171,12 @@ test("the prompt exposes exactly the closed quote batches", () => {
     /Emit no leaves, second slot, non-visibility selector, or inference/u,
   );
   assert.doesNotMatch(routingStages, /condition=field\+operator/u);
-  assert.match(routingConditions, /batch routing_conditions_exceptions/u);
+  assert.match(routingConditions, /batch routing_conditions/u);
   assert.match(
     routingConditions,
     /Condition core: exact field\+operator\+value\+matching_route/u,
   );
-  assert.match(routingConditions, /rejection intent/u);
+  assert.match(routingConditions, /Rejection, failure-return, and return-for-modification clauses are not conditions/u);
   assert.match(
     routingConditions,
     /Extract explicit contingent condition branches/u,
@@ -181,23 +187,15 @@ test("the prompt exposes exactly the closed quote batches", () => {
   );
   assert.match(
     routingConditions,
-    /set rejection once for all conditions_exceptions text/u,
-  );
-  assert.match(
-    routingConditions,
-    /their buckets are exclusive/u,
-  );
-  assert.match(
-    routingConditions,
     /No-bypass is non-executable/u,
   );
   assert.match(
     routingConditions,
-    /Rejection\/return-for-modification is rejection only/u,
+    /return-for-modification clauses are not conditions/u,
   );
   assert.match(
     routingConditions,
-    /condition leaves never cross a hard clause or sentence/u,
+    /Condition leaves never cross a hard clause or sentence/u,
   );
   assert.match(
     routingConditions,
@@ -223,8 +221,14 @@ test("the prompt exposes exactly the closed quote batches", () => {
     routingConditions,
     /Never use complete\/return_for_correction for no-bypass/u,
   );
-  assert.match(routingConditions, /Do not create stages, visibility, or notifications/u);
+  assert.match(routingConditions, /Do not create rejection, stages, visibility, or notifications/u);
   assert.doesNotMatch(routingConditions, /stage=label\+kind/u);
+  assert.match(routingRejection, /batch routing_rejection/u);
+  assert.match(routingRejection, /Set rejection once only when an explicit rejection, validation failure, or modification request returns for correction or modification/u);
+  assert.match(routingRejection, /otherwise use null/u);
+  assert.match(routingRejection, /server binds the full authorized source slot and independently requires a closed explicit return\/correction clause/u);
+  assert.match(routingRejection, /Do not treat a contingent condition route, completion, blocking rule, missing document, no-bypass policy, notification, or ordinary modification requirement as rejection/u);
+  assert.doesNotMatch(routingRejection, /condition=field\+operator/u);
 
   for (const prompt of [
     structure,
@@ -232,6 +236,7 @@ test("the prompt exposes exactly the closed quote batches", () => {
     routing,
     routingStages,
     routingConditions,
+    routingRejection,
     policy,
   ]) {
     assert.match(
@@ -299,8 +304,14 @@ test("the prompt exposes exactly the closed quote batches", () => {
   );
   assert.match(
     routingConditions,
-    /condition=\[conditions_exceptions\];rejection=\[conditions_exceptions\]/u,
+    /condition=\[conditions_exceptions\]/u,
   );
+  assert.doesNotMatch(routingConditions, /rejection=\[/u);
+  assert.match(
+    routingRejection,
+    /rejection=\[conditions_exceptions\]/u,
+  );
+  assert.doesNotMatch(routingRejection, /condition=\[/u);
   assert.match(
     policy,
     /workflow_name=\[identity_scope\].*timing=\[timing_escalation\];notification=\[timing_escalation\|visibility_notifications\].*retention=\[governance\]/u,
@@ -452,7 +463,7 @@ test("the prompt demands complete entity coverage and source-language fidelity",
       /add adjacent exact source text until unique, or omit/u,
     );
     assert.match(prompt, /Copy leaf.quote verbatim/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-21/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-22/u);
     assert.match(
       prompt,
       /quotations, quoted text, or proof that an employee or vendor followed named instructions/u,

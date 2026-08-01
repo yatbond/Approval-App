@@ -53,8 +53,10 @@ function formalWire(batchId, overrides = {}) {
       visibility: null,
       notification: [],
     },
-    routing_conditions_exceptions: {
+    routing_conditions: {
       condition: [],
+    },
+    routing_rejection: {
       rejection: null,
     },
     policy_context: {
@@ -617,19 +619,19 @@ test("rejection is a singleton intent bound to the complete conditions source", 
   const conditions =
     "安全影响为是时安全评审必须阻塞流程。成本增加超过港币一百万元走额外审批。紧急选项不能跳过审批。任何拒绝退回修改。";
   const source = templateCopilotV3ProviderQuoteBatches
-    .routing_conditions_exceptions.slots.map((slot) => ({
+    .routing_rejection.slots.map((slot) => ({
       slot,
       messageId: `message:rejection-whole:${slot}`,
       text: conditions,
     }));
   const expanded = expandTemplateCopilotV3ProviderQuoteWire({
-    batchId: "routing_conditions_exceptions",
-    output: formalWire("routing_conditions_exceptions", {
+    batchId: "routing_rejection",
+    output: formalWire("routing_rejection", {
       rejection: { a: 0 },
     }),
   });
   const located = locateTemplateCopilotV3ProviderQuotes({
-    batchId: "routing_conditions_exceptions",
+    batchId: "routing_rejection",
     sourceSlots: source,
     output: expanded,
   });
@@ -655,18 +657,217 @@ test("rejection is a singleton intent bound to the complete conditions source", 
   );
 });
 
+test("rejection requires both provider intent and explicit multilingual return-correction proof", () => {
+  const locateRejection = (text, rejection) => {
+    const sourceSlots = templateCopilotV3ProviderQuoteBatches.routing_rejection
+      .slots.map((slot) => ({
+        slot,
+        messageId: `message:rejection-proof:${slot}`,
+        text,
+      }));
+    return locateTemplateCopilotV3ProviderQuotes({
+      batchId: "routing_rejection",
+      sourceSlots,
+      output: expandTemplateCopilotV3ProviderQuoteWire({
+        batchId: "routing_rejection",
+        output: formalWire("routing_rejection", { rejection }),
+      }),
+    });
+  };
+
+  for (const text of [
+    "If either approver rejects, return to the requester for correction.",
+    "If the approver rejects it, return the request for correction.",
+    "If the approver rejects the request, it is returned to the requester for correction.",
+    "If rejected, it must be returned to the requester for correction.",
+    "Unlike the old workflow, rejection returns to the requester in this workflow.",
+    "Current policy:\nRejection returns to the requester for correction.",
+    "Example only. If amount exceeds 100, route to Finance. Current workflow rule. Rejection returns to the requester for correction.",
+    "Rejection returns to the requester for correction. Example only: If amount exceeds 100, route to Finance.",
+    "If the amount exceeds 100, route to Legal. This route is disabled. Rejection returns to the requester for correction.",
+    "Urgent requests route to Finance. Do not implement this route. Any rejection creates a correction loop.",
+    "A retired condition routes to Legal. The preceding route is disabled. Rejection returns to the requester for correction.",
+    "Any rejection creates a correction loop.",
+    "任何修改要求返回投标负责人。",
+    "验证失败退回措施负责人修改。",
+    "任何拒絕都退回補正。",
+    "不仅拒绝，还会退回申请人修改。",
+    "本流程规则：\n拒绝退回申请人修改。",
+    "仅为示例。金额超过一百元时走财务审批。本流程现行规则。拒绝退回申请人修改。",
+    "拒绝退回申请人修改。仅为示例：金额超过一百元时走财务审批。",
+    "金额超过一百元时走法务审批。该路径已停用。拒绝退回申请人修改。",
+    "紧急请求走财务审批。不要实施此路径。任何拒绝退回补正。",
+  ]) {
+    const located = locateRejection(text, { a: 0 });
+    assert.deepEqual(located.rejected, [], text);
+    assert.equal(located.accepted.length, 1, text);
+    assert.equal(located.accepted[0]?.kind, "rejection", text);
+  }
+
+  for (const scenario of templateCopilotQualificationScenarios) {
+    const located = locateRejection(scenario.conditions, { a: 0 });
+    assert.deepEqual(located.rejected, [], scenario.id);
+    assert.equal(located.accepted.length, 1, scenario.id);
+    assert.equal(located.accepted[0]?.kind, "rejection", scenario.id);
+  }
+
+  const proofWithoutIntent = locateRejection(
+    "Any rejection returns for correction.",
+    null,
+  );
+  assert.deepEqual(proofWithoutIntent, { accepted: [], rejected: [] });
+
+  for (const text of [
+    "If the amount is high, return to Finance for review.",
+    "No rejection returns for correction.",
+    "Rejection notices are archived with the correction request.",
+    "Validation failure returns an error code to the caller.",
+    "Rejection returns false to the caller.",
+    "A modification request returns status to the dashboard.",
+    "Rejection returns status code 422 to the API client; the workflow continues.",
+    "Rejection sends back an audit acknowledgment; no correction is requested.",
+    "Rejection may return the request to the requester for correction.",
+    "Rejection returns to the requester in the old system, but not in this workflow.",
+    "Rejection creates a correction loop in examples only, not in this workflow.",
+    "The workflow does not require that rejection returns to the requester for correction.",
+    'The statement "rejection returns to the requester for correction" is false.',
+    "A rule saying rejection returns to the requester for correction is prohibited.",
+    "Rejection returns to the requester only outside this workflow.",
+    "Rejection returns to the requester, but never in this workflow.",
+    "Rejection returns the request to the requester, but that route is disabled.",
+    "Rejection returns the request to the requester only in the legacy path.",
+    "No longer does rejection return the request to the requester.",
+    "Example only:\nRejection returns to the requester for correction.",
+    "Historical behavior. Rejection returns to the requester for correction.",
+    "Old workflow rule. Rejection returns to the requester for correction.",
+    "Legacy system policy. Rejection returns to the requester for correction.",
+    "The following statement is false. Rejection returns to the requester for correction.",
+    "Not part of this workflow:\nAny rejection creates a correction loop.",
+    "Rejection returns to the requester. This route is disabled.",
+    "Rejection returns to the requester; however, this is not part of the current workflow.",
+    "Rejection returns to the requester. The preceding statement is only an example.",
+    "Rejection returns to the requester. Do not implement this rule.",
+    "Rejection returns to the requester. This rule is prohibited.",
+    "Rejection returns to the requester. This rule has been disabled.",
+    "Rejection returns to the requester. That policy is retired.",
+    "Rejection returns to the requester. This rule is no longer valid.",
+    "Example only. Rejection behavior. Rejection returns to the requester for correction.",
+    "Rejection returns to the requester for correction. Implementation note. The preceding rule is disabled.",
+    "Historical behavior. Routing note. Any rejection creates a correction loop.",
+    "Any rejection creates a correction loop. Routing note. Do not implement this rule.",
+    "Example only:\nIf the amount exceeds 100, route to Finance.\nRejection returns to the requester for correction.",
+    "Historical behavior:\nIf urgent, route to Legal.\nAny rejection creates a correction loop.",
+    "Example only. Rejection handling. Rejection returns to the requester for correction.",
+    "Example only:\nUnlike the old workflow, rejection returns to the requester in this workflow.",
+    "Historical behavior. Unlike the old workflow, rejection returns to the requester in this workflow.",
+    "The following statement is false. Unlike the old workflow, rejection returns to the requester in this workflow.",
+    "Rejection returns to the requester for correction. This rejection route applies after manager review. This route is disabled.",
+    "Example only. Unlike the old workflow, rejection returns to the requester in this workflow. Any rejection returns for correction.",
+    "Any rejection returns for correction. Unlike the old workflow, rejection returns to the requester in this workflow. This rule is disabled.",
+    "This rule is disabled:\nRejection returns to the requester for correction.",
+    "Do not implement this rule:\nAny rejection creates a correction loop.",
+    "This route is not part of the current workflow:\nRejection returns to the requester for correction.",
+    "本规则已停用：\n拒绝退回申请人修改。",
+    "不要实施此规则：\n拒绝退回申请人修改。",
+    "Rejection returns to the requester for correction. Current policy:\nThis route is disabled.",
+    "Any rejection creates a correction loop. Active workflow rule. Do not implement this rule.",
+    "Rejection returns to the requester for correction. This workflow policy. The preceding rule is disabled.",
+    "拒绝退回申请人修改。当前政策：\n本路径已停用。",
+    "拒绝退回申请人修改。本流程现行规则。不要实施此规则。",
+    "拒绝不得退回修改。",
+    "拒绝后无需修改，流程直接结束。",
+    "拒绝修改请求并关闭流程。",
+    "拒绝与退回功能无关。",
+    "拒绝后退回功能已停用。",
+    "验证失败返回错误代码。",
+    "修改要求返回成功状态。",
+    "旧系统拒绝会退回，新流程不会。",
+    "拒绝返回错误代码给集成系统，流程继续。",
+    "拒絕返回審計記錄，並不要求補正。",
+    "本流程禁止采用拒绝退回申请人修改的规则。",
+    "拒绝退回申请人的说法不正确。",
+    "所谓拒绝退回申请人修改，只是示例。",
+    "拒绝可能退回申请人修改。",
+    "拒绝退回申请人的规则已废止。",
+    "拒绝退回申请人不是本流程规则。",
+    "拒绝会退回申请人，但此规则已停用。",
+    "旧政策规定拒绝会退回申请人。",
+    "示例：拒绝会退回申请人。",
+    "仅为示例：\n拒绝退回申请人修改。",
+    "以下规则已废止：\n拒绝退回申请人修改。",
+    "旧流程规则。拒绝退回申请人修改。",
+    "拒绝退回申请人。此规则已停用。",
+    "拒绝退回申请人；这只是旧政策，不适用于本流程。",
+    "拒绝退回申请人。不要实施此规则。",
+    "拒绝退回申请人修改。本规则已废止。",
+    "拒绝退回申请人修改。此规则已被废止。",
+    "拒绝退回申请人修改。该政策现已停用。",
+    "仅为示例。拒绝规则。拒绝退回申请人修改。",
+    "拒绝退回申请人修改。实施说明。上述规则已停用。",
+    "仅为示例：\n金额超过一百元时走财务审批。\n拒绝退回申请人修改。",
+    "旧流程规则。金额高时走财务审批。拒绝退回申请人修改。",
+    "仅为示例。拒绝处理。拒绝退回申请人修改。",
+    "普通修改要求由负责人批准。",
+  ]) {
+    const located = locateRejection(text, { a: 0 });
+    assert.deepEqual(located.accepted, [], text);
+    assert.deepEqual(located.rejected, [{
+      itemIndex: 0,
+      code: "item_schema_invalid",
+      detail: "rejection:explicit_return_correction_not_found",
+    }], text);
+  }
+});
+
+test("a stage named Rejection Review remains a legitimate condition route", () => {
+  const text =
+    "If correction count exceeds 2, route to Rejection Review.";
+  const located = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions",
+    sourceSlots: templateCopilotV3ProviderQuoteBatches.routing_conditions.slots
+      .map((slot) => ({
+        slot,
+        messageId: `message:rejection-review-condition:${slot}`,
+        text,
+      })),
+    output: expandTemplateCopilotV3ProviderQuoteWire({
+      batchId: "routing_conditions",
+      output: formalWire("routing_conditions", {
+        condition: [{
+          q: "If correction count exceeds 2, route to Rejection Review",
+          l: [
+            { r: "field", q: "correction count", h: null },
+            { r: "operator", q: "exceeds", h: ">" },
+            { r: "value", q: "2", h: null },
+            {
+              r: "matching_route",
+              q: "Rejection Review",
+              h: "stage_reference",
+            },
+          ],
+          a: 0,
+        }],
+      }),
+    }),
+  });
+
+  assert.deepEqual(located.rejected, []);
+  assert.equal(located.accepted.length, 1);
+  assert.equal(located.accepted[0]?.kind, "condition");
+});
+
 test("SC-01 conditions stay disjoint from no-bypass and rejection policy", () => {
   const conditions =
     "安全影响为是时安全评审必须阻塞流程。成本增加超过港币一百万元走额外审批。紧急选项不能跳过审批。任何拒绝退回修改。";
   const source = templateCopilotV3ProviderQuoteBatches
-    .routing_conditions_exceptions.slots.map((slot) => ({
+    .routing_conditions.slots.map((slot) => ({
       slot,
       messageId: `message:sc01-condition-contract:${slot}`,
       text: conditions,
     }));
   const expanded = expandTemplateCopilotV3ProviderQuoteWire({
-    batchId: "routing_conditions_exceptions",
-    output: formalWire("routing_conditions_exceptions", {
+    batchId: "routing_conditions",
+    output: formalWire("routing_conditions", {
       condition: [
         {
           q: "安全影响为是时安全评审必须阻塞流程",
@@ -699,11 +900,10 @@ test("SC-01 conditions stay disjoint from no-bypass and rejection policy", () =>
         },
         cjkNoBypassCondition(),
       ],
-      rejection: { a: 0 },
     }),
   });
   const located = locateTemplateCopilotV3ProviderQuotes({
-    batchId: "routing_conditions_exceptions",
+    batchId: "routing_conditions",
     sourceSlots: source,
     output: expanded,
   });
@@ -743,7 +943,50 @@ test("SC-01 conditions stay disjoint from no-bypass and rejection policy", () =>
     ),
     false,
   );
-  const rejection = located.accepted.find(
+  const fabricatedRejectionCondition = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions",
+    sourceSlots: source,
+    output: expandTemplateCopilotV3ProviderQuoteWire({
+      batchId: "routing_conditions",
+      output: formalWire("routing_conditions", {
+        condition: [{
+          q: "任何拒绝退回修改",
+          l: [
+            { r: "field", q: "拒绝", h: null },
+            { r: "operator", q: "拒绝", h: "unsupported_predicate" },
+            { r: "value", q: "修改", h: null },
+            {
+              r: "matching_route",
+              q: "退回修改",
+              h: "return_for_correction",
+            },
+          ],
+          a: 0,
+        }],
+      }),
+    }),
+  });
+  assert.deepEqual(fabricatedRejectionCondition.accepted, []);
+  assert.deepEqual(fabricatedRejectionCondition.rejected, [{
+    itemIndex: 0,
+    code: "item_schema_invalid",
+    detail: "condition:rejection_policy_clause",
+  }]);
+  const rejectionLocated = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_rejection",
+    sourceSlots: templateCopilotV3ProviderQuoteBatches.routing_rejection.slots
+      .map((slot) => ({
+        slot,
+        messageId: `message:sc01-rejection-contract:${slot}`,
+        text: conditions,
+      })),
+    output: expandTemplateCopilotV3ProviderQuoteWire({
+      batchId: "routing_rejection",
+      output: formalWire("routing_rejection", { rejection: { a: 0 } }),
+    }),
+  });
+  assert.deepEqual(rejectionLocated.rejected, []);
+  const rejection = rejectionLocated.accepted.find(
     (entry) => entry.kind === "rejection",
   );
   assert.equal(rejection?.anchor.exactText, conditions);
@@ -754,14 +997,14 @@ test("EN-08 explicit state no-bypass condition remains a governed item", () => {
   const conditions =
     "Retrospective status does not skip approval. Any rejection creates a correction loop.";
   const source = templateCopilotV3ProviderQuoteBatches
-    .routing_conditions_exceptions.slots.map((slot) => ({
+    .routing_conditions.slots.map((slot) => ({
       slot,
       messageId: `message:en08-no-bypass:${slot}`,
       text: conditions,
     }));
   const expanded = expandTemplateCopilotV3ProviderQuoteWire({
-    batchId: "routing_conditions_exceptions",
-    output: formalWire("routing_conditions_exceptions", {
+    batchId: "routing_conditions",
+    output: formalWire("routing_conditions", {
       condition: [{
         q: "Retrospective status does not skip approval",
         l: [
@@ -779,7 +1022,7 @@ test("EN-08 explicit state no-bypass condition remains a governed item", () => {
     }),
   });
   const located = locateTemplateCopilotV3ProviderQuotes({
-    batchId: "routing_conditions_exceptions",
+    batchId: "routing_conditions",
     sourceSlots: source,
     output: expanded,
   });
@@ -799,17 +1042,17 @@ test("no-bypass routes reject executable hints but retain explicit CJK predicate
   for (const routeHint of ["complete", "return_for_correction"]) {
     const conditions = "紧急选项不能跳过审批。";
     const source = templateCopilotV3ProviderQuoteBatches
-      .routing_conditions_exceptions.slots.map((slot) => ({
+      .routing_conditions.slots.map((slot) => ({
         slot,
         messageId: `message:no-bypass-hint:${routeHint}:${slot}`,
         text: conditions,
       }));
     const located = locateTemplateCopilotV3ProviderQuotes({
-      batchId: "routing_conditions_exceptions",
+      batchId: "routing_conditions",
       sourceSlots: source,
       output: expandTemplateCopilotV3ProviderQuoteWire({
-        batchId: "routing_conditions_exceptions",
-        output: formalWire("routing_conditions_exceptions", {
+        batchId: "routing_conditions",
+        output: formalWire("routing_conditions", {
           condition: [cjkNoBypassCondition({ routeHint })],
         }),
       }),
@@ -824,17 +1067,17 @@ test("no-bypass routes reject executable hints but retain explicit CJK predicate
 
   const englishBareText = "Emergency option cannot skip approval.";
   const englishBareSource = templateCopilotV3ProviderQuoteBatches
-    .routing_conditions_exceptions.slots.map((slot) => ({
+    .routing_conditions.slots.map((slot) => ({
       slot,
       messageId: `message:no-bypass-english-bare:${slot}`,
       text: englishBareText,
     }));
   const englishBare = locateTemplateCopilotV3ProviderQuotes({
-    batchId: "routing_conditions_exceptions",
+    batchId: "routing_conditions",
     sourceSlots: englishBareSource,
     output: expandTemplateCopilotV3ProviderQuoteWire({
-      batchId: "routing_conditions_exceptions",
-      output: formalWire("routing_conditions_exceptions", {
+      batchId: "routing_conditions",
+      output: formalWire("routing_conditions", {
         condition: [{
           q: "Emergency option cannot skip approval",
           l: [
@@ -862,17 +1105,17 @@ test("no-bypass routes reject executable hints but retain explicit CJK predicate
   const otherwiseText =
     "Amount above 100 routes to Finance; otherwise does not skip approval.";
   const otherwiseSource = templateCopilotV3ProviderQuoteBatches
-    .routing_conditions_exceptions.slots.map((slot) => ({
+    .routing_conditions.slots.map((slot) => ({
       slot,
       messageId: `message:no-bypass-otherwise:${slot}`,
       text: otherwiseText,
     }));
   const otherwise = locateTemplateCopilotV3ProviderQuotes({
-    batchId: "routing_conditions_exceptions",
+    batchId: "routing_conditions",
     sourceSlots: otherwiseSource,
     output: expandTemplateCopilotV3ProviderQuoteWire({
-      batchId: "routing_conditions_exceptions",
-      output: formalWire("routing_conditions_exceptions", {
+      batchId: "routing_conditions",
+      output: formalWire("routing_conditions", {
         condition: [{
           q: "Amount above 100 routes to Finance; otherwise does not skip approval",
           l: [
@@ -904,17 +1147,17 @@ test("no-bypass routes reject executable hints but retain explicit CJK predicate
 
   const explicitConditions = "紧急选项为是时不得跳过审批。";
   const explicitSource = templateCopilotV3ProviderQuoteBatches
-    .routing_conditions_exceptions.slots.map((slot) => ({
+    .routing_conditions.slots.map((slot) => ({
       slot,
       messageId: `message:no-bypass-explicit:${slot}`,
       text: explicitConditions,
     }));
   const explicit = locateTemplateCopilotV3ProviderQuotes({
-    batchId: "routing_conditions_exceptions",
+    batchId: "routing_conditions",
     sourceSlots: explicitSource,
     output: expandTemplateCopilotV3ProviderQuoteWire({
-      batchId: "routing_conditions_exceptions",
-      output: formalWire("routing_conditions_exceptions", {
+      batchId: "routing_conditions",
+      output: formalWire("routing_conditions", {
         condition: [cjkNoBypassCondition({ explicitPredicate: true })],
       }),
     }),
@@ -931,17 +1174,17 @@ test("no-bypass routes reject executable hints but retain explicit CJK predicate
   const explicitEnglishText =
     "Emergency option is true: cannot skip approval.";
   const explicitEnglishSource = templateCopilotV3ProviderQuoteBatches
-    .routing_conditions_exceptions.slots.map((slot) => ({
+    .routing_conditions.slots.map((slot) => ({
       slot,
       messageId: `message:no-bypass-explicit-en:${slot}`,
       text: explicitEnglishText,
     }));
   const explicitEnglish = locateTemplateCopilotV3ProviderQuotes({
-    batchId: "routing_conditions_exceptions",
+    batchId: "routing_conditions",
     sourceSlots: explicitEnglishSource,
     output: expandTemplateCopilotV3ProviderQuoteWire({
-      batchId: "routing_conditions_exceptions",
-      output: formalWire("routing_conditions_exceptions", {
+      batchId: "routing_conditions",
+      output: formalWire("routing_conditions", {
         condition: [{
           q: "Emergency option is true: cannot skip approval",
           l: [
@@ -1166,9 +1409,9 @@ test("formal v3 buckets fail the whole batch at bucket, aggregate, or leaf capac
         () => ({}),
       ),
     }],
-    ["conditions", "routing_conditions_exceptions", {
+    ["conditions", "routing_conditions", {
       condition: Array.from(
-        { length: bucketLimits.routing_conditions_exceptions.condition },
+        { length: bucketLimits.routing_conditions.condition },
         () => ({}),
       ),
     }],
@@ -1242,6 +1485,7 @@ test("formal v3 bucket ceilings stay one above the reviewed corpus maxima", () =
     intake_total: 0,
     stage_total: 0,
     condition_total: 0,
+    rejection_total: 0,
     policy_total: 0,
   };
   for (const scenario of templateCopilotQualificationScenarios) {
@@ -1275,8 +1519,9 @@ test("formal v3 bucket ceilings stay one above the reviewed corpus maxima", () =
     );
     maxima.condition_total = Math.max(
       maxima.condition_total,
-      manifest.conditions.length + 1,
+      manifest.conditions.length,
     );
+    maxima.rejection_total = Math.max(maxima.rejection_total, 1);
     maxima.policy_total = Math.max(
       maxima.policy_total,
       8 + policyNotifications,
@@ -1292,7 +1537,8 @@ test("formal v3 bucket ceilings stay one above the reviewed corpus maxima", () =
     policy_notification: 6,
     intake_total: 19,
     stage_total: 9,
-    condition_total: 4,
+    condition_total: 3,
+    rejection_total: 1,
     policy_total: 14,
   });
   const buckets = templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind;
@@ -1304,7 +1550,7 @@ test("formal v3 bucket ceilings stay one above the reviewed corpus maxima", () =
     maxima.stage_notification + 1,
   );
   assert.equal(
-    buckets.routing_conditions_exceptions.condition,
+    buckets.routing_conditions.condition,
     maxima.condition + 1,
   );
   assert.equal(buckets.policy_context.notification, maxima.policy_notification + 1);
@@ -1320,8 +1566,20 @@ test("formal v3 bucket ceilings stay one above the reviewed corpus maxima", () =
   );
   assert.equal(
     templateCopilotV3ProviderQuoteBatchGenerationLimits
-      .routing_conditions_exceptions.maximumItems,
+      .routing_conditions.maximumItems,
     maxima.condition_total + 1,
+  );
+  assert.equal(
+    templateCopilotV3ProviderQuoteBatchGenerationLimits.routing_rejection
+      .maximumItems,
+    maxima.rejection_total + 1,
+  );
+  assert.equal(
+    templateCopilotV3ProviderQuoteBatchGenerationLimits.routing_conditions
+        .maximumCompletionTokens +
+      templateCopilotV3ProviderQuoteBatchGenerationLimits.routing_rejection
+        .maximumCompletionTokens,
+    1_536,
   );
   assert.equal(
     templateCopilotV3ProviderQuoteBatchGenerationLimits.policy_context

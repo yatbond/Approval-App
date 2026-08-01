@@ -29,7 +29,8 @@ import {
 const expectedBatchIds = Object.freeze([
   "intake_documents",
   "routing_stages_participants",
-  "routing_conditions_exceptions",
+  "routing_conditions",
+  "routing_rejection",
   "policy_context",
 ]);
 const observedMetricKeys = Object.freeze([

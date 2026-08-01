@@ -55,13 +55,21 @@ test("v3 qualification fingerprints the exact compact provider contract", () => 
         schemaFingerprint:
           "sha256:7024d74220e4a5a8f37175cf4ec06a8bf1a81c6dd2d015182b87b04b6143b429",
       },
-      routing_conditions_exceptions: {
-        maximumItems: 5,
+      routing_conditions: {
+        maximumItems: 4,
         maximumLeavesPerItem: 10,
-        maximumCompletionTokens: 1_536,
-        schemaUtf8Bytes: 3_624,
+        maximumCompletionTokens: 1_280,
+        schemaUtf8Bytes: 3_331,
         schemaFingerprint:
-          "sha256:9f1d6f5d843a77a255f4f19e3b9778f47f4637fc34d50559e9cb7a2f7dd90209",
+          "sha256:a91f8f04953edf029b9d03c384e7ac234dd94e48a51764aed8a5d4fba8119284",
+      },
+      routing_rejection: {
+        maximumItems: 2,
+        maximumLeavesPerItem: 1,
+        maximumCompletionTokens: 256,
+        schemaUtf8Bytes: 539,
+        schemaFingerprint:
+          "sha256:ef4a9902c2c21946f3e6ac32a35426813ed151e0e3a3c3ca370b0c4f9a91d435",
       },
       policy_context: {
         maximumItems: 15,
@@ -75,7 +83,7 @@ test("v3 qualification fingerprints the exact compact provider contract", () => 
   });
 });
 
-test("v3 qualification executes exactly four sequential batches for all 24 multilingual scenarios", async () => {
+test("v3 qualification executes exactly five sequential batches for all 24 multilingual scenarios", async () => {
   const calls = [];
   let active = 0;
   let maximumActive = 0;
@@ -110,15 +118,16 @@ test("v3 qualification executes exactly four sequential batches for all 24 multi
   });
 
   assert.equal(maximumActive, 1);
-  assert.equal(calls.length, 96);
-  for (let index = 0; index < calls.length; index += 4) {
+  assert.equal(calls.length, 120);
+  for (let index = 0; index < calls.length; index += 5) {
     assert.deepEqual(
-      calls.slice(index, index + 4).map((entry) => entry.batchId),
+      calls.slice(index, index + 5).map((entry) => entry.batchId),
       formalBatchIds,
     );
     assert.equal(calls[index].scenarioId, calls[index + 1].scenarioId);
     assert.equal(calls[index].scenarioId, calls[index + 2].scenarioId);
     assert.equal(calls[index].scenarioId, calls[index + 3].scenarioId);
+    assert.equal(calls[index].scenarioId, calls[index + 4].scenarioId);
   }
   assert.equal(report.summary.fullGatePassed, false);
   assert.equal(report.summary.passed, false);
@@ -133,11 +142,11 @@ test("v3 qualification executes exactly four sequential batches for all 24 multi
   assert.equal(report.summary.executableDraftGate.evaluated, false);
   assert.equal(report.summary.activationGate.passed, false);
   assert.equal(report.summary.pilotGate.passed, false);
-  assert.equal(report.summary.successfulBatchCount, 96);
-  assert.equal(report.summary.providerRequestCount, 96);
+  assert.equal(report.summary.successfulBatchCount, 120);
+  assert.equal(report.summary.providerRequestCount, 120);
   assert.equal(
     report.metadata.runnerVersion,
-    "template-copilot-v3-live-semantic-qualification.12",
+    "template-copilot-v3-live-semantic-qualification.13",
   );
   assert.equal(report.summary.expandedAnchorItemCount, 0);
   assert.equal(report.summary.sameLocalClauseRecoveredLeafCount, 0);
@@ -147,8 +156,8 @@ test("v3 qualification executes exactly four sequential batches for all 24 multi
       sourceCapturePassCount: 8,
       governedHoldCount: 0,
       executableDraftPassCount: 0,
-      successfulBatchCount: 32,
-      batchCount: 32,
+      successfulBatchCount: 40,
+      batchCount: 40,
     });
   }
 });
@@ -159,8 +168,8 @@ test("v3 qualification reports 24/24 source capture and 64 holds without claimin
     return {
       id: item.id,
       language: item.language,
-      batchCount: 4,
-      successfulBatchCount: 4,
+      batchCount: 5,
+      successfulBatchCount: 5,
       batches: formalBatchIds.map((batchId) => ({
         batchId,
         status: "applied",
@@ -396,6 +405,7 @@ test("v3 qualification keeps stable server source IDs and quarantines the hostil
       "EN-01:conditions_exceptions",
       "EN-01:visibility_notifications",
       "EN-01:conditions_exceptions",
+      "EN-01:conditions_exceptions",
       "EN-01:identity_scope",
       "EN-01:collaboration_corrections",
       "EN-01:timing_escalation",
@@ -461,7 +471,7 @@ test("v3 qualification isolates a failed batch, continues later batches, and sto
   });
 
   assert.deepEqual(calls, formalBatchIds);
-  assert.equal(report.scenarios[0].successfulBatchCount, 3);
+  assert.equal(report.scenarios[0].successfulBatchCount, 4);
   assert.equal(report.scenarios[0].batches[0].providerOutcome, "timeout");
   assert.equal(
     report.scenarios[0].batches[0].providerFailureReason,
@@ -470,8 +480,9 @@ test("v3 qualification isolates a failed batch, continues later batches, and sto
   assert.equal(report.scenarios[0].batches[1].status, "applied");
   assert.equal(report.scenarios[0].batches[2].status, "applied");
   assert.equal(report.scenarios[0].batches[3].status, "applied");
+  assert.equal(report.scenarios[0].batches[4].status, "applied");
   assert.equal(report.summary.selectedGatePassed, false);
-  assert.equal(report.summary.providerRequestCount, 4);
+  assert.equal(report.summary.providerRequestCount, 5);
   assert.equal(report.summary.providerRequestFailureCount, 1);
   assert.equal(report.scenarios[0].batches[0].expandedAnchorItemCount, 0);
   assert.equal(
@@ -681,7 +692,7 @@ test("v3 qualification hard subset is fixed and never masquerades as the full ga
   assert.equal(report.summary.passed, false);
   assert.equal(report.summary.pilotGate.passed, false);
   assert.equal(report.summary.scenarioPassCount, 6);
-  assert.equal(report.summary.successfulBatchCount, 24);
+  assert.equal(report.summary.successfulBatchCount, 30);
 });
 
 test("v3 formal full gate requires clean comparable source, baseline route, timeout, and reasoning", async () => {
@@ -756,11 +767,12 @@ test("v3 qualification rejects a mismatched returned batch envelope and continue
     now: monotonicClock(),
   });
   assert.deepEqual(calls, formalBatchIds);
-  assert.equal(report.scenarios[0].successfulBatchCount, 3);
+  assert.equal(report.scenarios[0].successfulBatchCount, 4);
   assert.equal(report.scenarios[0].batches[0].status, "failed");
   assert.equal(report.scenarios[0].batches[1].status, "applied");
   assert.equal(report.scenarios[0].batches[2].status, "applied");
   assert.equal(report.scenarios[0].batches[3].status, "applied");
+  assert.equal(report.scenarios[0].batches[4].status, "applied");
   assert.equal(report.summary.selectedGatePassed, false);
 });
 
@@ -972,7 +984,8 @@ test("v3 qualification fails closed on malformed accepted-item recovery provenan
     assert.equal(report.scenarios[0].batches[1].status, "applied");
     assert.equal(report.scenarios[0].batches[2].status, "applied");
     assert.equal(report.scenarios[0].batches[3].status, "applied");
-    assert.equal(report.scenarios[0].successfulBatchCount, 3);
+    assert.equal(report.scenarios[0].batches[4].status, "applied");
+    assert.equal(report.scenarios[0].successfulBatchCount, 4);
     assert.equal(report.summary.selectedGatePassed, false);
     assert.doesNotMatch(JSON.stringify(report), /MALFORMED SECRET|privateQuote/u);
   }
@@ -1031,8 +1044,8 @@ test("v3 qualification rejects hidden retries, zero requests, swapped order, and
       now: monotonicClock(),
     });
     assert.equal(report.summary.selectedGatePassed, false);
-    assert.equal(report.scenarios[0].successfulBatchCount, 3);
-    assert.deepEqual(assembledItemCounts, [3]);
+    assert.equal(report.scenarios[0].successfulBatchCount, 4);
+    assert.deepEqual(assembledItemCounts, [4]);
   }
 
   const report = await runTemplateCopilotV3LiveSemanticQualification({
@@ -1617,7 +1630,7 @@ test("GPT-5.6 Sol shadow evidence remains excluded from formal and pilot gates",
     report.metadata.providerContract.chatCompletionTokenParameter,
     "max_completion_tokens",
   );
-  assert.equal(report.summary.successfulBatchCount, 96);
+  assert.equal(report.summary.successfulBatchCount, 120);
   assert.equal(report.summary.strictBatchScenarioCount, 24);
   assert.equal(report.summary.passed, false);
   assert.equal(report.summary.selectedGatePassed, false);
@@ -2022,8 +2035,8 @@ function passingScore() {
     batchGate: {
       passed: true,
       failures: [],
-      passedBatchCount: 4,
-      batchCount: 4,
+      passedBatchCount: 5,
+      batchCount: 5,
       batchFailureCount: 0,
       providerRequestFailureCount: 0,
       failureCount: 0,
