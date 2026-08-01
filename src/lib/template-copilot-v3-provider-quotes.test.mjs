@@ -1,18 +1,22 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import {
   buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema,
   formatTemplateCopilotV3ProviderQuoteBatch,
   locateTemplateCopilotV3ProviderQuotes,
+  templateCopilotV3ProviderQuoteAllowedSlotsByBatchAndKind,
   templateCopilotV3ProviderQuoteAllowedSlotsByKind,
+  templateCopilotV3ProviderQuoteBatchLocalRejectionDetails,
   templateCopilotV3ProviderQuoteBatchIds,
+  templateCopilotV3ProviderQuoteBatchGenerationLimits,
   templateCopilotV3ProviderQuoteBatches,
   templateCopilotV3ProviderQuoteKindRoleHints,
-  templateCopilotV3ProviderQuoteKinds,
-  templateCopilotV3ProviderQuoteMinimumSemanticCores,
+  templateCopilotV3ProviderQuoteMinimumSemanticCore,
   templateCopilotV3ProviderQuoteOutputSchema,
-  templateCopilotV3ProviderQuoteRoles,
   templateCopilotV3ProviderQuoteSlots,
+  templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind,
+  templateCopilotV3ProviderQuoteWireVersion,
 } from "./template-copilot-v3-provider-quotes.ts";
 import { templateCopilotV3SourceSpanSchema } from "./template-copilot-v3-evidence.ts";
 
@@ -70,7 +74,7 @@ const sqlWhitespaceCodePoints = [
   0x3000,
 ];
 
-test("quote batches partition the nine slots exactly and formatting omits server message IDs", () => {
+test("quote batches cover the nine slots with deliberate routing reference overlap", () => {
   assert.deepEqual(
     templateCopilotV3ProviderQuoteBatches.structure.slots,
     [
@@ -79,6 +83,31 @@ test("quote batches partition the nine slots exactly and formatting omits server
       "stages_participants",
       "conditions_exceptions",
     ],
+  );
+  assert.deepEqual(
+    templateCopilotV3ProviderQuoteBatches.intake_documents.slots,
+    ["initiators_fields", "attachments"],
+  );
+  assert.deepEqual(
+    templateCopilotV3ProviderQuoteBatches.routing_execution.slots,
+    ["stages_participants", "conditions_exceptions"],
+  );
+  assert.deepEqual(
+    templateCopilotV3ProviderQuoteBatches.routing_stages_participants.slots,
+    [
+      "stages_participants",
+      "conditions_exceptions",
+      "visibility_notifications",
+    ],
+  );
+  assert.deepEqual(
+    templateCopilotV3ProviderQuoteBatches.routing_conditions_exceptions.slots,
+    ["conditions_exceptions"],
+  );
+  assert.deepEqual(
+    templateCopilotV3ProviderQuoteBatches.routing_conditions_exceptions
+      .allowedKinds,
+    ["condition", "rejection"],
   );
   assert.deepEqual(
     templateCopilotV3ProviderQuoteBatches.policy_context.slots,
@@ -90,12 +119,16 @@ test("quote batches partition the nine slots exactly and formatting omits server
       "governance",
     ],
   );
+  const formalSlotUses = [
+    ...templateCopilotV3ProviderQuoteBatches.intake_documents.slots,
+    ...templateCopilotV3ProviderQuoteBatches.routing_stages_participants.slots,
+    ...templateCopilotV3ProviderQuoteBatches.routing_conditions_exceptions.slots,
+    ...templateCopilotV3ProviderQuoteBatches.policy_context.slots,
+  ];
+  assert.deepEqual(new Set(formalSlotUses), new Set(templateCopilotV3ProviderQuoteSlots));
   assert.deepEqual(
-    new Set([
-      ...templateCopilotV3ProviderQuoteBatches.structure.slots,
-      ...templateCopilotV3ProviderQuoteBatches.policy_context.slots,
-    ]),
-    new Set(templateCopilotV3ProviderQuoteSlots),
+    formalSlotUses.filter((slot) => slot === "conditions_exceptions"),
+    ["conditions_exceptions", "conditions_exceptions"],
   );
 
   const sources = sourceSlots("structure", {
@@ -143,160 +176,768 @@ test("the server owns a closed kind-to-source-slot matrix", () => {
         .flatMap((batch) => batch.allowedKinds),
     ),
   );
+
+  for (const [batchId, batch] of Object.entries(
+    templateCopilotV3ProviderQuoteBatches,
+  )) {
+    const localPolicy =
+      templateCopilotV3ProviderQuoteAllowedSlotsByBatchAndKind[batchId];
+    assert.deepEqual(
+      Object.keys(localPolicy),
+      [...batch.allowedKinds],
+      `${batchId}:closed-kind-set`,
+    );
+    for (const [kind, slots] of Object.entries(localPolicy)) {
+      assert.ok(slots.length > 0, `${batchId}:${kind}:nonempty`);
+      assert.ok(
+        slots.every(
+          (slot) =>
+            batch.slots.includes(slot) &&
+            templateCopilotV3ProviderQuoteAllowedSlotsByKind[kind].includes(
+              slot,
+            ),
+        ),
+        `${batchId}:${kind}:batch-and-global-authority`,
+      );
+    }
+  }
+  assert.deepEqual(
+    templateCopilotV3ProviderQuoteAllowedSlotsByBatchAndKind
+      .routing_stages_participants,
+    {
+      stage: ["stages_participants", "conditions_exceptions"],
+      visibility: ["stages_participants", "visibility_notifications"],
+      notification: ["stages_participants"],
+    },
+  );
+  assert.deepEqual(
+    templateCopilotV3ProviderQuoteAllowedSlotsByBatchAndKind.policy_context,
+    {
+      workflow_name: ["identity_scope"],
+      workflow_purpose: ["identity_scope"],
+      workflow_scope: ["identity_scope"],
+      collaboration: ["collaboration_corrections"],
+      timing: ["timing_escalation"],
+      notification: ["timing_escalation", "visibility_notifications"],
+      governance_owner: ["governance"],
+      governance_policy: ["governance"],
+      retention: ["governance"],
+    },
+  );
 });
 
-test("provider guidance exhaustively discriminates batch kinds and kind roles and hints", () => {
-  const guidanceItem = (kind, role, hint) => ({
-    kind,
-    quote: "source",
-    leaves: [{ role, quote: "source", hint }],
-    confidence: "high",
-    ambiguity: "none",
+test("batch-local authority rejects Cartesian kind-slot widening", () => {
+  const uniqueForbiddenStageNotification = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_stages_participants",
+    sourceSlots: sourceSlots("routing_stages_participants", {
+      visibility_notifications: "Notify the requester.",
+    }),
+    output: output([
+      item({
+        kind: "notification",
+        quote: "Notify the requester",
+        leaves: [
+          { role: "event", quote: "Notify", hint: "stage_completed" },
+          { role: "recipient", quote: "requester", hint: "requester" },
+        ],
+      }),
+    ]),
   });
-  const guidanceAllows = (schema, candidate) => {
-    const itemVariant = schema.properties.items.items.anyOf.find(
-      (variant) => variant.properties.kind.const === candidate.kind,
-    );
-    if (!itemVariant) return false;
-    const leafVariant = itemVariant.properties.leaves.items.anyOf.find(
-      (variant) => variant.properties.role.const === candidate.leaves[0].role,
-    );
-    if (!leafVariant) return false;
-    const hintSchema = leafVariant.properties.hint;
-    return hintSchema.type === "null"
-      ? candidate.leaves[0].hint === null
-      : hintSchema.enum.includes(candidate.leaves[0].hint);
-  };
+  assert.deepEqual(uniqueForbiddenStageNotification.rejected, [{
+    itemIndex: 0,
+    code: "slot_not_allowed",
+    detail: "notification:visibility_notifications",
+  }]);
 
+  const policySchema =
+    buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema("policy_context");
+  assert.ok(
+    !policySchema.properties.i.items.anyOf.some(
+      (branch) => branch.properties.k.const === "visibility",
+    ),
+    "policy schema must have no visibility branch",
+  );
+  const forbiddenPolicyVisibility = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "policy_context",
+    sourceSlots: sourceSlots("policy_context", {
+      visibility_notifications: "Only participants may view the request.",
+    }),
+    output: output([
+      item({
+        kind: "visibility",
+        quote: "Only participants may view the request",
+        leaves: [{
+          role: "rule",
+          quote: "Only participants may view the request",
+          hint: null,
+        }],
+      }),
+    ]),
+  });
+  assert.deepEqual(forbiddenPolicyVisibility.rejected, [{
+    itemIndex: 0,
+    code: "kind_not_allowed",
+    detail: "visibility",
+  }]);
+});
+
+test("whole-slot kinds expose and accept only their pinned semantic roles", () => {
+  assert.deepEqual(
+    templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind,
+    {
+      structure: {},
+      intake_documents: {
+        initiator: { role: "description", hint: null },
+      },
+      routing_execution: {},
+      routing_stages_participants: {
+        visibility: { role: "rule", hint: null },
+      },
+      routing_conditions_exceptions: {},
+      policy_context: {
+        workflow_name: { role: "description", hint: null },
+        workflow_purpose: { role: "description", hint: null },
+        workflow_scope: { role: "rule", hint: null },
+        collaboration: { role: "rule", hint: null },
+        timing: { role: "rule", hint: null },
+        governance_owner: { role: "description", hint: null },
+        governance_policy: { role: "rule", hint: null },
+        retention: { role: "period", hint: null },
+      },
+    },
+  );
+  const wholeSlotKinds = new Set(
+    Object.values(
+      templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind,
+    ).flatMap((batchPolicy) => Object.keys(batchPolicy)),
+  );
+  assert.equal(
+    new Set(templateCopilotV3ProviderQuoteBatchLocalRejectionDetails).size,
+    templateCopilotV3ProviderQuoteBatchLocalRejectionDetails.length,
+  );
+  assert.ok(
+    templateCopilotV3ProviderQuoteBatchLocalRejectionDetails.includes(
+      "attachment:format_requires_label",
+    ),
+  );
+  for (const kind of wholeSlotKinds) {
+    for (const suffix of [
+      "whole_slot_quote",
+      "whole_slot_leaf_count",
+      "whole_slot_leaf_quote",
+      "duplicate_whole_slot_item",
+    ]) {
+      assert.ok(
+        templateCopilotV3ProviderQuoteBatchLocalRejectionDetails.includes(
+          `${kind}:${suffix}`,
+        ),
+        `${kind}:${suffix}`,
+      );
+    }
+  }
+  assert.deepEqual(templateCopilotV3ProviderQuoteKindRoleHints.initiator, {
+    description: null,
+  });
+  assert.deepEqual(templateCopilotV3ProviderQuoteKindRoleHints.workflow_name, {
+    description: null,
+  });
+  assert.deepEqual(templateCopilotV3ProviderQuoteKindRoleHints.workflow_purpose, {
+    description: null,
+  });
+  assert.deepEqual(templateCopilotV3ProviderQuoteKindRoleHints.workflow_scope, {
+    rule: null,
+  });
+  assert.deepEqual(templateCopilotV3ProviderQuoteKindRoleHints.collaboration, {
+    rule: null,
+  });
+  assert.deepEqual(templateCopilotV3ProviderQuoteKindRoleHints.timing, {
+    rule: null,
+  });
+  assert.deepEqual(templateCopilotV3ProviderQuoteKindRoleHints.governance_owner, {
+    description: null,
+  });
+  assert.deepEqual(templateCopilotV3ProviderQuoteKindRoleHints.governance_policy, {
+    rule: null,
+  });
+  assert.deepEqual(templateCopilotV3ProviderQuoteKindRoleHints.retention, {
+    period: null,
+  });
+
+  const initiatorText =
+    "Employees may initiate and provide a business purpose.";
+  const initiator = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "intake_documents",
+    sourceSlots: sourceSlots("intake_documents", {
+      initiators_fields: initiatorText,
+    }),
+    output: output([
+      item({
+        kind: "initiator",
+        quote: initiatorText,
+        leaves: [{ role: "description", quote: initiatorText, hint: null }],
+      }),
+      item({
+        kind: "initiator",
+        quote: initiatorText,
+        leaves: [{
+          role: "mode",
+          quote: "Employees",
+          hint: "any_employee",
+        }],
+      }),
+    ]),
+  });
+  assert.deepEqual(
+    initiator.accepted.map(({ kind, slot, anchor, leaves }) => ({
+      kind,
+      slot,
+      anchor: anchor.exactText,
+      roles: leaves.map(({ role }) => role),
+    })),
+    [{
+      kind: "initiator",
+      slot: "initiators_fields",
+      anchor: initiatorText,
+      roles: ["description"],
+    }],
+  );
+  assert.deepEqual(initiator.rejected, [{
+    itemIndex: 1,
+    code: "role_not_allowed",
+    detail: "initiator:mode",
+  }]);
+
+  const policyText = Object.freeze({
+    identity_scope:
+      "Purchase approval workflow covers corporate purchase requests.",
+    collaboration_corrections:
+      "Contributors may collaborate and correct draft requests.",
+    timing_escalation:
+      "Escalate overdue approvals after twenty-four hours.",
+    governance:
+      "Procurement owns this policy; retain records for seven years.",
+  });
+  const correctPolicyItems = [
+    ["workflow_name", "description", "identity_scope"],
+    ["workflow_purpose", "description", "identity_scope"],
+    ["workflow_scope", "rule", "identity_scope"],
+    ["collaboration", "rule", "collaboration_corrections"],
+    ["timing", "rule", "timing_escalation"],
+    ["governance_owner", "description", "governance"],
+    ["governance_policy", "rule", "governance"],
+    ["retention", "period", "governance"],
+  ].map(([kind, role, slot]) =>
+    item({
+      kind,
+      quote: policyText[slot],
+      leaves: [{ role, quote: policyText[slot], hint: null }],
+    })
+  );
+  const wrongPolicyItems = [
+    ["workflow_name", "rule", "identity_scope"],
+    ["workflow_purpose", "rule", "identity_scope"],
+    ["workflow_scope", "description", "identity_scope"],
+    ["collaboration", "description", "collaboration_corrections"],
+    ["timing", "offset_hours", "timing_escalation"],
+    ["governance_owner", "rule", "governance"],
+    ["governance_policy", "description", "governance"],
+    ["retention", "rationale", "governance"],
+  ].map(([kind, role, slot]) =>
+    item({
+      kind,
+      quote: policyText[slot],
+      leaves: [{ role, quote: policyText[slot], hint: null }],
+    })
+  );
+  const policy = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "policy_context",
+    sourceSlots: sourceSlots("policy_context", policyText),
+    output: output([...correctPolicyItems, ...wrongPolicyItems]),
+  });
+  assert.deepEqual(
+    policy.accepted.map(({ kind, leaves }) => [kind, leaves[0].role]),
+    [
+      ["workflow_name", "description"],
+      ["workflow_purpose", "description"],
+      ["workflow_scope", "rule"],
+      ["collaboration", "rule"],
+      ["timing", "rule"],
+      ["governance_owner", "description"],
+      ["governance_policy", "rule"],
+      ["retention", "period"],
+    ],
+  );
+  assert.deepEqual(
+    policy.rejected.map(({ itemIndex, code, detail }) => ({
+      itemIndex,
+      code,
+      detail,
+    })),
+    [
+      { itemIndex: 8, code: "role_not_allowed", detail: "workflow_name:rule" },
+      { itemIndex: 9, code: "role_not_allowed", detail: "workflow_purpose:rule" },
+      { itemIndex: 10, code: "role_not_allowed", detail: "workflow_scope:description" },
+      { itemIndex: 11, code: "role_not_allowed", detail: "collaboration:description" },
+      { itemIndex: 12, code: "role_not_allowed", detail: "timing:offset_hours" },
+      { itemIndex: 13, code: "role_not_allowed", detail: "governance_owner:rule" },
+      { itemIndex: 14, code: "role_not_allowed", detail: "governance_policy:description" },
+      { itemIndex: 15, code: "role_not_allowed", detail: "retention:rationale" },
+    ],
+  );
+});
+
+test("formal batches enforce whole-slot quote, sole leaf, pinned role, and cardinality", () => {
+  const stagesParticipants =
+    "Finance approves. Participants may view supplier documents.";
+  const visibility = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_stages_participants",
+    sourceSlots: sourceSlots("routing_stages_participants", {
+      stages_participants: stagesParticipants,
+    }),
+    output: output([
+      item({
+        kind: "visibility",
+        quote: "Participants may view supplier documents",
+        leaves: [{
+          role: "description",
+          quote: "Participants may view supplier documents",
+          hint: null,
+        }],
+      }),
+      item({
+        kind: "visibility",
+        quote: stagesParticipants,
+        leaves: [{
+          role: "description",
+          quote: stagesParticipants,
+          hint: null,
+        }],
+      }),
+      item({
+        kind: "visibility",
+        quote: stagesParticipants,
+        leaves: [{
+          role: "rule",
+          quote: stagesParticipants,
+          hint: "all_participants",
+        }],
+      }),
+      item({
+        kind: "visibility",
+        quote: stagesParticipants,
+        leaves: [{ role: "rule", quote: stagesParticipants, hint: null }],
+      }),
+    ]),
+  });
+  assert.deepEqual(
+    visibility.accepted.map(({ itemIndex, kind, slot, anchor, leaves }) => ({
+      itemIndex,
+      kind,
+      slot,
+      anchor: anchor.exactText,
+      leaf: leaves[0].sourceSpan.exactText,
+      role: leaves[0].role,
+    })),
+    [{
+      itemIndex: 3,
+      kind: "visibility",
+      slot: "stages_participants",
+      anchor: stagesParticipants,
+      leaf: stagesParticipants,
+      role: "rule",
+    }],
+  );
+  assert.deepEqual(visibility.rejected, [
+    {
+      itemIndex: 0,
+      code: "item_schema_invalid",
+      detail: "visibility:whole_slot_quote",
+    },
+    {
+      itemIndex: 1,
+      code: "role_not_allowed",
+      detail: "visibility:description",
+    },
+    {
+      itemIndex: 2,
+      code: "hint_not_allowed",
+      detail: "visibility:rule",
+    },
+  ]);
+
+  const identityScope =
+    "Purchase approval workflow covers corporate purchase requests.";
+  const policy = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "policy_context",
+    sourceSlots: sourceSlots("policy_context", {
+      identity_scope: identityScope,
+    }),
+    output: output([
+      item({
+        kind: "workflow_name",
+        quote: "Purchase approval workflow",
+        leaves: [{
+          role: "description",
+          quote: "Purchase approval workflow",
+          hint: null,
+        }],
+      }),
+      item({
+        kind: "workflow_name",
+        quote: identityScope,
+        leaves: [
+          { role: "description", quote: identityScope, hint: null },
+          {
+            role: "description",
+            quote: "corporate purchase requests",
+            hint: null,
+          },
+        ],
+      }),
+      item({
+        kind: "workflow_name",
+        quote: identityScope,
+        leaves: [{
+          role: "description",
+          quote: "Purchase approval workflow",
+          hint: null,
+        }],
+      }),
+      item({
+        kind: "workflow_name",
+        quote: identityScope,
+        leaves: [{
+          role: "description",
+          quote: identityScope,
+          hint: null,
+        }],
+      }),
+    ]),
+  });
+  assert.deepEqual(
+    policy.accepted.map(({ itemIndex, kind, anchor, leaves }) => ({
+      itemIndex,
+      kind,
+      anchor: anchor.exactText,
+      leaf: leaves[0].sourceSpan.exactText,
+    })),
+    [{
+      itemIndex: 3,
+      kind: "workflow_name",
+      anchor: identityScope,
+      leaf: identityScope,
+    }],
+  );
+  assert.deepEqual(policy.rejected, [
+    {
+      itemIndex: 0,
+      code: "item_schema_invalid",
+      detail: "workflow_name:whole_slot_quote",
+    },
+    {
+      itemIndex: 1,
+      code: "item_schema_invalid",
+      detail: "workflow_name:whole_slot_leaf_count",
+    },
+    {
+      itemIndex: 2,
+      code: "item_schema_invalid",
+      detail: "workflow_name:whole_slot_leaf_quote",
+    },
+  ]);
+
+  const duplicate = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "policy_context",
+    sourceSlots: sourceSlots("policy_context", {
+      identity_scope: identityScope,
+    }),
+    output: output([
+      item({
+        kind: "workflow_purpose",
+        quote: identityScope,
+        leaves: [{
+          role: "description",
+          quote: identityScope,
+          hint: null,
+        }],
+      }),
+      item({
+        kind: "workflow_purpose",
+        quote: identityScope,
+        leaves: [{
+          role: "description",
+          quote: identityScope,
+          hint: null,
+        }],
+      }),
+    ]),
+  });
+  assert.deepEqual(duplicate.accepted, []);
+  assert.deepEqual(duplicate.rejected, [
+    {
+      itemIndex: 0,
+      code: "item_schema_invalid",
+      detail: "workflow_purpose:duplicate_whole_slot_item",
+    },
+    {
+      itemIndex: 1,
+      code: "item_schema_invalid",
+      detail: "workflow_purpose:duplicate_whole_slot_item",
+    },
+  ]);
+});
+
+test("intake document format evidence requires an entity-local label", () => {
+  const attachments = "Require supplier quotation as PDF.";
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "intake_documents",
+    sourceSlots: sourceSlots("intake_documents", { attachments }),
+    output: output([
+      item({
+        kind: "attachment",
+        quote: "PDF",
+        leaves: [{ role: "format", quote: "PDF", hint: "pdf" }],
+      }),
+      item({
+        kind: "attachment",
+        quote: attachments,
+        leaves: [
+          {
+            role: "label",
+            quote: "supplier quotation",
+            hint: null,
+          },
+          { role: "kind", quote: "quotation", hint: "attachment" },
+          { role: "required", quote: "Require", hint: "true" },
+          { role: "format", quote: "PDF", hint: "pdf" },
+        ],
+      }),
+    ]),
+  });
+  assert.deepEqual(
+    result.accepted.map(({ itemIndex, kind, slot, leaves }) => ({
+      itemIndex,
+      kind,
+      slot,
+      roles: leaves.map(({ role }) => role),
+    })),
+    [{
+      itemIndex: 1,
+      kind: "attachment",
+      slot: "attachments",
+      roles: ["label", "kind", "required", "format"],
+    }],
+  );
+  assert.deepEqual(result.rejected, [{
+    itemIndex: 0,
+    code: "item_schema_invalid",
+    detail: "attachment:format_requires_label",
+  }]);
+});
+
+test("stage routing captures condition-added stages while conditions stay kind-closed", () => {
+  const stage = item({
+    kind: "stage",
+    quote: "add Legal reviewer",
+    leaves: [
+      { role: "label", quote: "Legal", hint: null },
+      { role: "kind", quote: "reviewer", hint: "review" },
+      { role: "participant", quote: "Legal", hint: null },
+    ],
+  });
+  const stageResult = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_stages_participants",
+    sourceSlots: sourceSlots("routing_stages_participants", {
+      stages_participants: "Finance approves the original route.",
+      conditions_exceptions: "If urgent, add Legal reviewer.",
+    }),
+    output: output([stage]),
+  });
+  assert.deepEqual(stageResult.rejected, []);
+  assert.deepEqual(
+    stageResult.accepted.map(({ kind, slot }) => ({ kind, slot })),
+    [{ kind: "stage", slot: "conditions_exceptions" }],
+  );
+
+  const conditionsResult = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions_exceptions",
+    sourceSlots: sourceSlots("routing_conditions_exceptions", {
+      conditions_exceptions: "If urgent, add Legal reviewer.",
+    }),
+    output: output([stage]),
+  });
+  assert.deepEqual(conditionsResult.accepted, []);
+  assert.deepEqual(conditionsResult.rejected, [{
+    itemIndex: 0,
+    code: "kind_not_allowed",
+    detail: "stage",
+  }]);
+});
+
+test("provider guidance uses compact kind-discriminated formal schemas", () => {
+  const expectedSchemaEvidence = {
+    intake_documents: {
+      bytes: 6_441,
+      sha256: "cea44f166e5700a999ca95bfc027ea156a382ff32e5e6d73aca75098daa9605c",
+    },
+    routing_stages_participants: {
+      bytes: 6_318,
+      sha256: "b04c1c86215176c0727ee6ccf1c607a870099b788c2bbbbc732b65c758b1af4a",
+    },
+    routing_conditions_exceptions: {
+      bytes: 4_176,
+      sha256: "578a85fabe09000deab365f8771295f0779ecfe28fc2834503873ebc547419a1",
+    },
+    policy_context: {
+      bytes: 8_095,
+      sha256: "0487c220d0d2e132f23202e0a11926ff939343fcb31ffd7be0162dabb8c9a3bf",
+    },
+  };
   for (const batchId of templateCopilotV3ProviderQuoteBatchIds) {
     const schema =
       buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(batchId);
-    const itemVariants = schema.properties.items.items.anyOf;
-    assert.doesNotMatch(JSON.stringify(schema), /"oneOf"/u, `${batchId}:supported-unions`);
-    assert.deepEqual(
-      itemVariants.map((variant) => variant.properties.kind.const),
-      [...templateCopilotV3ProviderQuoteBatches[batchId].allowedKinds],
-      `${batchId}:kinds`,
-    );
-    assert.equal(schema.additionalProperties, false, `${batchId}:strict-root`);
-    assert.deepEqual(
-      schema.required,
-      ["contractVersion", "items"],
-      `${batchId}:required-root`,
-    );
+    const batch = templateCopilotV3ProviderQuoteBatches[batchId];
+    const limits = templateCopilotV3ProviderQuoteBatchGenerationLimits[batchId];
+    const itemContainer = schema.properties.i.items;
+    const itemPolicies = itemContainer.anyOf.map((itemSchema) => ({
+      itemSchema,
+      allowedKinds: [itemSchema.properties.k.const],
+    }));
+    const serialized = JSON.stringify(schema);
 
-    for (const kind of templateCopilotV3ProviderQuoteKinds) {
-      const [firstRole, firstHints] = Object.entries(
-        templateCopilotV3ProviderQuoteKindRoleHints[kind],
-      )[0];
-      const firstHint = firstHints === null ? null : firstHints[0];
-      assert.equal(
-        guidanceAllows(schema, guidanceItem(kind, firstRole, firstHint)),
-        templateCopilotV3ProviderQuoteBatches[batchId].allowedKinds.includes(
-          kind,
-        ),
-        `${batchId}:${kind}:batch`,
-      );
-    }
-
-    for (const kind of templateCopilotV3ProviderQuoteBatches[batchId]
-      .allowedKinds) {
-      const policy = templateCopilotV3ProviderQuoteKindRoleHints[kind];
-      const kindVariant = itemVariants.find(
-        (variant) => variant.properties.kind.const === kind,
-      );
-      const leafVariants = kindVariant.properties.leaves.items.anyOf;
-      const minimumCore = templateCopilotV3ProviderQuoteMinimumSemanticCores[
-        kind
-      ];
-      assert.equal(
-        kindVariant.properties.leaves.minItems,
-        minimumCore?.length ?? 1,
-        `${batchId}:${kind}:minimum-core-size`,
-      );
-      assert.equal(
-        typeof kindVariant.description,
-        minimumCore ? "string" : "undefined",
-        `${batchId}:${kind}:minimum-core-description`,
-      );
+    assert.deepEqual(
+      itemPolicies.map(({ allowedKinds }) => allowedKinds[0]),
+      [...batch.allowedKinds],
+      `${batchId}:disjoint-kind-branches`,
+    );
+    assert.equal(
+      itemContainer.anyOf.length,
+      batch.allowedKinds.length,
+      `${batchId}:branch-count`,
+    );
+    let expectedDescriptionCount = 0;
+    for (const { itemSchema, allowedKinds } of itemPolicies) {
+      const leafSchema = itemSchema.properties.l.items;
+      const expectedRolePolicies = new Map();
+      for (const kind of allowedKinds) {
+        for (const [role, hints] of Object.entries(
+          templateCopilotV3ProviderQuoteKindRoleHints[kind],
+        )) {
+          const policy = expectedRolePolicies.get(role) ?? {
+            allowsNull: false,
+            hints: new Set(),
+          };
+          if (hints === null) policy.allowsNull = true;
+          else for (const hint of hints) policy.hints.add(hint);
+          expectedRolePolicies.set(role, policy);
+        }
+      }
+      assert.equal(itemSchema.properties.k.const, allowedKinds[0]);
+      assert.equal(itemSchema.properties.k.enum, undefined);
       assert.deepEqual(
-        leafVariants.map((variant) => variant.properties.role.const),
-        Object.keys(policy),
-        `${batchId}:${kind}:roles`,
+        leafSchema.anyOf.map((variant) => variant.properties.r.const),
+        [...expectedRolePolicies.keys()].sort(),
+        `${batchId}:${allowedKinds.join("+")}:roles`,
       );
-
-      for (const [role, allowedHints] of Object.entries(policy)) {
-        const leafVariant = leafVariants.find(
-          (variant) => variant.properties.role.const === role,
-        );
-        if (allowedHints === null) {
-          assert.deepEqual(
-            leafVariant.properties.hint,
-            { type: "null" },
-            `${batchId}:${kind}:${role}:quote-only`,
-          );
+      for (const variant of leafSchema.anyOf) {
+        const role = variant.properties.r.const;
+        const policy = expectedRolePolicies.get(role);
+        const stringHints = { type: "string", enum: [...policy.hints].sort() };
+        const expectedHintSchema = policy.allowsNull && policy.hints.size > 0
+          ? { anyOf: [stringHints, { type: "null" }] }
+          : policy.allowsNull
+            ? { type: "null" }
+            : stringHints;
+        const expectedHintDescription = policy.hints.size === 0
+          ? "JSON null; q is evidence"
+          : policy.allowsNull
+            ? "JSON null or listed label proved by q"
+            : "listed label proved by q";
+        assert.deepEqual(variant.properties.h, {
+          ...expectedHintSchema,
+          description: expectedHintDescription,
+        }, `${batchId}:${allowedKinds.join("+")}:${role}:hints`);
+        if (policy.hints.size === 0) {
           assert.equal(
-            guidanceAllows(schema, guidanceItem(kind, role, null)),
-            true,
-            `${batchId}:${kind}:${role}:null`,
+            variant.properties.h.type,
+            "null",
+            `${batchId}:${allowedKinds.join("+")}:${role}:null`,
           );
-        } else {
-          assert.deepEqual(
-            leafVariant.properties.hint.enum,
-            [...allowedHints],
-            `${batchId}:${kind}:${role}:hints`,
-          );
-          for (const hint of allowedHints) {
-            assert.equal(
-              guidanceAllows(schema, guidanceItem(kind, role, hint)),
-              true,
-              `${batchId}:${kind}:${role}:${hint}`,
-            );
-          }
-          assert.equal(
-            guidanceAllows(schema, guidanceItem(kind, role, null)),
-            false,
-            `${batchId}:${kind}:${role}:null-not-allowed`,
+          assert.doesNotMatch(
+            variant.properties.h.description,
+            /canonical label/u,
+            `${batchId}:${allowedKinds.join("+")}:${role}:quote-only-description`,
           );
         }
         assert.equal(
-          guidanceAllows(
-            schema,
-            guidanceItem(kind, role, "unsupported_hint"),
-          ),
-          false,
-          `${batchId}:${kind}:${role}:wrong-hint`,
+          variant.properties.q.description,
+          "exact source lexeme",
+          `${batchId}:${allowedKinds.join("+")}:${role}:leaf-quote-description`,
         );
+        assert.deepEqual(variant.required, ["r", "q", "h"]);
+        assert.equal(variant.additionalProperties, false);
       }
-
-      for (const role of templateCopilotV3ProviderQuoteRoles.filter(
-        (candidate) => !Object.hasOwn(policy, candidate),
-      )) {
-        assert.equal(
-          guidanceAllows(schema, guidanceItem(kind, role, null)),
-          false,
-          `${batchId}:${kind}:${role}:wrong-role`,
-        );
-      }
+      assert.deepEqual(itemSchema.required, ["k", "q", "l", "a"]);
+      assert.equal(itemSchema.additionalProperties, false);
+      const minimumSemanticCore =
+        templateCopilotV3ProviderQuoteMinimumSemanticCore(allowedKinds[0]);
+      assert.equal(
+        itemSchema.properties.l.minItems,
+        minimumSemanticCore?.length ?? 1,
+        `${batchId}:${allowedKinds[0]}:minimum-leaves`,
+      );
+      assert.equal(
+        itemSchema.description,
+        minimumSemanticCore
+          ? `Keep this complete semantic core in one item: ${minimumSemanticCore
+              .map((group) =>
+                group.length === 1 ? group[0] : `(${group.join(" OR ")})`
+              )
+              .join(" + ")}.`
+          : undefined,
+        `${batchId}:${allowedKinds[0]}:semantic-core-description`,
+      );
+      assert.equal(itemSchema.properties.l.maxItems, limits.maximumLeavesPerItem);
+      assert.deepEqual(itemSchema.properties.a.enum, [0, 1, 2]);
+      assert.equal(
+        itemSchema.properties.q.description,
+        batchId === "intake_documents"
+          ? "unique source span enclosing non-recovered leaf q"
+          : "unique source span enclosing all leaf q",
+        `${batchId}:item-quote-description`,
+      );
+      expectedDescriptionCount +=
+        leafSchema.anyOf.length * 2 + 1 + (minimumSemanticCore ? 1 : 0);
     }
-
+    assert.equal(schema.additionalProperties, false, `${batchId}:strict-root`);
+    assert.deepEqual(schema.required, ["v", "i"], `${batchId}:required-root`);
+    assert.equal(schema.properties.v.const, templateCopilotV3ProviderQuoteWireVersion);
+    assert.equal(schema.properties.i.maxItems, limits.maximumItems);
     assert.equal(
-      guidanceAllows(
-        schema,
-        guidanceItem("unsupported_kind", "label", null),
-      ),
-      false,
-      `${batchId}:unknown-kind`,
+      serialized.match(/"description":/gu)?.length,
+      expectedDescriptionCount,
+      `${batchId}:only-item-quote-leaf-quote-hint-descriptions`,
     );
-    const firstKind = templateCopilotV3ProviderQuoteBatches[batchId]
-      .allowedKinds[0];
+    assert.doesNotMatch(serialized, /contractVersion|confidence|ambiguity/u);
+    const schemaCeiling = {
+      intake_documents: 6_900,
+      routing_stages_participants: 6_500,
+      routing_conditions_exceptions: 4_300,
+      policy_context: 10_600,
+    }[batchId];
+    assert.ok(
+      serialized.length <= schemaCeiling,
+      `${batchId}:schema-size:${serialized.length}`,
+    );
     assert.equal(
-      guidanceAllows(
-        schema,
-        guidanceItem(firstKind, "unsupported_role", null),
-      ),
-      false,
-      `${batchId}:unknown-role`,
+      Buffer.byteLength(serialized),
+      expectedSchemaEvidence[batchId].bytes,
+      `${batchId}:schema-bytes`,
+    );
+    assert.equal(
+      createHash("sha256").update(serialized).digest("hex"),
+      expectedSchemaEvidence[batchId].sha256,
+      `${batchId}:schema-fingerprint`,
     );
   }
 });
@@ -350,6 +991,52 @@ test("strict provider schema accepts quotes and advisory labels only", () => {
       false,
       target,
     );
+  }
+});
+
+test("server derives confidence only after successful location and preserves ambiguity", () => {
+  for (const {
+    inputConfidence,
+    ambiguity,
+    expectedConfidence,
+  } of [
+    {
+      inputConfidence: "low",
+      ambiguity: "none",
+      expectedConfidence: "high",
+    },
+    {
+      inputConfidence: "high",
+      ambiguity: "possible",
+      expectedConfidence: "low",
+    },
+    {
+      inputConfidence: "high",
+      ambiguity: "ambiguous",
+      expectedConfidence: "low",
+    },
+  ]) {
+    const result = locateTemplateCopilotV3ProviderQuotes({
+      batchId: "structure",
+      sourceSlots: sourceSlots("structure", {
+        initiators_fields: "Require purpose.",
+      }),
+      output: output([
+        item({
+          confidence: inputConfidence,
+          ambiguity,
+        }),
+      ]),
+    });
+
+    assert.equal(result.rejected.length, 0, ambiguity);
+    assert.equal(result.accepted.length, 1, ambiguity);
+    assert.equal(
+      result.accepted[0].confidence,
+      expectedConfidence,
+      ambiguity,
+    );
+    assert.equal(result.accepted[0].ambiguity, ambiguity, ambiguity);
   }
 });
 
@@ -447,6 +1134,83 @@ test("a repeated leaf inside one unique anchor is rejected", () => {
   assert.equal(result.rejected[0].detail, "attachment:format");
 });
 
+test("repeated PDF formats require entity-local label-plus-format anchors", () => {
+  const attachments =
+    "Require supplier quotation PDF. Require insurance certificate PDF.";
+  const localItems = [
+    ["supplier quotation", "Require supplier quotation PDF"],
+    ["insurance certificate", "Require insurance certificate PDF"],
+  ].map(([label, quote]) =>
+    item({
+      kind: "attachment",
+      quote,
+      confidence: "high",
+      ambiguity: "none",
+      leaves: [
+        { role: "label", quote: label, hint: null },
+        { role: "format", quote: "PDF", hint: "pdf" },
+        { role: "kind", quote: "PDF", hint: "attachment" },
+        { role: "required", quote: "Require", hint: "true" },
+      ],
+    })
+  );
+  const local = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "intake_documents",
+    sourceSlots: sourceSlots("intake_documents", { attachments }),
+    output: output(localItems),
+  });
+  assert.deepEqual(local.rejected, []);
+  assert.deepEqual(
+    local.accepted.map(({ anchor, confidence, leaves }) => ({
+      anchor: anchor.exactText,
+      confidence,
+      labels: leaves
+        .filter(({ role }) => role === "label")
+        .map(({ sourceSpan }) => sourceSpan.exactText),
+      formats: leaves
+        .filter(({ role }) => role === "format")
+        .map(({ sourceSpan }) => sourceSpan.exactText),
+    })),
+    [
+      {
+        anchor: "Require supplier quotation PDF",
+        confidence: "high",
+        labels: ["supplier quotation"],
+        formats: ["PDF"],
+      },
+      {
+        anchor: "Require insurance certificate PDF",
+        confidence: "high",
+        labels: ["insurance certificate"],
+        formats: ["PDF"],
+      },
+    ],
+  );
+
+  const broad = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "intake_documents",
+    sourceSlots: sourceSlots("intake_documents", { attachments }),
+    output: output([
+      item({
+        kind: "attachment",
+        quote: attachments,
+        confidence: "high",
+        ambiguity: "none",
+        leaves: [
+          { role: "label", quote: "supplier quotation", hint: null },
+          { role: "format", quote: "PDF", hint: "pdf" },
+        ],
+      }),
+    ]),
+  });
+  assert.deepEqual(broad.accepted, []);
+  assert.deepEqual(broad.rejected, [{
+    itemIndex: 0,
+    code: "leaf_ambiguous",
+    detail: "attachment:format",
+  }]);
+});
+
 test("recovers only exact shared request-field required leaves from the same local clause", () => {
   const result = locateTemplateCopilotV3ProviderQuotes({
     batchId: "structure",
@@ -458,6 +1222,7 @@ test("recovers only exact shared request-field required leaves from the same loc
       ["counterparty", "contract type", "value"].map((label) =>
         item({
           quote: label,
+          confidence: "low",
           leaves: [
             { role: "label", quote: label, hint: null },
             { role: "required", quote: "Require", hint: "true" },
@@ -474,22 +1239,26 @@ test("recovers only exact shared request-field required leaves from the same loc
       expanded: entry.anchorExpanded,
       recovered: entry.sameLocalClauseRecoveredLeafCount,
       anchor: entry.anchor.exactText,
+      confidence: entry.confidence,
     })),
     [
       {
         expanded: true,
         recovered: 1,
         anchor: "Require counterparty, contract type, and value",
+        confidence: "high",
       },
       {
         expanded: true,
         recovered: 1,
         anchor: "Require counterparty, contract type, and value",
+        confidence: "high",
       },
       {
         expanded: true,
         recovered: 1,
         anchor: "Require counterparty, contract type, and value",
+        confidence: "high",
       },
     ],
   );

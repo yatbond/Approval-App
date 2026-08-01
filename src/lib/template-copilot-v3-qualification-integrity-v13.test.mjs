@@ -88,12 +88,17 @@ function fabricatedPassingScore() {
     batchGate: {
       passed: true,
       failures: [],
-      passedBatchCount: 2,
-      batchCount: 2,
+      passedBatchCount: 4,
+      batchCount: 4,
       batchFailureCount: 0,
       providerRequestFailureCount: 0,
       failureCount: 0,
-      expectedBatchIds: ["structure", "policy_context"],
+      expectedBatchIds: [
+        "intake_documents",
+        "routing_stages_participants",
+        "routing_conditions_exceptions",
+        "policy_context",
+      ],
     },
     scenarioSemantics: {
       passed: true,

@@ -678,6 +678,26 @@ function mappingFor(
   if (kind === "stage" && role === "kind" && hint === "record_update") {
     return { kind: "semantic_only" };
   }
+  if (
+    (kind === "attachment" &&
+      role === "required" &&
+      [
+        "conditional",
+        "required_with_conditional_extension",
+        "optional_conditional",
+      ].includes(hint ?? "")) ||
+    (kind === "condition" &&
+      role === "operator" &&
+      hint === "unsupported_predicate") ||
+    (kind === "condition" &&
+      (role === "matching_route" || role === "otherwise_route") &&
+      hint === "unsupported_outcome") ||
+    (kind === "notification" &&
+      role === "recipient" &&
+      hint === "source_named_group")
+  ) {
+    return { kind: "semantic_only" };
+  }
   const maps: Record<keyof typeof arrayFactByKind, Partial<Record<TemplateCopilotV3ProviderQuoteRole, Mapping>>> = {
     request_field: {
       label: { kind: "scalar", path: "/label", mode: "text" },

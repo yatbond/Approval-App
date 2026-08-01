@@ -131,10 +131,10 @@ test("conditional quantity increments are a closed quote-only role with explicit
   });
   assert.equal(
     templateCopilotV3ProviderPromptVersion,
-    "template-copilot-v3-provider-quotes-7",
+    "template-copilot-v3-provider-quotes-16",
   );
   assert.match(prompt, /conditional_quantity_increment/u);
-  assert.match(prompt, /Never encode a conditional increment as maximum_quantity/u);
+  assert.match(prompt, /Never encode it as maximum_quantity or infer a total/u);
 });
 
 test("conditional increments and record updates remain review-only with no executable binding", () => {

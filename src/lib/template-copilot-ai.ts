@@ -21,6 +21,12 @@ import {
 } from "./template-copilot-plan.ts";
 import { wrapUntrustedRequirementText } from "./template-copilot-safety.ts";
 import { templateCopilotProviderTimeoutMs } from "./template-copilot-provider-timeout.ts";
+import {
+  resolveTemplateCopilotOpenRouterRouting,
+  type TemplateCopilotOpenRouterProviderRouting,
+  type TemplateCopilotOpenRouterRoutingProfile,
+  TemplateCopilotOpenRouterRoutingProfileError,
+} from "./template-copilot-openrouter-routing.ts";
 import { classifyTemplateCopilotStructuredDecodeFailure } from "./template-copilot-structured-output-failure.ts";
 import {
   templateCopilotV2DefaultOpenRouterModel,
@@ -45,7 +51,9 @@ import {
 import {
   classifyTemplateCopilotProviderFailureReasonCode,
   classifyTemplateCopilotProviderRequestOutcome,
+  classifyTemplateCopilotProviderTransportFailureReason,
   type TemplateCopilotProviderRequestObservation,
+  type TemplateCopilotProviderResponseTelemetry,
 } from "./template-copilot-provider-request-tracker.ts";
 import {
   formatTemplateCopilotV3ProviderQuoteBatch,
@@ -110,10 +118,8 @@ type TemplateCopilotAiConfiguration = {
     effort: "none" | "minimal" | "low" | "medium" | "high";
     exclude: true;
   };
-  openRouterProvider?: {
-    require_parameters: true;
-    zdr?: true;
-  };
+  openRouterProvider?: TemplateCopilotOpenRouterProviderRouting;
+  openRouterRoutingProfile?: TemplateCopilotOpenRouterRoutingProfile;
 };
 
 export { templateCopilotProviderTimeoutMs } from "./template-copilot-provider-timeout.ts";
@@ -125,7 +131,7 @@ function boundedProviderRequestOptions() {
   return { timeout, maxRetries: 0, signal: AbortSignal.timeout(timeout) };
 }
 
-function aiConfiguration() {
+function aiConfiguration(): TemplateCopilotAiConfiguration {
   const requestedProvider = process.env.TEMPLATE_COPILOT_PROVIDER?.trim();
   if (
     requestedProvider &&
@@ -165,6 +171,20 @@ function aiConfiguration() {
         "Production OpenRouter use requires a ZDR-capable route or an explicit approved non-ZDR production exception.",
       );
     }
+    let openRouterRouting;
+    try {
+      openRouterRouting = resolveTemplateCopilotOpenRouterRouting({
+        rawProfile:
+          process.env.TEMPLATE_COPILOT_OPENROUTER_ROUTING_PROFILE,
+        requireZdr,
+        vercelEnvironment: process.env.VERCEL_ENV,
+      });
+    } catch (error) {
+      if (error instanceof TemplateCopilotOpenRouterRoutingProfileError) {
+        throw new TemplateCopilotConfigurationError(error.message);
+      }
+      throw error;
+    }
     return {
       client: new OpenAI({
         apiKey,
@@ -186,10 +206,10 @@ function aiConfiguration() {
       privacyMode: requireZdr ? "zdr" : "standard",
       protocol: "chat_completions",
       structuredOutput: "json_schema",
-      openRouterProvider: {
-        require_parameters: true,
-        ...(requireZdr ? { zdr: true as const } : {}),
-      },
+      openRouterProvider: openRouterRouting.provider,
+      ...(openRouterRouting.profile
+        ? { openRouterRoutingProfile: openRouterRouting.profile }
+        : {}),
       openRouterReasoning: {
         effort: reasoningEffort as
           | "none"
@@ -262,7 +282,9 @@ function aiConfiguration() {
 }
 
 export type TemplateCopilotAiRoutingMetadata = Readonly<
-  Pick<TemplateCopilotAiConfiguration, "model" | "providerCode" | "privacyMode">
+  Pick<TemplateCopilotAiConfiguration, "model" | "providerCode" | "privacyMode"> & {
+    routingProfile: TemplateCopilotOpenRouterRoutingProfile | null;
+  }
 >;
 
 /** One safe, credential-free description of the exact production resolver.
@@ -274,6 +296,7 @@ export function getTemplateCopilotAiRoutingMetadata(): TemplateCopilotAiRoutingM
     model: configured.model,
     providerCode: configured.providerCode,
     privacyMode: configured.privacyMode,
+    routingProfile: configured.openRouterRoutingProfile ?? null,
   });
 }
 
@@ -350,10 +373,7 @@ async function requestStructuredOutput<T>({
         ? { reasoning: configured.openRouterReasoning }
         : {}),
     } satisfies OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming & {
-      provider?: {
-        require_parameters: true;
-        zdr?: true;
-      };
+      provider?: TemplateCopilotOpenRouterProviderRouting;
       reasoning?: {
         effort: "none" | "minimal" | "low" | "medium" | "high";
         exclude: true;
@@ -412,6 +432,7 @@ async function requestTemplateCopilotV3RawProviderOutput({
   developerText,
   userText,
   failureMessage,
+  observeProviderResponse,
 }: {
   configured: TemplateCopilotAiConfiguration;
   batchId: TemplateCopilotV3ProviderQuoteBatchId;
@@ -419,6 +440,9 @@ async function requestTemplateCopilotV3RawProviderOutput({
   developerText: string;
   userText: string;
   failureMessage: string;
+  observeProviderResponse?: (
+    telemetry: TemplateCopilotProviderResponseTelemetry,
+  ) => void;
 }) {
   try {
     return await requestTemplateCopilotV3ProviderQuoteOutput({
@@ -428,6 +452,7 @@ async function requestTemplateCopilotV3RawProviderOutput({
       developerText,
       userText,
       requestOptions: boundedProviderRequestOptions(),
+      observeProviderResponse,
     });
   } catch (error) {
     if (error instanceof TemplateCopilotV3ProviderQuoteTransportError) {
@@ -528,6 +553,7 @@ export async function extractTemplateCopilotV3QuoteBatch({
   }
 
   const startedAt = Date.now();
+  let responseTelemetry: TemplateCopilotProviderResponseTelemetry | undefined;
   try {
     const output = await requestTemplateCopilotV3RawProviderOutput({
       configured,
@@ -540,6 +566,9 @@ export async function extractTemplateCopilotV3QuoteBatch({
       userText,
       failureMessage:
         "The Copilot could not safely extract source-backed quotes.",
+      observeProviderResponse: (telemetry) => {
+        responseTelemetry = telemetry;
+      },
     });
     const located = locateTemplateCopilotV3ProviderQuotes({
       batchId,
@@ -548,7 +577,8 @@ export async function extractTemplateCopilotV3QuoteBatch({
     });
     safelyObserveProviderRequest(observeProviderRequest, {
       outcome: "success",
-      latencyMs: Date.now() - startedAt,
+      latencyMs: responseTelemetry?.providerLatencyMs ?? Date.now() - startedAt,
+      ...(responseTelemetry ? { responseTelemetry } : {}),
     });
     return Object.freeze({
       model: configured.model,
@@ -567,7 +597,10 @@ export async function extractTemplateCopilotV3QuoteBatch({
   } catch (error) {
     safelyObserveProviderRequest(observeProviderRequest, {
       outcome: classifyTemplateCopilotProviderRequestOutcome(error),
-      latencyMs: Date.now() - startedAt,
+      latencyMs: responseTelemetry?.providerLatencyMs ?? Date.now() - startedAt,
+      providerFailureReason:
+        classifyTemplateCopilotProviderTransportFailureReason(error),
+      ...(responseTelemetry ? { responseTelemetry } : {}),
     });
     throw error;
   }

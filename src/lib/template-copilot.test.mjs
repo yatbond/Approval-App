@@ -517,6 +517,10 @@ test("OpenRouter Copilot support requires explicit selection, strict schemas, an
     new URL("./template-copilot-v2-candidates.ts", import.meta.url),
     "utf8",
   );
+  const routingContract = await readFile(
+    new URL("./template-copilot-openrouter-routing.ts", import.meta.url),
+    "utf8",
+  );
   assert.match(source, /TEMPLATE_COPILOT_PROVIDER/);
   assert.match(source, /requestedProvider === "openrouter"/);
   assert.match(source, /https:\/\/openrouter\.ai\/api\/v1/);
@@ -524,7 +528,8 @@ test("OpenRouter Copilot support requires explicit selection, strict schemas, an
   assert.match(candidateContract, /qwen\/qwen3\.5-flash-02-23/);
   assert.match(source, /type: "json_schema"/);
   assert.match(source, /strict: true/);
-  assert.match(source, /require_parameters: true/);
+  assert.match(source, /resolveTemplateCopilotOpenRouterRouting/);
+  assert.match(routingContract, /require_parameters: true as const/);
   assert.match(source, /TEMPLATE_COPILOT_OPENROUTER_ZDR/);
   assert.match(source, /TEMPLATE_COPILOT_OPENROUTER_REASONING_EFFORT/);
   assert.match(source, /openRouterReasoning/);

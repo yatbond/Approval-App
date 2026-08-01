@@ -1,5 +1,5 @@
 import { realpath } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import {
   extractTemplateCopilotV3QuoteBatch,
   getTemplateCopilotAiRoutingMetadata,
@@ -7,6 +7,8 @@ import {
 } from "../src/lib/template-copilot-ai.ts";
 import { templateCopilotV3ProviderPromptVersion } from "../src/lib/template-copilot-v3-provider-prompt.ts";
 import { templateCopilotV3ProviderQuoteContractVersion } from "../src/lib/template-copilot-v3-provider-quotes.ts";
+import { templateCopilotV3OpenRouterChatCompletionTokenParameter } from "../src/lib/template-copilot-v3-provider-request.ts";
+import { templateCopilotOpenRouterQualificationRoutingProfile } from "../src/lib/template-copilot-openrouter-routing.ts";
 import { assembleTemplateCopilotV3Review } from "../src/lib/template-copilot-v3-review-assembly.ts";
 import {
   scoreTemplateCopilotV3LiveSemantic,
@@ -20,6 +22,8 @@ import {
   summarizeQualification,
   templateCopilotV3QualificationBaselineModel,
   templateCopilotV3QualificationFixtureFingerprint,
+  templateCopilotV3QualificationProviderContractMetadata,
+  templateCopilotV3QualificationShadowModel,
   templateCopilotV3QualificationSourceStateMatches,
 } from "./template-copilot-v3-live-semantic-qualification-runner.mjs";
 import {
@@ -43,6 +47,14 @@ const scenarioLimit = Math.max(
 const hardSubset = process.env.QUALIFICATION_HARD_SUBSET?.trim() === "true";
 const allowDirtySource =
   process.env.QUALIFICATION_ALLOW_DIRTY_SOURCE?.trim() === "true";
+const shadowFlag =
+  process.env.QUALIFICATION_SHADOW_MODEL?.trim() || "false";
+if (shadowFlag !== "true" && shadowFlag !== "false") {
+  throw new Error(
+    "QUALIFICATION_SHADOW_MODEL must be exactly true or false when supplied.",
+  );
+}
+const shadowModelRequested = shadowFlag === "true";
 const scenarios = selectTemplateCopilotV3QualificationScenarios({
   corpus: templateCopilotQualificationScenarios,
   scenarioIds,
@@ -72,9 +84,15 @@ if (provider !== "openrouter") {
     "V3 live semantic qualification requires TEMPLATE_COPILOT_PROVIDER=openrouter.",
   );
 }
-if (model !== templateCopilotV3QualificationBaselineModel) {
+if (
+  shadowModelRequested
+    ? model !== templateCopilotV3QualificationShadowModel
+    : model !== templateCopilotV3QualificationBaselineModel
+) {
   throw new Error(
-    `V3 live semantic qualification requires the Qwen baseline model ${templateCopilotV3QualificationBaselineModel}.`,
+    shadowModelRequested
+      ? `The explicit GPT-5.6 Sol shadow run requires model ${templateCopilotV3QualificationShadowModel}; the Qwen baseline cannot be labeled as shadow.`
+      : `V3 live semantic qualification requires the Qwen baseline model ${templateCopilotV3QualificationBaselineModel}. Set QUALIFICATION_SHADOW_MODEL=true only for the separately labeled ${templateCopilotV3QualificationShadowModel} shadow.`,
   );
 }
 if (!zdrRequired) {
@@ -100,49 +118,92 @@ if (
   providerRoute.privacyMode !== "zdr"
 ) {
   throw new Error(
-    "The configured provider route does not match the required OpenRouter ZDR baseline.",
+    "The configured provider route does not match the required OpenRouter ZDR run model.",
+  );
+}
+if (
+  providerRoute.routingProfile !==
+  templateCopilotOpenRouterQualificationRoutingProfile
+) {
+  throw new Error(
+    `V3 live semantic qualification requires TEMPLATE_COPILOT_OPENROUTER_ROUTING_PROFILE=${templateCopilotOpenRouterQualificationRoutingProfile}.`,
   );
 }
 
+const requestedOutputDirectory = process.env.QUALIFICATION_OUTPUT_DIR?.trim();
+if (shadowModelRequested && !requestedOutputDirectory) {
+  throw new Error(
+    "GPT-5.6 Sol shadow qualification requires an explicit separate QUALIFICATION_OUTPUT_DIR.",
+  );
+}
 const output = await resolveTemplateCopilotV3QualificationOutput({
   repositoryRoot,
-  requestedOutputDirectory: process.env.QUALIFICATION_OUTPUT_DIR?.trim(),
+  requestedOutputDirectory,
   defaultRelativeOutputDirectory: `output/template-copilot-v3-live-semantic/${safePathPart(model)}`,
 });
+if (shadowModelRequested) {
+  const shadowNamespace = join(
+    output.governedOutputRoot,
+    "template-copilot-v3-live-semantic",
+    "shadow-gpt-5.6-sol",
+  );
+  const shadowRelativePath = relative(
+    shadowNamespace,
+    output.outputDirectory,
+  );
+  if (
+    shadowRelativePath === "" ||
+    shadowRelativePath.startsWith("..") ||
+    isAbsolute(shadowRelativePath)
+  ) {
+    throw new Error(
+      "GPT-5.6 Sol shadow output must be a named run below output/template-copilot-v3-live-semantic/shadow-gpt-5.6-sol/.",
+    );
+  }
+}
 const reportPath = join(
   output.outputDirectory,
   "semantic-qualification-results.json",
 );
+const providerContract = Object.freeze({
+  ...templateCopilotV3QualificationProviderContractMetadata,
+  chatCompletionTokenParameter:
+    templateCopilotV3OpenRouterChatCompletionTokenParameter(model),
+});
 
 const metadata = {
   sourceRevision: sourceIdentity.sourceRevision,
   sourceWorktreeClean: sourceIdentity.sourceWorktreeClean,
   comparableCleanSource: sourceIdentity.comparableCleanSource,
   sourceEndCheckPassed: false,
-  qualificationMode: sourceIdentity.qualificationMode,
+  qualificationMode: shadowModelRequested
+    ? "shadow_exploratory"
+    : sourceIdentity.qualificationMode,
   provider,
   model,
   baselineModel: templateCopilotV3QualificationBaselineModel,
-  modelMatchesBaseline: true,
+  modelMatchesBaseline: !shadowModelRequested,
   zdrRequired,
   reasoningEffort: "none",
   providerRoute: {
     providerCode: providerRoute.providerCode,
     model: providerRoute.model,
     privacyMode: providerRoute.privacyMode,
+    routingProfile: providerRoute.routingProfile,
   },
   providerTimeoutMs,
   providerQuoteContractVersion: templateCopilotV3ProviderQuoteContractVersion,
+  providerContract,
   providerPromptVersion: templateCopilotV3ProviderPromptVersion,
   scoringBatchIds: [
     ...templateCopilotV3LiveSemanticScoringContract.expectedBatchIds,
   ],
   fixtureFingerprint: templateCopilotV3QualificationFixtureFingerprint,
-  selectionMode: hardSubset
+  selectionMode: `${shadowModelRequested ? "shadow_" : ""}${hardSubset
     ? "hard_subset"
     : scenarioIds.length > 0 || scenarioLimit > 0
       ? "focused_subset"
-      : "full",
+      : "full"}`,
 };
 
 const report = await runTemplateCopilotV3LiveSemanticQualification({
@@ -160,7 +221,7 @@ const report = await runTemplateCopilotV3LiveSemanticQualification({
       [
         `scenario=${latest.id}`,
         `locale=${latest.language}`,
-        `batches=${latest.successfulBatchCount}/2`,
+        `batches=${latest.successfulBatchCount}/${templateCopilotV3LiveSemanticScoringContract.expectedBatchIds.length}`,
         `capture=${latest.semanticCapture.passed ? "CAPTURE_PASS" : "CAPTURE_FAIL"}`,
         `holds=${latest.semanticCapture.governedHoldCount}`,
         "executable=BLOCKED",
@@ -181,8 +242,25 @@ report.metadata.sourceEndCheckPassed =
     endingWorktreeStatus: endingSourceState.worktreeStatus,
   });
 report.summary = summarizeQualification(report);
+if (
+  shadowModelRequested &&
+  (
+    report.summary.passed ||
+    report.summary.fullGatePassed ||
+    report.summary.selectedGatePassed ||
+    report.summary.pilotGate.passed ||
+    report.summary.semanticCaptureGate.fullCorpusPassed
+  )
+) {
+  throw new Error(
+    "A GPT-5.6 Sol shadow run must remain excluded from formal and pilot gates.",
+  );
+}
 await persistReport(report);
 
+console.log(
+  `qualification_run=${shadowModelRequested ? "GPT_5_6_SOL_SHADOW_EXPLORATORY" : "QWEN_BASELINE"}`,
+);
 console.log(
   `template_copilot_v3_source_capture=${report.summary.semanticCaptureGate.fullCorpusPassed ? "CAPTURE_PASS" : "CAPTURE_FAIL"}`,
 );

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { templateCopilotQualificationScenarios } from "../../scripts/template-copilot-qualification-scenarios.mjs";
 import {
   assertTemplateCopilotV3QualificationSource,
@@ -12,6 +14,8 @@ import {
   templateCopilotV3QualificationFixtureFingerprint,
   templateCopilotV3QualificationHardScenarioIds,
   templateCopilotV3QualificationObservedMetricKeys,
+  templateCopilotV3QualificationProviderContractMetadata,
+  templateCopilotV3QualificationShadowModel,
   templateCopilotV3QualificationSourceStateMatches,
   templateCopilotV3QualificationRunnerVersion,
 } from "../../scripts/template-copilot-v3-live-semantic-qualification-runner.mjs";
@@ -19,8 +23,59 @@ import { templateCopilotV3SemanticScenarioManifest } from "../../scripts/templat
 import { templateCopilotV3ProviderQuoteContractVersion } from "./template-copilot-v3-provider-quotes.ts";
 import { templateCopilotV3ProviderPromptVersion } from "./template-copilot-v3-provider-prompt.ts";
 import { templateCopilotV3LiveSemanticScoringContract } from "../../scripts/template-copilot-v3-live-semantic-scoring.mjs";
+import { templateCopilotOpenRouterQualificationRoutingProfile } from "./template-copilot-openrouter-routing.ts";
+import { templateCopilotProviderFailureReasons } from "./template-copilot-provider-request-tracker.ts";
 
-test("v3 qualification executes exactly two sequential batches for all 24 multilingual scenarios", async () => {
+const formalBatchIds = [
+  ...templateCopilotV3LiveSemanticScoringContract.expectedBatchIds,
+];
+
+test("v3 qualification fingerprints the exact compact provider contract", () => {
+  assert.deepEqual(templateCopilotV3QualificationProviderContractMetadata, {
+    canonicalContractVersion: 1,
+    wireVersion: 1,
+    maximumQuoteCodePoints: 8_000,
+    transportMaximumUtf8Bytes: 2 * 1024 * 1024,
+    chatCompletionTokenParameter: "max_tokens",
+    responsesCompletionTokenParameter: "max_output_tokens",
+    batches: {
+      intake_documents: {
+        maximumItems: 24,
+        maximumLeavesPerItem: 12,
+        maximumCompletionTokens: 3_072,
+        schemaUtf8Bytes: 6_441,
+        schemaFingerprint:
+          "sha256:cea44f166e5700a999ca95bfc027ea156a382ff32e5e6d73aca75098daa9605c",
+      },
+      routing_stages_participants: {
+        maximumItems: 12,
+        maximumLeavesPerItem: 8,
+        maximumCompletionTokens: 2_048,
+        schemaUtf8Bytes: 6_318,
+        schemaFingerprint:
+          "sha256:b04c1c86215176c0727ee6ccf1c607a870099b788c2bbbbc732b65c758b1af4a",
+      },
+      routing_conditions_exceptions: {
+        maximumItems: 8,
+        maximumLeavesPerItem: 10,
+        maximumCompletionTokens: 1_536,
+        schemaUtf8Bytes: 4_176,
+        schemaFingerprint:
+          "sha256:578a85fabe09000deab365f8771295f0779ecfe28fc2834503873ebc547419a1",
+      },
+      policy_context: {
+        maximumItems: 32,
+        maximumLeavesPerItem: 8,
+        maximumCompletionTokens: 4_096,
+        schemaUtf8Bytes: 8_095,
+        schemaFingerprint:
+          "sha256:0487c220d0d2e132f23202e0a11926ff939343fcb31ffd7be0162dabb8c9a3bf",
+      },
+    },
+  });
+});
+
+test("v3 qualification executes exactly four sequential batches for all 24 multilingual scenarios", async () => {
   const calls = [];
   let active = 0;
   let maximumActive = 0;
@@ -55,11 +110,15 @@ test("v3 qualification executes exactly two sequential batches for all 24 multil
   });
 
   assert.equal(maximumActive, 1);
-  assert.equal(calls.length, 48);
-  for (let index = 0; index < calls.length; index += 2) {
-    assert.equal(calls[index].batchId, "structure");
-    assert.equal(calls[index + 1].batchId, "policy_context");
+  assert.equal(calls.length, 96);
+  for (let index = 0; index < calls.length; index += 4) {
+    assert.deepEqual(
+      calls.slice(index, index + 4).map((entry) => entry.batchId),
+      formalBatchIds,
+    );
     assert.equal(calls[index].scenarioId, calls[index + 1].scenarioId);
+    assert.equal(calls[index].scenarioId, calls[index + 2].scenarioId);
+    assert.equal(calls[index].scenarioId, calls[index + 3].scenarioId);
   }
   assert.equal(report.summary.fullGatePassed, false);
   assert.equal(report.summary.passed, false);
@@ -74,11 +133,11 @@ test("v3 qualification executes exactly two sequential batches for all 24 multil
   assert.equal(report.summary.executableDraftGate.evaluated, false);
   assert.equal(report.summary.activationGate.passed, false);
   assert.equal(report.summary.pilotGate.passed, false);
-  assert.equal(report.summary.successfulBatchCount, 48);
-  assert.equal(report.summary.providerRequestCount, 48);
+  assert.equal(report.summary.successfulBatchCount, 96);
+  assert.equal(report.summary.providerRequestCount, 96);
   assert.equal(
     report.metadata.runnerVersion,
-    "template-copilot-v3-live-semantic-qualification.3",
+    "template-copilot-v3-live-semantic-qualification.12",
   );
   assert.equal(report.summary.expandedAnchorItemCount, 0);
   assert.equal(report.summary.sameLocalClauseRecoveredLeafCount, 0);
@@ -88,8 +147,8 @@ test("v3 qualification executes exactly two sequential batches for all 24 multil
       sourceCapturePassCount: 8,
       governedHoldCount: 0,
       executableDraftPassCount: 0,
-      successfulBatchCount: 16,
-      batchCount: 16,
+      successfulBatchCount: 32,
+      batchCount: 32,
     });
   }
 });
@@ -100,15 +159,18 @@ test("v3 qualification reports 24/24 source capture and 64 holds without claimin
     return {
       id: item.id,
       language: item.language,
-      batchCount: 2,
-      successfulBatchCount: 2,
-      batches: ["structure", "policy_context"].map((batchId) => ({
+      batchCount: 4,
+      successfulBatchCount: 4,
+      batches: formalBatchIds.map((batchId) => ({
         batchId,
         status: "applied",
         providerRequestCount: 1,
         providerRequestSuccessCount: 1,
         providerRequestFailureCount: 0,
         providerOutcome: "success",
+        providerFailureReason: null,
+        averageProviderRequestLatencyMs: 1,
+        providerResponseTelemetry: qualificationProviderTelemetry(),
         acceptedItemCount: 0,
         expandedAnchorItemCount: 0,
         sameLocalClauseRecoveredLeafCount: 0,
@@ -158,6 +220,7 @@ test("v3 qualification reports 24/24 source capture and 64 holds without claimin
   for (const [field, staleValue] of [
     ["runnerVersion", "template-copilot-v3-live-semantic-qualification.2"],
     ["providerQuoteContractVersion", -1],
+    ["providerContract", { wireVersion: -1 }],
     ["providerPromptVersion", "stale-provider-prompt"],
     ["scoringBatchIds", ["structure"]],
     ["fixtureFingerprint", "sha256:stale-fixture"],
@@ -168,6 +231,50 @@ test("v3 qualification reports 24/24 source capture and 64 holds without claimin
       summarizeQualification(stale).semanticCaptureGate.fullCorpusPassed,
       false,
       field,
+    );
+  }
+  for (const chatCompletionTokenParameter of [
+    "max_completion_tokens",
+    "max_token",
+    "",
+  ]) {
+    const wrongChatTokenParameter = structuredClone(report);
+    wrongChatTokenParameter.metadata.providerContract
+      .chatCompletionTokenParameter = chatCompletionTokenParameter;
+    assert.equal(
+      summarizeQualification(wrongChatTokenParameter).semanticCaptureGate
+        .fullCorpusPassed,
+      false,
+      `formal-chat-token-parameter:${chatCompletionTokenParameter}`,
+    );
+  }
+  const staleRoute = structuredClone(report);
+  staleRoute.metadata.providerRoute.routingProfile = null;
+  assert.equal(
+    summarizeQualification(staleRoute).semanticCaptureGate.fullCorpusPassed,
+    false,
+    "routingProfile",
+  );
+  for (const [label, mutate] of [
+    ["missing telemetry", (batch) => { batch.providerResponseTelemetry = null; }],
+    ["wrong returned model", (batch) => { batch.providerResponseTelemetry.returnedModel = "other/model"; }],
+    ["excluded provider", (batch) => { batch.providerResponseTelemetry.upstreamProvider = "AkashML"; }],
+    ["excluded provider variant", (batch) => { batch.providerResponseTelemetry.upstreamProvider = "Akash ML/fp8"; }],
+    ["provider whitespace", (batch) => { batch.providerResponseTelemetry.upstreamProvider = " CoreWeave"; }],
+    ["incomplete finish", (batch) => { batch.providerResponseTelemetry.finishState = "length"; }],
+    ["missing output usage", (batch) => { batch.providerResponseTelemetry.outputTokens = null; }],
+    ["inconsistent total", (batch) => { batch.providerResponseTelemetry.totalTokens += 1; }],
+    ["router fallback", (batch) => { batch.providerResponseTelemetry.routerAttemptCount = 2; }],
+    ["timeout boundary", (batch) => { batch.providerResponseTelemetry.providerLatencyMs = 12_000; batch.averageProviderRequestLatencyMs = 12_000; }],
+    ["latency mismatch", (batch) => { batch.averageProviderRequestLatencyMs += 1; }],
+  ]) {
+    const invalidTelemetry = structuredClone(report);
+    mutate(invalidTelemetry.scenarios[0].batches[0]);
+    assert.equal(
+      summarizeQualification(invalidTelemetry).semanticCaptureGate
+        .fullCorpusPassed,
+      false,
+      label,
     );
   }
   for (const locale of ["en", "zh-Hant", "zh-Hans"]) {
@@ -287,6 +394,8 @@ test("v3 qualification keeps stable server source IDs and quarantines the hostil
       "EN-01:attachments",
       "EN-01:stages_participants",
       "EN-01:conditions_exceptions",
+      "EN-01:visibility_notifications",
+      "EN-01:conditions_exceptions",
       "EN-01:identity_scope",
       "EN-01:collaboration_corrections",
       "EN-01:timing_escalation",
@@ -310,7 +419,7 @@ test("v3 qualification keeps stable server source IDs and quarantines the hostil
   assert.doesNotMatch(serialized, /EN-01:attachments/u);
 });
 
-test("v3 qualification isolates a failed batch, continues the second batch, and stores no provider error", async () => {
+test("v3 qualification isolates a failed batch, continues later batches, and stores no provider error", async () => {
   const calls = [];
   const scenario = templateCopilotQualificationScenarios.find(
     (item) => item.id === "EN-07",
@@ -321,7 +430,7 @@ test("v3 qualification isolates a failed batch, continues the second batch, and 
     scenarios: [scenario],
     extractBatch: async (input) => {
       calls.push(input.batchId);
-      if (input.batchId === "structure") {
+      if (input.batchId === formalBatchIds[0]) {
         input.observeProviderRequest({
           outcome: "timeout",
           latencyMs: 12_000,
@@ -351,12 +460,18 @@ test("v3 qualification isolates a failed batch, continues the second batch, and 
     now: monotonicClock(),
   });
 
-  assert.deepEqual(calls, ["structure", "policy_context"]);
-  assert.equal(report.scenarios[0].successfulBatchCount, 1);
+  assert.deepEqual(calls, formalBatchIds);
+  assert.equal(report.scenarios[0].successfulBatchCount, 3);
   assert.equal(report.scenarios[0].batches[0].providerOutcome, "timeout");
+  assert.equal(
+    report.scenarios[0].batches[0].providerFailureReason,
+    null,
+  );
   assert.equal(report.scenarios[0].batches[1].status, "applied");
+  assert.equal(report.scenarios[0].batches[2].status, "applied");
+  assert.equal(report.scenarios[0].batches[3].status, "applied");
   assert.equal(report.summary.selectedGatePassed, false);
-  assert.equal(report.summary.providerRequestCount, 2);
+  assert.equal(report.summary.providerRequestCount, 4);
   assert.equal(report.summary.providerRequestFailureCount, 1);
   assert.equal(report.scenarios[0].batches[0].expandedAnchorItemCount, 0);
   assert.equal(
@@ -366,6 +481,141 @@ test("v3 qualification isolates a failed batch, continues the second batch, and 
   assert.doesNotMatch(
     JSON.stringify(report),
     /TOP SECRET|raw output|user text/u,
+  );
+});
+
+test("v3 qualification reports each closed provider transport subtype without provider-private detail", async () => {
+  const scenario = templateCopilotQualificationScenarios[0];
+  for (const providerFailureReason of templateCopilotProviderFailureReasons) {
+    const secret = `PRIVATE-${providerFailureReason}-MESSAGE`;
+    const report = await runTemplateCopilotV3LiveSemanticQualification({
+      corpus: templateCopilotQualificationScenarios,
+      scenarios: [scenario],
+      extractBatch: async (input) => {
+        if (input.batchId === formalBatchIds[0]) {
+          input.observeProviderRequest({
+            outcome: "malformed_output",
+            latencyMs: 9,
+            providerFailureReason,
+            rawOutput: secret,
+          });
+          throw Object.assign(new Error(secret), {
+            reasonCode: providerFailureReason,
+            content: secret,
+            output: secret,
+            issuePaths: [secret],
+          });
+        }
+        input.observeProviderRequest({ outcome: "success", latencyMs: 1 });
+        return {
+          model: templateCopilotV3QualificationBaselineModel,
+          batch: batchIdentity(input),
+          accepted: [],
+          rejected: [],
+        };
+      },
+      assembleReview: emptyAssembly,
+      scoreProjection: passingScore,
+      metadata: qualificationMetadata(),
+      now: monotonicClock(),
+    });
+
+    assert.equal(
+      report.scenarios[0].batches[0].providerFailureReason,
+      providerFailureReason,
+    );
+    assert.equal(
+      report.scenarios[0].batches[0].providerOutcome,
+      "malformed_output",
+    );
+    assert.doesNotMatch(JSON.stringify(report), new RegExp(secret, "u"));
+  }
+  assert.doesNotMatch(
+    JSON.stringify(
+      await runTemplateCopilotV3LiveSemanticQualification({
+        corpus: templateCopilotQualificationScenarios,
+        scenarios: [scenario],
+        extractBatch: async (input) => {
+          input.observeProviderRequest({
+            outcome: "malformed_output",
+            latencyMs: 1,
+            providerFailureReason: "FORGED-PRIVATE-FAILURE-DETAIL",
+          });
+          throw Object.assign(new Error("FORGED-PRIVATE-ERROR-MESSAGE"), {
+            issuePaths: ["FORGED-PRIVATE-ISSUE-PATH"],
+            rawOutput: "FORGED-PRIVATE-RAW-OUTPUT",
+          });
+        },
+        assembleReview: emptyAssembly,
+        scoreProjection: passingScore,
+        metadata: qualificationMetadata(),
+        now: monotonicClock(),
+      }),
+    ),
+    /FORGED-PRIVATE/u,
+  );
+});
+
+test("v3 qualification nulls provider transport subtypes for non-transport outcomes and forged historical reports", async () => {
+  const scenario = templateCopilotQualificationScenarios[0];
+  for (const outcome of [
+    "timeout",
+    "outage",
+    "privacy_route_rejected",
+    "success",
+  ]) {
+    const report = await runTemplateCopilotV3LiveSemanticQualification({
+      corpus: templateCopilotQualificationScenarios,
+      scenarios: [scenario],
+      extractBatch: async (input) => {
+        input.observeProviderRequest({
+          outcome,
+          latencyMs: 1,
+          providerFailureReason: "invalid_json",
+        });
+        if (outcome !== "success") throw new Error(`failure-${outcome}`);
+        return {
+          model: templateCopilotV3QualificationBaselineModel,
+          batch: batchIdentity(input),
+          accepted: [],
+          rejected: [],
+        };
+      },
+      assembleReview: emptyAssembly,
+      scoreProjection: passingScore,
+      metadata: qualificationMetadata(),
+      now: monotonicClock(),
+    });
+    assert.equal(
+      report.scenarios[0].batches[0].providerFailureReason,
+      null,
+      outcome,
+    );
+  }
+
+  const current = await runTemplateCopilotV3LiveSemanticQualification({
+    corpus: templateCopilotQualificationScenarios,
+    scenarios: [scenario],
+    extractBatch: successfulExtractor,
+    assembleReview: emptyAssembly,
+    scoreProjection: passingScore,
+    metadata: qualificationMetadata(),
+    now: monotonicClock(),
+  });
+  assert.equal(summarizeQualification(current).strictBatchScenarioCount, 1);
+
+  const historical = structuredClone(current);
+  delete historical.scenarios[0].batches[0].providerFailureReason;
+  assert.equal(summarizeQualification(historical).strictBatchScenarioCount, 0);
+
+  const forged = structuredClone(current);
+  forged.scenarios[0].batches[0].providerFailureReason =
+    "FORGED-PRIVATE-HISTORICAL-REASON";
+  const forgedSummary = summarizeQualification(forged);
+  assert.equal(forgedSummary.strictBatchScenarioCount, 0);
+  assert.doesNotMatch(
+    JSON.stringify(forgedSummary),
+    /FORGED-PRIVATE-HISTORICAL-REASON/u,
   );
 });
 
@@ -431,7 +681,7 @@ test("v3 qualification hard subset is fixed and never masquerades as the full ga
   assert.equal(report.summary.passed, false);
   assert.equal(report.summary.pilotGate.passed, false);
   assert.equal(report.summary.scenarioPassCount, 6);
-  assert.equal(report.summary.successfulBatchCount, 12);
+  assert.equal(report.summary.successfulBatchCount, 24);
 });
 
 test("v3 formal full gate requires clean comparable source, baseline route, timeout, and reasoning", async () => {
@@ -490,7 +740,7 @@ test("v3 qualification rejects a mismatched returned batch envelope and continue
         model: templateCopilotV3QualificationBaselineModel,
         batch: {
           ...batchIdentity(input),
-          locale: input.batchId === "structure" ? "zh-Hant" : input.locale,
+          locale: input.batchId === formalBatchIds[0] ? "zh-Hant" : input.locale,
         },
         accepted: [],
         rejected: [],
@@ -505,10 +755,12 @@ test("v3 qualification rejects a mismatched returned batch envelope and continue
     metadata: qualificationMetadata(),
     now: monotonicClock(),
   });
-  assert.deepEqual(calls, ["structure", "policy_context"]);
-  assert.equal(report.scenarios[0].successfulBatchCount, 1);
+  assert.deepEqual(calls, formalBatchIds);
+  assert.equal(report.scenarios[0].successfulBatchCount, 3);
   assert.equal(report.scenarios[0].batches[0].status, "failed");
   assert.equal(report.scenarios[0].batches[1].status, "applied");
+  assert.equal(report.scenarios[0].batches[2].status, "applied");
+  assert.equal(report.scenarios[0].batches[3].status, "applied");
   assert.equal(report.summary.selectedGatePassed, false);
 });
 
@@ -537,6 +789,57 @@ test("v3 qualification report allowlists fact IDs and run metadata", async () =>
   );
 });
 
+test("v3 qualification stores only sanitized provider routing telemetry", async () => {
+  const scenario = templateCopilotQualificationScenarios[0];
+  const report = await runTemplateCopilotV3LiveSemanticQualification({
+    corpus: templateCopilotQualificationScenarios,
+    scenarios: [scenario],
+    extractBatch: async (input) => {
+      input.observeProviderRequest({
+        outcome: "success",
+        latencyMs: 999,
+        responseTelemetry: {
+          requestedModel: templateCopilotV3QualificationBaselineModel,
+          returnedModel: templateCopilotV3QualificationBaselineModel,
+          upstreamProvider: "CoreWeave",
+          finishState: "stop",
+          inputTokens: 1_000,
+          outputTokens: 200,
+          totalTokens: 1_200,
+          routerAttemptCount: 1,
+          providerLatencyMs: 321,
+          rawResponseId: "MUST_NOT_ENTER_REPORT",
+        },
+      });
+      return {
+        model: templateCopilotV3QualificationBaselineModel,
+        batch: batchIdentity(input),
+        accepted: [],
+        rejected: [],
+      };
+    },
+    assembleReview: emptyAssembly,
+    scoreProjection: passingScore,
+    metadata: qualificationMetadata(),
+    now: monotonicClock(),
+  });
+  assert.deepEqual(
+    report.scenarios[0].batches[0].providerResponseTelemetry,
+    {
+      requestedModel: templateCopilotV3QualificationBaselineModel,
+      returnedModel: templateCopilotV3QualificationBaselineModel,
+      upstreamProvider: "CoreWeave",
+      finishState: "stop",
+      inputTokens: 1_000,
+      outputTokens: 200,
+      totalTokens: 1_200,
+      routerAttemptCount: 1,
+      providerLatencyMs: 321,
+    },
+  );
+  assert.doesNotMatch(JSON.stringify(report), /MUST_NOT_ENTER_REPORT/u);
+});
+
 test("v3 qualification reports only sanitized local-clause recovery counters", async () => {
   const scenario = templateCopilotQualificationScenarios[0];
   const report = await runTemplateCopilotV3LiveSemanticQualification({
@@ -547,7 +850,7 @@ test("v3 qualification reports only sanitized local-clause recovery counters", a
       return {
         model: templateCopilotV3QualificationBaselineModel,
         batch: batchIdentity(input),
-        accepted: input.batchId === "structure"
+        accepted: input.batchId === "intake_documents"
           ? [
               {
                 anchorExpanded: true,
@@ -653,7 +956,7 @@ test("v3 qualification fails closed on malformed accepted-item recovery provenan
         return {
           model: templateCopilotV3QualificationBaselineModel,
           batch: batchIdentity(input),
-          accepted: input.batchId === "structure"
+          accepted: input.batchId === "intake_documents"
             ? [{ ...invalidAccepted, privateQuote: "MALFORMED SECRET" }]
             : [],
           rejected: [],
@@ -667,7 +970,9 @@ test("v3 qualification fails closed on malformed accepted-item recovery provenan
 
     assert.equal(report.scenarios[0].batches[0].status, "failed");
     assert.equal(report.scenarios[0].batches[1].status, "applied");
-    assert.equal(report.scenarios[0].successfulBatchCount, 1);
+    assert.equal(report.scenarios[0].batches[2].status, "applied");
+    assert.equal(report.scenarios[0].batches[3].status, "applied");
+    assert.equal(report.scenarios[0].successfulBatchCount, 3);
     assert.equal(report.summary.selectedGatePassed, false);
     assert.doesNotMatch(JSON.stringify(report), /MALFORMED SECRET|privateQuote/u);
   }
@@ -681,13 +986,19 @@ test("v3 qualification rejects hidden retries, zero requests, swapped order, and
       corpus: templateCopilotQualificationScenarios,
       scenarios: [scenario],
       extractBatch: async (input) => {
-        if (input.batchId !== "structure" || invalidMode !== "zero_request") {
+        if (
+          input.batchId !== "intake_documents" ||
+          invalidMode !== "zero_request"
+        ) {
           input.observeProviderRequest({
             outcome: "success",
             latencyMs: 1,
           });
         }
-        if (input.batchId === "structure" && invalidMode === "hidden_retry") {
+        if (
+          input.batchId === "intake_documents" &&
+          invalidMode === "hidden_retry"
+        ) {
           input.observeProviderRequest({
             outcome: "success",
             latencyMs: 1,
@@ -720,8 +1031,8 @@ test("v3 qualification rejects hidden retries, zero requests, swapped order, and
       now: monotonicClock(),
     });
     assert.equal(report.summary.selectedGatePassed, false);
-    assert.equal(report.scenarios[0].successfulBatchCount, 1);
-    assert.deepEqual(assembledItemCounts, [1]);
+    assert.equal(report.scenarios[0].successfulBatchCount, 3);
+    assert.deepEqual(assembledItemCounts, [3]);
   }
 
   const report = await runTemplateCopilotV3LiveSemanticQualification({
@@ -1136,14 +1447,33 @@ test("v3 qualification allowlists provider and assembler rejection codes", async
         model: templateCopilotV3QualificationBaselineModel,
         batch: batchIdentity(input),
         accepted: [],
-        rejected: [{ code: "provider_secret_code" }],
+        rejected: [
+          { code: "leaf_not_found", detail: "condition:operator" },
+          {
+            code: "item_schema_invalid",
+            detail: "workflow_name:whole_slot_quote",
+          },
+          {
+            code: "provider_secret_code",
+            detail: "provider_secret_detail",
+          },
+        ],
       };
     },
     assembleReview: () => ({
       ...emptyAssembly(),
       review: {
         ...emptyAssembly().review,
-        rejections: [{ code: "assembler_secret_code" }],
+        rejections: [
+          {
+            code: "unverifiable_leaf",
+            detail: "attachment:required",
+          },
+          {
+            code: "assembler_secret_code",
+            detail: "assembler_secret_detail",
+          },
+        ],
       },
     }),
     scoreProjection: passingScore,
@@ -1151,14 +1481,26 @@ test("v3 qualification allowlists provider and assembler rejection codes", async
     now: monotonicClock(),
   });
   assert.deepEqual(report.scenarios[0].batches[0].rejectionCodes, {
+    leaf_not_found: 1,
+    item_schema_invalid: 1,
+    unknown: 1,
+  });
+  assert.deepEqual(report.scenarios[0].batches[0].rejectionDetails, {
+    "condition:operator": 1,
+    "workflow_name:whole_slot_quote": 1,
     unknown: 1,
   });
   assert.deepEqual(report.scenarios[0].projection.rejectionCodes, {
+    unverifiable_leaf: 1,
+    unknown: 1,
+  });
+  assert.deepEqual(report.scenarios[0].projection.rejectionDetails, {
+    "attachment:required": 1,
     unknown: 1,
   });
   assert.doesNotMatch(
     JSON.stringify(report),
-    /provider_secret_code|assembler_secret_code/u,
+    /provider_secret_code|provider_secret_detail|assembler_secret_code|assembler_secret_detail/u,
   );
 });
 
@@ -1195,6 +1537,25 @@ test("v3 qualification CLI fixes canonical cwd, governed atomic output, and endi
   assert.match(cliSource, /activation=BLOCKED/u);
   assert.match(cliSource, /pilot=BLOCKED/u);
   assert.match(cliSource, /overall=BLOCKED/u);
+  assert.match(cliSource, /QUALIFICATION_SHADOW_MODEL/u);
+  assert.match(cliSource, /templateCopilotV3QualificationShadowModel/u);
+  assert.match(
+    cliSource,
+    /shadowModelRequested && !requestedOutputDirectory/u,
+  );
+  assert.match(cliSource, /qualificationMode: shadowModelRequested/u);
+  assert.match(cliSource, /"shadow_exploratory"/u);
+  assert.match(cliSource, /modelMatchesBaseline: !shadowModelRequested/u);
+  assert.match(
+    cliSource,
+    /templateCopilotV3OpenRouterChatCompletionTokenParameter\(model\)/u,
+  );
+  assert.match(cliSource, /providerContract,/u);
+  assert.match(cliSource, /selectionMode: `\$\{shadowModelRequested/u);
+  assert.match(
+    cliSource,
+    /shadowModelRequested &&[\s\S]*report\.summary\.fullGatePassed[\s\S]*report\.summary\.selectedGatePassed[\s\S]*report\.summary\.pilotGate\.passed/u,
+  );
   assert.match(
     cliSource,
     /if \(!report\.summary\.pilotGate\.passed\)\s*\{\s*process\.exitCode = 1;/u,
@@ -1203,6 +1564,202 @@ test("v3 qualification CLI fixes canonical cwd, governed atomic output, and endi
   assert.doesNotMatch(
     cliSource,
     /function readGit|execFileSync|cwd: process\.cwd\(\)/u,
+  );
+});
+
+test("GPT-5.6 Sol shadow evidence remains excluded from formal and pilot gates", async () => {
+  const shadowModel = templateCopilotV3QualificationShadowModel;
+  const metadata = qualificationMetadata();
+  metadata.model = shadowModel;
+  metadata.providerRoute.model = shadowModel;
+  metadata.modelMatchesBaseline = false;
+  metadata.qualificationMode = "shadow_exploratory";
+  metadata.selectionMode = "shadow_full";
+  metadata.providerContract = {
+    ...metadata.providerContract,
+    chatCompletionTokenParameter: "max_completion_tokens",
+  };
+  const report = await runTemplateCopilotV3LiveSemanticQualification({
+    corpus: templateCopilotQualificationScenarios,
+    scenarios: templateCopilotQualificationScenarios,
+    extractBatch: async (input) => {
+      input.observeProviderRequest({
+        outcome: "success",
+        latencyMs: 1,
+        responseTelemetry: qualificationProviderTelemetry({
+          requestedModel: shadowModel,
+          returnedModel: shadowModel,
+          upstreamProvider: "Azure",
+        }),
+      });
+      return {
+        model: shadowModel,
+        batch: batchIdentity(input),
+        accepted: acceptedFixtureBatch(input.batchId),
+        rejected: [],
+      };
+    },
+    assembleReview: passingAssembly,
+    scoreProjection: passingScore,
+    metadata,
+    now: monotonicClock(),
+  });
+
+  assert.equal(report.metadata.model, shadowModel);
+  assert.equal(
+    report.metadata.baselineModel,
+    templateCopilotV3QualificationBaselineModel,
+  );
+  assert.equal(report.metadata.modelMatchesBaseline, false);
+  assert.equal(report.metadata.qualificationMode, "shadow_exploratory");
+  assert.equal(report.metadata.selectionMode, "shadow_full");
+  assert.equal(
+    report.metadata.providerContract.chatCompletionTokenParameter,
+    "max_completion_tokens",
+  );
+  assert.equal(report.summary.successfulBatchCount, 96);
+  assert.equal(report.summary.strictBatchScenarioCount, 24);
+  assert.equal(report.summary.passed, false);
+  assert.equal(report.summary.selectedGatePassed, false);
+  assert.equal(report.summary.fullGatePassed, false);
+  assert.equal(report.summary.semanticCaptureGate.fullCorpusPassed, false);
+  assert.equal(report.summary.pilotGate.passed, false);
+
+  const crossModelTelemetry = structuredClone(report);
+  crossModelTelemetry.scenarios[0].batches[0]
+    .providerResponseTelemetry.returnedModel =
+      templateCopilotV3QualificationBaselineModel;
+  const crossModelSummary = summarizeQualification(crossModelTelemetry);
+  assert.equal(crossModelSummary.strictBatchScenarioCount, 23);
+  assert.equal(crossModelSummary.semanticCaptureGate.passed, false);
+});
+
+test("qualification CLI model policy fails closed before making a provider request", () => {
+  const script = new URL(
+    "../../scripts/test-template-copilot-v3-live-semantic-qualification.mjs",
+    import.meta.url,
+  );
+  const cases = [
+    {
+      label: "Qwen cannot be mislabeled as shadow",
+      model: templateCopilotV3QualificationBaselineModel,
+      shadowFlag: "true",
+      expected: /Qwen baseline cannot be labeled as shadow/u,
+    },
+    {
+      label: "unknown baseline model",
+      model: "unknown/model",
+      shadowFlag: "false",
+      expected: /requires the Qwen baseline model/u,
+    },
+    {
+      label: "unknown shadow model",
+      model: "openai/gpt-5.6-unknown",
+      shadowFlag: "true",
+      expected: /explicit GPT-5\.6 Sol shadow run requires model openai\/gpt-5\.6-sol/u,
+    },
+    {
+      label: "unknown shadow flag",
+      model: templateCopilotV3QualificationBaselineModel,
+      shadowFlag: "TRUE",
+      expected: /must be exactly true or false/u,
+    },
+  ];
+  for (const modelCase of cases) {
+    const child = spawnSync(
+      process.execPath,
+      [
+        "--conditions=react-server",
+        "--import",
+        "tsx",
+        fileURLToPath(script),
+      ],
+      {
+        encoding: "utf8",
+        timeout: 20_000,
+        env: {
+          ...process.env,
+          QUALIFICATION_ALLOW_DIRTY_SOURCE: "true",
+          QUALIFICATION_SHADOW_MODEL: modelCase.shadowFlag,
+          TEMPLATE_COPILOT_PROVIDER: "openrouter",
+          TEMPLATE_COPILOT_MODEL: modelCase.model,
+          OPENROUTER_MODEL: modelCase.model,
+        },
+      },
+    );
+    assert.notEqual(child.status, 0, modelCase.label);
+    assert.match(`${child.stdout}\n${child.stderr}`, modelCase.expected, modelCase.label);
+  }
+
+  const missingShadowOutput = spawnSync(
+    process.execPath,
+    [
+      "--conditions=react-server",
+      "--import",
+      "tsx",
+      fileURLToPath(script),
+    ],
+    {
+      encoding: "utf8",
+      timeout: 20_000,
+      env: {
+        ...process.env,
+        VERCEL_ENV: "",
+        OPENROUTER_API_KEY: "qualification-policy-test-only",
+        QUALIFICATION_ALLOW_DIRTY_SOURCE: "true",
+        QUALIFICATION_OUTPUT_DIR: "",
+        QUALIFICATION_SHADOW_MODEL: "true",
+        TEMPLATE_COPILOT_PROVIDER: "openrouter",
+        TEMPLATE_COPILOT_MODEL: "openai/gpt-5.6-sol",
+        OPENROUTER_MODEL: "openai/gpt-5.6-sol",
+        TEMPLATE_COPILOT_OPENROUTER_ZDR: "true",
+        TEMPLATE_COPILOT_OPENROUTER_REASONING_EFFORT: "none",
+        TEMPLATE_COPILOT_OPENROUTER_ROUTING_PROFILE:
+          templateCopilotOpenRouterQualificationRoutingProfile,
+        TEMPLATE_COPILOT_PROVIDER_TIMEOUT_MS: "12000",
+      },
+    },
+  );
+  assert.notEqual(missingShadowOutput.status, 0);
+  assert.match(
+    `${missingShadowOutput.stdout}\n${missingShadowOutput.stderr}`,
+    /requires an explicit separate QUALIFICATION_OUTPUT_DIR/u,
+  );
+
+  const collidingShadowOutput = spawnSync(
+    process.execPath,
+    [
+      "--conditions=react-server",
+      "--import",
+      "tsx",
+      fileURLToPath(script),
+    ],
+    {
+      encoding: "utf8",
+      timeout: 20_000,
+      env: {
+        ...process.env,
+        VERCEL_ENV: "",
+        OPENROUTER_API_KEY: "qualification-policy-test-only",
+        QUALIFICATION_ALLOW_DIRTY_SOURCE: "true",
+        QUALIFICATION_OUTPUT_DIR:
+          "output/template-copilot-v3-live-semantic",
+        QUALIFICATION_SHADOW_MODEL: "true",
+        TEMPLATE_COPILOT_PROVIDER: "openrouter",
+        TEMPLATE_COPILOT_MODEL: templateCopilotV3QualificationShadowModel,
+        OPENROUTER_MODEL: templateCopilotV3QualificationShadowModel,
+        TEMPLATE_COPILOT_OPENROUTER_ZDR: "true",
+        TEMPLATE_COPILOT_OPENROUTER_REASONING_EFFORT: "none",
+        TEMPLATE_COPILOT_OPENROUTER_ROUTING_PROFILE:
+          templateCopilotOpenRouterQualificationRoutingProfile,
+        TEMPLATE_COPILOT_PROVIDER_TIMEOUT_MS: "12000",
+      },
+    },
+  );
+  assert.notEqual(collidingShadowOutput.status, 0);
+  assert.match(
+    `${collidingShadowOutput.stdout}\n${collidingShadowOutput.stderr}`,
+    /shadow output must be a named run below/u,
   );
 });
 
@@ -1231,7 +1788,11 @@ test("v3 full gate requires 24 distinct selected scenario IDs", async () => {
 });
 
 async function successfulExtractor(input) {
-  input.observeProviderRequest({ outcome: "success", latencyMs: 1 });
+  input.observeProviderRequest({
+    outcome: "success",
+    latencyMs: 1,
+    responseTelemetry: qualificationProviderTelemetry(),
+  });
   return {
     model: templateCopilotV3QualificationBaselineModel,
     batch: batchIdentity(input),
@@ -1461,12 +2022,12 @@ function passingScore() {
     batchGate: {
       passed: true,
       failures: [],
-      passedBatchCount: 2,
-      batchCount: 2,
+      passedBatchCount: 4,
+      batchCount: 4,
       batchFailureCount: 0,
       providerRequestFailureCount: 0,
       failureCount: 0,
-      expectedBatchIds: ["structure", "policy_context"],
+      expectedBatchIds: formalBatchIds,
     },
     scenarioSemantics: {
       passed: true,
@@ -1557,12 +2118,14 @@ function qualificationMetadata() {
       providerCode: "openrouter",
       model: templateCopilotV3QualificationBaselineModel,
       privacyMode: "zdr",
+      routingProfile: templateCopilotOpenRouterQualificationRoutingProfile,
     },
     providerTimeoutMs: 12_000,
     providerQuoteContractVersion:
       templateCopilotV3ProviderQuoteContractVersion,
+    providerContract: templateCopilotV3QualificationProviderContractMetadata,
     providerPromptVersion: templateCopilotV3ProviderPromptVersion,
-    scoringBatchIds: ["structure", "policy_context"],
+    scoringBatchIds: formalBatchIds,
     fixtureFingerprint: templateCopilotV3QualificationFixtureFingerprint,
     baselineModel: templateCopilotV3QualificationBaselineModel,
     modelMatchesBaseline: true,
@@ -1572,6 +2135,21 @@ function qualificationMetadata() {
     comparableCleanSource: true,
     sourceEndCheckPassed: true,
     qualificationMode: "clean_source",
+  };
+}
+
+function qualificationProviderTelemetry(overrides = {}) {
+  return {
+    requestedModel: templateCopilotV3QualificationBaselineModel,
+    returnedModel: templateCopilotV3QualificationBaselineModel,
+    upstreamProvider: "CoreWeave",
+    finishState: "stop",
+    inputTokens: 100,
+    outputTokens: 20,
+    totalTokens: 120,
+    routerAttemptCount: 1,
+    providerLatencyMs: 1,
+    ...overrides,
   };
 }
 

@@ -2544,3 +2544,270 @@ test("does not carry a threshold field into a clause that names a different enti
   assert.equal(item.fragmentId, null);
   assert.equal(result.envelope.fragments.length, 0);
 });
+
+test("retains only closed non-executable provider hints as semantic observations", () => {
+  const cases = [
+    {
+      kind: "attachment",
+      text: "Conditional document uploaded file when needed",
+      leaves: [
+        { role: "label", quote: "Conditional document" },
+        { role: "kind", quote: "uploaded file", hint: "attachment" },
+        { role: "required", quote: "when needed", hint: "conditional" },
+      ],
+    },
+    {
+      kind: "attachment",
+      text: "Extended document uploaded file required with more proof for high risk",
+      leaves: [
+        { role: "label", quote: "Extended document" },
+        { role: "kind", quote: "uploaded file", hint: "attachment" },
+        {
+          role: "required",
+          quote: "required with more proof for high risk",
+          hint: "required_with_conditional_extension",
+        },
+      ],
+    },
+    {
+      kind: "attachment",
+      text: "Optional document uploaded file optional for ordinary requests",
+      leaves: [
+        { role: "label", quote: "Optional document" },
+        { role: "kind", quote: "uploaded file", hint: "attachment" },
+        {
+          role: "required",
+          quote: "optional for ordinary requests",
+          hint: "optional_conditional",
+        },
+      ],
+    },
+    {
+      kind: "condition",
+      text: "High risk or overseas routes to Legal Review",
+      leaves: [
+        { role: "field", quote: "High risk or overseas" },
+        {
+          role: "operator",
+          quote: "High risk or overseas",
+          hint: "unsupported_predicate",
+        },
+        { role: "value", quote: "High risk" },
+        {
+          role: "matching_route",
+          quote: "Legal Review",
+          hint: "stage_reference",
+        },
+      ],
+    },
+    {
+      kind: "condition",
+      text: "Amount equals 10 adds executive review otherwise adds board review",
+      leaves: [
+        { role: "field", quote: "Amount" },
+        { role: "operator", quote: "equals", hint: "=" },
+        { role: "value", quote: "10" },
+        {
+          role: "matching_route",
+          quote: "executive review",
+          hint: "unsupported_outcome",
+        },
+        {
+          role: "otherwise_route",
+          quote: "board review",
+          hint: "unsupported_outcome",
+        },
+      ],
+    },
+    {
+      kind: "notification",
+      text: "Request submitted notifies Finance Team recipients only",
+      leaves: [
+        {
+          role: "event",
+          quote: "Request submitted",
+          hint: "request_submitted",
+        },
+        {
+          role: "recipient",
+          quote: "Finance Team",
+          hint: "source_named_group",
+        },
+        {
+          role: "visibility",
+          quote: "recipients only",
+          hint: "recipients_only",
+        },
+      ],
+    },
+  ];
+  const sourceMessages = Object.fromEntries(
+    cases.map((entry, index) => [`semantic-only:${index}`, entry.text]),
+  );
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages,
+    items: cases.map((entry, itemIndex) =>
+      located({
+        itemIndex,
+        kind: entry.kind,
+        messageId: `semantic-only:${itemIndex}`,
+        text: entry.text,
+        leaves: entry.leaves,
+      }),
+    ),
+  });
+
+  assert.equal(result.review.items.length, cases.length, JSON.stringify(result.review.rejections));
+  assert.equal(
+    result.review.rejections.filter((entry) => entry.code === "unverifiable_leaf").length,
+    0,
+    JSON.stringify(result.review.rejections),
+  );
+  for (const [itemIndex, entry] of cases.entries()) {
+    const item = result.review.items.find((candidate) =>
+      candidate.providerItemIndexes.includes(itemIndex)
+    );
+    assert.ok(item, `${itemIndex}: ${JSON.stringify(result.review.rejections)}`);
+    for (const leaf of entry.leaves.filter((candidate) =>
+      [
+        "conditional",
+        "required_with_conditional_extension",
+        "optional_conditional",
+        "unsupported_predicate",
+        "unsupported_outcome",
+        "source_named_group",
+      ].includes(candidate.hint)
+    )) {
+      assert.ok(
+        item.semanticObservations.some((observation) =>
+          observation.role === leaf.role &&
+          observation.advisoryHint === leaf.hint &&
+          observation.quote === leaf.quote
+        ),
+        `${itemIndex}:${leaf.role}:${leaf.hint}`,
+      );
+    }
+  }
+});
+
+test("keeps ordinary required, kind, event, and stage leaves fail closed", () => {
+  const cases = [
+    {
+      kind: "request_field",
+      detail: "request_field:required",
+      text: "Bad field sometimes",
+      leaves: [
+        { role: "label", quote: "Bad field" },
+        { role: "required", quote: "sometimes", hint: "true" },
+      ],
+    },
+    {
+      kind: "attachment",
+      detail: "attachment:required",
+      text: "Bad requirement uploaded file sometimes",
+      leaves: [
+        { role: "label", quote: "Bad requirement" },
+        { role: "kind", quote: "uploaded file", hint: "attachment" },
+        { role: "required", quote: "sometimes", hint: "true" },
+      ],
+    },
+    {
+      kind: "stage",
+      detail: "stage:kind",
+      text: "Finance mystery",
+      leaves: [
+        { role: "label", quote: "Finance" },
+        { role: "kind", quote: "mystery", hint: "review" },
+        { role: "participant", quote: "Finance" },
+      ],
+    },
+    {
+      kind: "stage",
+      detail: "stage:sequence",
+      text: "Finance review then",
+      leaves: [
+        { role: "label", quote: "Finance" },
+        { role: "kind", quote: "review", hint: "review" },
+        { role: "participant", quote: "Finance" },
+        { role: "sequence", quote: "then" },
+      ],
+    },
+    {
+      kind: "condition",
+      detail: "condition:operator",
+      text: "Amount approximately 10 routes to Finance",
+      leaves: [
+        { role: "field", quote: "Amount" },
+        { role: "operator", quote: "approximately", hint: "=" },
+        { role: "value", quote: "10" },
+        { role: "matching_route", quote: "Finance", hint: "stage_reference" },
+      ],
+    },
+    {
+      kind: "condition",
+      detail: "condition:matching_route",
+      text: "Amount equals 10 does nothing",
+      leaves: [
+        { role: "field", quote: "Amount" },
+        { role: "operator", quote: "equals", hint: "=" },
+        { role: "value", quote: "10" },
+        { role: "matching_route", quote: "does nothing", hint: "complete" },
+      ],
+    },
+    {
+      kind: "attachment",
+      detail: "attachment:kind",
+      text: "Bad kind mystery required",
+      leaves: [
+        { role: "label", quote: "Bad kind" },
+        { role: "kind", quote: "mystery", hint: "attachment" },
+        { role: "required", quote: "required", hint: "true" },
+      ],
+    },
+    {
+      kind: "notification",
+      detail: "notification:event",
+      text: "Something happened Finance Team recipients only",
+      leaves: [
+        { role: "event", quote: "Something happened", hint: "request_submitted" },
+        { role: "recipient", quote: "Finance Team", hint: "source_named_group" },
+        { role: "visibility", quote: "recipients only", hint: "recipients_only" },
+      ],
+    },
+    {
+      kind: "notification",
+      detail: "notification:stage",
+      text: "Request submitted Finance Team recipients only Finance Review",
+      leaves: [
+        { role: "event", quote: "Request submitted", hint: "request_submitted" },
+        { role: "recipient", quote: "Finance Team", hint: "source_named_group" },
+        { role: "visibility", quote: "recipients only", hint: "recipients_only" },
+        { role: "stage", quote: "Finance Review" },
+      ],
+    },
+  ];
+  const sourceMessages = Object.fromEntries(
+    cases.map((entry, index) => [`fail-closed:${index}`, entry.text]),
+  );
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages,
+    items: cases.map((entry, itemIndex) =>
+      located({
+        itemIndex,
+        kind: entry.kind,
+        messageId: `fail-closed:${itemIndex}`,
+        text: entry.text,
+        leaves: entry.leaves,
+      }),
+    ),
+  });
+
+  const rejectedDetails = new Set(
+    result.review.rejections
+      .filter((entry) => entry.code === "unverifiable_leaf")
+      .map((entry) => entry.detail),
+  );
+  for (const entry of cases) {
+    assert.ok(rejectedDetails.has(entry.detail), entry.detail);
+  }
+});

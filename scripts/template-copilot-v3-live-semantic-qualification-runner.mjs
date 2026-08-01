@@ -2,16 +2,25 @@ import { createHash } from "node:crypto";
 import {
   classifyTemplateCopilotProviderRequestOutcome,
   createTemplateCopilotProviderRequestTracker,
+  sanitizeTemplateCopilotProviderFailureReason,
 } from "../src/lib/template-copilot-provider-request-tracker.ts";
+import { templateCopilotOpenRouterQualificationRoutingProfile } from "../src/lib/template-copilot-openrouter-routing.ts";
 import {
   quarantineTemplateCopilotRequirementText,
   templateCopilotDocumentQuarantineReasons,
 } from "../src/lib/template-copilot-safety.ts";
 import {
+  buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema,
   templateCopilotV3ProviderQuoteBatchIds,
+  templateCopilotV3ProviderQuoteBatchLocalRejectionDetails,
+  templateCopilotV3ProviderQuoteBatchGenerationLimits,
   templateCopilotV3ProviderQuoteBatches,
   templateCopilotV3ProviderQuoteContractVersion,
+  templateCopilotV3ProviderQuoteMaximumCodePoints,
+  templateCopilotV3ProviderQuoteKindRoleHints,
   templateCopilotV3ProviderQuoteRejectionCodes,
+  templateCopilotV3ProviderQuoteTransportLimits,
+  templateCopilotV3ProviderQuoteWireVersion,
 } from "../src/lib/template-copilot-v3-provider-quotes.ts";
 import {
   templateCopilotV3ProviderPromptVersion,
@@ -24,7 +33,7 @@ import {
 import { templateCopilotV3LiveSemanticScoringContract } from "./template-copilot-v3-live-semantic-scoring.mjs";
 
 export const templateCopilotV3QualificationRunnerVersion =
-  "template-copilot-v3-live-semantic-qualification.3";
+  "template-copilot-v3-live-semantic-qualification.12";
 export const templateCopilotV3QualificationExpectedScenarioCount = 24;
 export const templateCopilotV3QualificationExpectedGovernedHoldCount = 64;
 export const templateCopilotV3QualificationExpectedLocaleCount = 3;
@@ -36,10 +45,49 @@ if (
 ) throw new Error("The qualification locale distribution is inconsistent.");
 export const templateCopilotV3QualificationBaselineModel =
   "qwen/qwen3.5-35b-a3b";
+export const templateCopilotV3QualificationShadowModel =
+  "openai/gpt-5.6-sol";
 export const templateCopilotV3QualificationFixtureFingerprint =
   `sha256:${createHash("sha256")
     .update(JSON.stringify(templateCopilotQualificationScenarios))
     .digest("hex")}`;
+export const templateCopilotV3QualificationProviderContractMetadata =
+  Object.freeze({
+    canonicalContractVersion: templateCopilotV3ProviderQuoteContractVersion,
+    wireVersion: templateCopilotV3ProviderQuoteWireVersion,
+    maximumQuoteCodePoints: templateCopilotV3ProviderQuoteMaximumCodePoints,
+    transportMaximumUtf8Bytes:
+      templateCopilotV3ProviderQuoteTransportLimits.maximumUtf8Bytes,
+    chatCompletionTokenParameter: "max_tokens",
+    responsesCompletionTokenParameter: "max_output_tokens",
+    batches: Object.freeze(
+      Object.fromEntries(
+        templateCopilotV3ProviderQuoteBatchIds.map((batchId) => {
+          const serialized = JSON.stringify(
+            buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(batchId),
+          );
+          return [
+            batchId,
+            Object.freeze({
+              maximumItems:
+                templateCopilotV3ProviderQuoteBatchGenerationLimits[batchId]
+                  .maximumItems,
+              maximumLeavesPerItem:
+                templateCopilotV3ProviderQuoteBatchGenerationLimits[batchId]
+                  .maximumLeavesPerItem,
+              maximumCompletionTokens:
+                templateCopilotV3ProviderQuoteBatchGenerationLimits[batchId]
+                  .maximumCompletionTokens,
+              schemaUtf8Bytes: new TextEncoder().encode(serialized).byteLength,
+              schemaFingerprint: `sha256:${createHash("sha256")
+                .update(serialized)
+                .digest("hex")}`,
+            }),
+          ];
+        }),
+      ),
+    ),
+  });
 export const templateCopilotV3QualificationHardScenarioIds = Object.freeze([
   "EN-01",
   "EN-07",
@@ -128,7 +176,42 @@ if (
 const providerRejectionCodeSet = new Set(
   templateCopilotV3ProviderQuoteRejectionCodes,
 );
+const providerQuoteSlotValues = Object.freeze([
+  ...new Set(
+    Object.values(templateCopilotV3ProviderQuoteBatches).flatMap(
+      (batch) => batch.slots,
+    ),
+  ),
+]);
+const providerRejectionDetailSet = new Set([
+  "envelope",
+  "item",
+  "derived_anchor_span",
+  "derived_leaf_span",
+  ...templateCopilotV3ProviderQuoteBatchLocalRejectionDetails,
+  ...Object.entries(templateCopilotV3ProviderQuoteKindRoleHints).flatMap(
+    ([kind, roles]) => [
+      kind,
+      ...Object.keys(roles).map((role) => `${kind}:${role}`),
+      ...providerQuoteSlotValues.map((slot) => `${kind}:${slot}`),
+    ],
+  ),
+]);
 const reviewRejectionCodeSet = new Set(templateCopilotV3ReviewRejectionCodes);
+const reviewRejectionDetailSet = new Set([
+  ...Object.entries(templateCopilotV3ProviderQuoteKindRoleHints).flatMap(
+    ([kind, roles]) => [
+      kind,
+      `${kind}:anchor`,
+      `${kind}:semantic_context`,
+      `${kind}:semantic_authority_context`,
+      ...Object.keys(roles).map((role) => `${kind}:${role}`),
+    ],
+  ),
+  ...templateCopilotV3QualificationFactIds.map(
+    (factId) => `${factId}:assembled`,
+  ),
+]);
 const qualificationGovernedHoldKeySet = new Set([
   "factId",
   "blockingReason",
@@ -387,9 +470,11 @@ export async function runTemplateCopilotV3LiveSemanticQualification({
       fullScenarioSetSelected,
       batchIds: [...templateCopilotV3ProviderQuoteBatchIds],
       batchCountPerScenario: templateCopilotV3ProviderQuoteBatchIds.length,
-      expectedBatchCount: scenarios.length * 2,
+      expectedBatchCount:
+        scenarios.length * templateCopilotV3ProviderQuoteBatchIds.length,
       expectedFullBatchCount:
-        templateCopilotV3QualificationExpectedScenarioCount * 2,
+        templateCopilotV3QualificationExpectedScenarioCount *
+        templateCopilotV3ProviderQuoteBatchIds.length,
       legacyEquivalentExtractionCount: scenarios.length * 9,
       scenarioWorkerConcurrency: 1,
       providerBatchConcurrency: 1,
@@ -543,7 +628,9 @@ export async function runTemplateCopilotV3LiveSemanticQualificationScenario({
         providerRequestSuccessCount: provider.successCount,
         providerRequestFailureCount: provider.failureCount,
         providerOutcome: provider.outcome,
+        providerFailureReason: null,
         averageProviderRequestLatencyMs: provider.averageLatencyMs,
+        providerResponseTelemetry: provider.responseTelemetry ?? null,
         acceptedItemCount: Array.isArray(extracted.accepted)
           ? extracted.accepted.length
           : 0,
@@ -554,6 +641,9 @@ export async function runTemplateCopilotV3LiveSemanticQualificationScenario({
         sameLocalClauseRecoveredLeafCount,
         rejectionCodes: countBy(extracted.rejected, (entry) =>
           safeCode(entry?.code, providerRejectionCodeSet),
+        ),
+        rejectionDetails: countBy(extracted.rejected, (entry) =>
+          safeCode(entry?.detail, providerRejectionDetailSet),
         ),
         failureCount: 0,
       });
@@ -570,12 +660,21 @@ export async function runTemplateCopilotV3LiveSemanticQualificationScenario({
           provider.requestCount > 0
             ? provider.outcome
             : classifyTemplateCopilotProviderRequestOutcome(error),
+        providerFailureReason:
+          provider.requestCount > 0 &&
+          provider.outcome === "malformed_output"
+            ? sanitizeTemplateCopilotProviderFailureReason(
+                provider.providerFailureReason,
+              )
+            : null,
         averageProviderRequestLatencyMs: provider.averageLatencyMs,
+        providerResponseTelemetry: provider.responseTelemetry ?? null,
         acceptedItemCount: 0,
         rejectedItemCount: 0,
         expandedAnchorItemCount: 0,
         sameLocalClauseRecoveredLeafCount: 0,
         rejectionCodes: {},
+        rejectionDetails: {},
         failureCount: 1,
       });
     }
@@ -652,6 +751,9 @@ export async function runTemplateCopilotV3LiveSemanticQualificationScenario({
       rejectionCount: projectionRejections.length,
       rejectionCodes: countBy(projectionRejections, (entry) =>
         safeCode(entry?.code, reviewRejectionCodeSet),
+      ),
+      rejectionDetails: countBy(projectionRejections, (entry) =>
+        safeCode(entry?.detail, reviewRejectionDetailSet),
       ),
     },
     semanticCapture,
@@ -736,7 +838,9 @@ export function summarizeQualification(report) {
     qualificationExpectedScenarioIds.every((scenarioId) =>
       selectedScenarioIdSet.has(scenarioId),
     );
-  const strictBatchScenarioCount = scenarios.filter(scenarioBatchesPass).length;
+  const strictBatchScenarioCount = scenarios.filter((item) =>
+    scenarioBatchesPass(item, report.metadata.model),
+  ).length;
   const languageSummaries = Object.fromEntries(
     qualificationLocales.map((language) => {
       const matching = scenarios.filter((item) => item.language === language);
@@ -770,7 +874,8 @@ export function summarizeQualification(report) {
       ];
     }),
   );
-  const expectedSelectedBatchCount = scenarios.length * 2;
+  const expectedSelectedBatchCount =
+    scenarios.length * templateCopilotV3ProviderQuoteBatchIds.length;
   const selectedCapturePassed =
     scenarios.length > 0 &&
     batchCount === expectedSelectedBatchCount &&
@@ -793,6 +898,10 @@ export function summarizeQualification(report) {
       templateCopilotV3QualificationRunnerVersion &&
     report.metadata.providerQuoteContractVersion ===
       templateCopilotV3ProviderQuoteContractVersion &&
+    sameProviderContractMetadata(
+      report.metadata.providerContract,
+      templateCopilotV3QualificationProviderContractMetadata,
+    ) &&
     report.metadata.providerPromptVersion ===
       templateCopilotV3ProviderPromptVersion &&
     sameStringArray(
@@ -811,6 +920,8 @@ export function summarizeQualification(report) {
     report.metadata.reasoningEffort === "none" &&
     report.metadata.providerRoute?.providerCode === "openrouter" &&
     report.metadata.providerRoute?.privacyMode === "zdr" &&
+    report.metadata.providerRoute?.routingProfile ===
+      templateCopilotOpenRouterQualificationRoutingProfile &&
     report.metadata.providerRoute?.model === report.metadata.model &&
     scenarios.length === templateCopilotV3QualificationExpectedScenarioCount &&
     fullScenarioIdentitySetPassed &&
@@ -826,9 +937,11 @@ export function summarizeQualification(report) {
           templateCopilotV3QualificationExpectedScenariosPerLocale &&
         summary.executableDraftPassCount === 0 &&
         summary.successfulBatchCount ===
-          templateCopilotV3QualificationExpectedScenariosPerLocale * 2 &&
+          templateCopilotV3QualificationExpectedScenariosPerLocale *
+            templateCopilotV3ProviderQuoteBatchIds.length &&
         summary.batchCount ===
-          templateCopilotV3QualificationExpectedScenariosPerLocale * 2
+          templateCopilotV3QualificationExpectedScenariosPerLocale *
+            templateCopilotV3ProviderQuoteBatchIds.length
       );
     });
   const semanticCaptureGate = {
@@ -1008,8 +1121,9 @@ function sanitizeSemanticResult(semantic, projectionIntegrity) {
   const batchGatePassed =
     batchGateShapeValid &&
     batchGate.passed === true &&
-    batchGate.passedBatchCount === 2 &&
-    batchGate.batchCount === 2 &&
+    batchGate.passedBatchCount ===
+      templateCopilotV3ProviderQuoteBatchIds.length &&
+    batchGate.batchCount === templateCopilotV3ProviderQuoteBatchIds.length &&
     batchGate.batchFailureCount === 0 &&
     batchGate.providerRequestFailureCount === 0 &&
     batchGate.failureCount === 0 &&
@@ -1493,9 +1607,17 @@ function sanitizeQualificationMetadata(metadata) {
       providerCode: route.providerCode,
       model: route.model,
       privacyMode: route.privacyMode,
+      routingProfile:
+        route.routingProfile ===
+        templateCopilotOpenRouterQualificationRoutingProfile
+          ? route.routingProfile
+          : null,
     },
     providerTimeoutMs: nonnegativeInteger(metadata?.providerTimeoutMs),
     providerQuoteContractVersion: metadata?.providerQuoteContractVersion,
+    providerContract: sanitizeProviderContractMetadata(
+      metadata?.providerContract,
+    ),
     providerPromptVersion: metadata?.providerPromptVersion,
     scoringBatchIds: Array.isArray(metadata?.scoringBatchIds)
       ? metadata.scoringBatchIds.filter((value) =>
@@ -1505,6 +1627,56 @@ function sanitizeQualificationMetadata(metadata) {
     fixtureFingerprint: metadata?.fixtureFingerprint,
     selectionMode: metadata?.selectionMode,
   };
+}
+
+function sanitizeProviderContractMetadata(value) {
+  const batches = isRecord(value?.batches) ? value.batches : {};
+  return {
+    canonicalContractVersion: nonnegativeInteger(
+      value?.canonicalContractVersion,
+    ),
+    wireVersion: nonnegativeInteger(value?.wireVersion),
+    maximumQuoteCodePoints: nonnegativeInteger(value?.maximumQuoteCodePoints),
+    transportMaximumUtf8Bytes: nonnegativeInteger(
+      value?.transportMaximumUtf8Bytes,
+    ),
+    chatCompletionTokenParameter:
+      value?.chatCompletionTokenParameter === "max_tokens" ||
+        value?.chatCompletionTokenParameter === "max_completion_tokens"
+        ? value.chatCompletionTokenParameter
+        : "",
+    responsesCompletionTokenParameter:
+      value?.responsesCompletionTokenParameter === "max_output_tokens"
+        ? "max_output_tokens"
+        : "",
+    batches: Object.fromEntries(
+      templateCopilotV3ProviderQuoteBatchIds.map((batchId) => {
+        const batch = isRecord(batches[batchId]) ? batches[batchId] : {};
+        return [
+          batchId,
+          {
+            maximumItems: nonnegativeInteger(batch.maximumItems),
+            maximumLeavesPerItem: nonnegativeInteger(
+              batch.maximumLeavesPerItem,
+            ),
+            maximumCompletionTokens: nonnegativeInteger(
+              batch.maximumCompletionTokens,
+            ),
+            schemaUtf8Bytes: nonnegativeInteger(batch.schemaUtf8Bytes),
+            schemaFingerprint:
+              typeof batch.schemaFingerprint === "string" &&
+              /^sha256:[0-9a-f]{64}$/u.test(batch.schemaFingerprint)
+                ? batch.schemaFingerprint
+                : "",
+          },
+        ];
+      }),
+    ),
+  };
+}
+
+function sameProviderContractMetadata(value, expected) {
+  return JSON.stringify(value) === JSON.stringify(expected);
 }
 
 function sameStringArray(value, expected) {
@@ -1524,7 +1696,7 @@ function sameKeySet(value, expected) {
   );
 }
 
-function scenarioBatchesPass(item) {
+function scenarioBatchesPass(item, expectedModel) {
   if (
     !isRecord(item) ||
     item.batchCount !== templateCopilotV3ProviderQuoteBatchIds.length ||
@@ -1561,6 +1733,8 @@ function scenarioBatchesPass(item) {
       batch.providerRequestSuccessCount === 1 &&
       batch.providerRequestFailureCount === 0 &&
       batch.providerOutcome === "success" &&
+      batch.providerFailureReason === null &&
+      qualificationProviderTelemetryPass(batch, expectedModel) &&
       isNonnegativeInteger(batch.acceptedItemCount) &&
       isNonnegativeInteger(batch.expandedAnchorItemCount) &&
       isNonnegativeInteger(batch.sameLocalClauseRecoveredLeafCount) &&
@@ -1573,6 +1747,49 @@ function scenarioBatchesPass(item) {
         batch.acceptedItemCount * 2 &&
       batch.failureCount === 0,
   );
+}
+
+function qualificationProviderTelemetryPass(batch, expectedModel) {
+  const telemetry = batch.providerResponseTelemetry;
+  const upstreamProviderCode = normalizedUpstreamProviderCode(
+    telemetry?.upstreamProvider,
+  );
+  return (
+    (
+      expectedModel === templateCopilotV3QualificationBaselineModel ||
+      expectedModel === templateCopilotV3QualificationShadowModel
+    ) &&
+    isRecord(telemetry) &&
+    telemetry.requestedModel === expectedModel &&
+    telemetry.returnedModel === expectedModel &&
+    upstreamProviderCode !== null &&
+    !upstreamProviderCode.includes("akashml") &&
+    telemetry.finishState === "stop" &&
+    isNonnegativeInteger(telemetry.inputTokens) &&
+    telemetry.inputTokens > 0 &&
+    isNonnegativeInteger(telemetry.outputTokens) &&
+    telemetry.outputTokens > 0 &&
+    isNonnegativeInteger(telemetry.totalTokens) &&
+    telemetry.totalTokens === telemetry.inputTokens + telemetry.outputTokens &&
+    telemetry.routerAttemptCount === 1 &&
+    isNonnegativeInteger(telemetry.providerLatencyMs) &&
+    telemetry.providerLatencyMs > 0 &&
+    telemetry.providerLatencyMs < 12_000 &&
+    batch.averageProviderRequestLatencyMs === telemetry.providerLatencyMs
+  );
+}
+
+function normalizedUpstreamProviderCode(value) {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.trim() !== value ||
+    !/^[A-Za-z0-9 ._:/-]+$/u.test(value)
+  ) {
+    return null;
+  }
+  const normalized = value.toLocaleLowerCase().replace(/[^a-z0-9]+/gu, "");
+  return normalized.length > 0 ? normalized : null;
 }
 
 function safeCode(value, allowedCodes) {

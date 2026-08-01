@@ -26,7 +26,12 @@ import {
   templateCopilotV3SemanticScenarioManifests,
 } from "./template-copilot-v3-semantic-scenario-manifests.mjs";
 
-const expectedBatchIds = Object.freeze(["structure", "policy_context"]);
+const expectedBatchIds = Object.freeze([
+  "intake_documents",
+  "routing_stages_participants",
+  "routing_conditions_exceptions",
+  "policy_context",
+]);
 const observedMetricKeys = Object.freeze([
   "documents",
   "requestFields",
