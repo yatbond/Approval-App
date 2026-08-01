@@ -1372,7 +1372,7 @@ test("enum aliases are exact fact-and-path scopes with isolated email wording", 
   );
 });
 
-test("fixed-corpus semantic aliases derive only their scoped canonical leaves", () => {
+test("independently sufficient fixed-corpus aliases derive only their scoped canonical leaves", () => {
   const derivesEnum = (factId, path, leafName, canonical, sourceText) =>
     templateCopilotV3DirectEvidenceDerivesLeaf({
       factId,
@@ -1392,7 +1392,6 @@ test("fixed-corpus semantic aliases derive only their scoped canonical leaves", 
 
   const positives = [
     ["attachments.requirements", "/kind", "kind", "attachment", "PDF"],
-    ["attachments.requirements", "/kind", "kind", "form", "原生"],
     ["workflow.stages", "/kind", "kind", "review", "審查"],
     ["workflow.stages", "/kind", "kind", "review", "审查"],
     ["workflow.stages", "/kind", "kind", "review", "評審"],
@@ -1400,18 +1399,6 @@ test("fixed-corpus semantic aliases derive only their scoped canonical leaves", 
     ["workflow.conditions", "/operator", "operator", "=", "为是"],
     ["workflow.conditions", "/operator", "operator", ">", "超過"],
     ["workflow.conditions", "/operator", "operator", ">", "超过"],
-    ["notifications.rules", "/event", "event", "stage_assigned", "assignment"],
-    ["notifications.rules", "/event", "event", "stage_assigned", "獲指派"],
-    ["notifications.rules", "/event", "event", "stage_assigned", "分配"],
-    ["notifications.rules", "/event", "event", "request_rejected", "rejection"],
-    ["notifications.rules", "/event", "event", "request_rejected", "拒絕"],
-    ["notifications.rules", "/event", "event", "request_rejected", "拒绝"],
-    ["notifications.rules", "/event", "event", "correction_requested", "correction"],
-    ["notifications.rules", "/event", "event", "correction_requested", "補正"],
-    ["notifications.rules", "/event", "event", "correction_requested", "补正"],
-    ["notifications.rules", "/event", "event", "request_completed", "completion"],
-    ["notifications.rules", "/event", "event", "request_completed", "完成"],
-    ["notifications.rules", "/event", "event", "overdue", "逾期"],
   ];
   for (const [factId, path, leafName, canonical, sourceText] of positives) {
     assert.equal(
@@ -1449,6 +1436,50 @@ test("fixed-corpus semantic aliases derive only their scoped canonical leaves", 
     "a notification alias cannot leak into the workflow-stage scope",
   );
   assert.equal(derivesBoolean(false, "必填"), false);
+});
+
+test("fails closed when a bare attachment-kind or notification-event span lacks authoritative context", () => {
+  const derivesEnum = (factId, path, leafName, canonical, sourceText) =>
+    templateCopilotV3DirectEvidenceDerivesLeaf({
+      factId,
+      path,
+      rule: "enum_lexical",
+      value: { [leafName]: canonical },
+      sourceText,
+    });
+
+  assert.equal(
+    derivesEnum("attachments.requirements", "/kind", "kind", "form", "原生"),
+    false,
+    "原生 alone cannot distinguish an in-app form from a native CAD file",
+  );
+
+  for (const [canonical, sourceText] of [
+    ["stage_assigned", "assignment"],
+    ["stage_assigned", "獲指派"],
+    ["stage_assigned", "分配"],
+    ["request_rejected", "rejection"],
+    ["request_rejected", "拒絕"],
+    ["request_rejected", "拒绝"],
+    ["correction_requested", "correction"],
+    ["correction_requested", "補正"],
+    ["correction_requested", "补正"],
+    ["request_completed", "completion"],
+    ["request_completed", "完成"],
+    ["overdue", "逾期"],
+  ]) {
+    assert.equal(
+      derivesEnum(
+        "notifications.rules",
+        "/event",
+        "event",
+        canonical,
+        sourceText,
+      ),
+      false,
+      `${canonical}:${sourceText} requires polarity-bearing context`,
+    );
+  }
 });
 
 test("exported lexical contracts are recursively runtime immutable", () => {

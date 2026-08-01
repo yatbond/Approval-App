@@ -257,6 +257,12 @@ test("a Go/No-Go title does not turn a legitimate required native form into nega
       itemIndex: 0,
       kind: "attachment",
       code: "unverifiable_leaf",
+      detail: "attachment:kind",
+    },
+    {
+      itemIndex: 0,
+      kind: "attachment",
+      code: "unverifiable_leaf",
       detail: "attachment:required",
     },
   ]);

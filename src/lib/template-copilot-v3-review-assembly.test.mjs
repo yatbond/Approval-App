@@ -690,6 +690,76 @@ test("blocks explicitly negated core semantics in English, Traditional Chinese, 
   }
 });
 
+test("bare native and notification words cannot authorize context-dependent durable leaves", () => {
+  const cases = [
+    {
+      caseId: "native-cad",
+      kind: "attachment",
+      text: "请上传原生 CAD 文件",
+      leaves: [
+        { role: "label", quote: "CAD 文件" },
+        { role: "kind", quote: "原生", hint: "form" },
+      ],
+      path: "/kind",
+      valueKey: "kind",
+      rejectionDetail: "attachment:kind",
+    },
+    ...[
+      ["not-completed", "申请未完成时通知直接相关人员", "完成", "request_completed"],
+      ["not-rejected", "申请未被拒绝时通知直接相关人员", "拒绝", "request_rejected"],
+      ["no-correction", "申请无需补正时通知直接相关人员", "补正", "correction_requested"],
+      ["not-overdue", "申请未逾期时通知直接相关人员", "逾期", "overdue"],
+      ["not-assigned", "申请未分配时通知直接相关人员", "分配", "stage_assigned"],
+    ].map(([caseId, text, event, hint]) => ({
+      caseId,
+      kind: "notification",
+      text,
+      leaves: [
+        { role: "event", quote: event, hint },
+        { role: "recipient", quote: "直接相关人员", hint: "source_named_group" },
+      ],
+      path: "/event",
+      valueKey: "event",
+      rejectionDetail: "notification:event",
+    })),
+  ];
+  const sourceMessages = Object.fromEntries(
+    cases.map((entry) => [`context-authority:${entry.caseId}`, entry.text]),
+  );
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages,
+    items: cases.map((entry, itemIndex) =>
+      located({
+        itemIndex,
+        messageId: `context-authority:${entry.caseId}`,
+        ...entry,
+      }),
+    ),
+  });
+
+  for (const [itemIndex, entry] of cases.entries()) {
+    const item = result.review.items.find((candidate) =>
+      candidate.providerItemIndexes.includes(itemIndex),
+    );
+    assert.ok(item, entry.caseId);
+    assert.equal(item.value[entry.valueKey], undefined, entry.caseId);
+    assert.equal(
+      item.bindings.some((binding) => binding.path === entry.path),
+      false,
+      entry.caseId,
+    );
+    assert.ok(
+      result.review.rejections.some(
+        (rejection) =>
+          rejection.itemIndex === itemIndex &&
+          rejection.code === "unverifiable_leaf" &&
+          rejection.detail === entry.rejectionDetail,
+      ),
+      entry.caseId,
+    );
+  }
+});
+
 test("rejects cross-sentence core splicing while preserving coordinated same-clause requirements", () => {
   const splicedMessageId = "message-field-spliced-001";
   const splicedText = "Purpose is optional. Amount is required.";

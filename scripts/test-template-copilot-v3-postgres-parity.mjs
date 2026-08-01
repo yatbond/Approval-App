@@ -565,6 +565,47 @@ function createSemanticVectors() {
     expected: false,
   });
 
+  for (const { description, factId, path, leafValue, sourceText } of [
+    {
+      description: "bare native wording does not prove an in-app form",
+      factId: "attachments.requirements",
+      path: "/kind",
+      leafValue: "form",
+      sourceText: "原生",
+    },
+    ...[
+      ["stage_assigned", "assignment"],
+      ["stage_assigned", "獲指派"],
+      ["stage_assigned", "分配"],
+      ["request_rejected", "rejection"],
+      ["request_rejected", "拒絕"],
+      ["request_rejected", "拒绝"],
+      ["correction_requested", "correction"],
+      ["correction_requested", "補正"],
+      ["correction_requested", "补正"],
+      ["request_completed", "completion"],
+      ["request_completed", "完成"],
+      ["overdue", "逾期"],
+    ].map(([leafValue, sourceText]) => ({
+      description: `bare notification event ${sourceText} lacks polarity context`,
+      factId: "notifications.rules",
+      path: "/event",
+      leafValue,
+      sourceText,
+    })),
+  ]) {
+    push({
+      category: "context_authority_negative",
+      description,
+      factId,
+      path,
+      rule: "enum_lexical",
+      leafValue,
+      sourceText,
+      expected: false,
+    });
+  }
+
   for (const { factId, path } of [
     { factId: "attachments.requirements", path: "/stage" },
     { factId: "workflow.conditions", path: "/matchingRoute" },
