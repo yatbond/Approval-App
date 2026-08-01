@@ -18,6 +18,16 @@ function structureSources(caseId, conditions) {
   }));
 }
 
+function routingConditionSources(caseId, conditions) {
+  return templateCopilotV3ProviderQuoteBatches.routing_conditions.slots.map(
+    (slot) => ({
+      slot,
+      messageId: `real-path-formal:${caseId}:${slot}`,
+      text: conditions,
+    }),
+  );
+}
+
 function conditionOutput(quote, leaves) {
   return {
     contractVersion: 1,
@@ -39,6 +49,16 @@ function locateCondition(caseId, source, quote, leaves) {
   const sourceSlots = structureSources(caseId, source);
   const located = locateTemplateCopilotV3ProviderQuotes({
     batchId: "structure",
+    sourceSlots,
+    output: conditionOutput(quote, leaves),
+  });
+  return { located, sourceSlots };
+}
+
+function locateFormalCondition(caseId, source, quote, leaves) {
+  const sourceSlots = routingConditionSources(caseId, source);
+  const located = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions",
     sourceSlots,
     output: conditionOutput(quote, leaves),
   });
@@ -1624,5 +1644,56 @@ test("direct and correction-bound condition routes remain valid", () => {
         entry.id,
       );
     }
+  }
+});
+
+test("the formal real path binds provider-split simplified CJK yes to the complete source comparator", () => {
+  for (const { caseId, operatorQuote } of [
+    { caseId: "leading-copula", operatorQuote: "为" },
+    { caseId: "overlapping-value", operatorQuote: "是" },
+  ]) {
+    const source = "安全影响为是时安全评审必须阻塞流程";
+    const { located, sourceSlots } = locateFormalCondition(
+      `cjk-yes-${caseId}`,
+      source,
+      source,
+      [
+        leaf("field", "安全影响"),
+        leaf("operator", operatorQuote, "="),
+        leaf("value", "是"),
+        leaf("matching_route", "安全评审", "stage_reference"),
+      ],
+    );
+    assert.deepEqual(located.rejected, [], operatorQuote);
+    assert.equal(located.accepted.length, 1, operatorQuote);
+    assert.equal(
+      located.accepted[0].leaves.find((entry) => entry.role === "operator")
+        ?.sourceSpan.exactText,
+      operatorQuote,
+      operatorQuote,
+    );
+    const assembled = assembleLocated(located, sourceSlots);
+    const item = assembled.review.items[0];
+    assert.ok(item, `${operatorQuote}: ${JSON.stringify(assembled.review.rejections)}`);
+    assert.equal(item.value.operator, "=", operatorQuote);
+    assert.equal(item.semanticComplete, true, operatorQuote);
+    const operatorBinding = item.bindings.find(
+      (binding) => binding.path === "/operator",
+    );
+    assert.ok(operatorBinding, operatorQuote);
+    assert.deepEqual(
+      operatorBinding.spanIds.map((spanId) =>
+        item.sourceSpans.find((span) => span.spanId === spanId)?.exactText
+      ),
+      ["为是"],
+      operatorQuote,
+    );
+    assert.equal(
+      assembled.review.rejections.some(
+        (entry) => entry.detail === "condition:operator",
+      ),
+      false,
+      operatorQuote,
+    );
   }
 });

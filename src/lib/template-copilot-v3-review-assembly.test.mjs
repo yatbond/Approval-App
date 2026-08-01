@@ -41,9 +41,11 @@ function located({ itemIndex, kind, messageId, text, anchorQuote = text, leaves,
     kind,
     slot: slotByKind[kind],
     anchor: span(messageId, text, anchorQuote),
-    leaves: Object.freeze(leaves.map((leaf) => Object.freeze({ role: leaf.role, hint: leaf.hint ?? null, sourceSpan: span(messageId, text, leaf.quote, leaf.occurrence ?? 0) }))),
+    leaves: Object.freeze(leaves.map((leaf) => Object.freeze({ role: leaf.role, hint: leaf.hint ?? null, sourceSpan: span(messageId, text, leaf.quote, leaf.occurrence ?? 0), sameLocalClauseRecovered: false }))),
     confidence,
     ambiguity,
+    anchorExpanded: false,
+    sameLocalClauseRecoveredLeafCount: 0,
   });
 }
 
@@ -1199,6 +1201,208 @@ test("audits a bounded semantic operator for every fixed condition corpus entry 
     assert.equal(assembled.defaulted, false, entry.caseId);
     assert.equal(assembled.persisted, false, entry.caseId);
     assert.equal(assembled.executable, false, entry.caseId);
+  }
+});
+
+test("closes only the exact simplified CJK yes compound when a provider splits its operator", () => {
+  const positives = [
+    { caseId: "leading-copula", operator: "为" },
+    { caseId: "overlapping-value", operator: "是" },
+  ];
+  for (const [itemIndex, entry] of positives.entries()) {
+    const messageId = `closed-cjk-yes:${entry.caseId}`;
+    const text = "安全影响为是时安全评审必须阻塞流程";
+    const messages = { [messageId]: text };
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: messages,
+      items: [located({
+        itemIndex,
+        kind: "condition",
+        messageId,
+        text,
+        leaves: [
+          { role: "field", quote: "安全影响" },
+          { role: "operator", quote: entry.operator, hint: "=" },
+          { role: "value", quote: "是" },
+          {
+            role: "matching_route",
+            quote: "安全评审",
+            hint: "stage_reference",
+          },
+        ],
+      })],
+    });
+    const item = result.review.items[0];
+    assert.ok(item, `${entry.caseId}: ${JSON.stringify(result.review.rejections)}`);
+    assert.equal(item.value.operator, "=", entry.caseId);
+    assert.equal(item.semanticComplete, true, entry.caseId);
+    assert.deepEqual(
+      new Set(item.semanticValue.operator),
+      new Set([entry.operator, "为是"]),
+      entry.caseId,
+    );
+    const operatorBinding = item.bindings.find(
+      (binding) => binding.path === "/operator",
+    );
+    assert.ok(operatorBinding, entry.caseId);
+    assert.deepEqual(
+      operatorBinding.spanIds.map((spanId) =>
+        item.sourceSpans.find((candidate) => candidate.spanId === spanId)
+          ?.exactText
+      ),
+      ["为是"],
+      entry.caseId,
+    );
+    assert.ok(
+      item.semanticObservations.some(
+        (observation) =>
+          observation.role === "operator" &&
+          observation.quote === entry.operator,
+      ),
+      entry.caseId,
+    );
+    assert.equal(
+      result.review.rejections.some(
+        (rejection) => rejection.detail === "condition:operator",
+      ),
+      false,
+      entry.caseId,
+    );
+    assert.ok(
+      validateTemplateCopilotV3ExtractionEnvelopeSourceAuthority(
+        result.envelope,
+        messages,
+      ),
+      entry.caseId,
+    );
+  }
+
+  const rejected = [
+    {
+      caseId: "traditional-contract-not-authorized",
+      text: "安全影響為是時安全評審必須阻塞流程",
+      field: "安全影響",
+      operator: "為",
+      value: "是",
+      route: "安全評審",
+    },
+    {
+      caseId: "negated",
+      text: "安全影响不为是时安全评审必须阻塞流程",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "question-form",
+      text: "安全影响为是否需要安全评审",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "cross-hard-clause",
+      text: "安全影响为是。安全评审必须阻塞流程",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "compound-predicate",
+      text: "安全影响为是且地区为欧盟时走安全评审",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "unrelated-predicate-route",
+      text: "安全影响为是用于记录，地区为欧盟时走安全评审",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "hedged-route",
+      text: "安全影响为是时预计走安全评审",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "example-only",
+      text: "示例：安全影响为是时安全评审必须阻塞流程",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "duplicate-comparator",
+      text: "安全影响为是用于记录，安全影响为是时安全评审必须阻塞流程",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "field-outside-anchor",
+      text: "安全影响为是时安全评审必须阻塞流程",
+      anchorQuote: "为是时安全评审必须阻塞流程",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "route-outside-anchor",
+      text: "安全影响为是时安全评审必须阻塞流程",
+      anchorQuote: "安全影响为是",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+  ];
+  for (const [itemIndex, entry] of rejected.entries()) {
+    const messageId = `closed-cjk-yes-reject:${entry.caseId}`;
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: { [messageId]: entry.text },
+      items: [located({
+        itemIndex: 100 + itemIndex,
+        kind: "condition",
+        messageId,
+        text: entry.text,
+        anchorQuote: entry.anchorQuote ?? entry.text,
+        leaves: [
+          { role: "field", quote: entry.field },
+          { role: "operator", quote: entry.operator, hint: "=" },
+          { role: "value", quote: entry.value },
+          {
+            role: "matching_route",
+            quote: entry.route,
+            hint: "stage_reference",
+          },
+        ],
+      })],
+    });
+    const item = result.review.items[0];
+    assert.ok(item, entry.caseId);
+    assert.equal(item.value.operator, undefined, entry.caseId);
+    assert.equal(item.semanticComplete, false, entry.caseId);
+    assert.ok(
+      result.review.rejections.some(
+        (rejection) =>
+          rejection.code === "unverifiable_leaf" &&
+          rejection.detail === "condition:operator",
+      ),
+      `${entry.caseId}: ${JSON.stringify(result.review.rejections)}`,
+    );
   }
 });
 test("keeps semantic aliases closed and advisory hints non-authoritative", () => {

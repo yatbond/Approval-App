@@ -522,7 +522,25 @@ function compileArrayItem(
       rejections.push(rejection(item, "unverifiable_leaf", `${item.kind}:${supplied.role}`));
       continue;
     }
-    const derived = deriveLeaf(factId, mapping, supplied.hint, supplied.sourceSpan);
+    let evidenceSpan = supplied.sourceSpan;
+    let derived = deriveLeaf(factId, mapping, supplied.hint, evidenceSpan);
+    if (!derived) {
+      const closedCjkYesOperator =
+        deriveClosedSimplifiedCjkYesOperatorObservation({
+          item,
+          supplied,
+          messages,
+          semanticContexts,
+          semanticAuthorityBlocked: draft.semanticAuthorityBlocked,
+        });
+      if (closedCjkYesOperator) {
+        evidenceSpan = closedCjkYesOperator.sourceSpan;
+        derived = deriveLeaf(factId, mapping, supplied.hint, evidenceSpan);
+        if (derived) {
+          draft.semanticObservations.push(closedCjkYesOperator);
+        }
+      }
+    }
     if (!derived) {
       if (
         contextualRecoveredCoreEvidenceCanRemainReviewOnly(
@@ -546,7 +564,7 @@ function compileArrayItem(
       const values = draft.arrays.get(mapping.path) ?? new Map<string, Leaf>();
       const key = stableJson(derived.value);
       const current = values.get(key);
-      values.set(key, current ? { ...current, spans: dedupeSpans([...current.spans, supplied.sourceSpan], compareSpans) } : { ...derived, spans: [supplied.sourceSpan] });
+      values.set(key, current ? { ...current, spans: dedupeSpans([...current.spans, evidenceSpan], compareSpans) } : { ...derived, spans: [evidenceSpan] });
       draft.arrays.set(mapping.path, values);
       continue;
     }
@@ -555,7 +573,7 @@ function compileArrayItem(
       conflictedPaths.add(mapping.path);
       continue;
     }
-    draft.leaves.set(mapping.path, current ? { ...current, spans: dedupeSpans([...current.spans, supplied.sourceSpan], compareSpans) } : { ...derived, spans: [supplied.sourceSpan] });
+    draft.leaves.set(mapping.path, current ? { ...current, spans: dedupeSpans([...current.spans, evidenceSpan], compareSpans) } : { ...derived, spans: [evidenceSpan] });
   }
   for (const path of semanticObservationConflictPaths(draft)) {
     conflictedPaths.add(path);
@@ -805,6 +823,194 @@ function deriveLeaf(factId: TemplateCopilotV3FragmentFactId, mapping: Exclude<Ma
   const testValue: Record<string, unknown> = {};
   setAt(testValue, pointer, value);
   return templateCopilotV3DirectEvidenceDerivesLeaf({ factId, path: pointer, rule, value: testValue, sourceText: span.exactText }) ? { value, rule } : null;
+}
+
+function deriveClosedSimplifiedCjkYesOperatorObservation({
+  item,
+  supplied,
+  messages,
+  semanticContexts,
+  semanticAuthorityBlocked,
+}: Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem & {
+    kind: keyof typeof arrayFactByKind;
+  };
+  supplied: TemplateCopilotV3LocatedQuoteItem["leaves"][number];
+  messages: Readonly<Record<string, string>>;
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[];
+  semanticAuthorityBlocked: boolean;
+}>): TemplateCopilotV3ReviewObservation | null {
+  if (
+    item.kind !== "condition" ||
+    item.slot !== "conditions_exceptions" ||
+    item.ambiguity !== "none" ||
+    item.anchorExpanded === true ||
+    item.sameLocalClauseRecoveredLeafCount !== 0 ||
+    semanticAuthorityBlocked ||
+    supplied.role !== "operator" ||
+    supplied.hint !== "="
+  ) {
+    return null;
+  }
+  const fields = item.leaves.filter((leaf) => leaf.role === "field");
+  const operators = item.leaves.filter((leaf) => leaf.role === "operator");
+  const values = item.leaves.filter((leaf) => leaf.role === "value");
+  const matchingRoutes = item.leaves.filter(
+    (leaf) => leaf.role === "matching_route",
+  );
+  if (
+    fields.length !== 1 ||
+    operators.length !== 1 ||
+    values.length !== 1 ||
+    matchingRoutes.length !== 1 ||
+    item.leaves.some((leaf) => leaf.role === "otherwise_route")
+  ) {
+    return null;
+  }
+  const field = fields[0];
+  const operator = operators[0];
+  const value = values[0];
+  const matchingRoute = matchingRoutes[0];
+  if (
+    !field ||
+    !operator ||
+    !value ||
+    !matchingRoute ||
+    operator !== supplied ||
+    matchingRoute.hint !== "stage_reference" ||
+    value.sourceSpan.exactText !== "是" ||
+    (operator.sourceSpan.exactText !== "为" &&
+      operator.sourceSpan.exactText !== "是")
+  ) {
+    return null;
+  }
+  const messageId = item.anchor.messageId;
+  if (
+    [field, operator, value, matchingRoute].some(
+      (leaf) =>
+        leaf.sourceSpan.messageId !== messageId ||
+        !validSpan(leaf.sourceSpan, messages) ||
+        leaf.sourceSpan.startCodePoint < item.anchor.startCodePoint ||
+        leaf.sourceSpan.endCodePoint > item.anchor.endCodePoint,
+    )
+  ) {
+    return null;
+  }
+  const message = messages[messageId];
+  if (typeof message !== "string") return null;
+  const codePoints = Array.from(message);
+  const comparatorStart = field.sourceSpan.endCodePoint;
+  const comparatorEnd = comparatorStart + 2;
+  const operatorIsLeadingCopula = operator.sourceSpan.exactText === "为";
+  const operatorCoordinatesMatch = operatorIsLeadingCopula
+    ? operator.sourceSpan.startCodePoint === comparatorStart &&
+      operator.sourceSpan.endCodePoint === comparatorStart + 1 &&
+      value.sourceSpan.startCodePoint === comparatorStart + 1 &&
+      value.sourceSpan.endCodePoint === comparatorEnd
+    : operator.sourceSpan.startCodePoint === comparatorStart + 1 &&
+      operator.sourceSpan.endCodePoint === comparatorEnd &&
+      value.sourceSpan.startCodePoint === operator.sourceSpan.startCodePoint &&
+      value.sourceSpan.endCodePoint === operator.sourceSpan.endCodePoint;
+  if (
+    !operatorCoordinatesMatch ||
+    comparatorStart < item.anchor.startCodePoint ||
+    comparatorEnd > item.anchor.endCodePoint ||
+    matchingRoute.sourceSpan.startCodePoint < comparatorEnd ||
+    codePoints.slice(comparatorStart, comparatorEnd).join("") !== "为是" ||
+    codePoints[comparatorEnd] === "否"
+  ) {
+    return null;
+  }
+  const spanInput = {
+    messageId,
+    startCodePoint: comparatorStart,
+    endCodePoint: comparatorEnd,
+    exactText: "为是",
+  };
+  const parsedSpan = templateCopilotV3SourceSpanSchema.safeParse({
+    spanId: templateCopilotV3SourceSpanId(spanInput),
+    ...spanInput,
+  });
+  if (
+    !parsedSpan.success ||
+    !validateTemplateCopilotV3SourceSpan(parsedSpan.data, messages)
+  ) {
+    return null;
+  }
+  const observation = Object.freeze({
+    role: "operator" as const,
+    quote: parsedSpan.data.exactText,
+    advisoryHint: "=",
+    sourceSpan: Object.freeze(parsedSpan.data),
+  });
+  const fieldObservation = Object.freeze({
+    role: "field" as const,
+    quote: field.sourceSpan.exactText,
+    advisoryHint: field.hint,
+    sourceSpan: field.sourceSpan,
+  });
+  const valueObservation = Object.freeze({
+    role: "value" as const,
+    quote: value.sourceSpan.exactText,
+    advisoryHint: value.hint,
+    sourceSpan: value.sourceSpan,
+  });
+  const routeObservation = Object.freeze({
+    role: "matching_route" as const,
+    quote: matchingRoute.sourceSpan.exactText,
+    advisoryHint: matchingRoute.hint,
+    sourceSpan: matchingRoute.sourceSpan,
+  });
+  const clause = semanticObservationClause(fieldObservation, semanticContexts);
+  if (
+    clause === null ||
+    /(?:^|\b)(?:example|for example|e\.g\.|historical|previously quoted)(?:\b|$)|(?:示例|例子|例如|歷史|历史)/u
+      .test(templateCopilotV3NormalizeLexicalText(clause)) ||
+    exactSemanticOccurrenceCount(clause, "为是") !== 1 ||
+    !semanticHintIsVerified(
+      "workflow.conditions",
+      observation,
+      semanticContexts,
+    ) ||
+    !semanticHintIsVerified(
+      "workflow.conditions",
+      routeObservation,
+      semanticContexts,
+    ) ||
+    !semanticConditionPredicateGroupsHaveAffinity(
+      [fieldObservation],
+      [observation],
+      [valueObservation],
+      semanticContexts,
+    ) ||
+    !semanticConditionRoutesHaveAffinity(
+      [fieldObservation],
+      [observation],
+      [valueObservation],
+      [routeObservation],
+      [],
+      semanticContexts,
+    ) ||
+    semanticConditionHasCompoundPredicateContext(
+      [fieldObservation, observation, valueObservation, routeObservation],
+      semanticContexts,
+    )
+  ) {
+    return null;
+  }
+  return observation;
+}
+
+function exactSemanticOccurrenceCount(value: string, needle: string) {
+  let count = 0;
+  let cursor = 0;
+  while (cursor <= value.length - needle.length) {
+    const offset = value.indexOf(needle, cursor);
+    if (offset < 0) break;
+    count += 1;
+    cursor = offset + Math.max(needle.length, 1);
+  }
+  return count;
 }
 
 function deriveNumericValue(factId: TemplateCopilotV3FragmentFactId, path: string, sourceText: string) {

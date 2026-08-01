@@ -146,7 +146,7 @@ test("v3 qualification executes exactly five sequential batches for all 24 multi
   assert.equal(report.summary.providerRequestCount, 120);
   assert.equal(
     report.metadata.runnerVersion,
-    "template-copilot-v3-live-semantic-qualification.16",
+    "template-copilot-v3-live-semantic-qualification.17",
   );
   assert.equal(report.summary.expandedAnchorItemCount, 0);
   assert.equal(report.summary.sameLocalClauseRecoveredLeafCount, 0);
