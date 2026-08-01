@@ -35,7 +35,7 @@ import {
 } from "./template-copilot-v3-clause-boundaries.ts";
 
 export const templateCopilotV3ProviderQuoteContractVersion = 1 as const;
-export const templateCopilotV3ProviderQuoteWireVersion = 1 as const;
+export const templateCopilotV3ProviderQuoteWireVersion = 2 as const;
 export const templateCopilotV3ProviderQuoteMaximumCodePoints = 8_000;
 
 export const templateCopilotV3ProviderQuoteTransportLimits = Object.freeze({
@@ -548,11 +548,23 @@ const templateCopilotV3CompactProviderQuoteAmbiguitySchema = z.union([
 
 const invalidCanonicalProviderQuoteItem = Object.freeze({});
 
+const templateCopilotV3ProviderQuoteWholeSlotIntentSchema = z
+  .object({
+    kind: z.enum(templateCopilotV3ProviderQuoteKinds),
+    serverWholeSlotIntent: z.literal(true),
+    selectorQuote: z.string().nullable(),
+    ambiguity: z.enum(["none", "possible", "ambiguous"]),
+  })
+  .strict();
+
 /**
  * Expands the compact, provider-facing wire envelope into the existing
- * canonical item contract. Invalid items become constant sentinels so the
- * locator can isolate them without reordering valid siblings. Provider
- * confidence is never accepted; ambiguity must be explicit on the wire.
+ * canonical item contract. Whole facts remain compact server-binding intents
+ * until the locator has the original source slots. A multi-slot whole fact
+ * carries only a short exact selector quote; it never echoes the bound slot.
+ * Invalid items become constant sentinels so the locator can isolate them
+ * without reordering valid siblings. Provider confidence is never accepted;
+ * ambiguity must be explicit on the wire.
  */
 export function expandTemplateCopilotV3ProviderQuoteWire({
   batchId,
@@ -598,6 +610,45 @@ export function expandTemplateCopilotV3ProviderQuoteWire({
     })
     .strict();
   const items = shell.data.i.map((rawItem) => {
+    const rawKind = isTemplateCopilotV3ProviderQuoteWireRecord(rawItem)
+      ? rawItem.k
+      : null;
+    if (
+      typeof rawKind === "string" &&
+      templateCopilotV3ProviderQuoteKinds.includes(
+        rawKind as TemplateCopilotV3ProviderQuoteKind,
+      ) &&
+      batchLocalWholeSlotIntentPolicy(
+        batchId,
+        rawKind as TemplateCopilotV3ProviderQuoteKind,
+      )
+    ) {
+      const policy = batchLocalWholeSlotIntentPolicy(
+        batchId,
+        rawKind as TemplateCopilotV3ProviderQuoteKind,
+      );
+      if (!policy) return invalidCanonicalProviderQuoteItem;
+      const intent = z
+        .object({
+          k: z.literal(rawKind),
+          ...(policy.slots.length > 1 ? { q: quote } : {}),
+          a: templateCopilotV3CompactProviderQuoteAmbiguitySchema,
+        })
+        .strict()
+        .safeParse(rawItem);
+      if (!intent.success) return invalidCanonicalProviderQuoteItem;
+      return Object.freeze({
+        kind: rawKind,
+        serverWholeSlotIntent: true as const,
+        selectorQuote:
+          policy.slots.length > 1 && "q" in intent.data
+            ? intent.data.q
+            : null,
+        ambiguity: (["none", "possible", "ambiguous"] as const)[
+          intent.data.a
+        ],
+      });
+    }
     const parsed = compactItemSchema.safeParse(rawItem);
     if (!parsed.success) return invalidCanonicalProviderQuoteItem;
     return Object.freeze({
@@ -889,6 +940,7 @@ const templateCopilotV3ProviderQuoteWholeSlotRejectionDetailSuffixes =
     "whole_slot_quote",
     "whole_slot_leaf_count",
     "whole_slot_leaf_quote",
+    "whole_slot_source_too_long",
     "duplicate_whole_slot_item",
   ] as const);
 
@@ -1014,6 +1066,41 @@ function buildTemplateCopilotV3ProviderQuoteGuidanceItemSchema({
   const leafVariants =
     buildTemplateCopilotV3ProviderQuoteGuidanceLeafVariants(allowedKinds);
   const onlyAllowedKind = allowedKinds.length === 1 ? allowedKinds[0] : null;
+  const wholeSlotIntent = onlyAllowedKind
+    ? batchLocalWholeSlotIntentPolicy(batchId, onlyAllowedKind)
+    : null;
+  if (wholeSlotIntent && onlyAllowedKind) {
+    return {
+      type: "object" as const,
+      description:
+        wholeSlotIntent.slots.length === 1
+          ? "Declare this applicable whole-slot fact; the server binds its exact authorized source slot and pinned leaf."
+          : "Declare this applicable whole-slot fact with the shortest unique exact selector q; the server binds the selected full authorized source slot and pinned leaf.",
+      properties: {
+        k: kindSchema,
+        ...(wholeSlotIntent.slots.length > 1
+          ? {
+              q: {
+                type: "string" as const,
+                description:
+                  "shortest unique exact source span selecting one authorized slot",
+                minLength: 1,
+                maxLength: templateCopilotV3ProviderQuoteMaximumCodePoints,
+              },
+            }
+          : {}),
+        a: {
+          type: "integer" as const,
+          enum: [0, 1, 2],
+        },
+      },
+      required:
+        wholeSlotIntent.slots.length > 1
+          ? ["k", "q", "a"]
+          : ["k", "a"],
+      additionalProperties: false,
+    };
+  }
   const minimumSemanticCore = onlyAllowedKind
     ? templateCopilotV3ProviderQuoteMinimumSemanticCore(onlyAllowedKind)
     : null;
@@ -1222,14 +1309,104 @@ export function locateTemplateCopilotV3ProviderQuotes({
   const rejected: TemplateCopilotV3ProviderQuoteRejection[] = [];
 
   shell.data.items.forEach((rawItem, itemIndex) => {
-    const parsed = templateCopilotV3ProviderQuoteItemSchema.safeParse(rawItem);
-    if (!parsed.success) {
-      rejected.push(
-        rejection(itemIndex, "item_schema_invalid", "item"),
+    const wholeSlotIntent =
+      templateCopilotV3ProviderQuoteWholeSlotIntentSchema.safeParse(rawItem);
+    let item: TemplateCopilotV3ProviderQuoteItem;
+    if (wholeSlotIntent.success) {
+      const binding = batchLocalWholeSlotIntentPolicy(
+        batchId,
+        wholeSlotIntent.data.kind,
       );
-      return;
+      if (!binding) {
+        rejected.push(
+          rejection(itemIndex, "item_schema_invalid", "whole_slot_intent"),
+        );
+        return;
+      }
+      let source: TemplateCopilotV3ProviderQuoteSourceSlot | undefined;
+      if (wholeSlotIntent.data.selectorQuote === null) {
+        if (binding.slots.length === 1) {
+          source = sources.find((entry) => entry.slot === binding.slots[0]);
+        }
+      } else {
+        let selectorAmbiguous = false;
+        for (const candidate of sources) {
+          if (!binding.slots.includes(candidate.slot)) continue;
+          const match = uniqueOffset(
+            candidate.text,
+            wholeSlotIntent.data.selectorQuote,
+          );
+          if (match.status === "none") continue;
+          if (match.status === "ambiguous" || source !== undefined) {
+            selectorAmbiguous = true;
+            break;
+          }
+          source = candidate;
+        }
+        if (selectorAmbiguous) {
+          rejected.push(
+            rejection(
+              itemIndex,
+              "anchor_ambiguous",
+              wholeSlotIntent.data.kind,
+            ),
+          );
+          return;
+        }
+      }
+      if (!source) {
+        rejected.push(
+          rejection(
+            itemIndex,
+            "anchor_not_found",
+            wholeSlotIntent.data.kind,
+          ),
+        );
+        return;
+      }
+      if (
+        templateCopilotUnicodeCodePointCount(source.text) >
+        templateCopilotV3ProviderQuoteMaximumCodePoints
+      ) {
+        rejected.push(
+          rejection(
+            itemIndex,
+            "item_schema_invalid",
+            `${wholeSlotIntent.data.kind}:whole_slot_source_too_long`,
+          ),
+        );
+        return;
+      }
+      const serverBoundItem = templateCopilotV3ProviderQuoteItemSchema.safeParse({
+        kind: wholeSlotIntent.data.kind,
+        quote: source.text,
+        leaves: [
+          {
+            role: binding.role,
+            quote: source.text,
+            hint: binding.hint,
+          },
+        ],
+        confidence: "low" as const,
+        ambiguity: wholeSlotIntent.data.ambiguity,
+      });
+      if (!serverBoundItem.success) {
+        rejected.push(
+          rejection(itemIndex, "item_schema_invalid", "item"),
+        );
+        return;
+      }
+      item = serverBoundItem.data;
+    } else {
+      const parsed = templateCopilotV3ProviderQuoteItemSchema.safeParse(rawItem);
+      if (!parsed.success) {
+        rejected.push(
+          rejection(itemIndex, "item_schema_invalid", "item"),
+        );
+        return;
+      }
+      item = parsed.data;
     }
-    const item = parsed.data;
     if (!allowedKinds.has(item.kind)) {
       rejected.push(
         rejection(itemIndex, "kind_not_allowed", item.kind),
@@ -1770,6 +1947,25 @@ function batchLocalWholeSlotPolicy(
   return batchPolicy[
     kind as keyof typeof batchPolicy
   ] as TemplateCopilotV3ProviderQuoteWholeSlotPolicy;
+}
+
+function batchLocalWholeSlotIntentPolicy(
+  batchId: TemplateCopilotV3ProviderQuoteBatchId,
+  kind: TemplateCopilotV3ProviderQuoteKind,
+): (TemplateCopilotV3ProviderQuoteWholeSlotPolicy & Readonly<{
+  slots: readonly TemplateCopilotV3ProviderQuoteSlot[];
+}>) | null {
+  const policy = batchLocalWholeSlotPolicy(batchId, kind);
+  if (!policy) return null;
+  const batchKindSlotPolicy =
+    templateCopilotV3ProviderQuoteAllowedSlotsByBatchAndKind[batchId];
+  const slots = Object.hasOwn(batchKindSlotPolicy, kind)
+    ? (batchKindSlotPolicy[
+        kind as keyof typeof batchKindSlotPolicy
+      ] as readonly TemplateCopilotV3ProviderQuoteSlot[])
+    : [];
+  if (slots.length === 0) return null;
+  return Object.freeze({ ...policy, slots: Object.freeze([...slots]) });
 }
 
 function validateItemPolicy(item: TemplateCopilotV3ProviderQuoteItem):

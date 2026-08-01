@@ -33,7 +33,7 @@ const formalBatchIds = [
 test("v3 qualification fingerprints the exact compact provider contract", () => {
   assert.deepEqual(templateCopilotV3QualificationProviderContractMetadata, {
     canonicalContractVersion: 1,
-    wireVersion: 1,
+    wireVersion: 2,
     maximumQuoteCodePoints: 8_000,
     transportMaximumUtf8Bytes: 2 * 1024 * 1024,
     chatCompletionTokenParameter: "max_tokens",
@@ -43,17 +43,17 @@ test("v3 qualification fingerprints the exact compact provider contract", () => 
         maximumItems: 24,
         maximumLeavesPerItem: 12,
         maximumCompletionTokens: 3_072,
-        schemaUtf8Bytes: 6_441,
+        schemaUtf8Bytes: 6_089,
         schemaFingerprint:
-          "sha256:cea44f166e5700a999ca95bfc027ea156a382ff32e5e6d73aca75098daa9605c",
+          "sha256:4a4e56a02e9ac3858287f4f6c11d4d3116458d7e523a6046317e118523ffc70a",
       },
       routing_stages_participants: {
         maximumItems: 12,
         maximumLeavesPerItem: 8,
         maximumCompletionTokens: 2_048,
-        schemaUtf8Bytes: 6_318,
+        schemaUtf8Bytes: 5_890,
         schemaFingerprint:
-          "sha256:b04c1c86215176c0727ee6ccf1c607a870099b788c2bbbbc732b65c758b1af4a",
+          "sha256:8c87800c9ad1233d07013375c0c5622ce3f20fae754ee69eff0e7a32ebf08ff4",
       },
       routing_conditions_exceptions: {
         maximumItems: 8,
@@ -61,15 +61,15 @@ test("v3 qualification fingerprints the exact compact provider contract", () => 
         maximumCompletionTokens: 1_536,
         schemaUtf8Bytes: 4_176,
         schemaFingerprint:
-          "sha256:578a85fabe09000deab365f8771295f0779ecfe28fc2834503873ebc547419a1",
+          "sha256:f35be736d05efb33db5fb3c56b058408a76106cb3a5e559cafb81820afbd1758",
       },
       policy_context: {
         maximumItems: 32,
         maximumLeavesPerItem: 8,
         maximumCompletionTokens: 4_096,
-        schemaUtf8Bytes: 8_095,
+        schemaUtf8Bytes: 5_400,
         schemaFingerprint:
-          "sha256:0487c220d0d2e132f23202e0a11926ff939343fcb31ffd7be0162dabb8c9a3bf",
+          "sha256:3b03d582c0db5325bff3e042c1c6c6e2022f7588ed45e5f98461daee6142bce8",
       },
     },
   });

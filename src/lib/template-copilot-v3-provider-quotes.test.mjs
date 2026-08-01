@@ -325,6 +325,7 @@ test("whole-slot kinds expose and accept only their pinned semantic roles", () =
       "whole_slot_quote",
       "whole_slot_leaf_count",
       "whole_slot_leaf_quote",
+      "whole_slot_source_too_long",
       "duplicate_whole_slot_item",
     ]) {
       assert.ok(
@@ -777,20 +778,20 @@ test("stage routing captures condition-added stages while conditions stay kind-c
 test("provider guidance uses compact kind-discriminated formal schemas", () => {
   const expectedSchemaEvidence = {
     intake_documents: {
-      bytes: 6_441,
-      sha256: "cea44f166e5700a999ca95bfc027ea156a382ff32e5e6d73aca75098daa9605c",
+      bytes: 6_089,
+      sha256: "4a4e56a02e9ac3858287f4f6c11d4d3116458d7e523a6046317e118523ffc70a",
     },
     routing_stages_participants: {
-      bytes: 6_318,
-      sha256: "b04c1c86215176c0727ee6ccf1c607a870099b788c2bbbbc732b65c758b1af4a",
+      bytes: 5_890,
+      sha256: "8c87800c9ad1233d07013375c0c5622ce3f20fae754ee69eff0e7a32ebf08ff4",
     },
     routing_conditions_exceptions: {
       bytes: 4_176,
-      sha256: "578a85fabe09000deab365f8771295f0779ecfe28fc2834503873ebc547419a1",
+      sha256: "f35be736d05efb33db5fb3c56b058408a76106cb3a5e559cafb81820afbd1758",
     },
     policy_context: {
-      bytes: 8_095,
-      sha256: "0487c220d0d2e132f23202e0a11926ff939343fcb31ffd7be0162dabb8c9a3bf",
+      bytes: 5_400,
+      sha256: "3b03d582c0db5325bff3e042c1c6c6e2022f7588ed45e5f98461daee6142bce8",
     },
   };
   for (const batchId of templateCopilotV3ProviderQuoteBatchIds) {
@@ -817,6 +818,47 @@ test("provider guidance uses compact kind-discriminated formal schemas", () => {
     );
     let expectedDescriptionCount = 0;
     for (const { itemSchema, allowedKinds } of itemPolicies) {
+      const [kind] = allowedKinds;
+      const wholeSlotPolicy =
+        templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind[
+          batchId
+        ][kind];
+      const wholeSlotAllowedSlots = wholeSlotPolicy
+        ? templateCopilotV3ProviderQuoteAllowedSlotsByBatchAndKind[
+            batchId
+          ][kind]
+        : [];
+      assert.equal(itemSchema.properties.k.const, kind);
+      assert.equal(itemSchema.properties.k.enum, undefined);
+      if (wholeSlotPolicy) {
+        const multiSlot = wholeSlotAllowedSlots.length > 1;
+        assert.deepEqual(
+          Object.keys(itemSchema.properties),
+          multiSlot ? ["k", "q", "a"] : ["k", "a"],
+          `${batchId}:${kind}:whole-slot-wire-properties`,
+        );
+        assert.deepEqual(
+          itemSchema.required,
+          multiSlot ? ["k", "q", "a"] : ["k", "a"],
+          `${batchId}:${kind}:whole-slot-wire-required`,
+        );
+        assert.equal(itemSchema.additionalProperties, false);
+        assert.deepEqual(itemSchema.properties.a.enum, [0, 1, 2]);
+        assert.equal(
+          itemSchema.description,
+          multiSlot
+            ? "Declare this applicable whole-slot fact with the shortest unique exact selector q; the server binds the selected full authorized source slot and pinned leaf."
+            : "Declare this applicable whole-slot fact; the server binds its exact authorized source slot and pinned leaf.",
+        );
+        if (multiSlot) {
+          assert.equal(
+            itemSchema.properties.q.description,
+            "shortest unique exact source span selecting one authorized slot",
+          );
+        }
+        expectedDescriptionCount += multiSlot ? 2 : 1;
+        continue;
+      }
       const leafSchema = itemSchema.properties.l.items;
       const expectedRolePolicies = new Map();
       for (const kind of allowedKinds) {
@@ -832,8 +874,6 @@ test("provider guidance uses compact kind-discriminated formal schemas", () => {
           expectedRolePolicies.set(role, policy);
         }
       }
-      assert.equal(itemSchema.properties.k.const, allowedKinds[0]);
-      assert.equal(itemSchema.properties.k.enum, undefined);
       assert.deepEqual(
         leafSchema.anyOf.map((variant) => variant.properties.r.const),
         [...expectedRolePolicies.keys()].sort(),

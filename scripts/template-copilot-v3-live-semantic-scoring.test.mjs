@@ -14,6 +14,7 @@ import { quarantineTemplateCopilotRequirementText } from "../src/lib/template-co
 import {
   templateCopilotV3ProviderQuoteAllowedSlotsByBatchAndKind,
   templateCopilotV3ProviderQuoteBatchIds,
+  templateCopilotV3ProviderQuoteBatchGenerationLimits,
   templateCopilotV3ProviderQuoteBatches,
 } from "../src/lib/template-copilot-v3-provider-quotes.ts";
 import { templateCopilotQualificationScenarios } from "./template-copilot-qualification-scenarios.mjs";
@@ -104,6 +105,28 @@ test("all 24 manifests route exactly one authoritative visibility source", () =>
       "visibility",
     ),
     false,
+  );
+});
+
+test("formal routing-stage capacity exceeds every reviewed corpus payload", () => {
+  const counts = Object.values(templateCopilotV3SemanticScenarioManifests).map(
+    (manifest) => ({
+      id: manifest.id,
+      count:
+        manifest.stages.length +
+        1 +
+        manifest.notificationRules.filter(
+          (rule) => rule.slot === "stages_participants",
+        ).length,
+    }),
+  );
+  const maximum = Math.max(...counts.map(({ count }) => count));
+  assert.equal(maximum, 8);
+  assert.equal(counts.find(({ id }) => id === "SC-01")?.count, 7);
+  assert.ok(
+    maximum <
+      templateCopilotV3ProviderQuoteBatchGenerationLimits
+        .routing_stages_participants.maximumItems,
   );
 });
 

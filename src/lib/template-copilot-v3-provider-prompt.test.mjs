@@ -104,17 +104,24 @@ test("the prompt exposes exactly the closed quote batches", () => {
   );
   assert.match(
     routingStages,
-    /Emit exactly one whole-slot visibility item/u,
+    /Emit one visibility intent/u,
   );
   assert.match(
     routingStages,
-    /If stages_participants contains any stage, document, or field visibility requirement/u,
+    /If stages_participants has a stage, document, or field visibility rule/u,
   );
   assert.match(
     routingStages,
-    /otherwise use the full exact visibility_notifications slot/u,
+    /otherwise q is that clause from visibility_notifications/u,
   );
-  assert.match(routingStages, /Never emit both, split either slot/u);
+  assert.match(
+    routingStages,
+    /server uses q only to select one authorized slot and binds its full text plus rule leaf/u,
+  );
+  assert.match(
+    routingStages,
+    /Emit no leaves, second slot, non-visibility selector, or inference/u,
+  );
   assert.doesNotMatch(routingStages, /condition=field\+operator/u);
   assert.match(routingConditions, /batch routing_conditions_exceptions/u);
   assert.match(routingConditions, /condition=field\+operator/u);
@@ -151,19 +158,19 @@ test("the prompt exposes exactly the closed quote batches", () => {
   assert.doesNotMatch(intake, /initiator\([^)]*mode=/u);
   assert.match(
     intake,
-    /Initiator: one whole-slot item/u,
+    /Initiator whole-slot/u,
   );
   assert.match(
     intake,
-    /sole description leaf\.quote equal the full exact initiators_fields slot/u,
+    /server binds initiators_fields and description leaf/u,
   );
-  assert.match(intake, /no mode, split, or duplicate/u);
-  assert.match(policy, /Emit one whole-slot item/u);
+  assert.match(intake, /Never split, duplicate, or add fields/u);
+  assert.match(policy, /Emit one compact branch per applicable non-notification kind/u);
   assert.match(
     policy,
-    /item\.quote and sole leaf\.quote must equal the full exact authorized slot/u,
+    /server binds each full authorized slot and pinned leaf/u,
   );
-  assert.match(policy, /Only notification may repeat/u);
+  assert.match(policy, /only notification may repeat/u);
   assert.match(policy, /Do not emit visibility in this batch/u);
   assert.doesNotMatch(
     policy,
@@ -317,7 +324,7 @@ test("the prompt demands complete entity coverage and source-language fidelity",
 
   for (const prompt of [traditional, simplified]) {
     assert.match(prompt, /one semantic entity per item/u);
-    assert.match(prompt, /Choose leaves first/u);
+    assert.match(prompt, /[Cc]hoose leaves first/u);
     assert.match(prompt, /leaf\.quote is an exact source lexeme/u);
     assert.match(
       prompt,
@@ -326,10 +333,6 @@ test("the prompt demands complete entity coverage and source-language fidelity",
     assert.match(
       prompt,
       /For role=\[\.\.\.\], leaf\.hint is the listed canonical label proved by leaf\.quote \(for example, below\/< and approves\/approval\)/u,
-    );
-    assert.match(
-      prompt,
-      /Set leaf\.hint to JSON null for role=null; for role=\[\.\.\.\], use a listed hint only/u,
     );
     assert.match(
       prompt,
@@ -344,24 +347,20 @@ test("the prompt demands complete entity coverage and source-language fidelity",
       /add adjacent exact source text until unique, or omit/u,
     );
     assert.match(prompt, /Copy leaf.quote verbatim/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-16/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-17/u);
     assert.match(
       prompt,
       /quotations, quoted text, or proof that an employee or vendor followed named instructions/u,
     );
-    assert.match(
-      prompt,
-      /a listed hint only when its shortest exact source token proves it/u,
-    );
-    assert.match(
-      prompt,
-      /Omit unsupported optional leaves and entities without exact unique anchors/u,
-    );
+    assert.match(prompt, /Use only exposed fields and listed values/u);
+    assert.match(prompt, /omit unsupported optional leaves and entities/u);
     assert.match(
       prompt,
       /every core is complete/u,
     );
   }
+  assert.match(simplified, /Whole-slot branch/u);
+  assert.doesNotMatch(traditional, /Whole-slot branch/u);
   assert.match(
     traditional,
     /request_field=label\+required;attachment=label\+kind\+required;stage=label\+kind\+\(participant OR participant_mode\);condition=field\+operator\+value\+matching_route;notification=event\+recipient/u,
