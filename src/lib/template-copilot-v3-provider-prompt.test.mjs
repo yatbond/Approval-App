@@ -178,11 +178,15 @@ test("the prompt exposes exactly the closed quote batches", () => {
   );
   assert.match(
     routingConditions,
-    /Condition anchor closure is mandatory: item\.quote starts at or before the field leaf and extends through the complete matching_route leaf/u,
+    /Condition anchor closure: item\.quote spans the earliest through latest condition leaf/u,
   );
   assert.match(
     routingConditions,
-    /predicate-only item\.quote that stops after field, operator, or value is invalid/u,
+    /Source order may be route-first/u,
+  );
+  assert.match(
+    routingConditions,
+    /Predicate-only or route-only item\.quote is invalid/u,
   );
   assert.match(routingConditions, /Rejection, failure-return, and return-for-modification clauses are not conditions/u);
   assert.match(
@@ -471,7 +475,7 @@ test("the prompt demands complete entity coverage and source-language fidelity",
       /add adjacent exact source text until unique, or omit/u,
     );
     assert.match(prompt, /Copy leaf.quote verbatim/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-23/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-24/u);
     assert.match(
       prompt,
       /quotations, quoted text, or proof that an employee or vendor followed named instructions/u,
