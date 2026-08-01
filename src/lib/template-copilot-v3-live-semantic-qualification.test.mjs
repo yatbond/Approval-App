@@ -59,9 +59,9 @@ test("v3 qualification fingerprints the exact compact provider contract", () => 
         maximumItems: 4,
         maximumLeavesPerItem: 10,
         maximumCompletionTokens: 1_280,
-        schemaUtf8Bytes: 3_331,
+        schemaUtf8Bytes: 3_474,
         schemaFingerprint:
-          "sha256:a91f8f04953edf029b9d03c384e7ac234dd94e48a51764aed8a5d4fba8119284",
+          "sha256:44741ac6a08dea201b0a8bb6861ec285de49f782a29ff8fd3976e89b1f6c1b0c",
       },
       routing_rejection: {
         maximumItems: 2,
@@ -146,7 +146,7 @@ test("v3 qualification executes exactly five sequential batches for all 24 multi
   assert.equal(report.summary.providerRequestCount, 120);
   assert.equal(
     report.metadata.runnerVersion,
-    "template-copilot-v3-live-semantic-qualification.13",
+    "template-copilot-v3-live-semantic-qualification.14",
   );
   assert.equal(report.summary.expandedAnchorItemCount, 0);
   assert.equal(report.summary.sameLocalClauseRecoveredLeafCount, 0);

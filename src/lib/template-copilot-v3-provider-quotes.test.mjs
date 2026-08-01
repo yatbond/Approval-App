@@ -815,8 +815,8 @@ test("provider guidance uses required kind buckets for every formal schema", () 
       sha256: "7024d74220e4a5a8f37175cf4ec06a8bf1a81c6dd2d015182b87b04b6143b429",
     },
     routing_conditions: {
-      bytes: 3_331,
-      sha256: "a91f8f04953edf029b9d03c384e7ac234dd94e48a51764aed8a5d4fba8119284",
+      bytes: 3_474,
+      sha256: "44741ac6a08dea201b0a8bb6861ec285de49f782a29ff8fd3976e89b1f6c1b0c",
     },
     routing_rejection: {
       bytes: 539,
@@ -980,6 +980,8 @@ test("provider guidance uses required kind buckets for every formal schema", () 
         itemSchema.properties.q.description,
         batchId === "intake_documents"
           ? "unique source span enclosing non-recovered leaf q"
+          : batchId === "routing_conditions"
+            ? "one unique exact hard-clause span containing every leaf q, including field, operator, value, matching_route, and otherwise_route when present; never stop after the predicate or value"
           : "unique source span enclosing all leaf q",
         `${batchId}:item-quote-description`,
       );
@@ -1014,6 +1016,79 @@ test("provider guidance uses required kind buckets for every formal schema", () 
       `${batchId}:schema-fingerprint`,
     );
   }
+});
+
+test("condition anchors fail closed when they stop before the matching route", () => {
+  const conditions =
+    "安全影响为是时安全评审必须阻塞流程。成本增加超过港币一百万元走额外审批。";
+  const conditionItems = [
+    item({
+      kind: "condition",
+      quote: "安全影响为是",
+      leaves: [
+        { role: "field", quote: "安全影响", hint: null },
+        { role: "operator", quote: "为是", hint: "=" },
+        { role: "value", quote: "是", hint: null },
+        { role: "matching_route", quote: "安全评审", hint: "stage_reference" },
+      ],
+    }),
+    item({
+      kind: "condition",
+      quote: "成本增加超过港币一百万元",
+      leaves: [
+        { role: "field", quote: "成本增加", hint: null },
+        { role: "operator", quote: "超过", hint: ">" },
+        { role: "value", quote: "一百万元", hint: null },
+        { role: "currency", quote: "港币", hint: null },
+        { role: "matching_route", quote: "额外审批", hint: "unsupported_outcome" },
+      ],
+    }),
+  ];
+  const shortened = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions",
+    sourceSlots: sourceSlots("routing_conditions", {
+      conditions_exceptions: conditions,
+    }),
+    output: output(conditionItems),
+  });
+  assert.deepEqual(shortened.accepted, []);
+  assert.deepEqual(shortened.rejected, [
+    {
+      itemIndex: 0,
+      code: "leaf_not_found",
+      detail: "condition:matching_route",
+    },
+    {
+      itemIndex: 1,
+      code: "leaf_not_found",
+      detail: "condition:matching_route",
+    },
+  ]);
+
+  const closed = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions",
+    sourceSlots: sourceSlots("routing_conditions", {
+      conditions_exceptions: conditions,
+    }),
+    output: output([
+      {
+        ...conditionItems[0],
+        quote: "安全影响为是时安全评审必须阻塞流程",
+      },
+      {
+        ...conditionItems[1],
+        quote: "成本增加超过港币一百万元走额外审批",
+      },
+    ]),
+  });
+  assert.equal(closed.rejected.length, 0);
+  assert.deepEqual(
+    closed.accepted.map((entry) => entry.anchor.exactText),
+    [
+      "安全影响为是时安全评审必须阻塞流程",
+      "成本增加超过港币一百万元走额外审批",
+    ],
+  );
 });
 
 test("strict provider schema accepts quotes and advisory labels only", () => {

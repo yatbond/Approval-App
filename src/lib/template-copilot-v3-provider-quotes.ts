@@ -1361,6 +1361,8 @@ function buildTemplateCopilotV3ProviderQuoteGuidanceItemSchema({
         description:
           batchId === "structure" || batchId === "intake_documents"
             ? "unique source span enclosing non-recovered leaf q"
+            : batchId === "routing_conditions"
+              ? "one unique exact hard-clause span containing every leaf q, including field, operator, value, matching_route, and otherwise_route when present; never stop after the predicate or value"
             : "unique source span enclosing all leaf q",
         minLength: 1,
         maxLength: templateCopilotV3ProviderQuoteMaximumCodePoints,
