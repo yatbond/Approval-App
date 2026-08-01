@@ -37,6 +37,11 @@ test("the prompt exposes exactly the closed quote batches", () => {
       batchId: "routing_stages_participants",
       locale: "en",
     });
+  const routingStagesSimplified =
+    buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
+      batchId: "routing_stages_participants",
+      locale: "zh-Hans",
+    });
   const routingConditions =
     buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
       batchId: "routing_conditions_exceptions",
@@ -90,8 +95,32 @@ test("the prompt exposes exactly the closed quote batches", () => {
   );
   assert.match(routingStages, /Form one stage union across both slots/u);
   assert.match(routingStages, /Prefer stages_participants/u);
+  assert.match(routingStages, /same named participant\+kind pair occurs/u);
   assert.match(routingStages, /From conditions_exceptions, emit a stage only/u);
-  assert.match(routingStages, /participant does not occur in stages_participants/u);
+  assert.match(
+    routingStages,
+    /participant\+kind pair does not occur in stages_participants/u,
+  );
+  assert.match(
+    routingStages,
+    /One item per named participant\+kind pair/u,
+  );
+  assert.match(
+    routingStages,
+    /require participant, not participant_mode alone/u,
+  );
+  assert.match(
+    routingStages,
+    /No extra governing group\/shared action, route, condition, or alias item/u,
+  );
+  assert.match(
+    routingStages,
+    /Repeat only for a second explicit kind/u,
+  );
+  assert.match(
+    routingStages,
+    /Then one visibility intent, stage notifications, and stop/u,
+  );
   assert.match(routingStages, /Never convert an ordinary route target/u);
   assert.match(routingStages, /Do not create conditions/u);
   assert.match(
@@ -158,13 +187,13 @@ test("the prompt exposes exactly the closed quote batches", () => {
   assert.doesNotMatch(intake, /initiator\([^)]*mode=/u);
   assert.match(
     intake,
-    /Initiator whole-slot/u,
+    /Initiator if present: one k\/a object for all initiators_fields text/u,
   );
   assert.match(
     intake,
-    /server binds initiators_fields and description leaf/u,
+    /not per person, role, or clause/u,
   );
-  assert.match(intake, /Never split, duplicate, or add fields/u);
+  assert.match(intake, /Then emit separate exact-core request fields and attachments/u);
   assert.match(policy, /Emit one compact branch per applicable non-notification kind/u);
   assert.match(
     policy,
@@ -259,6 +288,10 @@ test("the prompt exposes exactly the closed quote batches", () => {
     `routing stages prompt: ${routingStages.length}`,
   );
   assert.ok(
+    routingStagesSimplified.length <= 6_200,
+    `simplified routing stages prompt: ${routingStagesSimplified.length}`,
+  );
+  assert.ok(
     routingConditions.length <= 4_800,
     `routing conditions prompt: ${routingConditions.length}`,
   );
@@ -347,7 +380,7 @@ test("the prompt demands complete entity coverage and source-language fidelity",
       /add adjacent exact source text until unique, or omit/u,
     );
     assert.match(prompt, /Copy leaf.quote verbatim/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-17/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-18/u);
     assert.match(
       prompt,
       /quotations, quoted text, or proof that an employee or vendor followed named instructions/u,
@@ -359,8 +392,8 @@ test("the prompt demands complete entity coverage and source-language fidelity",
       /every core is complete/u,
     );
   }
-  assert.match(simplified, /Whole-slot branch/u);
-  assert.doesNotMatch(traditional, /Whole-slot branch/u);
+  assert.match(simplified, /Whole-slot:/u);
+  assert.doesNotMatch(traditional, /Whole-slot:/u);
   assert.match(
     traditional,
     /request_field=label\+required;attachment=label\+kind\+required;stage=label\+kind\+\(participant OR participant_mode\);condition=field\+operator\+value\+matching_route;notification=event\+recipient/u,

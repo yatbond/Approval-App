@@ -114,6 +114,7 @@ test("formal routing-stage capacity exceeds every reviewed corpus payload", () =
       id: manifest.id,
       count:
         manifest.stages.length +
+        manifest.fyiRecipients.length +
         1 +
         manifest.notificationRules.filter(
           (rule) => rule.slot === "stages_participants",
@@ -121,7 +122,9 @@ test("formal routing-stage capacity exceeds every reviewed corpus payload", () =
     }),
   );
   const maximum = Math.max(...counts.map(({ count }) => count));
-  assert.equal(maximum, 8);
+  assert.equal(maximum, 9);
+  assert.equal(counts.find(({ id }) => id === "SC-06")?.count, 9);
+  assert.equal(counts.find(({ id }) => id === "SC-08")?.count, 9);
   assert.equal(counts.find(({ id }) => id === "SC-01")?.count, 7);
   assert.ok(
     maximum <
