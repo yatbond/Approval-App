@@ -10,7 +10,7 @@ import {
 } from "./template-copilot-v3-provider-quotes.ts";
 
 export const templateCopilotV3ProviderPromptVersion =
-  "template-copilot-v3-provider-quotes-19" as const;
+  "template-copilot-v3-provider-quotes-20" as const;
 
 const localeInstruction = Object.freeze({
   en: "Preserve the source language and orthography exactly.",
@@ -55,11 +55,11 @@ const batchInstructions = Object.freeze({
   routing_stages_participants: [
     "Extract stages and participants from stages_participants and conditions_exceptions; extract visibility from stages_participants and visibility_notifications; extract notifications only from stages_participants.",
     "Complete core per entity (all roles in ONE item): stage=label+kind+(participant OR participant_mode);notification=event+recipient. Omit an entity whose core cannot be quoted exactly; add optional roles only when sourced.",
-    "Stage kind has no recovery: each stage item.quote must contain its kind leaf.quote. If one exact action or one exact parallel relationship marker governs named participants, emit one item per participant; repeat the shortest whole clause as item.quote and the exact action as kind, with that participant alone as label and participant. When an exact parallel marker governs those participants, repeat that exact marker as relationship=parallel in every affected participant item; never infer parallel without an exact marker.",
+    "Stage kind has no recovery: item.quote contains kind leaf.quote. When one exact action or parallel marker governs named participants, emit one item per participant: repeat the shortest whole clause and exact action, name that participant alone as label+participant, and repeat relationship=parallel only when its marker is exact. Never infer parallel.",
     "Form one stage union across both slots. Prefer stages_participants: when the same named participant+kind pair occurs in both slots, emit it once using stages_participants.",
     "From conditions_exceptions, emit a stage only when a clause explicitly adds, inserts, or includes a named approval, review, submission, or record-update stage and that participant+kind pair does not occur in stages_participants.",
     "Emit one visibility intent. If stages_participants has a stage, document, or field visibility rule, q is its shortest unique exact visibility clause; otherwise q is that clause from visibility_notifications. The server uses q only to select one authorized slot and binds its full text plus rule leaf. Emit no leaves, second slot, non-visibility selector, or inference.",
-    "One item per named participant+kind pair; require participant, not participant_mode alone. No extra governing group/shared action, route, condition, or alias item. Repeat only for a second explicit kind. Then one visibility intent, stage notifications, and stop.",
+    "One stage per named participant+kind; require participant. No extra group, shared action, route, condition, or alias. Repeat only for another explicit kind. Then one visibility intent. Use notification=[] unless stages_participants explicitly says notify/通知 and names both event and recipient; view, see, visibility, approval, and assignment facts are not notifications.",
     "Never convert an ordinary route target, final or completion reference, rejection actor, or already-declared participant into another stage. Do not create conditions, threshold routes, or rejection routes in this batch.",
   ],
   routing_conditions_exceptions: [

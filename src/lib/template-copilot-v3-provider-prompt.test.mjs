@@ -79,11 +79,11 @@ test("the prompt exposes exactly the closed quote batches", () => {
   assert.match(routingStages, /notification=event\+recipient/u);
   assert.match(
     routingStages,
-    /Stage kind has no recovery: each stage item\.quote must contain its kind leaf\.quote/u,
+    /Stage kind has no recovery: item\.quote contains kind leaf\.quote/u,
   );
   assert.match(
     routingStages,
-    /repeat the shortest whole clause as item\.quote/u,
+    /repeat the shortest whole clause and exact action/u,
   );
   assert.match(
     routingStages,
@@ -103,33 +103,41 @@ test("the prompt exposes exactly the closed quote batches", () => {
   );
   assert.match(
     routingStages,
-    /One item per named participant\+kind pair/u,
+    /One stage per named participant\+kind/u,
   );
   assert.match(
     routingStages,
-    /require participant, not participant_mode alone/u,
+    /require participant/u,
   );
   assert.match(
     routingStages,
-    /No extra governing group\/shared action, route, condition, or alias item/u,
+    /No extra group, shared action, route, condition, or alias/u,
   );
   assert.match(
     routingStages,
-    /Repeat only for a second explicit kind/u,
+    /Repeat only for another explicit kind/u,
   );
   assert.match(
     routingStages,
-    /Then one visibility intent, stage notifications, and stop/u,
+    /Then one visibility intent/u,
+  );
+  assert.match(
+    routingStages,
+    /Use notification=\[\] unless stages_participants explicitly says notify\/通知 and names both event and recipient/u,
+  );
+  assert.match(
+    routingStages,
+    /view, see, visibility, approval, and assignment facts are not notifications/u,
   );
   assert.match(routingStages, /Never convert an ordinary route target/u);
   assert.match(routingStages, /Do not create conditions/u);
   assert.match(
     routingStages,
-    /repeat that exact marker as relationship=parallel in every affected participant item/u,
+    /repeat relationship=parallel only when its marker is exact/u,
   );
   assert.match(
     routingStages,
-    /never infer parallel without an exact marker/u,
+    /Never infer parallel/u,
   );
   assert.match(
     routingStages,
@@ -384,7 +392,7 @@ test("the prompt demands complete entity coverage and source-language fidelity",
       /add adjacent exact source text until unique, or omit/u,
     );
     assert.match(prompt, /Copy leaf.quote verbatim/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-19/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-20/u);
     assert.match(
       prompt,
       /quotations, quoted text, or proof that an employee or vendor followed named instructions/u,
