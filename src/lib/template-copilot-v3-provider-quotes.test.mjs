@@ -11,6 +11,7 @@ import {
   templateCopilotV3ProviderQuoteBatchIds,
   templateCopilotV3ProviderQuoteBatchGenerationLimits,
   templateCopilotV3ProviderQuoteBatches,
+  templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind,
   templateCopilotV3ProviderQuoteKindRoleHints,
   templateCopilotV3ProviderQuoteMinimumSemanticCore,
   templateCopilotV3ProviderQuoteOutputSchema,
@@ -252,9 +253,7 @@ test("batch-local authority rejects Cartesian kind-slot widening", () => {
   const policySchema =
     buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema("policy_context");
   assert.ok(
-    !policySchema.properties.i.items.anyOf.some(
-      (branch) => branch.properties.k.const === "visibility",
-    ),
+    !Object.hasOwn(policySchema.properties.b.properties, "visibility"),
     "policy schema must have no visibility branch",
   );
   const forbiddenPolicyVisibility = locateTemplateCopilotV3ProviderQuotes({
@@ -293,7 +292,9 @@ test("whole-slot kinds expose and accept only their pinned semantic roles", () =
       routing_stages_participants: {
         visibility: { role: "rule", hint: null },
       },
-      routing_conditions_exceptions: {},
+      routing_conditions_exceptions: {
+        rejection: { role: "mode", hint: "return_for_correction" },
+      },
       policy_context: {
         workflow_name: { role: "description", hint: null },
         workflow_purpose: { role: "description", hint: null },
@@ -775,23 +776,23 @@ test("stage routing captures condition-added stages while conditions stay kind-c
   }]);
 });
 
-test("provider guidance uses compact kind-discriminated formal schemas", () => {
+test("provider guidance uses required kind buckets for every formal schema", () => {
   const expectedSchemaEvidence = {
     intake_documents: {
-      bytes: 6_089,
-      sha256: "4a4e56a02e9ac3858287f4f6c11d4d3116458d7e523a6046317e118523ffc70a",
+      bytes: 6_362,
+      sha256: "9a0558ab618e828f5d0d572dc1e5ebe95e6e956ae35fae5be284ab86a9a65a9f",
     },
     routing_stages_participants: {
-      bytes: 5_890,
-      sha256: "8c87800c9ad1233d07013375c0c5622ce3f20fae754ee69eff0e7a32ebf08ff4",
+      bytes: 6_151,
+      sha256: "7024d74220e4a5a8f37175cf4ec06a8bf1a81c6dd2d015182b87b04b6143b429",
     },
     routing_conditions_exceptions: {
-      bytes: 4_176,
-      sha256: "f35be736d05efb33db5fb3c56b058408a76106cb3a5e559cafb81820afbd1758",
+      bytes: 3_624,
+      sha256: "9f1d6f5d843a77a255f4f19e3b9778f47f4637fc34d50559e9cb7a2f7dd90209",
     },
     policy_context: {
-      bytes: 5_400,
-      sha256: "3b03d582c0db5325bff3e042c1c6c6e2022f7588ed45e5f98461daee6142bce8",
+      bytes: 5_626,
+      sha256: "bab319877ab56d27cf15b68663696b9def4c85a9ee5d74f4e7f102cc149eb3e6",
     },
   };
   for (const batchId of templateCopilotV3ProviderQuoteBatchIds) {
@@ -799,26 +800,19 @@ test("provider guidance uses compact kind-discriminated formal schemas", () => {
       buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(batchId);
     const batch = templateCopilotV3ProviderQuoteBatches[batchId];
     const limits = templateCopilotV3ProviderQuoteBatchGenerationLimits[batchId];
-    const itemContainer = schema.properties.i.items;
-    const itemPolicies = itemContainer.anyOf.map((itemSchema) => ({
-      itemSchema,
-      allowedKinds: [itemSchema.properties.k.const],
-    }));
+    const buckets = schema.properties.b;
     const serialized = JSON.stringify(schema);
 
-    assert.deepEqual(
-      itemPolicies.map(({ allowedKinds }) => allowedKinds[0]),
-      [...batch.allowedKinds],
-      `${batchId}:disjoint-kind-branches`,
-    );
-    assert.equal(
-      itemContainer.anyOf.length,
-      batch.allowedKinds.length,
-      `${batchId}:branch-count`,
-    );
-    let expectedDescriptionCount = 0;
-    for (const { itemSchema, allowedKinds } of itemPolicies) {
-      const [kind] = allowedKinds;
+    assert.deepEqual(schema.required, ["v", "b"], `${batchId}:required-root`);
+    assert.equal(schema.additionalProperties, false, `${batchId}:strict-root`);
+    assert.equal(schema.properties.v.const, templateCopilotV3ProviderQuoteWireVersion);
+    assert.equal(buckets.additionalProperties, false, `${batchId}:strict-buckets`);
+    assert.deepEqual(buckets.required, [...batch.allowedKinds]);
+    assert.deepEqual(Object.keys(buckets.properties), [...batch.allowedKinds]);
+
+    let singletonCount = 0;
+    let repeatableCeilingTotal = 0;
+    for (const kind of batch.allowedKinds) {
       const wholeSlotPolicy =
         templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind[
           batchId
@@ -828,18 +822,23 @@ test("provider guidance uses compact kind-discriminated formal schemas", () => {
             batchId
           ][kind]
         : [];
-      assert.equal(itemSchema.properties.k.const, kind);
-      assert.equal(itemSchema.properties.k.enum, undefined);
+      const bucketSchema = buckets.properties[kind];
+      const itemSchema = wholeSlotPolicy
+        ? bucketSchema.anyOf[0]
+        : bucketSchema.items;
+      assert.equal(itemSchema.properties.k, undefined, `${batchId}:${kind}:no-k`);
       if (wholeSlotPolicy) {
+        singletonCount += 1;
         const multiSlot = wholeSlotAllowedSlots.length > 1;
+        assert.deepEqual(bucketSchema.anyOf[1], { type: "null" });
         assert.deepEqual(
           Object.keys(itemSchema.properties),
-          multiSlot ? ["k", "q", "a"] : ["k", "a"],
+          multiSlot ? ["q", "a"] : ["a"],
           `${batchId}:${kind}:whole-slot-wire-properties`,
         );
         assert.deepEqual(
           itemSchema.required,
-          multiSlot ? ["k", "q", "a"] : ["k", "a"],
+          multiSlot ? ["q", "a"] : ["a"],
           `${batchId}:${kind}:whole-slot-wire-required`,
         );
         assert.equal(itemSchema.additionalProperties, false);
@@ -856,28 +855,34 @@ test("provider guidance uses compact kind-discriminated formal schemas", () => {
             "shortest unique exact source span selecting one authorized slot",
           );
         }
-        expectedDescriptionCount += multiSlot ? 2 : 1;
         continue;
       }
+      const maximumItems =
+        templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind[
+          batchId
+        ][kind];
+      repeatableCeilingTotal += maximumItems;
+      assert.equal(bucketSchema.type, "array");
+      assert.equal(bucketSchema.minItems, 0);
+      assert.equal(bucketSchema.maxItems, maximumItems);
+      assert.equal(
+        bucketSchema.description,
+        `Every source-backed ${kind} entity; use [] only when none is stated.`,
+      );
       const leafSchema = itemSchema.properties.l.items;
       const expectedRolePolicies = new Map();
-      for (const kind of allowedKinds) {
-        for (const [role, hints] of Object.entries(
-          templateCopilotV3ProviderQuoteKindRoleHints[kind],
-        )) {
-          const policy = expectedRolePolicies.get(role) ?? {
-            allowsNull: false,
-            hints: new Set(),
-          };
-          if (hints === null) policy.allowsNull = true;
-          else for (const hint of hints) policy.hints.add(hint);
-          expectedRolePolicies.set(role, policy);
-        }
+      for (const [role, hints] of Object.entries(
+        templateCopilotV3ProviderQuoteKindRoleHints[kind],
+      )) {
+        expectedRolePolicies.set(role, {
+          allowsNull: hints === null,
+          hints: new Set(hints ?? []),
+        });
       }
       assert.deepEqual(
         leafSchema.anyOf.map((variant) => variant.properties.r.const),
         [...expectedRolePolicies.keys()].sort(),
-        `${batchId}:${allowedKinds.join("+")}:roles`,
+        `${batchId}:${kind}:roles`,
       );
       for (const variant of leafSchema.anyOf) {
         const role = variant.properties.r.const;
@@ -896,35 +901,35 @@ test("provider guidance uses compact kind-discriminated formal schemas", () => {
         assert.deepEqual(variant.properties.h, {
           ...expectedHintSchema,
           description: expectedHintDescription,
-        }, `${batchId}:${allowedKinds.join("+")}:${role}:hints`);
+        }, `${batchId}:${kind}:${role}:hints`);
         if (policy.hints.size === 0) {
           assert.equal(
             variant.properties.h.type,
             "null",
-            `${batchId}:${allowedKinds.join("+")}:${role}:null`,
+            `${batchId}:${kind}:${role}:null`,
           );
           assert.doesNotMatch(
             variant.properties.h.description,
             /canonical label/u,
-            `${batchId}:${allowedKinds.join("+")}:${role}:quote-only-description`,
+            `${batchId}:${kind}:${role}:quote-only-description`,
           );
         }
         assert.equal(
           variant.properties.q.description,
           "exact source lexeme",
-          `${batchId}:${allowedKinds.join("+")}:${role}:leaf-quote-description`,
+          `${batchId}:${kind}:${role}:leaf-quote-description`,
         );
         assert.deepEqual(variant.required, ["r", "q", "h"]);
         assert.equal(variant.additionalProperties, false);
       }
-      assert.deepEqual(itemSchema.required, ["k", "q", "l", "a"]);
+      assert.deepEqual(itemSchema.required, ["q", "l", "a"]);
       assert.equal(itemSchema.additionalProperties, false);
       const minimumSemanticCore =
-        templateCopilotV3ProviderQuoteMinimumSemanticCore(allowedKinds[0]);
+        templateCopilotV3ProviderQuoteMinimumSemanticCore(kind);
       assert.equal(
         itemSchema.properties.l.minItems,
         minimumSemanticCore?.length ?? 1,
-        `${batchId}:${allowedKinds[0]}:minimum-leaves`,
+        `${batchId}:${kind}:minimum-leaves`,
       );
       assert.equal(
         itemSchema.description,
@@ -935,7 +940,7 @@ test("provider guidance uses compact kind-discriminated formal schemas", () => {
               )
               .join(" + ")}.`
           : undefined,
-        `${batchId}:${allowedKinds[0]}:semantic-core-description`,
+        `${batchId}:${kind}:semantic-core-description`,
       );
       assert.equal(itemSchema.properties.l.maxItems, limits.maximumLeavesPerItem);
       assert.deepEqual(itemSchema.properties.a.enum, [0, 1, 2]);
@@ -946,18 +951,12 @@ test("provider guidance uses compact kind-discriminated formal schemas", () => {
           : "unique source span enclosing all leaf q",
         `${batchId}:item-quote-description`,
       );
-      expectedDescriptionCount +=
-        leafSchema.anyOf.length * 2 + 1 + (minimumSemanticCore ? 1 : 0);
     }
-    assert.equal(schema.additionalProperties, false, `${batchId}:strict-root`);
-    assert.deepEqual(schema.required, ["v", "i"], `${batchId}:required-root`);
-    assert.equal(schema.properties.v.const, templateCopilotV3ProviderQuoteWireVersion);
-    assert.equal(schema.properties.i.maxItems, limits.maximumItems);
-    assert.equal(
-      serialized.match(/"description":/gu)?.length,
-      expectedDescriptionCount,
-      `${batchId}:only-item-quote-leaf-quote-hint-descriptions`,
+    assert.ok(
+      singletonCount + repeatableCeilingTotal >= limits.maximumItems,
+      `${batchId}:bucket-ceilings-cover-aggregate`,
     );
+    assert.doesNotMatch(serialized, /"k":/u);
     assert.doesNotMatch(serialized, /contractVersion|confidence|ambiguity/u);
     const schemaCeiling = {
       intake_documents: 6_900,

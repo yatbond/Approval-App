@@ -6,12 +6,19 @@ import {
   locateTemplateCopilotV3ProviderQuotes,
   templateCopilotV3ProviderQuoteBatchGenerationLimits,
   templateCopilotV3ProviderQuoteBatches,
+  templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind,
   templateCopilotV3ProviderQuoteTransportLimits,
   TemplateCopilotV3ProviderQuoteTransportError,
 } from "./template-copilot-v3-provider-quotes.ts";
 import {
   requestTemplateCopilotV3ProviderQuoteOutput,
 } from "./template-copilot-v3-provider-request.ts";
+import {
+  templateCopilotQualificationScenarios,
+} from "../../scripts/template-copilot-qualification-scenarios.mjs";
+import {
+  templateCopilotV3SemanticScenarioManifest,
+} from "../../scripts/template-copilot-v3-semantic-scenario-manifests.mjs";
 
 function sourceSlots(initiatorText = "Require purpose.") {
   return templateCopilotV3ProviderQuoteBatches.structure.slots.map((slot) => ({
@@ -32,6 +39,37 @@ function validWireItem(overrides = {}) {
     a: 0,
     ...overrides,
   };
+}
+
+function formalWire(batchId, overrides = {}) {
+  const buckets = {
+    intake_documents: {
+      initiator: null,
+      request_field: [],
+      attachment: [],
+    },
+    routing_stages_participants: {
+      stage: [],
+      visibility: null,
+      notification: [],
+    },
+    routing_conditions_exceptions: {
+      condition: [],
+      rejection: null,
+    },
+    policy_context: {
+      workflow_name: null,
+      workflow_purpose: null,
+      workflow_scope: null,
+      collaboration: null,
+      timing: null,
+      notification: [],
+      governance_owner: null,
+      governance_policy: null,
+      retention: null,
+    },
+  }[batchId];
+  return { v: 3, b: { ...buckets, ...overrides } };
 }
 
 function fakeConfiguration(
@@ -268,7 +306,7 @@ test("OpenRouter uses the exact-model GPT-5.6 Sol completion token parameter", a
   ]) {
     const fake = fakeConfiguration(
       "chat_completions",
-      JSON.stringify({ v: 2, i: [] }),
+      JSON.stringify(formalWire("policy_context")),
       {
         model,
         openRouterProvider: provider,
@@ -352,7 +390,7 @@ test("whole-slot wire intents preserve provider selection while the server binds
     }));
   const policyOutput = expandTemplateCopilotV3ProviderQuoteWire({
     batchId: "policy_context",
-    output: { v: 2, i: [{ k: "workflow_name", a: 0 }] },
+    output: formalWire("policy_context", { workflow_name: { a: 0 } }),
   });
   const policy = locateTemplateCopilotV3ProviderQuotes({
     batchId: "policy_context",
@@ -395,7 +433,9 @@ test("whole-slot wire intents preserve provider selection while the server binds
   const visibilityIntent = (q, extra = {}) =>
     expandTemplateCopilotV3ProviderQuoteWire({
       batchId: "routing_stages_participants",
-      output: { v: 2, i: [{ k: "visibility", q, a: 0, ...extra }] },
+      output: formalWire("routing_stages_participants", {
+        visibility: { q, a: 0, ...extra },
+      }),
     });
   const selectedStageSlot = locateTemplateCopilotV3ProviderQuotes({
     batchId: "routing_stages_participants",
@@ -444,7 +484,9 @@ test("whole-slot wire intents preserve provider selection while the server binds
     sourceSlots: routingSources(),
     output: expandTemplateCopilotV3ProviderQuoteWire({
       batchId: "routing_stages_participants",
-      output: { v: 2, i: [{ k: "visibility", a: 0 }] },
+      output: formalWire("routing_stages_participants", {
+        visibility: { a: 0 },
+      }),
     }),
   });
   assert.deepEqual(absentSelector.rejected, [{
@@ -467,16 +509,23 @@ test("whole-slot wire intents preserve provider selection while the server binds
     detail: "visibility",
   }]);
 
-  const duplicateOutput = expandTemplateCopilotV3ProviderQuoteWire({
-    batchId: "routing_stages_participants",
-    output: {
-      v: 2,
-      i: [
-        { k: "visibility", q: "only sees final documents", a: 0 },
-        { k: "visibility", q: "only sees final documents", a: 0 },
-      ],
-    },
-  });
+  const duplicateOutput = {
+    contractVersion: 1,
+    items: [
+      {
+        kind: "visibility",
+        serverWholeSlotIntent: true,
+        selectorQuote: "only sees final documents",
+        ambiguity: "none",
+      },
+      {
+        kind: "visibility",
+        serverWholeSlotIntent: true,
+        selectorQuote: "only sees final documents",
+        ambiguity: "none",
+      },
+    ],
+  };
   const duplicate = locateTemplateCopilotV3ProviderQuotes({
     batchId: "routing_stages_participants",
     sourceSlots: routingSources(),
@@ -529,6 +578,48 @@ test("whole-slot wire intents preserve provider selection while the server binds
   }]);
 });
 
+test("rejection is a singleton intent bound to the complete conditions source", () => {
+  const conditions =
+    "安全影响为是时安全评审必须阻塞流程。成本增加超过港币一百万元走额外审批。紧急选项不能跳过审批。任何拒绝退回修改。";
+  const source = templateCopilotV3ProviderQuoteBatches
+    .routing_conditions_exceptions.slots.map((slot) => ({
+      slot,
+      messageId: `message:rejection-whole:${slot}`,
+      text: conditions,
+    }));
+  const expanded = expandTemplateCopilotV3ProviderQuoteWire({
+    batchId: "routing_conditions_exceptions",
+    output: formalWire("routing_conditions_exceptions", {
+      rejection: { a: 0 },
+    }),
+  });
+  const located = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions_exceptions",
+    sourceSlots: source,
+    output: expanded,
+  });
+
+  assert.deepEqual(located.rejected, []);
+  assert.deepEqual(
+    located.accepted.map(({ kind, slot, anchor, leaves }) => ({
+      kind,
+      slot,
+      anchor: anchor.exactText,
+      role: leaves[0].role,
+      leaf: leaves[0].sourceSpan.exactText,
+      hint: leaves[0].hint,
+    })),
+    [{
+      kind: "rejection",
+      slot: "conditions_exceptions",
+      anchor: conditions,
+      role: "mode",
+      leaf: conditions,
+      hint: "return_for_correction",
+    }],
+  );
+});
+
 test("server-bound whole slots reject overlimit evidence without losing siblings", () => {
   const longIdentity = "W".repeat(8_001);
   const policySources =
@@ -545,12 +636,10 @@ test("server-bound whole slots reject overlimit evidence without losing siblings
     }));
   const output = expandTemplateCopilotV3ProviderQuoteWire({
     batchId: "policy_context",
-    output: {
-      v: 2,
-      i: [
-        { k: "workflow_name", a: 0 },
+    output: formalWire("policy_context", {
+      workflow_name: { a: 0 },
+      notification: [
         {
-          k: "notification",
           q: "Notify requester at completion",
           l: [
             { r: "event", q: "completion", h: "request_completed" },
@@ -559,7 +648,7 @@ test("server-bound whole slots reject overlimit evidence without losing siblings
           a: 0,
         },
       ],
-    },
+    }),
   });
   const located = locateTemplateCopilotV3ProviderQuotes({
     batchId: "policy_context",
@@ -591,6 +680,311 @@ test("server-bound whole slots reject overlimit evidence without losing siblings
   assert.deepEqual(atLimit.accepted.map(({ itemIndex }) => itemIndex), [0, 1]);
   assert.equal(atLimit.accepted[0].anchor.exactText.length, 8_000);
   assert.equal(atLimit.accepted[0].leaves[0].sourceSpan.exactText.length, 8_000);
+});
+
+test("formal v3 buckets flatten deterministically and isolate invalid children", () => {
+  const intakeSources =
+    templateCopilotV3ProviderQuoteBatches.intake_documents.slots.map((slot) => ({
+      slot,
+      messageId: `message:bucket-wire:${slot}`,
+      text: slot === "initiators_fields"
+        ? "Any employee may start. Require purpose."
+        : "Require attachment invoice PDF.",
+    }));
+  const requestField = {
+    q: "Require purpose",
+    l: [
+      { r: "label", q: "purpose", h: null },
+      { r: "required", q: "Require", h: "true" },
+    ],
+    a: 0,
+  };
+  const attachment = {
+    q: "Require attachment invoice PDF",
+    l: [
+      { r: "label", q: "invoice", h: null },
+      { r: "kind", q: "attachment", h: "attachment" },
+      { r: "required", q: "Require", h: "true" },
+      { r: "format", q: "PDF", h: "pdf" },
+    ],
+    a: 0,
+  };
+  const expanded = expandTemplateCopilotV3ProviderQuoteWire({
+    batchId: "intake_documents",
+    output: {
+      v: 3,
+      b: {
+        attachment: [attachment],
+        request_field: [requestField],
+        initiator: { a: 0 },
+      },
+    },
+  });
+  assert.deepEqual(
+    expanded.items.map((entry) => entry.kind),
+    ["initiator", "request_field", "attachment"],
+  );
+  assert.equal(expanded.items[0].serverWholeSlotIntent, true);
+  assert.equal(expanded.items[1].confidence, "low");
+  assert.equal(expanded.items[2].leaves[3].quote, "PDF");
+
+  const located = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "intake_documents",
+    sourceSlots: intakeSources,
+    output: expanded,
+  });
+  assert.deepEqual(located.rejected, []);
+  assert.deepEqual(
+    located.accepted.map(({ itemIndex, kind }) => [itemIndex, kind]),
+    [[0, "initiator"], [1, "request_field"], [2, "attachment"]],
+  );
+
+  const isolated = expandTemplateCopilotV3ProviderQuoteWire({
+    batchId: "intake_documents",
+    output: formalWire("intake_documents", {
+      request_field: [{ ...requestField, k: "request_field" }],
+      attachment: [attachment],
+    }),
+  });
+  const isolatedLocated = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "intake_documents",
+    sourceSlots: intakeSources,
+    output: isolated,
+  });
+  assert.deepEqual(
+    isolatedLocated.accepted.map(({ itemIndex, kind }) => [itemIndex, kind]),
+    [[1, "attachment"]],
+  );
+  assert.deepEqual(isolatedLocated.rejected, [{
+    itemIndex: 0,
+    code: "item_schema_invalid",
+    detail: "item",
+  }]);
+
+  const empty = expandTemplateCopilotV3ProviderQuoteWire({
+    batchId: "intake_documents",
+    output: formalWire("intake_documents"),
+  });
+  assert.deepEqual(empty.items, []);
+  for (const [label, invalid] of [
+    ["old wire", { v: 2, i: [] }],
+    ["missing bucket", {
+      v: 3,
+      b: { initiator: null, request_field: [] },
+    }],
+    ["extra bucket", {
+      ...formalWire("intake_documents"),
+      b: {
+        ...formalWire("intake_documents").b,
+        stage: [],
+      },
+    }],
+    ["extra root", {
+      ...formalWire("intake_documents"),
+      providerId: "forged",
+    }],
+  ]) {
+    assert.deepEqual(
+      expandTemplateCopilotV3ProviderQuoteWire({
+        batchId: "intake_documents",
+        output: invalid,
+      }),
+      {},
+      label,
+    );
+  }
+});
+
+test("formal v3 buckets fail the whole batch at bucket, aggregate, or leaf capacity", () => {
+  const bucketLimits =
+    templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind;
+  const saturatedBuckets = [
+    ["intake fields", "intake_documents", {
+      request_field: Array.from(
+        { length: bucketLimits.intake_documents.request_field },
+        () => ({}),
+      ),
+    }],
+    ["intake attachments", "intake_documents", {
+      attachment: Array.from(
+        { length: bucketLimits.intake_documents.attachment },
+        () => ({}),
+      ),
+    }],
+    ["stages", "routing_stages_participants", {
+      stage: Array.from(
+        { length: bucketLimits.routing_stages_participants.stage },
+        () => ({}),
+      ),
+    }],
+    ["stage notifications", "routing_stages_participants", {
+      notification: Array.from(
+        { length: bucketLimits.routing_stages_participants.notification },
+        () => ({}),
+      ),
+    }],
+    ["conditions", "routing_conditions_exceptions", {
+      condition: Array.from(
+        { length: bucketLimits.routing_conditions_exceptions.condition },
+        () => ({}),
+      ),
+    }],
+    ["policy notifications", "policy_context", {
+      notification: Array.from(
+        { length: bucketLimits.policy_context.notification },
+        () => ({}),
+      ),
+    }],
+  ];
+  for (const [label, batchId, overrides] of saturatedBuckets) {
+    assert.throws(
+      () => expandTemplateCopilotV3ProviderQuoteWire({
+        batchId,
+        output: formalWire(batchId, overrides),
+      }),
+      (error) =>
+        error instanceof TemplateCopilotV3ProviderQuoteTransportError &&
+        error.reasonCode === "output_capacity_exhausted",
+      label,
+    );
+  }
+
+  for (const [label, batchId, output] of [
+    ["intake aggregate", "intake_documents", formalWire("intake_documents", {
+      initiator: { a: 0 },
+      request_field: Array.from({ length: 14 }, () => ({})),
+      attachment: Array.from({ length: 5 }, () => ({})),
+    })],
+    ["stage aggregate", "routing_stages_participants", formalWire(
+      "routing_stages_participants",
+      {
+        stage: Array.from({ length: 8 }, () => ({})),
+        visibility: { q: "visible", a: 0 },
+        notification: [{}],
+      },
+    )],
+    ["leaf", "intake_documents", formalWire("intake_documents", {
+      request_field: [{
+        q: "Require purpose",
+        l: Array.from(
+          {
+            length:
+              templateCopilotV3ProviderQuoteBatchGenerationLimits
+                .intake_documents.maximumLeavesPerItem,
+          },
+          () => ({ r: "label", q: "purpose", h: null }),
+        ),
+        a: 0,
+      }],
+    })],
+  ]) {
+    assert.throws(
+      () => expandTemplateCopilotV3ProviderQuoteWire({ batchId, output }),
+      (error) =>
+        error instanceof TemplateCopilotV3ProviderQuoteTransportError &&
+        error.reasonCode === "output_capacity_exhausted",
+      label,
+    );
+  }
+});
+
+test("formal v3 bucket ceilings stay one above the reviewed corpus maxima", () => {
+  const maxima = {
+    request_field: 0,
+    attachment: 0,
+    stage: 0,
+    stage_notification: 0,
+    condition: 0,
+    policy_notification: 0,
+    intake_total: 0,
+    stage_total: 0,
+    condition_total: 0,
+    policy_total: 0,
+  };
+  for (const scenario of templateCopilotQualificationScenarios) {
+    const manifest = templateCopilotV3SemanticScenarioManifest(scenario.id);
+    const stageNotifications = manifest.notificationRules.filter(
+      (entry) => entry.slot === "stages_participants",
+    ).length;
+    const policyNotifications = manifest.notificationRules.filter(
+      (entry) => entry.slot === "visibility_notifications",
+    ).length;
+    const stageItems = manifest.stages.length + manifest.fyiRecipients.length;
+    maxima.request_field = Math.max(maxima.request_field, manifest.fields.length);
+    maxima.attachment = Math.max(maxima.attachment, manifest.attachments.length);
+    maxima.stage = Math.max(maxima.stage, stageItems);
+    maxima.stage_notification = Math.max(
+      maxima.stage_notification,
+      stageNotifications,
+    );
+    maxima.condition = Math.max(maxima.condition, manifest.conditions.length);
+    maxima.policy_notification = Math.max(
+      maxima.policy_notification,
+      policyNotifications,
+    );
+    maxima.intake_total = Math.max(
+      maxima.intake_total,
+      1 + manifest.fields.length + manifest.attachments.length,
+    );
+    maxima.stage_total = Math.max(
+      maxima.stage_total,
+      stageItems + 1 + stageNotifications,
+    );
+    maxima.condition_total = Math.max(
+      maxima.condition_total,
+      manifest.conditions.length + 1,
+    );
+    maxima.policy_total = Math.max(
+      maxima.policy_total,
+      8 + policyNotifications,
+    );
+  }
+
+  assert.deepEqual(maxima, {
+    request_field: 14,
+    attachment: 6,
+    stage: 8,
+    stage_notification: 1,
+    condition: 3,
+    policy_notification: 6,
+    intake_total: 19,
+    stage_total: 9,
+    condition_total: 4,
+    policy_total: 14,
+  });
+  const buckets = templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind;
+  assert.equal(buckets.intake_documents.request_field, maxima.request_field + 1);
+  assert.equal(buckets.intake_documents.attachment, maxima.attachment + 1);
+  assert.equal(buckets.routing_stages_participants.stage, maxima.stage + 1);
+  assert.equal(
+    buckets.routing_stages_participants.notification,
+    maxima.stage_notification + 1,
+  );
+  assert.equal(
+    buckets.routing_conditions_exceptions.condition,
+    maxima.condition + 1,
+  );
+  assert.equal(buckets.policy_context.notification, maxima.policy_notification + 1);
+  assert.equal(
+    templateCopilotV3ProviderQuoteBatchGenerationLimits.intake_documents
+      .maximumItems,
+    maxima.intake_total + 1,
+  );
+  assert.equal(
+    templateCopilotV3ProviderQuoteBatchGenerationLimits
+      .routing_stages_participants.maximumItems,
+    maxima.stage_total + 1,
+  );
+  assert.equal(
+    templateCopilotV3ProviderQuoteBatchGenerationLimits
+      .routing_conditions_exceptions.maximumItems,
+    maxima.condition_total + 1,
+  );
+  assert.equal(
+    templateCopilotV3ProviderQuoteBatchGenerationLimits.policy_context
+      .maximumItems,
+    maxima.policy_total + 1,
+  );
 });
 
 test("compact expansion enforces batch item and leaf caps without shifting siblings", () => {
@@ -715,7 +1109,7 @@ test("compact generation vocabulary does not replace locator policy authority", 
 });
 
 test("Chat does not duplicate JSON Schema text when response_format carries it", async () => {
-  const raw = JSON.stringify({ v: 2, i: [] });
+  const raw = JSON.stringify(formalWire("policy_context"));
   const strict = fakeConfiguration("chat_completions", raw);
   await request(strict.configured, "policy_context");
   const strictBody = strict.calls[0][0];

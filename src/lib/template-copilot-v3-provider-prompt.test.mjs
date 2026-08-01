@@ -155,6 +155,10 @@ test("the prompt exposes exactly the closed quote batches", () => {
   assert.match(routingConditions, /batch routing_conditions_exceptions/u);
   assert.match(routingConditions, /condition=field\+operator/u);
   assert.match(routingConditions, /rejection behavior/u);
+  assert.match(
+    routingConditions,
+    /set the rejection singleton once for all conditions_exceptions text/u,
+  );
   assert.match(routingConditions, /Do not create stage entities/u);
   assert.doesNotMatch(routingConditions, /stage=label\+kind/u);
 
@@ -168,7 +172,7 @@ test("the prompt exposes exactly the closed quote batches", () => {
   ]) {
     assert.match(
       prompt,
-      /response JSON Schema is the closed batch wire vocabulary/u,
+      /(?:response JSON Schema is the closed batch wire vocabulary|Closed JSON Schema)/u,
     );
     assert.doesNotMatch(prompt, /Allowed closed kind, role, and hint contract/u);
     assert.doesNotMatch(prompt, /source_slot\[/u);
@@ -187,14 +191,14 @@ test("the prompt exposes exactly the closed quote batches", () => {
   assert.doesNotMatch(intake, /initiator\([^)]*mode=/u);
   assert.match(
     intake,
-    /Initiator if present: one k\/a object for all initiators_fields text/u,
+    /Set initiator once for all initiators_fields text/u,
   );
   assert.match(
     intake,
     /not per person, role, or clause/u,
   );
-  assert.match(intake, /Then emit separate exact-core request fields and attachments/u);
-  assert.match(policy, /Emit one compact branch per applicable non-notification kind/u);
+  assert.match(intake, /fill request_field and attachment arrays/u);
+  assert.match(policy, /Set each applicable non-notification bucket once/u);
   assert.match(
     policy,
     /server binds each full authorized slot and pinned leaf/u,
@@ -380,13 +384,13 @@ test("the prompt demands complete entity coverage and source-language fidelity",
       /add adjacent exact source text until unique, or omit/u,
     );
     assert.match(prompt, /Copy leaf.quote verbatim/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-18/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-19/u);
     assert.match(
       prompt,
       /quotations, quoted text, or proof that an employee or vendor followed named instructions/u,
     );
-    assert.match(prompt, /Use only exposed fields and listed values/u);
-    assert.match(prompt, /omit unsupported optional leaves and entities/u);
+    assert.match(prompt, /Use (?:only )?exposed fields(?: and |\/)listed values/u);
+    assert.match(prompt, /omit unsupported (?:optional )?leaves/u);
     assert.match(
       prompt,
       /every core is complete/u,

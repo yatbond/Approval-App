@@ -35,7 +35,8 @@ import {
 } from "./template-copilot-v3-clause-boundaries.ts";
 
 export const templateCopilotV3ProviderQuoteContractVersion = 1 as const;
-export const templateCopilotV3ProviderQuoteWireVersion = 2 as const;
+export const templateCopilotV3ProviderQuoteWireVersion = 3 as const;
+const templateCopilotV3ProviderQuoteLegacyWireVersion = 2 as const;
 export const templateCopilotV3ProviderQuoteMaximumCodePoints = 8_000;
 
 export const templateCopilotV3ProviderQuoteTransportLimits = Object.freeze({
@@ -54,7 +55,7 @@ export const templateCopilotV3ProviderQuoteBatchGenerationLimits =
       maximumCompletionTokens: 6_144,
     }),
     intake_documents: Object.freeze({
-      maximumItems: 24,
+      maximumItems: 20,
       maximumLeavesPerItem: 12,
       maximumCompletionTokens: 3_072,
     }),
@@ -64,17 +65,17 @@ export const templateCopilotV3ProviderQuoteBatchGenerationLimits =
       maximumCompletionTokens: 3_072,
     }),
     routing_stages_participants: Object.freeze({
-      maximumItems: 12,
+      maximumItems: 10,
       maximumLeavesPerItem: 8,
       maximumCompletionTokens: 2_048,
     }),
     routing_conditions_exceptions: Object.freeze({
-      maximumItems: 8,
+      maximumItems: 5,
       maximumLeavesPerItem: 10,
       maximumCompletionTokens: 1_536,
     }),
     policy_context: Object.freeze({
-      maximumItems: 32,
+      maximumItems: 15,
       maximumLeavesPerItem: 8,
       maximumCompletionTokens: 4_096,
     }),
@@ -573,6 +574,105 @@ export function expandTemplateCopilotV3ProviderQuoteWire({
   batchId: TemplateCopilotV3ProviderQuoteBatchId;
   output: unknown;
 }>): unknown {
+  return isTemplateCopilotV3ProviderQuoteFormalBatchId(batchId)
+    ? expandTemplateCopilotV3ProviderQuoteBucketWire({ batchId, output })
+    : expandTemplateCopilotV3ProviderQuoteLegacyWire({ batchId, output });
+}
+
+function expandTemplateCopilotV3ProviderQuoteBucketWire({
+  batchId,
+  output,
+}: Readonly<{
+  batchId: TemplateCopilotV3ProviderQuoteFormalBatchId;
+  output: unknown;
+}>): unknown {
+  const limits = templateCopilotV3ProviderQuoteBatchGenerationLimits[batchId];
+  const batch = templateCopilotV3ProviderQuoteBatches[batchId];
+  if (
+    !isTemplateCopilotV3ProviderQuoteWireRecord(output) ||
+    output.v !== templateCopilotV3ProviderQuoteWireVersion ||
+    !isTemplateCopilotV3ProviderQuoteWireRecord(output.b) ||
+    !templateCopilotV3ProviderQuoteWireHasExactKeys(output, ["v", "b"]) ||
+    !templateCopilotV3ProviderQuoteWireHasExactKeys(
+      output.b,
+      batch.allowedKinds,
+    )
+  ) {
+    return invalidCanonicalProviderQuoteItem;
+  }
+
+  const bucketMaximumItems =
+    templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind[batchId];
+  const flattened: Array<{
+    kind: TemplateCopilotV3ProviderQuoteKind;
+    rawItem: unknown;
+  }> = [];
+  for (const kind of batch.allowedKinds) {
+    const rawBucket = output.b[kind];
+    if (batchLocalWholeSlotIntentPolicy(batchId, kind)) {
+      if (rawBucket === null) continue;
+      if (!isTemplateCopilotV3ProviderQuoteWireRecord(rawBucket)) {
+        return invalidCanonicalProviderQuoteItem;
+      }
+      flattened.push({ kind, rawItem: rawBucket });
+      continue;
+    }
+
+    const maximumItems = Object.hasOwn(bucketMaximumItems, kind)
+      ? bucketMaximumItems[kind as keyof typeof bucketMaximumItems]
+      : undefined;
+    if (typeof maximumItems !== "number" || !Array.isArray(rawBucket)) {
+      return invalidCanonicalProviderQuoteItem;
+    }
+    if (rawBucket.length >= maximumItems) {
+      throw new TemplateCopilotV3ProviderQuoteTransportError(
+        "output_capacity_exhausted",
+      );
+    }
+    for (const rawItem of rawBucket) {
+      if (
+        isTemplateCopilotV3ProviderQuoteWireRecord(rawItem) &&
+        Array.isArray(rawItem.l) &&
+        rawItem.l.length >= limits.maximumLeavesPerItem
+      ) {
+        throw new TemplateCopilotV3ProviderQuoteTransportError(
+          "output_capacity_exhausted",
+        );
+      }
+      flattened.push({ kind, rawItem });
+    }
+  }
+  if (flattened.length >= limits.maximumItems) {
+    throw new TemplateCopilotV3ProviderQuoteTransportError(
+      "output_capacity_exhausted",
+    );
+  }
+
+  return Object.freeze({
+    contractVersion: templateCopilotV3ProviderQuoteContractVersion,
+    items: Object.freeze(
+      flattened.map(({ kind, rawItem }) =>
+        expandTemplateCopilotV3ProviderQuoteWireItem({
+          batchId,
+          forcedKind: kind,
+          rawItem,
+          maximumLeavesPerItem: limits.maximumLeavesPerItem,
+        }),
+      ),
+    ),
+  });
+}
+
+function expandTemplateCopilotV3ProviderQuoteLegacyWire({
+  batchId,
+  output,
+}: Readonly<{
+  batchId: Exclude<
+    TemplateCopilotV3ProviderQuoteBatchId,
+    TemplateCopilotV3ProviderQuoteFormalBatchId
+  >;
+  output: unknown;
+}>): unknown {
   const limits = templateCopilotV3ProviderQuoteBatchGenerationLimits[batchId];
   if (
     isTemplateCopilotV3ProviderQuoteWireRecord(output) &&
@@ -591,88 +691,113 @@ export function expandTemplateCopilotV3ProviderQuoteWire({
   }
   const shell = z
     .object({
-      v: z.literal(templateCopilotV3ProviderQuoteWireVersion),
+      v: z.literal(templateCopilotV3ProviderQuoteLegacyWireVersion),
       i: z.array(z.unknown()).max(limits.maximumItems),
     })
     .strict()
     .safeParse(output);
   if (!shell.success) return invalidCanonicalProviderQuoteItem;
 
-  const compactItemSchema = z
-    .object({
-      k: z.enum(templateCopilotV3ProviderQuoteKinds),
-      q: quote,
-      l: z
-        .array(templateCopilotV3CompactProviderQuoteLeafSchema)
-        .min(1)
-        .max(limits.maximumLeavesPerItem),
-      a: templateCopilotV3CompactProviderQuoteAmbiguitySchema,
-    })
-    .strict();
-  const items = shell.data.i.map((rawItem) => {
-    const rawKind = isTemplateCopilotV3ProviderQuoteWireRecord(rawItem)
-      ? rawItem.k
-      : null;
-    if (
-      typeof rawKind === "string" &&
-      templateCopilotV3ProviderQuoteKinds.includes(
-        rawKind as TemplateCopilotV3ProviderQuoteKind,
-      ) &&
-      batchLocalWholeSlotIntentPolicy(
-        batchId,
-        rawKind as TemplateCopilotV3ProviderQuoteKind,
-      )
-    ) {
-      const policy = batchLocalWholeSlotIntentPolicy(
-        batchId,
-        rawKind as TemplateCopilotV3ProviderQuoteKind,
-      );
-      if (!policy) return invalidCanonicalProviderQuoteItem;
-      const intent = z
-        .object({
-          k: z.literal(rawKind),
-          ...(policy.slots.length > 1 ? { q: quote } : {}),
-          a: templateCopilotV3CompactProviderQuoteAmbiguitySchema,
-        })
-        .strict()
-        .safeParse(rawItem);
-      if (!intent.success) return invalidCanonicalProviderQuoteItem;
-      return Object.freeze({
-        kind: rawKind,
-        serverWholeSlotIntent: true as const,
-        selectorQuote:
-          policy.slots.length > 1 && "q" in intent.data
-            ? intent.data.q
-            : null,
-        ambiguity: (["none", "possible", "ambiguous"] as const)[
-          intent.data.a
-        ],
-      });
-    }
-    const parsed = compactItemSchema.safeParse(rawItem);
-    if (!parsed.success) return invalidCanonicalProviderQuoteItem;
-    return Object.freeze({
-      kind: parsed.data.k,
-      quote: parsed.data.q,
-      leaves: Object.freeze(
-        parsed.data.l.map((leaf) =>
-          Object.freeze({
-            role: leaf.r,
-            quote: leaf.q,
-            hint: leaf.h,
-          }),
-        ),
-      ),
-      confidence: "low" as const,
-      ambiguity: (["none", "possible", "ambiguous"] as const)[
-        parsed.data.a
-      ],
-    });
-  });
+  const items = shell.data.i.map((rawItem) =>
+    expandTemplateCopilotV3ProviderQuoteWireItem({
+      batchId,
+      forcedKind: null,
+      rawItem,
+      maximumLeavesPerItem: limits.maximumLeavesPerItem,
+    }),
+  );
   return Object.freeze({
     contractVersion: templateCopilotV3ProviderQuoteContractVersion,
     items: Object.freeze(items),
   });
+}
+
+function expandTemplateCopilotV3ProviderQuoteWireItem({
+  batchId,
+  forcedKind,
+  rawItem,
+  maximumLeavesPerItem,
+}: Readonly<{
+  batchId: TemplateCopilotV3ProviderQuoteBatchId;
+  forcedKind: TemplateCopilotV3ProviderQuoteKind | null;
+  rawItem: unknown;
+  maximumLeavesPerItem: number;
+}>): unknown {
+  const rawKind = forcedKind ?? (
+    isTemplateCopilotV3ProviderQuoteWireRecord(rawItem) ? rawItem.k : null
+  );
+  if (
+    typeof rawKind !== "string" ||
+    !templateCopilotV3ProviderQuoteKinds.includes(
+      rawKind as TemplateCopilotV3ProviderQuoteKind,
+    )
+  ) {
+    return invalidCanonicalProviderQuoteItem;
+  }
+  const kind = rawKind as TemplateCopilotV3ProviderQuoteKind;
+  const policy = batchLocalWholeSlotIntentPolicy(batchId, kind);
+  if (policy) {
+    const intent = z
+      .object({
+        ...(forcedKind ? {} : { k: z.literal(kind) }),
+        ...(policy.slots.length > 1 ? { q: quote } : {}),
+        a: templateCopilotV3CompactProviderQuoteAmbiguitySchema,
+      })
+      .strict()
+      .safeParse(rawItem);
+    if (!intent.success) return invalidCanonicalProviderQuoteItem;
+    return Object.freeze({
+      kind,
+      serverWholeSlotIntent: true as const,
+      selectorQuote:
+        policy.slots.length > 1 && "q" in intent.data
+          ? (intent.data.q as string)
+          : null,
+      ambiguity: (["none", "possible", "ambiguous"] as const)[
+        intent.data.a
+      ],
+    });
+  }
+
+  const parsed = z
+    .object({
+      ...(forcedKind ? {} : { k: z.enum(templateCopilotV3ProviderQuoteKinds) }),
+      q: quote,
+      l: z
+        .array(templateCopilotV3CompactProviderQuoteLeafSchema)
+        .min(1)
+        .max(maximumLeavesPerItem),
+      a: templateCopilotV3CompactProviderQuoteAmbiguitySchema,
+    })
+    .strict()
+    .safeParse(rawItem);
+  if (!parsed.success) return invalidCanonicalProviderQuoteItem;
+  return Object.freeze({
+    kind,
+    quote: parsed.data.q,
+    leaves: Object.freeze(
+      parsed.data.l.map((leaf) =>
+        Object.freeze({
+          role: leaf.r,
+          quote: leaf.q,
+          hint: leaf.h,
+        }),
+      ),
+    ),
+    confidence: "low" as const,
+    ambiguity: (["none", "possible", "ambiguous"] as const)[parsed.data.a],
+  });
+}
+
+function templateCopilotV3ProviderQuoteWireHasExactKeys(
+  record: Record<string, unknown>,
+  expected: readonly string[],
+) {
+  const actual = Object.keys(record);
+  return (
+    actual.length === expected.length &&
+    expected.every((key) => Object.hasOwn(record, key))
+  );
 }
 
 function isTemplateCopilotV3ProviderQuoteWireRecord(
@@ -901,7 +1026,12 @@ export const templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind =
     routing_stages_participants: Object.freeze({
       visibility: Object.freeze({ role: "rule" as const, hint: null }),
     }),
-    routing_conditions_exceptions: Object.freeze({}),
+    routing_conditions_exceptions: Object.freeze({
+      rejection: Object.freeze({
+        role: "mode" as const,
+        hint: "return_for_correction",
+      }),
+    }),
     policy_context: Object.freeze({
       workflow_name: Object.freeze({
         role: "description" as const,
@@ -932,6 +1062,36 @@ export const templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind =
           >
         >
       >
+    >
+  >);
+
+/**
+ * Repeatable formal-wire bucket ceilings. Every formal batch also has one
+ * nullable property for each whole-slot kind declared above. The batch-level
+ * maximum is one above the reviewed corpus maximum, so reaching either a
+ * bucket or aggregate ceiling is an incomplete-output signal rather than a
+ * semantic result.
+ */
+export const templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind =
+  Object.freeze({
+    intake_documents: Object.freeze({
+      request_field: 15,
+      attachment: 7,
+    }),
+    routing_stages_participants: Object.freeze({
+      stage: 9,
+      notification: 2,
+    }),
+    routing_conditions_exceptions: Object.freeze({
+      condition: 4,
+    }),
+    policy_context: Object.freeze({
+      notification: 7,
+    }),
+  } as const satisfies Readonly<
+    Record<
+      (typeof templateCopilotV3ProviderQuoteBatchIds)[number],
+      Readonly<Partial<Record<TemplateCopilotV3ProviderQuoteKind, number>>>
     >
   >);
 
@@ -993,40 +1153,96 @@ function templateCopilotV3ProviderQuoteAllowsSameLocalClauseRecovery(
   ).includes(role);
 }
 
+type TemplateCopilotV3ProviderQuoteFormalBatchId =
+  (typeof templateCopilotV3ProviderQuoteBatchIds)[number];
+
+function isTemplateCopilotV3ProviderQuoteFormalBatchId(
+  batchId: TemplateCopilotV3ProviderQuoteBatchId,
+): batchId is TemplateCopilotV3ProviderQuoteFormalBatchId {
+  return (
+    templateCopilotV3ProviderQuoteBatchIds as readonly TemplateCopilotV3ProviderQuoteBatchId[]
+  ).includes(batchId);
+}
+
 /**
- * Builds a compact provider-generation schema. It deliberately constrains
- * the closed batch wire vocabulary and role-to-hint shape. Formal generation
- * batches also expose disjoint kind branches; the canonical expander and
- * locator remain authoritative for exact evidence and semantic cores.
+ * Builds a compact provider-generation schema. Formal batches use a v3
+ * required bucket for every allowed kind. The bucket name supplies kind, so a
+ * provider cannot repeat a singleton kind or spend the entire response on one
+ * category. The canonical expander and locator remain authoritative for exact
+ * evidence, source slots, semantic cores, and all internal identities.
  */
 export function buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(
   batchId: TemplateCopilotV3ProviderQuoteBatchId,
 ) {
   const batch = templateCopilotV3ProviderQuoteBatches[batchId];
   const limits = templateCopilotV3ProviderQuoteBatchGenerationLimits[batchId];
-  const kindDiscriminated = (
-    templateCopilotV3ProviderQuoteBatchIds as readonly TemplateCopilotV3ProviderQuoteBatchId[]
-  ).includes(batchId);
-  const itemSchema = kindDiscriminated
-    ? {
-        anyOf: batch.allowedKinds.map((kind) =>
+  if (isTemplateCopilotV3ProviderQuoteFormalBatchId(batchId)) {
+    const bucketMaximumItems =
+      templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind[batchId];
+    const bucketProperties = Object.fromEntries(
+      batch.allowedKinds.map((kind) => {
+        const itemSchema =
           buildTemplateCopilotV3ProviderQuoteGuidanceItemSchema({
             batchId,
             allowedKinds: [kind],
-            kindSchema: { type: "string" as const, const: kind },
+            kindSchema: null,
             maximumLeavesPerItem: limits.maximumLeavesPerItem,
-          }),
-        ),
-      }
-    : buildTemplateCopilotV3ProviderQuoteGuidanceItemSchema({
-        batchId,
-        allowedKinds: batch.allowedKinds,
-        kindSchema: {
-          type: "string" as const,
-          enum: [...batch.allowedKinds],
+          });
+        if (batchLocalWholeSlotIntentPolicy(batchId, kind)) {
+          return [kind, { anyOf: [itemSchema, { type: "null" as const }] }];
+        }
+        const maximumItems = Object.hasOwn(bucketMaximumItems, kind)
+          ? bucketMaximumItems[
+              kind as keyof typeof bucketMaximumItems
+            ]
+          : undefined;
+        if (typeof maximumItems !== "number") {
+          throw new Error(
+            `The provider quote bucket limit is missing for ${batchId}:${kind}.`,
+          );
+        }
+        return [
+          kind,
+          {
+            type: "array" as const,
+            description: `Every source-backed ${kind} entity; use [] only when none is stated.`,
+            minItems: 0,
+            maxItems: maximumItems,
+            items: itemSchema,
+          },
+        ];
+      }),
+    );
+
+    return {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      type: "object" as const,
+      properties: {
+        v: {
+          type: "integer" as const,
+          const: templateCopilotV3ProviderQuoteWireVersion,
         },
-        maximumLeavesPerItem: limits.maximumLeavesPerItem,
-      });
+        b: {
+          type: "object" as const,
+          properties: bucketProperties,
+          required: [...batch.allowedKinds],
+          additionalProperties: false,
+        },
+      },
+      required: ["v", "b"],
+      additionalProperties: false,
+    };
+  }
+
+  const itemSchema = buildTemplateCopilotV3ProviderQuoteGuidanceItemSchema({
+    batchId,
+    allowedKinds: batch.allowedKinds,
+    kindSchema: {
+      type: "string" as const,
+      enum: [...batch.allowedKinds],
+    },
+    maximumLeavesPerItem: limits.maximumLeavesPerItem,
+  });
 
   return {
     $schema: "http://json-schema.org/draft-07/schema#",
@@ -1034,7 +1250,7 @@ export function buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(
     properties: {
       v: {
         type: "integer" as const,
-        const: templateCopilotV3ProviderQuoteWireVersion,
+        const: templateCopilotV3ProviderQuoteLegacyWireVersion,
       },
       i: {
         type: "array" as const,
@@ -1060,7 +1276,8 @@ function buildTemplateCopilotV3ProviderQuoteGuidanceItemSchema({
     | Readonly<{
         type: "string";
         enum: readonly TemplateCopilotV3ProviderQuoteKind[];
-      }>;
+      }>
+    | null;
   maximumLeavesPerItem: number;
 }>) {
   const leafVariants =
@@ -1077,7 +1294,7 @@ function buildTemplateCopilotV3ProviderQuoteGuidanceItemSchema({
           ? "Declare this applicable whole-slot fact; the server binds its exact authorized source slot and pinned leaf."
           : "Declare this applicable whole-slot fact with the shortest unique exact selector q; the server binds the selected full authorized source slot and pinned leaf.",
       properties: {
-        k: kindSchema,
+        ...(kindSchema ? { k: kindSchema } : {}),
         ...(wholeSlotIntent.slots.length > 1
           ? {
               q: {
@@ -1096,8 +1313,8 @@ function buildTemplateCopilotV3ProviderQuoteGuidanceItemSchema({
       },
       required:
         wholeSlotIntent.slots.length > 1
-          ? ["k", "q", "a"]
-          : ["k", "a"],
+          ? [...(kindSchema ? ["k"] : []), "q", "a"]
+          : [...(kindSchema ? ["k"] : []), "a"],
       additionalProperties: false,
     };
   }
@@ -1116,7 +1333,7 @@ function buildTemplateCopilotV3ProviderQuoteGuidanceItemSchema({
         }
       : {}),
     properties: {
-      k: kindSchema,
+      ...(kindSchema ? { k: kindSchema } : {}),
       q: {
         type: "string" as const,
         description:
@@ -1137,7 +1354,7 @@ function buildTemplateCopilotV3ProviderQuoteGuidanceItemSchema({
         enum: [0, 1, 2],
       },
     },
-    required: ["k", "q", "l", "a"],
+    required: [...(kindSchema ? ["k"] : []), "q", "l", "a"],
     additionalProperties: false,
   };
 }

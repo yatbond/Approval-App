@@ -33,43 +33,43 @@ const formalBatchIds = [
 test("v3 qualification fingerprints the exact compact provider contract", () => {
   assert.deepEqual(templateCopilotV3QualificationProviderContractMetadata, {
     canonicalContractVersion: 1,
-    wireVersion: 2,
+    wireVersion: 3,
     maximumQuoteCodePoints: 8_000,
     transportMaximumUtf8Bytes: 2 * 1024 * 1024,
     chatCompletionTokenParameter: "max_tokens",
     responsesCompletionTokenParameter: "max_output_tokens",
     batches: {
       intake_documents: {
-        maximumItems: 24,
+        maximumItems: 20,
         maximumLeavesPerItem: 12,
         maximumCompletionTokens: 3_072,
-        schemaUtf8Bytes: 6_089,
+        schemaUtf8Bytes: 6_362,
         schemaFingerprint:
-          "sha256:4a4e56a02e9ac3858287f4f6c11d4d3116458d7e523a6046317e118523ffc70a",
+          "sha256:9a0558ab618e828f5d0d572dc1e5ebe95e6e956ae35fae5be284ab86a9a65a9f",
       },
       routing_stages_participants: {
-        maximumItems: 12,
+        maximumItems: 10,
         maximumLeavesPerItem: 8,
         maximumCompletionTokens: 2_048,
-        schemaUtf8Bytes: 5_890,
+        schemaUtf8Bytes: 6_151,
         schemaFingerprint:
-          "sha256:8c87800c9ad1233d07013375c0c5622ce3f20fae754ee69eff0e7a32ebf08ff4",
+          "sha256:7024d74220e4a5a8f37175cf4ec06a8bf1a81c6dd2d015182b87b04b6143b429",
       },
       routing_conditions_exceptions: {
-        maximumItems: 8,
+        maximumItems: 5,
         maximumLeavesPerItem: 10,
         maximumCompletionTokens: 1_536,
-        schemaUtf8Bytes: 4_176,
+        schemaUtf8Bytes: 3_624,
         schemaFingerprint:
-          "sha256:f35be736d05efb33db5fb3c56b058408a76106cb3a5e559cafb81820afbd1758",
+          "sha256:9f1d6f5d843a77a255f4f19e3b9778f47f4637fc34d50559e9cb7a2f7dd90209",
       },
       policy_context: {
-        maximumItems: 32,
+        maximumItems: 15,
         maximumLeavesPerItem: 8,
         maximumCompletionTokens: 4_096,
-        schemaUtf8Bytes: 5_400,
+        schemaUtf8Bytes: 5_626,
         schemaFingerprint:
-          "sha256:3b03d582c0db5325bff3e042c1c6c6e2022f7588ed45e5f98461daee6142bce8",
+          "sha256:bab319877ab56d27cf15b68663696b9def4c85a9ee5d74f4e7f102cc149eb3e6",
       },
     },
   });
