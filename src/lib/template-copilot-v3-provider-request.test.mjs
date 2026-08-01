@@ -33,7 +33,11 @@ function validItem(overrides = {}) {
   };
 }
 
-function fakeConfiguration(protocol, raw, { useResponsesParts = false } = {}) {
+function fakeConfiguration(
+  protocol,
+  raw,
+  { useResponsesParts = false, structuredOutput = "json_schema" } = {},
+) {
   const calls = [];
   let parseCalled = false;
   const client = {
@@ -72,16 +76,17 @@ function fakeConfiguration(protocol, raw, { useResponsesParts = false } = {}) {
       client,
       model: "qualification-model",
       protocol,
-      structuredOutput: "json_schema",
+      structuredOutput,
     },
     calls,
     parseWasCalled: () => parseCalled,
   };
 }
 
-async function request(configured) {
+async function request(configured, batchId = "structure") {
   return requestTemplateCopilotV3ProviderQuoteOutput({
     configured,
+    batchId,
     schemaName: "template_copilot_v3_provider_quotes",
     developerText: "Quote exact source text.",
     userText: "Untrusted source slots.",
@@ -124,6 +129,16 @@ test("Responses and Chat preserve a valid item beside a forged sibling", async (
     }], protocol);
 
     const requestBody = fake.calls[0][0];
+    const guidanceSchema = protocol === "responses"
+      ? requestBody.text.format.schema
+      : requestBody.response_format.json_schema.schema;
+    assert.deepEqual(
+      guidanceSchema.properties.items.items.anyOf.map(
+        (variant) => variant.properties.kind.const,
+      ),
+      [...templateCopilotV3ProviderQuoteBatches.structure.allowedKinds],
+      protocol,
+    );
     if (protocol === "responses") {
       assert.equal(requestBody.text.format.type, "json_schema");
       assert.equal(requestBody.text.format.strict, true);
@@ -137,6 +152,30 @@ test("Responses and Chat preserve a valid item beside a forged sibling", async (
       );
     }
   }
+});
+
+test("Chat does not duplicate JSON Schema text when response_format carries it", async () => {
+  const raw = JSON.stringify({ contractVersion: 1, items: [] });
+  const strict = fakeConfiguration("chat_completions", raw);
+  await request(strict.configured, "policy_context");
+  const strictBody = strict.calls[0][0];
+  assert.equal(strictBody.response_format.type, "json_schema");
+  assert.doesNotMatch(
+    strictBody.messages[0].content,
+    /must satisfy this .* JSON Schema|additionalProperties/u,
+  );
+
+  const fallback = fakeConfiguration("chat_completions", raw, {
+    structuredOutput: "json_object",
+  });
+  await request(fallback.configured, "policy_context");
+  const fallbackBody = fallback.calls[0][0];
+  assert.equal(fallbackBody.response_format.type, "json_object");
+  assert.match(
+    fallbackBody.messages[0].content,
+    /must satisfy this template_copilot_v3_provider_quotes JSON Schema/u,
+  );
+  assert.match(fallbackBody.messages[0].content, /additionalProperties/u);
 });
 
 test("raw transport decode leaves invalid envelopes for the strict locator", async () => {

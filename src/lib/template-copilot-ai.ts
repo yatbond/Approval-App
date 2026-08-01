@@ -407,12 +407,14 @@ async function requestStructuredOutput<T>({
 
 async function requestTemplateCopilotV3RawProviderOutput({
   configured,
+  batchId,
   schemaName,
   developerText,
   userText,
   failureMessage,
 }: {
   configured: TemplateCopilotAiConfiguration;
+  batchId: TemplateCopilotV3ProviderQuoteBatchId;
   schemaName: string;
   developerText: string;
   userText: string;
@@ -421,6 +423,7 @@ async function requestTemplateCopilotV3RawProviderOutput({
   try {
     return await requestTemplateCopilotV3ProviderQuoteOutput({
       configured,
+      batchId,
       schemaName,
       developerText,
       userText,
@@ -528,7 +531,8 @@ export async function extractTemplateCopilotV3QuoteBatch({
   try {
     const output = await requestTemplateCopilotV3RawProviderOutput({
       configured,
-      schemaName: "template_copilot_v3_provider_quotes",
+      batchId,
+      schemaName: `template_copilot_v3_provider_quotes_${batchId}`,
       developerText: buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
         batchId,
         locale: validatedLocale,

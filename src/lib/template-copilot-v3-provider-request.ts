@@ -1,9 +1,9 @@
 import type OpenAI from "openai";
-import { z } from "zod";
 import {
+  buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema,
   decodeTemplateCopilotV3ProviderQuoteTransport,
-  templateCopilotV3ProviderQuoteOutputSchema,
   TemplateCopilotV3ProviderQuoteTransportError,
+  type TemplateCopilotV3ProviderQuoteBatchId,
 } from "./template-copilot-v3-provider-quotes.ts";
 
 export type TemplateCopilotV3ProviderRequestConfiguration = Readonly<{
@@ -34,21 +34,21 @@ type ProviderRequestOptions = Readonly<{
  */
 export async function requestTemplateCopilotV3ProviderQuoteOutput({
   configured,
+  batchId,
   schemaName,
   developerText,
   userText,
   requestOptions,
 }: Readonly<{
   configured: TemplateCopilotV3ProviderRequestConfiguration;
+  batchId: TemplateCopilotV3ProviderQuoteBatchId;
   schemaName: string;
   developerText: string;
   userText: string;
   requestOptions: ProviderRequestOptions;
 }>): Promise<unknown> {
-  const jsonSchema = z.toJSONSchema(
-    templateCopilotV3ProviderQuoteOutputSchema,
-    { target: "draft-07" },
-  );
+  const jsonSchema =
+    buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(batchId);
   if (configured.protocol === "responses") {
     const response = await configured.client.responses.create(
       {
@@ -102,8 +102,12 @@ export async function requestTemplateCopilotV3ProviderQuoteOutput({
         content: [
           developerText,
           "Return one JSON object only. Do not include Markdown or explanatory text.",
-          `The JSON object must satisfy this ${schemaName} JSON Schema:`,
-          JSON.stringify(jsonSchema),
+          ...(configured.structuredOutput === "json_schema"
+            ? []
+            : [
+                `The JSON object must satisfy this ${schemaName} JSON Schema:`,
+                JSON.stringify(jsonSchema),
+              ]),
         ].join("\n\n"),
       },
       { role: "user", content: userText },

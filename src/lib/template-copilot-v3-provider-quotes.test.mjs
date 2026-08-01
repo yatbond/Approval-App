@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema,
   formatTemplateCopilotV3ProviderQuoteBatch,
   locateTemplateCopilotV3ProviderQuotes,
   templateCopilotV3ProviderQuoteAllowedSlotsByKind,
+  templateCopilotV3ProviderQuoteBatchIds,
   templateCopilotV3ProviderQuoteBatches,
+  templateCopilotV3ProviderQuoteKindRoleHints,
+  templateCopilotV3ProviderQuoteKinds,
+  templateCopilotV3ProviderQuoteMinimumSemanticCores,
   templateCopilotV3ProviderQuoteOutputSchema,
+  templateCopilotV3ProviderQuoteRoles,
   templateCopilotV3ProviderQuoteSlots,
 } from "./template-copilot-v3-provider-quotes.ts";
 import { templateCopilotV3SourceSpanSchema } from "./template-copilot-v3-evidence.ts";
@@ -137,6 +143,162 @@ test("the server owns a closed kind-to-source-slot matrix", () => {
         .flatMap((batch) => batch.allowedKinds),
     ),
   );
+});
+
+test("provider guidance exhaustively discriminates batch kinds and kind roles and hints", () => {
+  const guidanceItem = (kind, role, hint) => ({
+    kind,
+    quote: "source",
+    leaves: [{ role, quote: "source", hint }],
+    confidence: "high",
+    ambiguity: "none",
+  });
+  const guidanceAllows = (schema, candidate) => {
+    const itemVariant = schema.properties.items.items.anyOf.find(
+      (variant) => variant.properties.kind.const === candidate.kind,
+    );
+    if (!itemVariant) return false;
+    const leafVariant = itemVariant.properties.leaves.items.anyOf.find(
+      (variant) => variant.properties.role.const === candidate.leaves[0].role,
+    );
+    if (!leafVariant) return false;
+    const hintSchema = leafVariant.properties.hint;
+    return hintSchema.type === "null"
+      ? candidate.leaves[0].hint === null
+      : hintSchema.enum.includes(candidate.leaves[0].hint);
+  };
+
+  for (const batchId of templateCopilotV3ProviderQuoteBatchIds) {
+    const schema =
+      buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(batchId);
+    const itemVariants = schema.properties.items.items.anyOf;
+    assert.doesNotMatch(JSON.stringify(schema), /"oneOf"/u, `${batchId}:supported-unions`);
+    assert.deepEqual(
+      itemVariants.map((variant) => variant.properties.kind.const),
+      [...templateCopilotV3ProviderQuoteBatches[batchId].allowedKinds],
+      `${batchId}:kinds`,
+    );
+    assert.equal(schema.additionalProperties, false, `${batchId}:strict-root`);
+    assert.deepEqual(
+      schema.required,
+      ["contractVersion", "items"],
+      `${batchId}:required-root`,
+    );
+
+    for (const kind of templateCopilotV3ProviderQuoteKinds) {
+      const [firstRole, firstHints] = Object.entries(
+        templateCopilotV3ProviderQuoteKindRoleHints[kind],
+      )[0];
+      const firstHint = firstHints === null ? null : firstHints[0];
+      assert.equal(
+        guidanceAllows(schema, guidanceItem(kind, firstRole, firstHint)),
+        templateCopilotV3ProviderQuoteBatches[batchId].allowedKinds.includes(
+          kind,
+        ),
+        `${batchId}:${kind}:batch`,
+      );
+    }
+
+    for (const kind of templateCopilotV3ProviderQuoteBatches[batchId]
+      .allowedKinds) {
+      const policy = templateCopilotV3ProviderQuoteKindRoleHints[kind];
+      const kindVariant = itemVariants.find(
+        (variant) => variant.properties.kind.const === kind,
+      );
+      const leafVariants = kindVariant.properties.leaves.items.anyOf;
+      const minimumCore = templateCopilotV3ProviderQuoteMinimumSemanticCores[
+        kind
+      ];
+      assert.equal(
+        kindVariant.properties.leaves.minItems,
+        minimumCore?.length ?? 1,
+        `${batchId}:${kind}:minimum-core-size`,
+      );
+      assert.equal(
+        typeof kindVariant.description,
+        minimumCore ? "string" : "undefined",
+        `${batchId}:${kind}:minimum-core-description`,
+      );
+      assert.deepEqual(
+        leafVariants.map((variant) => variant.properties.role.const),
+        Object.keys(policy),
+        `${batchId}:${kind}:roles`,
+      );
+
+      for (const [role, allowedHints] of Object.entries(policy)) {
+        const leafVariant = leafVariants.find(
+          (variant) => variant.properties.role.const === role,
+        );
+        if (allowedHints === null) {
+          assert.deepEqual(
+            leafVariant.properties.hint,
+            { type: "null" },
+            `${batchId}:${kind}:${role}:quote-only`,
+          );
+          assert.equal(
+            guidanceAllows(schema, guidanceItem(kind, role, null)),
+            true,
+            `${batchId}:${kind}:${role}:null`,
+          );
+        } else {
+          assert.deepEqual(
+            leafVariant.properties.hint.enum,
+            [...allowedHints],
+            `${batchId}:${kind}:${role}:hints`,
+          );
+          for (const hint of allowedHints) {
+            assert.equal(
+              guidanceAllows(schema, guidanceItem(kind, role, hint)),
+              true,
+              `${batchId}:${kind}:${role}:${hint}`,
+            );
+          }
+          assert.equal(
+            guidanceAllows(schema, guidanceItem(kind, role, null)),
+            false,
+            `${batchId}:${kind}:${role}:null-not-allowed`,
+          );
+        }
+        assert.equal(
+          guidanceAllows(
+            schema,
+            guidanceItem(kind, role, "unsupported_hint"),
+          ),
+          false,
+          `${batchId}:${kind}:${role}:wrong-hint`,
+        );
+      }
+
+      for (const role of templateCopilotV3ProviderQuoteRoles.filter(
+        (candidate) => !Object.hasOwn(policy, candidate),
+      )) {
+        assert.equal(
+          guidanceAllows(schema, guidanceItem(kind, role, null)),
+          false,
+          `${batchId}:${kind}:${role}:wrong-role`,
+        );
+      }
+    }
+
+    assert.equal(
+      guidanceAllows(
+        schema,
+        guidanceItem("unsupported_kind", "label", null),
+      ),
+      false,
+      `${batchId}:unknown-kind`,
+    );
+    const firstKind = templateCopilotV3ProviderQuoteBatches[batchId]
+      .allowedKinds[0];
+    assert.equal(
+      guidanceAllows(
+        schema,
+        guidanceItem(firstKind, "unsupported_role", null),
+      ),
+      false,
+      `${batchId}:unknown-role`,
+    );
+  }
 });
 
 test("strict provider schema accepts quotes and advisory labels only", () => {

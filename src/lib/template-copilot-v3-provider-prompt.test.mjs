@@ -105,7 +105,7 @@ test("the prompt demands complete entity coverage and source-language fidelity",
     assert.match(prompt, /one semantic entity per item/u);
     assert.match(prompt, /smallest unique contiguous exact source passage/u);
     assert.match(prompt, /occurs exactly once inside the item quote/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-5/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-6/u);
     assert.match(
       prompt,
       /threshold operator or value quote may repeat only in adjacent affirmative threshold branches/u,
@@ -126,18 +126,35 @@ test("the prompt demands complete entity coverage and source-language fidelity",
     assert.match(prompt, /Hints are advisory, language-independent tokens/u);
     assert.match(prompt, /conditional_quantity_increment for the exact added quantity/u);
     assert.match(prompt, /Never encode a conditional increment as maximum_quantity/u);
-    assert.match(prompt, /otherwise omit that leaf, not the whole item/u);
-    assert.match(prompt, /Emit every independently supported leaf/u);
-    assert.match(prompt, /omit only an incomplete or uncertain leaf/u);
     assert.match(
       prompt,
-      /Omit the whole item only when no defensible unique anchor-and-leaf pair remains/u,
+      /Omit an unsupported optional leaf; if it is part of a listed complete core, omit that entity/u,
     );
-    assert.doesNotMatch(
+    assert.match(
       prompt,
-      /When evidence is incomplete or uncertain, omit the item/u,
+      /quote only the shortest exact source token or phrase that proves that hint/u,
+    );
+    assert.match(
+      prompt,
+      /every leaf.quote occurs verbatim inside item.quote/u,
+    );
+    assert.match(prompt, /Never substitute a synonym/u);
+    assert.match(
+      prompt,
+      /Omit any item that lacks a defensible unique anchor-and-leaf pair/u,
     );
   }
+  assert.match(
+    traditional,
+    /request_field=label\+required;attachment=label\+kind\+required;stage=label\+kind\+\(participant OR participant_mode\);condition=field\+operator\+value\+matching_route;notification=event\+recipient/u,
+  );
+  assert.match(traditional, /all roles in ONE item; never split a core/u);
+  assert.match(traditional, /For a named stage, include its exact participant leaf/u);
+  assert.match(
+    simplified,
+    /Complete core per emitted entity \(all roles in ONE item; never split a core\): notification=event\+recipient/u,
+  );
+  assert.doesNotMatch(simplified, /request_field=label\+required/u);
   assert.match(traditional, /never translate or convert it to Simplified Chinese/u);
   assert.match(simplified, /never translate or convert it to Traditional Chinese/u);
 });
@@ -166,6 +183,10 @@ test("the wrapper makes one bounded raw request through the shared resolver", as
   assert.match(wrapper, /classifyTemplateCopilotV2ProviderFailure/u);
   assert.match(wrapper, /formatTemplateCopilotV3ProviderQuoteBatch/u);
   assert.match(wrapper, /locateTemplateCopilotV3ProviderQuotes/u);
+  assert.match(
+    wrapper,
+    /schemaName: `template_copilot_v3_provider_quotes_\$\{batchId\}`/u,
+  );
   assert.doesNotMatch(
     wrapper,
     /FocusedRecovery|maxRetries|Promise\.all|new OpenAI/u,

@@ -495,6 +495,144 @@ export const templateCopilotV3ProviderQuoteKindRoleHints = Object.freeze({
   Record<TemplateCopilotV3ProviderQuoteKind, RolePolicy>
 >);
 
+type TemplateCopilotV3ProviderQuoteSemanticCoreRoleGroup =
+  readonly TemplateCopilotV3ProviderQuoteRole[];
+
+/**
+ * Required role groups for the entity kinds that the review assembler can
+ * treat as semantically complete. A group with more than one role is an
+ * explicit alternative; all groups must otherwise be represented in one
+ * provider item. The assembler remains authoritative.
+ */
+export const templateCopilotV3ProviderQuoteMinimumSemanticCores =
+  Object.freeze({
+    request_field: Object.freeze([
+      Object.freeze(["label"] as const),
+      Object.freeze(["required"] as const),
+    ]),
+    attachment: Object.freeze([
+      Object.freeze(["label"] as const),
+      Object.freeze(["kind"] as const),
+      Object.freeze(["required"] as const),
+    ]),
+    stage: Object.freeze([
+      Object.freeze(["label"] as const),
+      Object.freeze(["kind"] as const),
+      Object.freeze(["participant", "participant_mode"] as const),
+    ]),
+    condition: Object.freeze([
+      Object.freeze(["field"] as const),
+      Object.freeze(["operator"] as const),
+      Object.freeze(["value"] as const),
+      Object.freeze(["matching_route"] as const),
+    ]),
+    notification: Object.freeze([
+      Object.freeze(["event"] as const),
+      Object.freeze(["recipient"] as const),
+    ]),
+  } satisfies Readonly<
+    Partial<
+      Record<
+        TemplateCopilotV3ProviderQuoteKind,
+        readonly TemplateCopilotV3ProviderQuoteSemanticCoreRoleGroup[]
+      >
+    >
+  >);
+
+export function templateCopilotV3ProviderQuoteMinimumSemanticCore(
+  kind: TemplateCopilotV3ProviderQuoteKind,
+): readonly TemplateCopilotV3ProviderQuoteSemanticCoreRoleGroup[] | null {
+  if (!Object.hasOwn(templateCopilotV3ProviderQuoteMinimumSemanticCores, kind)) {
+    return null;
+  }
+  return templateCopilotV3ProviderQuoteMinimumSemanticCores[
+    kind as keyof typeof templateCopilotV3ProviderQuoteMinimumSemanticCores
+  ];
+}
+
+/**
+ * Builds batch- and kind-discriminated JSON Schema used only to guide provider
+ * generation. The locator below remains the authoritative runtime validator.
+ */
+export function buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(
+  batchId: TemplateCopilotV3ProviderQuoteBatchId,
+) {
+  const itemVariants = templateCopilotV3ProviderQuoteBatches[
+    batchId
+  ].allowedKinds.map((kind) => {
+    const minimumSemanticCore =
+      templateCopilotV3ProviderQuoteMinimumSemanticCore(kind);
+    const leafVariants = Object.entries(
+      templateCopilotV3ProviderQuoteKindRoleHints[kind],
+    ).map(([role, allowedHints]) => ({
+      type: "object" as const,
+      properties: {
+        role: { type: "string" as const, const: role },
+        quote: { type: "string" as const },
+        hint: allowedHints === null
+          ? { type: "null" as const }
+          : {
+              type: "string" as const,
+              enum: [...allowedHints],
+            },
+      },
+      required: ["role", "quote", "hint"],
+      additionalProperties: false,
+    }));
+
+    return {
+      type: "object" as const,
+      ...(minimumSemanticCore
+        ? {
+            description: `Keep this complete semantic core in one item: ${minimumSemanticCore
+              .map((group) =>
+                group.length === 1 ? group[0] : `(${group.join(" OR ")})`,
+              )
+              .join(" + ")}.`,
+          }
+        : {}),
+      properties: {
+        kind: { type: "string" as const, const: kind },
+        quote: { type: "string" as const },
+        leaves: {
+          type: "array" as const,
+          minItems: minimumSemanticCore?.length ?? 1,
+          maxItems: 48,
+          items: { anyOf: leafVariants },
+        },
+        confidence: {
+          type: "string" as const,
+          enum: ["low", "medium", "high"],
+        },
+        ambiguity: {
+          type: "string" as const,
+          enum: ["none", "possible", "ambiguous"],
+        },
+      },
+      required: ["kind", "quote", "leaves", "confidence", "ambiguity"],
+      additionalProperties: false,
+    };
+  });
+
+  return {
+    $schema: "http://json-schema.org/draft-07/schema#",
+    type: "object" as const,
+    properties: {
+      contractVersion: {
+        type: "number" as const,
+        const: templateCopilotV3ProviderQuoteContractVersion,
+      },
+      items: {
+        type: "array" as const,
+        maxItems: templateCopilotV3ProviderQuoteTransportLimits.maximumArrayItems,
+        items: { anyOf: itemVariants },
+      },
+    },
+    required: ["contractVersion", "items"],
+    additionalProperties: false,
+  };
+}
+
 export type TemplateCopilotV3ProviderQuoteSourceSlot = Readonly<{
   slot: TemplateCopilotV3ProviderQuoteSlot;
   messageId: string;
