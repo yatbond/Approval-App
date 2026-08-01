@@ -12,6 +12,7 @@ import {
   templateCopilotV3ProviderQuoteBatchGenerationLimits,
   templateCopilotV3ProviderQuoteBatches,
   templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind,
+  templateCopilotV3ProviderQuoteConditionLeafLocationDiagnosticDetails,
   templateCopilotV3ProviderQuoteKindRoleHints,
   templateCopilotV3ProviderQuoteMinimumSemanticCore,
   templateCopilotV3ProviderQuoteOutputSchema,
@@ -1020,7 +1021,7 @@ test("provider guidance uses required kind buckets for every formal schema", () 
   }
 });
 
-test("condition anchors fail closed when they stop before the matching route", () => {
+test("condition leaf diagnostics stay private while distinguishing exact location failures", () => {
   const conditions =
     "安全影响为是时安全评审必须阻塞流程。成本增加超过港币一百万元走额外审批。";
   const conditionItems = [
@@ -1051,21 +1052,136 @@ test("condition anchors fail closed when they stop before the matching route", (
     sourceSlots: sourceSlots("routing_conditions", {
       conditions_exceptions: conditions,
     }),
-    output: output(conditionItems),
+    output: output([
+      ...conditionItems,
+      item({
+        kind: "condition",
+        quote: "安全影响为是时安全评审必须阻塞流程",
+        leaves: [
+          { role: "field", quote: "安全影响", hint: null },
+          { role: "operator", quote: "=", hint: "=" },
+          { role: "value", quote: "是", hint: null },
+          {
+            role: "matching_route",
+            quote: "安全评审",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+      item({
+        kind: "condition",
+        quote: "安全影响为是时安全评审必须阻塞流程",
+        leaves: [
+          { role: "field", quote: "安全影响", hint: null },
+          { role: "operator", quote: "s3cr3t-operator-token", hint: "=" },
+          { role: "value", quote: "是", hint: null },
+          {
+            role: "matching_route",
+            quote: "安全评审",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+      item({
+        kind: "condition",
+        quote: "安全影响为是时安全评审必须阻塞流程",
+        leaves: [
+          { role: "field", quote: "安全影响", hint: null },
+          { role: "operator", quote: "=", hint: "!=" },
+          { role: "value", quote: "是", hint: null },
+          {
+            role: "matching_route",
+            quote: "安全评审",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+      item({
+        kind: "condition",
+        quote: "安全影响为是时安全评审必须阻塞流程",
+        leaves: [
+          { role: "field", quote: "安全影响", hint: null },
+          { role: "operator", quote: "为是", hint: "=" },
+          { role: "value", quote: "是", hint: null },
+          {
+            role: "matching_route",
+            quote: "法务经理",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+      item({
+        kind: "condition",
+        quote: "安全影响为是时安全评审必须阻塞流程",
+        leaves: [
+          { role: "field", quote: "安全影响", hint: null },
+          { role: "operator", quote: " = ", hint: "=" },
+          { role: "value", quote: "是", hint: null },
+          {
+            role: "matching_route",
+            quote: "安全评审",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+    ]),
   });
   assert.deepEqual(shortened.accepted, []);
   assert.deepEqual(shortened.rejected, [
     {
       itemIndex: 0,
       code: "leaf_not_found",
-      detail: "condition:matching_route",
+      detail: "condition:matching_route:same_clause_unique_outside_anchor",
     },
     {
       itemIndex: 1,
       code: "leaf_not_found",
-      detail: "condition:matching_route",
+      detail: "condition:matching_route:same_clause_unique_outside_anchor",
+    },
+    {
+      itemIndex: 2,
+      code: "leaf_not_found",
+      detail:
+        "condition:operator:canonical_equality_symbol:equality_hint:absent_from_authorized_slot",
+    },
+    {
+      itemIndex: 3,
+      code: "leaf_not_found",
+      detail:
+        "condition:operator:other:equality_hint:absent_from_authorized_slot",
+    },
+    {
+      itemIndex: 4,
+      code: "leaf_not_found",
+      detail:
+        "condition:operator:canonical_equality_symbol:non_equality_hint:absent_from_authorized_slot",
+    },
+    {
+      itemIndex: 5,
+      code: "leaf_not_found",
+      detail: "condition:matching_route:absent_from_authorized_slot",
+    },
+    {
+      itemIndex: 6,
+      code: "leaf_not_found",
+      detail:
+        "condition:operator:other:equality_hint:absent_from_authorized_slot",
     },
   ]);
+  assert.ok(
+    templateCopilotV3ProviderQuoteConditionLeafLocationDiagnosticDetails.includes(
+      shortened.rejected[0]?.detail,
+    ),
+  );
+  assert.ok(
+    templateCopilotV3ProviderQuoteConditionLeafLocationDiagnosticDetails.includes(
+      shortened.rejected[2]?.detail,
+    ),
+  );
+  assert.doesNotMatch(
+    JSON.stringify(shortened.rejected),
+    /安全|评审|一百万|s3cr3t|法务/u,
+  );
 
   const closed = locateTemplateCopilotV3ProviderQuotes({
     batchId: "routing_conditions",

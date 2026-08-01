@@ -1491,6 +1491,41 @@ export const templateCopilotV3ProviderQuoteRejectionCodes = [
 export type TemplateCopilotV3ProviderQuoteRejectionCode =
   (typeof templateCopilotV3ProviderQuoteRejectionCodes)[number];
 
+const conditionLeafLocationDiagnostics = Object.freeze([
+  "same_clause_unique_outside_anchor",
+  "same_clause_ambiguous_outside_anchor",
+  "source_unique_outside_clause",
+  "source_ambiguous_outside_clause",
+  "absent_from_authorized_slot",
+] as const);
+const conditionOperatorQuoteShapeDiagnostics = Object.freeze([
+  "full_simplified_yes_comparator",
+  "full_traditional_yes_comparator",
+  "bare_simplified_copula",
+  "bare_traditional_copula",
+  "bare_yes_lexeme",
+  "canonical_equality_symbol",
+  "recognized_equality_wording",
+  "other",
+] as const);
+const conditionOperatorHintDiagnostics = Object.freeze([
+  "equality_hint",
+  "non_equality_hint",
+] as const);
+export const templateCopilotV3ProviderQuoteConditionLeafLocationDiagnosticDetails =
+  Object.freeze([
+    ...conditionOperatorQuoteShapeDiagnostics.flatMap((shape) =>
+      conditionOperatorHintDiagnostics.flatMap((hint) =>
+        conditionLeafLocationDiagnostics.map(
+          (location) => `condition:operator:${shape}:${hint}:${location}`,
+        ),
+      ),
+    ),
+    ...conditionLeafLocationDiagnostics.map(
+      (location) => `condition:matching_route:${location}`,
+    ),
+  ]);
+
 export type TemplateCopilotV3LocatedQuoteItem = Readonly<{
   itemIndex: number;
   kind: TemplateCopilotV3ProviderQuoteKind;
@@ -1824,7 +1859,12 @@ export function locateTemplateCopilotV3ProviderQuotes({
             rejection(
               itemIndex,
               "leaf_not_found",
-              `${item.kind}:${staged.leaf.role}`,
+              conditionMissingLeafDiagnosticDetail({
+                item,
+                leaf: staged.leaf,
+                sourceText: anchorMatch.source.text,
+                localClauseText: localClause.text,
+              }),
             ),
           );
           return;
@@ -3900,6 +3940,68 @@ function uniqueOffset(
   return value.indexOf(needle, first + 1) < 0
     ? { status: "unique", startCodeUnit: first }
     : { status: "ambiguous" };
+}
+
+function conditionMissingLeafDiagnosticDetail({
+  item,
+  leaf,
+  sourceText,
+  localClauseText,
+}: Readonly<{
+  item: TemplateCopilotV3ProviderQuoteItem;
+  leaf: TemplateCopilotV3ProviderQuoteItem["leaves"][number];
+  sourceText: string;
+  localClauseText: string;
+}>) {
+  const base = `${item.kind}:${leaf.role}`;
+  if (
+    item.kind !== "condition" ||
+    (leaf.role !== "operator" && leaf.role !== "matching_route")
+  ) {
+    return base;
+  }
+  const localMatch = uniqueOffset(localClauseText, leaf.quote);
+  const location = localMatch.status === "unique"
+    ? "same_clause_unique_outside_anchor"
+    : localMatch.status === "ambiguous"
+    ? "same_clause_ambiguous_outside_anchor"
+    : (() => {
+        const sourceMatch = uniqueOffset(sourceText, leaf.quote);
+        return sourceMatch.status === "unique"
+          ? "source_unique_outside_clause"
+          : sourceMatch.status === "ambiguous"
+          ? "source_ambiguous_outside_clause"
+          : "absent_from_authorized_slot";
+      })();
+  if (leaf.role === "matching_route") {
+    return `condition:matching_route:${location}`;
+  }
+  const normalized = leaf.quote.trim().replace(/\s+/gu, " ").toLowerCase();
+  const shape = leaf.quote === "为是"
+    ? "full_simplified_yes_comparator"
+    : leaf.quote === "為是"
+    ? "full_traditional_yes_comparator"
+    : leaf.quote === "为"
+    ? "bare_simplified_copula"
+    : leaf.quote === "為"
+    ? "bare_traditional_copula"
+    : leaf.quote === "是"
+    ? "bare_yes_lexeme"
+    : leaf.quote === "="
+    ? "canonical_equality_symbol"
+    : [
+        "equal",
+        "equal to",
+        "equals",
+        "is",
+        "is equal to",
+        "等于",
+        "等於",
+      ].includes(normalized)
+    ? "recognized_equality_wording"
+    : "other";
+  const hint = leaf.hint === "=" ? "equality_hint" : "non_equality_hint";
+  return `condition:operator:${shape}:${hint}:${location}`;
 }
 
 function rejection(

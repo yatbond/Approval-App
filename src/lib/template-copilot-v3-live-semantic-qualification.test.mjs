@@ -146,7 +146,7 @@ test("v3 qualification executes exactly five sequential batches for all 24 multi
   assert.equal(report.summary.providerRequestCount, 120);
   assert.equal(
     report.metadata.runnerVersion,
-    "template-copilot-v3-live-semantic-qualification.17",
+    "template-copilot-v3-live-semantic-qualification.18",
   );
   assert.equal(report.summary.expandedAnchorItemCount, 0);
   assert.equal(report.summary.sameLocalClauseRecoveredLeafCount, 0);
@@ -1461,7 +1461,11 @@ test("v3 qualification allowlists provider and assembler rejection codes", async
         batch: batchIdentity(input),
         accepted: [],
         rejected: [
-          { code: "leaf_not_found", detail: "condition:operator" },
+          {
+            code: "leaf_not_found",
+            detail:
+              "condition:operator:canonical_equality_symbol:equality_hint:absent_from_authorized_slot",
+          },
           {
             code: "item_schema_invalid",
             detail: "workflow_name:whole_slot_quote",
@@ -1499,7 +1503,7 @@ test("v3 qualification allowlists provider and assembler rejection codes", async
     unknown: 1,
   });
   assert.deepEqual(report.scenarios[0].batches[0].rejectionDetails, {
-    "condition:operator": 1,
+    "condition:operator:canonical_equality_symbol:equality_hint:absent_from_authorized_slot": 1,
     "workflow_name:whole_slot_quote": 1,
     unknown: 1,
   });

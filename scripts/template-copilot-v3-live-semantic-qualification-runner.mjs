@@ -15,6 +15,7 @@ import {
   templateCopilotV3ProviderQuoteBatchLocalRejectionDetails,
   templateCopilotV3ProviderQuoteBatchGenerationLimits,
   templateCopilotV3ProviderQuoteBatches,
+  templateCopilotV3ProviderQuoteConditionLeafLocationDiagnosticDetails,
   templateCopilotV3ProviderQuoteContractVersion,
   templateCopilotV3ProviderQuoteMaximumCodePoints,
   templateCopilotV3ProviderQuoteKindRoleHints,
@@ -33,7 +34,7 @@ import {
 import { templateCopilotV3LiveSemanticScoringContract } from "./template-copilot-v3-live-semantic-scoring.mjs";
 
 export const templateCopilotV3QualificationRunnerVersion =
-  "template-copilot-v3-live-semantic-qualification.17";
+  "template-copilot-v3-live-semantic-qualification.18";
 export const templateCopilotV3QualificationExpectedScenarioCount = 24;
 export const templateCopilotV3QualificationExpectedGovernedHoldCount = 64;
 export const templateCopilotV3QualificationExpectedLocaleCount = 3;
@@ -189,6 +190,7 @@ const providerRejectionDetailSet = new Set([
   "derived_anchor_span",
   "derived_leaf_span",
   ...templateCopilotV3ProviderQuoteBatchLocalRejectionDetails,
+  ...templateCopilotV3ProviderQuoteConditionLeafLocationDiagnosticDetails,
   ...Object.entries(templateCopilotV3ProviderQuoteKindRoleHints).flatMap(
     ([kind, roles]) => [
       kind,
