@@ -35,17 +35,62 @@ const slotByKind = {
   notification: "visibility_notifications",
 };
 
-function located({ itemIndex, kind, messageId, text, anchorQuote = text, leaves, confidence = "high", ambiguity = "none" }) {
+function located({ itemIndex, kind, messageId, text, anchorQuote = text, leaves, confidence = "high", ambiguity = "none", slot = slotByKind[kind], anchorExpanded = false, sameLocalClauseRecoveredLeafCount = 0 }) {
   return Object.freeze({
     itemIndex,
     kind,
-    slot: slotByKind[kind],
+    slot,
     anchor: span(messageId, text, anchorQuote),
-    leaves: Object.freeze(leaves.map((leaf) => Object.freeze({ role: leaf.role, hint: leaf.hint ?? null, sourceSpan: span(messageId, text, leaf.quote, leaf.occurrence ?? 0), sameLocalClauseRecovered: false }))),
+    leaves: Object.freeze(leaves.map((leaf) => Object.freeze({ role: leaf.role, hint: leaf.hint ?? null, sourceSpan: span(messageId, text, leaf.quote, leaf.occurrence ?? 0), sameLocalClauseRecovered: leaf.sameLocalClauseRecovered ?? false }))),
     confidence,
     ambiguity,
-    anchorExpanded: false,
-    sameLocalClauseRecoveredLeafCount: 0,
+    anchorExpanded,
+    sameLocalClauseRecoveredLeafCount,
+  });
+}
+
+function conditionAuthoritySymbols({
+  caseId,
+  field,
+  route,
+  itemIndexBase = 900_000,
+}) {
+  const fieldMessageId = `condition-symbol:${caseId}:field`;
+  const stageMessageId = `condition-symbol:${caseId}:stage`;
+  const fieldText = `必填${field}`;
+  const stageText = `${route}审批申请人`;
+  return Object.freeze({
+    sourceMessages: Object.freeze({
+      [fieldMessageId]: fieldText,
+      [stageMessageId]: stageText,
+    }),
+    items: Object.freeze([
+      located({
+        itemIndex: itemIndexBase,
+        kind: "request_field",
+        messageId: fieldMessageId,
+        text: fieldText,
+        leaves: [
+          { role: "label", quote: field },
+          { role: "required", quote: "必填", hint: "true" },
+        ],
+      }),
+      located({
+        itemIndex: itemIndexBase + 1,
+        kind: "stage",
+        messageId: stageMessageId,
+        text: stageText,
+        leaves: [
+          { role: "label", quote: route },
+          { role: "kind", quote: "审批", hint: "approval" },
+          {
+            role: "participant_mode",
+            quote: "申请人",
+            hint: "requester",
+          },
+        ],
+      }),
+    ]),
   });
 }
 
@@ -1204,36 +1249,85 @@ test("audits a bounded semantic operator for every fixed condition corpus entry 
   }
 });
 
-test("closes only the exact simplified CJK yes compound when a provider splits its operator", () => {
+test("closes only a structurally authoritative exact simplified CJK yes compound", () => {
   const positives = [
-    { caseId: "leading-copula", operator: "为" },
-    { caseId: "overlapping-value", operator: "是" },
+    {
+      caseId: "leading-copula",
+      text: "安全影响为是时安全评审必须阻塞流程",
+      operator: "为",
+    },
+    {
+      caseId: "overlapping-value",
+      text: "安全影响为是时安全评审必须阻塞流程",
+      operator: "是",
+    },
+    {
+      caseId: "declarative-terminal",
+      text: "安全影响为是时安全评审必须阻塞流程。",
+      operator: "为",
+    },
+    {
+      caseId: "governing-cjk-colon-payload",
+      text: "引用并执行以下要求：安全影响为是时安全评审必须阻塞流程",
+      operator: "为",
+    },
+    {
+      caseId: "governing-cjk-quoted-payload",
+      text: "引用并执行以下要求：“安全影响为是时安全评审必须阻塞流程”",
+      operator: "为",
+    },
+    {
+      caseId: "governing-english-ascii-quote",
+      text:
+        'Enforce the following quoted requirement: "安全影响为是时安全评审必须阻塞流程"',
+      operator: "为",
+    },
+    {
+      caseId: "quote-aware-terminal-inside-payload",
+      text: "引用并执行以下要求：「安全影响为是时安全评审必须阻塞流程。」",
+      operator: "为",
+    },
   ];
   for (const [itemIndex, entry] of positives.entries()) {
-    const messageId = `closed-cjk-yes:${entry.caseId}`;
-    const text = "安全影响为是时安全评审必须阻塞流程";
-    const messages = { [messageId]: text };
+    const messageId = "closed-cjk-yes:" + entry.caseId;
+    const symbols = conditionAuthoritySymbols({
+      caseId: entry.caseId,
+      field: "安全影响",
+      route: "安全评审",
+    });
+    const messages = {
+      [messageId]: entry.text,
+      ...symbols.sourceMessages,
+    };
     const result = assembleTemplateCopilotV3Review({
       sourceMessages: messages,
-      items: [located({
-        itemIndex,
-        kind: "condition",
-        messageId,
-        text,
-        leaves: [
-          { role: "field", quote: "安全影响" },
-          { role: "operator", quote: entry.operator, hint: "=" },
-          { role: "value", quote: "是" },
-          {
-            role: "matching_route",
-            quote: "安全评审",
-            hint: "stage_reference",
-          },
-        ],
-      })],
+      items: [
+        ...symbols.items,
+        located({
+          itemIndex,
+          kind: "condition",
+          messageId,
+          text: entry.text,
+          leaves: [
+            { role: "field", quote: "安全影响" },
+            { role: "operator", quote: entry.operator, hint: "=" },
+            { role: "value", quote: "是" },
+            {
+              role: "matching_route",
+              quote: "安全评审",
+              hint: "stage_reference",
+            },
+          ],
+        }),
+      ],
     });
-    const item = result.review.items[0];
-    assert.ok(item, `${entry.caseId}: ${JSON.stringify(result.review.rejections)}`);
+    const item = result.review.items.find((candidate) =>
+      candidate.providerItemIndexes.includes(itemIndex)
+    );
+    assert.ok(
+      item,
+      entry.caseId + ": " + JSON.stringify(result.review.rejections),
+    );
     assert.equal(item.value.operator, "=", entry.caseId);
     assert.equal(item.semanticComplete, true, entry.caseId);
     assert.deepEqual(
@@ -1251,21 +1345,6 @@ test("closes only the exact simplified CJK yes compound when a provider splits i
           ?.exactText
       ),
       ["为是"],
-      entry.caseId,
-    );
-    assert.ok(
-      item.semanticObservations.some(
-        (observation) =>
-          observation.role === "operator" &&
-          observation.quote === entry.operator,
-      ),
-      entry.caseId,
-    );
-    assert.equal(
-      result.review.rejections.some(
-        (rejection) => rejection.detail === "condition:operator",
-      ),
-      false,
       entry.caseId,
     );
     assert.ok(
@@ -1303,8 +1382,16 @@ test("closes only the exact simplified CJK yes compound when a provider splits i
       route: "安全评审",
     },
     {
-      caseId: "cross-hard-clause",
-      text: "安全影响为是。安全评审必须阻塞流程",
+      caseId: "question-terminator",
+      text: "安全影响为是时安全评审必须阻塞流程？",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "semicolon-terminator",
+      text: "安全影响为是时安全评审必须阻塞流程；",
       field: "安全影响",
       operator: "为",
       value: "是",
@@ -1335,8 +1422,172 @@ test("closes only the exact simplified CJK yes compound when a provider splits i
       route: "安全评审",
     },
     {
-      caseId: "example-only",
-      text: "示例：安全影响为是时安全评审必须阻塞流程",
+      caseId: "arbitrary-same-unit-prefix",
+      text: "背景资料：安全影响为是时安全评审必须阻塞流程",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "arbitrary-same-unit-suffix",
+      text: "安全影响为是时安全评审必须阻塞流程供讨论",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "field-swallows-nonauthoritative-prefix",
+      text: "仅供参考安全影响为是时走安全评审",
+      field: "仅供参考安全影响",
+      trustedField: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "field-swallows-nonauthoritative-suffix",
+      text: "安全影响仅供参考为是时走安全评审",
+      field: "安全影响仅供参考",
+      trustedField: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "route-swallows-nonauthoritative-prefix",
+      text: "安全影响为是时走仅供参考安全评审",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "仅供参考安全评审",
+      trustedRoute: "安全评审",
+    },
+    {
+      caseId: "route-swallows-nonauthoritative-suffix",
+      text: "安全影响为是时走安全评审仅供参考",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审仅供参考",
+      trustedRoute: "安全评审",
+    },
+    {
+      caseId: "extra-cross-kind-role",
+      text: "安全影响为是时走安全评审",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+      extraLeaves: [
+        { role: "participant", quote: "安全评审" },
+      ],
+    },
+    {
+      caseId: "inconsistent-recovered-leaf-metadata",
+      text: "安全影响为是时走安全评审",
+      field: "安全影响",
+      operator: "为",
+      operatorRecovered: true,
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "single-quotes-swallowed-at-edges",
+      text: "'安全影响为是时走安全评审'",
+      field: "'安全影响",
+      trustedField: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审'",
+      trustedRoute: "安全评审",
+    },
+    {
+      caseId: "backticks-swallowed-at-edges",
+      text: "`安全影响为是时走安全评审`",
+      field: "`安全影响",
+      trustedField: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审`",
+      trustedRoute: "安全评审",
+    },
+    {
+      caseId: "fullwidth-quotes-swallowed-at-edges",
+      text: "＂安全影响为是时走安全评审＂",
+      field: "＂安全影响",
+      trustedField: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审＂",
+      trustedRoute: "安全评审",
+    },
+    {
+      caseId: "bare-quote",
+      text: "“安全影响为是时安全评审必须阻塞流程”",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "unknown-wrapper",
+      text: "Retain this text: 安全影响为是时安全评审必须阻塞流程",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "prohibited-wrapper",
+      text:
+        "Do not execute the following requirement: 安全影响为是时安全评审必须阻塞流程",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "mismatched-governing-quotes",
+      text: "引用并执行以下要求：“安全影响为是时安全评审必须阻塞流程」",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "governing-question-payload",
+      text: "引用并执行以下要求：“安全影响为是时安全评审必须阻塞流程？”",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "cropped-adjacent-prefix",
+      text: "任意说明。安全影响为是时安全评审必须阻塞流程",
+      anchorQuote: "安全影响为是时安全评审必须阻塞流程",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "cropped-adjacent-suffix",
+      text: "安全影响为是时安全评审必须阻塞流程。任意说明",
+      anchorQuote: "安全影响为是时安全评审必须阻塞流程",
+      field: "安全影响",
+      operator: "为",
+      value: "是",
+      route: "安全评审",
+    },
+    {
+      caseId: "cropped-governing-outside-suffix",
+      text:
+        "引用并执行以下要求：“安全影响为是时安全评审必须阻塞流程”。任意说明",
+      anchorQuote:
+        "引用并执行以下要求：“安全影响为是时安全评审必须阻塞流程”",
       field: "安全影响",
       operator: "为",
       value: "是",
@@ -1370,28 +1621,47 @@ test("closes only the exact simplified CJK yes compound when a provider splits i
     },
   ];
   for (const [itemIndex, entry] of rejected.entries()) {
-    const messageId = `closed-cjk-yes-reject:${entry.caseId}`;
-    const result = assembleTemplateCopilotV3Review({
-      sourceMessages: { [messageId]: entry.text },
-      items: [located({
-        itemIndex: 100 + itemIndex,
-        kind: "condition",
-        messageId,
-        text: entry.text,
-        anchorQuote: entry.anchorQuote ?? entry.text,
-        leaves: [
-          { role: "field", quote: entry.field },
-          { role: "operator", quote: entry.operator, hint: "=" },
-          { role: "value", quote: entry.value },
-          {
-            role: "matching_route",
-            quote: entry.route,
-            hint: "stage_reference",
-          },
-        ],
-      })],
+    const messageId = "closed-cjk-yes-reject:" + entry.caseId;
+    const symbols = conditionAuthoritySymbols({
+      caseId: "reject:" + entry.caseId,
+      field: entry.trustedField ?? entry.field,
+      route: entry.trustedRoute ?? entry.route,
     });
-    const item = result.review.items[0];
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: {
+        [messageId]: entry.text,
+        ...symbols.sourceMessages,
+      },
+      items: [
+        ...symbols.items,
+        located({
+          itemIndex: 100 + itemIndex,
+          kind: "condition",
+          messageId,
+          text: entry.text,
+          anchorQuote: entry.anchorQuote ?? entry.text,
+          leaves: [
+            { role: "field", quote: entry.field },
+            {
+              role: "operator",
+              quote: entry.operator,
+              hint: "=",
+              sameLocalClauseRecovered: entry.operatorRecovered ?? false,
+            },
+            { role: "value", quote: entry.value },
+            {
+              role: "matching_route",
+              quote: entry.route,
+              hint: "stage_reference",
+            },
+            ...(entry.extraLeaves ?? []),
+          ],
+        }),
+      ],
+    });
+    const item = result.review.items.find((candidate) =>
+      candidate.providerItemIndexes.includes(100 + itemIndex)
+    );
     assert.ok(item, entry.caseId);
     assert.equal(item.value.operator, undefined, entry.caseId);
     assert.equal(item.semanticComplete, false, entry.caseId);
@@ -1401,10 +1671,1363 @@ test("closes only the exact simplified CJK yes compound when a provider splits i
           rejection.code === "unverifiable_leaf" &&
           rejection.detail === "condition:operator",
       ),
-      `${entry.caseId}: ${JSON.stringify(result.review.rejections)}`,
+      entry.caseId + ": " + JSON.stringify(result.review.rejections),
     );
   }
 });
+
+test("requires clean unique first-pass field and stage symbols for split operator recovery", () => {
+  const messageId = "condition-symbol-gate:condition";
+  const text = "安全影响为是时走安全评审";
+  const condition = located({
+    itemIndex: 777,
+    kind: "condition",
+    messageId,
+    text,
+    leaves: [
+      { role: "field", quote: "安全影响" },
+      { role: "operator", quote: "为", hint: "=" },
+      { role: "value", quote: "是" },
+      {
+        role: "matching_route",
+        quote: "安全评审",
+        hint: "stage_reference",
+      },
+    ],
+  });
+  const symbols = conditionAuthoritySymbols({
+    caseId: "symbol-gate",
+    field: "安全影响",
+    route: "安全评审",
+  });
+  const [fieldSymbol, stageSymbol] = symbols.items;
+  assert.ok(fieldSymbol);
+  assert.ok(stageSymbol);
+  const sourceMessages = {
+    [messageId]: text,
+    ...symbols.sourceMessages,
+  };
+  const assemble = (symbolItems, extraMessages = {}) =>
+    assembleTemplateCopilotV3Review({
+      sourceMessages: { ...sourceMessages, ...extraMessages },
+      items: [...symbolItems, condition],
+    });
+  const recoveredOperator = (result) =>
+    result.review.items.find((item) =>
+      item.providerItemIndexes.includes(777)
+    )?.value.operator;
+  assert.equal(recoveredOperator(assemble(symbols.items)), "=");
+
+  const unrelatedMessageId = "condition-symbol-gate:unrelated-rejection";
+  const unrelatedText = "unrelated";
+  const unrelatedRejectedItem = located({
+    itemIndex: fieldSymbol.itemIndex,
+    kind: "notification",
+    messageId: unrelatedMessageId,
+    text: unrelatedText,
+    leaves: [{ role: "label", quote: unrelatedText }],
+  });
+  assert.equal(
+    recoveredOperator(
+      assemble(
+        [unrelatedRejectedItem, ...symbols.items],
+        { [unrelatedMessageId]: unrelatedText },
+      ),
+    ),
+    "=",
+    "a rejection with a colliding batch-local item index",
+  );
+
+  const recoveredFieldSymbol = Object.freeze({
+    ...fieldSymbol,
+    sameLocalClauseRecoveredLeafCount: 1,
+    leaves: Object.freeze(fieldSymbol.leaves.map((leaf, index) =>
+      Object.freeze({
+        ...leaf,
+        sameLocalClauseRecovered: index === 0,
+      })
+    )),
+  });
+  const rejectedFieldSymbol = Object.freeze({
+    ...fieldSymbol,
+    leaves: Object.freeze([
+      ...fieldSymbol.leaves,
+      Object.freeze({
+        ...fieldSymbol.leaves[0],
+        role: "event",
+      }),
+    ]),
+  });
+  const duplicateMessageId = "condition-symbol-gate:duplicate-field";
+  const duplicateText = "必填安全影响";
+  const duplicateField = located({
+    itemIndex: 900_002,
+    kind: "request_field",
+    messageId: duplicateMessageId,
+    text: duplicateText,
+    leaves: [
+      { role: "label", quote: "安全影响" },
+      { role: "required", quote: "必填", hint: "true" },
+    ],
+  });
+  const unsafeSymbolSets = [
+    [stageSymbol],
+    [fieldSymbol],
+    [{ ...fieldSymbol, slot: "conditions_exceptions" }, stageSymbol],
+    [fieldSymbol, { ...stageSymbol, slot: "conditions_exceptions" }],
+    [{ ...fieldSymbol, ambiguity: "possible" }, stageSymbol],
+    [fieldSymbol, { ...stageSymbol, anchorExpanded: true }],
+    [recoveredFieldSymbol, stageSymbol],
+    [rejectedFieldSymbol, stageSymbol],
+  ];
+  for (const [index, symbolItems] of unsafeSymbolSets.entries()) {
+    assert.equal(
+      recoveredOperator(assemble(symbolItems)),
+      undefined,
+      "unsafe symbol set " + index,
+    );
+  }
+  const duplicateResult = assemble(
+    [...symbols.items, duplicateField],
+    { [duplicateMessageId]: duplicateText },
+  );
+  assert.equal(
+    recoveredOperator(duplicateResult),
+    undefined,
+    "duplicate field definition: " + JSON.stringify({
+      rejections: duplicateResult.review.rejections,
+      fields: duplicateResult.review.items.filter(
+        (item) => item.factId === "request.fields",
+      ).map((item) => ({
+        value: item.value,
+        semanticComplete: item.semanticComplete,
+        ambiguity: item.ambiguity,
+        sourceAnchors: item.sourceAnchors.map((span) => span.exactText),
+      })),
+    }),
+  );
+
+  const trailingRequiredId = "condition-symbol-gate:trailing-required";
+  const trailingRequiredText = "安全影响必填";
+  const trailingRequiredField = located({
+    itemIndex: 900_003,
+    kind: "request_field",
+    messageId: trailingRequiredId,
+    text: trailingRequiredText,
+    leaves: [
+      { role: "label", quote: "安全影响" },
+      { role: "required", quote: "必填", hint: "true" },
+    ],
+  });
+  assert.equal(
+    recoveredOperator(assemble(
+      [trailingRequiredField, stageSymbol],
+      { [trailingRequiredId]: trailingRequiredText },
+    )),
+    "=",
+    "an exact label followed immediately by its required marker",
+  );
+
+  const neutralPrefixId = "condition-symbol-gate:neutral-field-prefix";
+  const neutralPrefixText = "系统说明安全影响必填";
+  const neutralPrefixField = located({
+    itemIndex: 900_004,
+    kind: "request_field",
+    messageId: neutralPrefixId,
+    text: neutralPrefixText,
+    leaves: [
+      { role: "label", quote: "安全影响" },
+      { role: "required", quote: "必填", hint: "true" },
+    ],
+  });
+  assert.equal(
+    recoveredOperator(assemble(
+      [neutralPrefixField, stageSymbol],
+      { [neutralPrefixId]: neutralPrefixText },
+    )),
+    undefined,
+    "neutral prose before a field cannot seed condition authority",
+  );
+
+  for (const [index, [opening, closing]] of [
+    ['"', '"'],
+    ["“", "”"],
+    ["《", "》"],
+    ["【", "】"],
+    ["`", "`"],
+    ["'", "'"],
+    ["[", "]"],
+    ["«", "»"],
+    ["〝", "〞"],
+    ["❝", "❞"],
+    ["❛", "❜"],
+    ["｟", "｠"],
+    ["⟪", "⟫"],
+    ["﹁", "﹂"],
+    ["<", ">"],
+    ["＜", "＞"],
+    ["> ", ""],
+    ["′", "′"],
+    ["″", "″"],
+    ["‵", "‵"],
+    ["‶", "‶"],
+  ].entries()) {
+    for (const cropped of [false, true]) {
+      const quotedFieldId =
+        `condition-symbol-gate:quoted-field:${index}:${cropped}`;
+      const quotedFieldInner = "必填安全影响";
+      const quotedFieldText = opening + quotedFieldInner + closing;
+      const quotedField = located({
+        itemIndex: 910_000 + index * 10 + Number(cropped),
+        kind: "request_field",
+        messageId: quotedFieldId,
+        text: quotedFieldText,
+        anchorQuote: cropped ? quotedFieldInner : quotedFieldText,
+        leaves: [
+          { role: "label", quote: "安全影响" },
+          { role: "required", quote: "必填", hint: "true" },
+        ],
+      });
+      assert.equal(
+        recoveredOperator(
+          assemble(
+            [quotedField, stageSymbol],
+            { [quotedFieldId]: quotedFieldText },
+          ),
+        ),
+        undefined,
+        `quoted field ${index}:${cropped}`,
+      );
+
+      const quotedStageId =
+        `condition-symbol-gate:quoted-stage:${index}:${cropped}`;
+      const quotedStageInner = "安全评审审批申请人";
+      const quotedStageText = opening + quotedStageInner + closing;
+      const quotedStage = located({
+        itemIndex: 920_000 + index * 10 + Number(cropped),
+        kind: "stage",
+        messageId: quotedStageId,
+        text: quotedStageText,
+        anchorQuote: cropped ? quotedStageInner : quotedStageText,
+        leaves: [
+          { role: "label", quote: "安全评审" },
+          { role: "kind", quote: "审批", hint: "approval" },
+          {
+            role: "participant_mode",
+            quote: "申请人",
+            hint: "requester",
+          },
+        ],
+      });
+      assert.equal(
+        recoveredOperator(
+          assemble(
+            [fieldSymbol, quotedStage],
+            { [quotedStageId]: quotedStageText },
+          ),
+        ),
+        undefined,
+        `quoted stage ${index}:${cropped}`,
+      );
+    }
+  }
+
+
+  const metaPrefixes = [...new Set([
+    "示例",
+    "例子",
+    "例如",
+    "历史",
+    "歷史",
+    "供参考",
+    "供參考",
+    "参考资料",
+    "參考資料",
+    "背景资料",
+    "背景資料",
+    "示意",
+    "摘录",
+    "摘錄",
+    "原文",
+    "以下为引述",
+    "以下為引述",
+    "草稿",
+    "旧版",
+    "舊版",
+    "存档",
+    "存檔",
+    "演示",
+    "样本",
+    "樣本",
+    "假设",
+    "假設",
+    "备忘",
+    "備忘",
+    "转述",
+    "轉述",
+    "节选",
+    "節選",
+    "摘自",
+  ].flatMap((prefix) => [
+    "",
+    " ",
+    "\u200B",
+    "\u2060",
+    "\uFE00",
+    "\u0301",
+    "\u20DD",
+    "\u00AD",
+    "\t",
+  ].map((joiner) => Array.from(prefix).join(joiner))))];
+  for (const [index, prefix] of metaPrefixes.entries()) {
+    for (const [variantIndex, fieldText] of [
+      `${prefix}安全影响必填`,
+      `必填${prefix}、安全影响`,
+    ].entries()) {
+      const fieldId =
+        `condition-symbol-gate:meta-field:${index}:${variantIndex}`;
+      const metaField = located({
+        itemIndex: 930_000 + index * 10 + variantIndex,
+        kind: "request_field",
+        messageId: fieldId,
+        text: fieldText,
+        leaves: [
+          { role: "label", quote: "安全影响" },
+          { role: "required", quote: "必填", hint: "true" },
+        ],
+      });
+      assert.equal(
+        recoveredOperator(assemble(
+          [metaField, stageSymbol],
+          { [fieldId]: fieldText },
+        )),
+        undefined,
+        `meta field ${index}:${variantIndex}`,
+      );
+    }
+
+    const exactStageId = `condition-symbol-gate:meta-stage-exact:${index}`;
+    const exactStageText = `${prefix}：安全评审审批申请人`;
+    const exactStage = located({
+      itemIndex: 940_000 + index,
+      kind: "stage",
+      messageId: exactStageId,
+      text: exactStageText,
+      leaves: [
+        { role: "label", quote: "安全评审" },
+        { role: "kind", quote: "审批", hint: "approval" },
+        { role: "participant_mode", quote: "申请人", hint: "requester" },
+      ],
+    });
+    assert.equal(
+      recoveredOperator(assemble(
+        [fieldSymbol, exactStage],
+        { [exactStageId]: exactStageText },
+      )),
+      undefined,
+      `meta exact stage ${index}`,
+    );
+
+    const compositeStageId =
+      `condition-symbol-gate:meta-stage-composite:${index}`;
+    const compositeStageText =
+      `${prefix}：工程、商务和安全并行评审各自影响`;
+    const compositeStage = located({
+      itemIndex: 950_000 + index,
+      kind: "stage",
+      messageId: compositeStageId,
+      text: compositeStageText,
+      leaves: [
+        { role: "label", quote: "安全" },
+        { role: "kind", quote: "评审", hint: "review" },
+        { role: "participant", quote: "安全" },
+      ],
+    });
+    assert.equal(
+      recoveredOperator(assemble(
+        [fieldSymbol, compositeStage],
+        { [compositeStageId]: compositeStageText },
+      )),
+      undefined,
+      `meta composite stage ${index}`,
+    );
+  }
+
+  for (const [index, entry] of [
+    {
+      text: "工程、商务和安 全并行评审各自影响",
+      label: "安 全",
+      kind: "评审",
+    },
+    {
+      text: "工程、商务和安\u200B全并行评审各自影响",
+      label: "安\u200B全",
+      kind: "评审",
+    },
+    {
+      text: "工程、商务和安全并行评 审各自影响",
+      label: "安全",
+      kind: "评 审",
+    },
+    {
+      text: "工程、商务和安全并行评\u200B审各自影响",
+      label: "安全",
+      kind: "评\u200B审",
+    },
+  ].entries()) {
+    const stageId = `condition-symbol-gate:obscured-stage-part:${index}`;
+    const obscuredStage = located({
+      itemIndex: 960_000 + index,
+      kind: "stage",
+      messageId: stageId,
+      text: entry.text,
+      leaves: [
+        { role: "label", quote: entry.label },
+        { role: "kind", quote: entry.kind, hint: "review" },
+        { role: "participant", quote: entry.label },
+      ],
+    });
+    assert.equal(
+      recoveredOperator(assemble(
+        [fieldSymbol, obscuredStage],
+        { [stageId]: entry.text },
+      )),
+      undefined,
+      `obscured stage part ${index}`,
+    );
+  }
+});
+
+test("requires independently compiled adjacent authority units for the real SC-01 and SC-03 split conditions", () => {
+  const sc01Id = "condition-authority:sc01";
+  const sc01Text =
+    "安全影响为是时安全评审必须阻塞流程。成本增加超过港币一百万元走额外审批。紧急选项不能跳过审批。任何拒绝退回修改。";
+  const sc01Symbols = conditionAuthoritySymbols({
+    caseId: "sc01",
+    field: "安全影响",
+    route: "安全评审",
+  });
+  const sc01Items = [
+    ...sc01Symbols.items,
+    located({
+      itemIndex: 0,
+      kind: "condition",
+      messageId: sc01Id,
+      text: sc01Text,
+      anchorQuote: "安全影响为是时安全评审必须阻塞流程",
+      leaves: [
+        { role: "field", quote: "安全影响" },
+        { role: "operator", quote: "为", hint: "=" },
+        { role: "value", quote: "是" },
+        {
+          role: "matching_route",
+          quote: "安全评审",
+          hint: "stage_reference",
+        },
+      ],
+    }),
+    located({
+      itemIndex: 1,
+      kind: "condition",
+      messageId: sc01Id,
+      text: sc01Text,
+      anchorQuote: "成本增加超过港币一百万元走额外审批",
+      leaves: [
+        { role: "field", quote: "成本增加" },
+        { role: "operator", quote: "超过", hint: ">" },
+        { role: "value", quote: "一百万元" },
+        {
+          role: "matching_route",
+          quote: "额外审批",
+          hint: "unsupported_outcome",
+        },
+      ],
+    }),
+  ];
+  for (const items of [sc01Items, [...sc01Items].reverse()]) {
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: {
+        [sc01Id]: sc01Text,
+        ...sc01Symbols.sourceMessages,
+      },
+      items,
+    });
+    const split = result.review.items.find((item) =>
+      item.providerItemIndexes.includes(0)
+    );
+    assert.equal(split?.value.operator, "=", "SC-01 item order");
+    assert.equal(split?.semanticComplete, true, "SC-01 item order");
+  }
+
+  const sc03Id = "condition-authority:sc03";
+  const sc03Text =
+    "性能声明必须经过法务和产品审批。客户名称为是时增加客户经理。若目标地区不是香港，增加当地合规审查。拒绝退回修改。";
+  const sc03Symbols = conditionAuthoritySymbols({
+    caseId: "sc03",
+    field: "客户名称",
+    route: "客户经理",
+  });
+  const sc03StageSymbolId = "condition-authority:sc03:stage-symbol";
+  const sc03StageSymbolText = "涉及客户名称时客户经理也审批";
+  const sc03StageSymbol = located({
+    itemIndex: 900_020,
+    kind: "stage",
+    messageId: sc03StageSymbolId,
+    text: sc03StageSymbolText,
+    leaves: [
+      { role: "label", quote: "客户经理" },
+      { role: "kind", quote: "审批", hint: "approval" },
+      { role: "participant", quote: "客户经理" },
+    ],
+  });
+  const sc03SymbolItems = [sc03Symbols.items[0], sc03StageSymbol];
+  const sc03Items = [
+    ...sc03SymbolItems,
+    located({
+      itemIndex: 10,
+      kind: "condition",
+      messageId: sc03Id,
+      text: sc03Text,
+      anchorQuote: "客户名称为是时增加客户经理",
+      leaves: [
+        { role: "field", quote: "客户名称" },
+        { role: "operator", quote: "为", hint: "=" },
+        { role: "value", quote: "是" },
+        {
+          role: "matching_route",
+          quote: "客户经理",
+          hint: "stage_reference",
+        },
+      ],
+    }),
+    located({
+      itemIndex: 11,
+      kind: "stage",
+      slot: "conditions_exceptions",
+      messageId: sc03Id,
+      text: sc03Text,
+      anchorQuote: "性能声明必须经过法务和产品审批",
+      leaves: [
+        { role: "label", quote: "法务和产品" },
+        { role: "kind", quote: "审批", hint: "approval" },
+        { role: "participant", quote: "法务和产品" },
+      ],
+    }),
+    located({
+      itemIndex: 12,
+      kind: "condition",
+      messageId: sc03Id,
+      text: sc03Text,
+      anchorQuote: "若目标地区不是香港，增加当地合规审查",
+      leaves: [
+        { role: "field", quote: "目标地区" },
+        { role: "operator", quote: "不是", hint: "!=" },
+        { role: "value", quote: "香港" },
+        {
+          role: "matching_route",
+          quote: "当地合规审查",
+          hint: "stage_reference",
+        },
+      ],
+    }),
+  ];
+  for (const items of [sc03Items, [...sc03Items].reverse()]) {
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: {
+        [sc03Id]: sc03Text,
+        [sc03StageSymbolId]: sc03StageSymbolText,
+        ...sc03Symbols.sourceMessages,
+      },
+      items,
+    });
+    const split = result.review.items.find((item) =>
+      item.providerItemIndexes.includes(10)
+    );
+    assert.equal(split?.value.operator, "=", "SC-03 item order");
+    assert.equal(split?.semanticComplete, true, "SC-03 item order");
+  }
+  for (const omittedItemIndex of [11, 12]) {
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: {
+        [sc03Id]: sc03Text,
+        [sc03StageSymbolId]: sc03StageSymbolText,
+        ...sc03Symbols.sourceMessages,
+      },
+      items: sc03Items.filter(
+        (item) => item.itemIndex !== omittedItemIndex,
+      ),
+    });
+    const split = result.review.items.find((item) =>
+      item.providerItemIndexes.includes(10)
+    );
+    assert.equal(
+      split?.value.operator,
+      undefined,
+      "SC-03 missing " + omittedItemIndex,
+    );
+    assert.equal(split?.semanticComplete, false);
+  }
+});
+
+test("does not let incomplete, unsafe, remote, connector-led, or deferred siblings provide condition authority", () => {
+  const baseId = "condition-authority:unsafe-neighbor";
+  const baseText =
+    "安全影响为是时走安全评审。成本增加超过一百万元走额外审批";
+  const baseSymbols = conditionAuthoritySymbols({
+    caseId: "unsafe-neighbor",
+    field: "安全影响",
+    route: "安全评审",
+  });
+  const split = located({
+    itemIndex: 20,
+    kind: "condition",
+    messageId: baseId,
+    text: baseText,
+    anchorQuote: "安全影响为是时走安全评审",
+    leaves: [
+      { role: "field", quote: "安全影响" },
+      { role: "operator", quote: "为", hint: "=" },
+      { role: "value", quote: "是" },
+      {
+        role: "matching_route",
+        quote: "安全评审",
+        hint: "stage_reference",
+      },
+    ],
+  });
+  const neighbor = (overrides = {}) =>
+    located({
+      itemIndex: 21,
+      kind: "condition",
+      messageId: baseId,
+      text: baseText,
+      anchorQuote: "成本增加超过一百万元走额外审批",
+      leaves: [
+        { role: "field", quote: "成本增加" },
+        { role: "operator", quote: "超过", hint: ">" },
+        { role: "value", quote: "一百万元" },
+        {
+          role: "matching_route",
+          quote: "额外审批",
+          hint: "stage_reference",
+        },
+      ],
+      ...overrides,
+    });
+
+  const incomplete = neighbor({
+    leaves: [
+      { role: "field", quote: "成本增加" },
+      { role: "operator", quote: "超过", hint: ">" },
+      { role: "value", quote: "一百万元" },
+    ],
+  });
+  const unsafeNeighbors = [
+    incomplete,
+    neighbor({ ambiguity: "possible" }),
+    neighbor({ anchorExpanded: true }),
+    neighbor({
+      sameLocalClauseRecoveredLeafCount: 1,
+      leaves: [
+        { role: "field", quote: "成本增加" },
+        {
+          role: "operator",
+          quote: "超过",
+          hint: ">",
+          sameLocalClauseRecovered: true,
+        },
+        { role: "value", quote: "一百万元" },
+        {
+          role: "matching_route",
+          quote: "额外审批",
+          hint: "stage_reference",
+        },
+      ],
+    }),
+  ];
+  for (const [index, unsafeNeighbor] of unsafeNeighbors.entries()) {
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: {
+        [baseId]: baseText,
+        ...baseSymbols.sourceMessages,
+      },
+      items: [...baseSymbols.items, split, unsafeNeighbor],
+    });
+    const splitItem = result.review.items.find((item) =>
+      item.providerItemIndexes.includes(20)
+    );
+    assert.equal(splitItem?.value.operator, undefined, "unsafe " + index);
+    assert.equal(splitItem?.semanticComplete, false, "unsafe " + index);
+  }
+
+  for (const [index, entry] of [
+    {
+      text:
+        "安全影响为是时走安全评审。背景资料：成本增加超过一百万元走额外审批",
+      neighborAnchor: "背景资料：成本增加超过一百万元走额外审批",
+    },
+    {
+      text:
+        "安全影响为是时走安全评审。“成本增加超过一百万元走额外审批”",
+      neighborAnchor: "“成本增加超过一百万元走额外审批”",
+    },
+  ].entries()) {
+    const messageId = "condition-authority:meta-neighbor:" + index;
+    const symbols = conditionAuthoritySymbols({
+      caseId: "meta-neighbor:" + index,
+      field: "安全影响",
+      route: "安全评审",
+    });
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: {
+        [messageId]: entry.text,
+        ...symbols.sourceMessages,
+      },
+      items: [
+        ...symbols.items,
+        located({
+          itemIndex: 40 + index * 2,
+          kind: "condition",
+          messageId,
+          text: entry.text,
+          anchorQuote: "安全影响为是时走安全评审",
+          leaves: [
+            { role: "field", quote: "安全影响" },
+            { role: "operator", quote: "为", hint: "=" },
+            { role: "value", quote: "是" },
+            {
+              role: "matching_route",
+              quote: "安全评审",
+              hint: "stage_reference",
+            },
+          ],
+        }),
+        located({
+          itemIndex: 41 + index * 2,
+          kind: "condition",
+          messageId,
+          text: entry.text,
+          anchorQuote: entry.neighborAnchor,
+          leaves: [
+            { role: "field", quote: "成本增加" },
+            { role: "operator", quote: "超过", hint: ">" },
+            { role: "value", quote: "一百万元" },
+            {
+              role: "matching_route",
+              quote: "额外审批",
+              hint: "stage_reference",
+            },
+          ],
+        }),
+      ],
+    });
+    const splitItem = result.review.items.find((item) =>
+      item.providerItemIndexes.includes(40 + index * 2)
+    );
+    assert.equal(splitItem?.value.operator, undefined, "meta " + index);
+    assert.equal(splitItem?.semanticComplete, false, "meta " + index);
+  }
+
+  const stageMetaId = "condition-authority:stage-meta-neighbor";
+  const stageMetaText =
+    "背景资料：性能声明必须经过法务和产品审批。客户名称为是时增加客户经理";
+  const stageMetaSymbols = conditionAuthoritySymbols({
+    caseId: "stage-meta-neighbor",
+    field: "客户名称",
+    route: "客户经理",
+  });
+  const stageMetaResult = assembleTemplateCopilotV3Review({
+    sourceMessages: {
+      [stageMetaId]: stageMetaText,
+      ...stageMetaSymbols.sourceMessages,
+    },
+    items: [
+      ...stageMetaSymbols.items,
+      located({
+        itemIndex: 50,
+        kind: "condition",
+        messageId: stageMetaId,
+        text: stageMetaText,
+        anchorQuote: "客户名称为是时增加客户经理",
+        leaves: [
+          { role: "field", quote: "客户名称" },
+          { role: "operator", quote: "为", hint: "=" },
+          { role: "value", quote: "是" },
+          {
+            role: "matching_route",
+            quote: "客户经理",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+      located({
+        itemIndex: 51,
+        kind: "stage",
+        slot: "conditions_exceptions",
+        messageId: stageMetaId,
+        text: stageMetaText,
+        anchorQuote: "背景资料：性能声明必须经过法务和产品审批",
+        leaves: [
+          { role: "label", quote: "法务和产品" },
+          { role: "kind", quote: "审批", hint: "approval" },
+          { role: "participant", quote: "法务和产品" },
+        ],
+      }),
+    ],
+  });
+  const stageMetaSplit = stageMetaResult.review.items.find((item) =>
+    item.providerItemIndexes.includes(50)
+  );
+  assert.equal(stageMetaSplit?.value.operator, undefined);
+  assert.equal(stageMetaSplit?.semanticComplete, false);
+
+  for (const [index, stageUnit] of [
+    "法务仅供参考审批",
+    "仅供参考但必须经过法务审批",
+    "这是示例但必须经过法务审批",
+    "不要执行但必须经过法务审批",
+  ].entries()) {
+    const messageId = "condition-authority:stage-laundering:" + index;
+    const text = "安全影响为是时走安全评审。" + stageUnit;
+    const symbols = conditionAuthoritySymbols({
+      caseId: "stage-laundering:" + index,
+      field: "安全影响",
+      route: "安全评审",
+    });
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: {
+        [messageId]: text,
+        ...symbols.sourceMessages,
+      },
+      items: [
+        ...symbols.items,
+        located({
+          itemIndex: 60 + index * 2,
+          kind: "condition",
+          messageId,
+          text,
+          anchorQuote: "安全影响为是时走安全评审",
+          leaves: [
+            { role: "field", quote: "安全影响" },
+            { role: "operator", quote: "为", hint: "=" },
+            { role: "value", quote: "是" },
+            {
+              role: "matching_route",
+              quote: "安全评审",
+              hint: "stage_reference",
+            },
+          ],
+        }),
+        located({
+          itemIndex: 61 + index * 2,
+          kind: "stage",
+          slot: "conditions_exceptions",
+          messageId,
+          text,
+          anchorQuote: stageUnit,
+          leaves: [
+            { role: "label", quote: "法务" },
+            { role: "kind", quote: "审批", hint: "approval" },
+            { role: "participant", quote: "法务" },
+          ],
+        }),
+      ],
+    });
+    const target = result.review.items.find((item) =>
+      item.providerItemIndexes.includes(60 + index * 2)
+    );
+    assert.equal(target?.value.operator, undefined, "stage " + index);
+    assert.equal(target?.semanticComplete, false, "stage " + index);
+  }
+
+  for (const [index, entry] of [
+    {
+      neighbor: "仅供参考成本增加超过100走额外审批",
+      field: "仅供参考成本增加",
+      route: "额外审批",
+      routeHint: "stage_reference",
+    },
+    {
+      neighbor: "成本增加仅供参考超过100走额外审批",
+      field: "成本增加仅供参考",
+      route: "额外审批",
+      routeHint: "stage_reference",
+    },
+    {
+      neighbor: "成本增加超过100走仅供参考额外审批",
+      field: "成本增加",
+      route: "仅供参考额外审批",
+      routeHint: "stage_reference",
+    },
+    {
+      neighbor: "成本增加超过100走额外审批仅供参考",
+      field: "成本增加",
+      route: "额外审批仅供参考",
+      routeHint: "unsupported_outcome",
+    },
+    {
+      neighbor: "成本增加背景资料100走额外审批",
+      field: "成本增加",
+      operator: "背景资料",
+      operatorHint: "unsupported_predicate",
+      route: "额外审批",
+      routeHint: "stage_reference",
+    },
+    {
+      neighbor: "成本增加背 景 资 料100走额外审批",
+      field: "成本增加",
+      operator: "背 景 资 料",
+      operatorHint: "unsupported_predicate",
+      route: "额外审批",
+      routeHint: "stage_reference",
+    },
+    {
+      neighbor: "成本增加草稿100走额外审批",
+      field: "成本增加",
+      operator: "草稿",
+      operatorHint: "unsupported_predicate",
+      route: "额外审批",
+      routeHint: "stage_reference",
+    },
+    {
+      neighbor: "成本增加超过背景资料100走额外审批",
+      field: "成本增加",
+      value: "背景资料100",
+      route: "额外审批",
+      routeHint: "stage_reference",
+    },
+    {
+      neighbor: "成本增加超过背景资料100走额外审批",
+      field: "成本增加",
+      value: "100",
+      route: "额外审批",
+      routeHint: "stage_reference",
+    },
+    {
+      neighbor: "成本增加超过草稿100走额外审批",
+      field: "成本增加",
+      value: "100",
+      route: "额外审批",
+      routeHint: "stage_reference",
+    },
+    {
+      neighbor: "成本增加超过任意说明100走额外审批",
+      field: "成本增加",
+      value: "100",
+      route: "额外审批",
+      routeHint: "stage_reference",
+    },
+    {
+      neighbor: "[成本增加超过100走额外审批]",
+      field: "[成本增加",
+      route: "额外审批]",
+      routeHint: "stage_reference",
+    },
+    {
+      neighbor: "«成本增加超过100走额外审批»",
+      field: "«成本增加",
+      route: "额外审批»",
+      routeHint: "stage_reference",
+    },
+  ].entries()) {
+    const messageId = "condition-authority:swallowed-neighbor:" + index;
+    const text = "安全影响为是时走安全评审。" + entry.neighbor;
+    const symbols = conditionAuthoritySymbols({
+      caseId: "swallowed-neighbor:" + index,
+      field: "安全影响",
+      route: "安全评审",
+    });
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: {
+        [messageId]: text,
+        ...symbols.sourceMessages,
+      },
+      items: [
+        ...symbols.items,
+        located({
+          itemIndex: 200 + index * 2,
+          kind: "condition",
+          messageId,
+          text,
+          anchorQuote: "安全影响为是时走安全评审",
+          leaves: [
+            { role: "field", quote: "安全影响" },
+            { role: "operator", quote: "为", hint: "=" },
+            { role: "value", quote: "是" },
+            {
+              role: "matching_route",
+              quote: "安全评审",
+              hint: "stage_reference",
+            },
+          ],
+        }),
+        located({
+          itemIndex: 201 + index * 2,
+          kind: "condition",
+          messageId,
+          text,
+          anchorQuote: entry.neighbor,
+          leaves: [
+            { role: "field", quote: entry.field },
+            {
+              role: "operator",
+              quote: entry.operator ?? "超过",
+              hint: entry.operatorHint ?? ">",
+            },
+            { role: "value", quote: entry.value ?? "100" },
+            {
+              role: "matching_route",
+              quote: entry.route,
+              hint: entry.routeHint,
+            },
+          ],
+        }),
+      ],
+    });
+    const target = result.review.items.find((item) =>
+      item.providerItemIndexes.includes(200 + index * 2)
+    );
+    assert.equal(target?.value.operator, undefined, "condition " + index);
+    assert.equal(target?.semanticComplete, false, "condition " + index);
+  }
+
+  for (const [index, entry] of [
+    { unit: "法务仅供参考审批", actor: "法务仅供参考" },
+    { unit: "仅供参考法务审批", actor: "仅供参考法务" },
+    { unit: "示例法务审批", actor: "示例法务" },
+  ].entries()) {
+    const messageId = "condition-authority:swallowed-stage:" + index;
+    const text = "安全影响为是时走安全评审。" + entry.unit;
+    const symbols = conditionAuthoritySymbols({
+      caseId: "swallowed-stage:" + index,
+      field: "安全影响",
+      route: "安全评审",
+    });
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: {
+        [messageId]: text,
+        ...symbols.sourceMessages,
+      },
+      items: [
+        ...symbols.items,
+        located({
+          itemIndex: 300 + index * 2,
+          kind: "condition",
+          messageId,
+          text,
+          anchorQuote: "安全影响为是时走安全评审",
+          leaves: [
+            { role: "field", quote: "安全影响" },
+            { role: "operator", quote: "为", hint: "=" },
+            { role: "value", quote: "是" },
+            {
+              role: "matching_route",
+              quote: "安全评审",
+              hint: "stage_reference",
+            },
+          ],
+        }),
+        located({
+          itemIndex: 301 + index * 2,
+          kind: "stage",
+          slot: "conditions_exceptions",
+          messageId,
+          text,
+          anchorQuote: entry.unit,
+          leaves: [
+            { role: "label", quote: entry.actor },
+            { role: "kind", quote: "审批", hint: "approval" },
+            { role: "participant", quote: entry.actor },
+          ],
+        }),
+      ],
+    });
+    const target = result.review.items.find((item) =>
+      item.providerItemIndexes.includes(300 + index * 2)
+    );
+    assert.equal(target?.value.operator, undefined, "stage swallow " + index);
+    assert.equal(target?.semanticComplete, false, "stage swallow " + index);
+  }
+
+  const remoteId = "condition-authority:remote-neighbor";
+  const remoteText = "成本增加超过一百万元走额外审批";
+  const remoteNeighbor = located({
+    itemIndex: 22,
+    kind: "condition",
+    messageId: remoteId,
+    text: remoteText,
+    leaves: [
+      { role: "field", quote: "成本增加" },
+      { role: "operator", quote: "超过", hint: ">" },
+      { role: "value", quote: "一百万元" },
+      {
+        role: "matching_route",
+        quote: "额外审批",
+        hint: "stage_reference",
+      },
+    ],
+  });
+  const remoteResult = assembleTemplateCopilotV3Review({
+    sourceMessages: {
+      [baseId]: baseText,
+      [remoteId]: remoteText,
+      ...baseSymbols.sourceMessages,
+    },
+    items: [...baseSymbols.items, split, remoteNeighbor],
+  });
+  const remoteSplit = remoteResult.review.items.find((item) =>
+    item.providerItemIndexes.includes(20)
+  );
+  assert.equal(remoteSplit?.value.operator, undefined);
+  assert.equal(remoteSplit?.semanticComplete, false);
+
+  const connectorId = "condition-authority:connector";
+  const connectorText =
+    "安全影响为是时走安全评审。且成本增加超过一百万元走额外审批";
+  const connectorSymbols = conditionAuthoritySymbols({
+    caseId: "connector",
+    field: "安全影响",
+    route: "安全评审",
+  });
+  const connectorResult = assembleTemplateCopilotV3Review({
+    sourceMessages: {
+      [connectorId]: connectorText,
+      ...connectorSymbols.sourceMessages,
+    },
+    items: [
+      ...connectorSymbols.items,
+      located({
+        itemIndex: 23,
+        kind: "condition",
+        messageId: connectorId,
+        text: connectorText,
+        anchorQuote: "安全影响为是时走安全评审",
+        leaves: [
+          { role: "field", quote: "安全影响" },
+          { role: "operator", quote: "为", hint: "=" },
+          { role: "value", quote: "是" },
+          {
+            role: "matching_route",
+            quote: "安全评审",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+      located({
+        itemIndex: 24,
+        kind: "condition",
+        messageId: connectorId,
+        text: connectorText,
+        anchorQuote: "且成本增加超过一百万元走额外审批",
+        leaves: [
+          { role: "field", quote: "成本增加" },
+          { role: "operator", quote: "超过", hint: ">" },
+          { role: "value", quote: "一百万元" },
+          {
+            role: "matching_route",
+            quote: "额外审批",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+    ],
+  });
+  const connectorSplit = connectorResult.review.items.find((item) =>
+    item.providerItemIndexes.includes(23)
+  );
+  assert.equal(connectorSplit?.value.operator, undefined);
+  assert.equal(connectorSplit?.semanticComplete, false);
+
+  const circularId = "condition-authority:circular";
+  const circularText =
+    "安全影响为是时走安全评审。客户名称为是时增加客户经理。成本增加超过一百万元走额外审批";
+  const circularFirstSymbols = conditionAuthoritySymbols({
+    caseId: "circular:first",
+    field: "安全影响",
+    route: "安全评审",
+  });
+  const circularSecondSymbols = conditionAuthoritySymbols({
+    caseId: "circular:second",
+    field: "客户名称",
+    route: "客户经理",
+    itemIndexBase: 900_010,
+  });
+  const circularResult = assembleTemplateCopilotV3Review({
+    sourceMessages: {
+      [circularId]: circularText,
+      ...circularFirstSymbols.sourceMessages,
+      ...circularSecondSymbols.sourceMessages,
+    },
+    items: [
+      ...circularFirstSymbols.items,
+      ...circularSecondSymbols.items,
+      located({
+        itemIndex: 25,
+        kind: "condition",
+        messageId: circularId,
+        text: circularText,
+        anchorQuote: "安全影响为是时走安全评审",
+        leaves: [
+          { role: "field", quote: "安全影响" },
+          { role: "operator", quote: "为", hint: "=" },
+          { role: "value", quote: "是", occurrence: 0 },
+          {
+            role: "matching_route",
+            quote: "安全评审",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+      located({
+        itemIndex: 26,
+        kind: "condition",
+        messageId: circularId,
+        text: circularText,
+        anchorQuote: "客户名称为是时增加客户经理",
+        leaves: [
+          { role: "field", quote: "客户名称" },
+          { role: "operator", quote: "为", hint: "=", occurrence: 1 },
+          { role: "value", quote: "是", occurrence: 1 },
+          {
+            role: "matching_route",
+            quote: "客户经理",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+      located({
+        itemIndex: 27,
+        kind: "condition",
+        messageId: circularId,
+        text: circularText,
+        anchorQuote: "成本增加超过一百万元走额外审批",
+        leaves: [
+          { role: "field", quote: "成本增加" },
+          { role: "operator", quote: "超过", hint: ">" },
+          { role: "value", quote: "一百万元" },
+          {
+            role: "matching_route",
+            quote: "额外审批",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+    ],
+  });
+  for (const itemIndex of [25, 26]) {
+    const item = circularResult.review.items.find((candidate) =>
+      candidate.providerItemIndexes.includes(itemIndex)
+    );
+    assert.equal(item?.value.operator, undefined, "circular " + itemIndex);
+    assert.equal(item?.semanticComplete, false, "circular " + itemIndex);
+  }
+
+  const disguisedId = "condition-authority:disguised-circular";
+  const disguisedText =
+    "安全影响为是时走安全评审。客户名称为是时增加客户经理";
+  const disguisedSymbols = conditionAuthoritySymbols({
+    caseId: "disguised-circular",
+    field: "安全影响",
+    route: "安全评审",
+  });
+  const disguisedResult = assembleTemplateCopilotV3Review({
+    sourceMessages: {
+      [disguisedId]: disguisedText,
+      ...disguisedSymbols.sourceMessages,
+    },
+    items: [
+      ...disguisedSymbols.items,
+      located({
+        itemIndex: 80,
+        kind: "condition",
+        messageId: disguisedId,
+        text: disguisedText,
+        anchorQuote: "安全影响为是时走安全评审",
+        leaves: [
+          { role: "field", quote: "安全影响" },
+          { role: "operator", quote: "为", hint: "=" },
+          { role: "value", quote: "是", occurrence: 0 },
+          {
+            role: "matching_route",
+            quote: "安全评审",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+      located({
+        itemIndex: 81,
+        kind: "condition",
+        messageId: disguisedId,
+        text: disguisedText,
+        anchorQuote: "客户名称为是时增加客户经理",
+        leaves: [
+          { role: "field", quote: "客户名称" },
+          {
+            role: "operator",
+            quote: "为",
+            hint: "unsupported_predicate",
+            occurrence: 1,
+          },
+          { role: "value", quote: "是", occurrence: 1 },
+          {
+            role: "matching_route",
+            quote: "客户经理",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+    ],
+  });
+  const disguisedTarget = disguisedResult.review.items.find((item) =>
+    item.providerItemIndexes.includes(80)
+  );
+  assert.equal(disguisedTarget?.value.operator, undefined);
+  assert.equal(disguisedTarget?.semanticComplete, false);
+});
+
+test("treats a blank line as an authority block boundary", () => {
+  const messageId = "condition-authority:blank-block";
+  const text =
+    "任意非权威说明\n\n安全影响为是时安全评审必须阻塞流程";
+  const symbols = conditionAuthoritySymbols({
+    caseId: "blank-block",
+    field: "安全影响",
+    route: "安全评审",
+  });
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages: {
+      [messageId]: text,
+      ...symbols.sourceMessages,
+    },
+    items: [
+      ...symbols.items,
+      located({
+        itemIndex: 30,
+        kind: "condition",
+        messageId,
+        text,
+        anchorQuote: "安全影响为是时安全评审必须阻塞流程",
+        leaves: [
+          { role: "field", quote: "安全影响" },
+          { role: "operator", quote: "为", hint: "=" },
+          { role: "value", quote: "是" },
+          {
+            role: "matching_route",
+            quote: "安全评审",
+            hint: "stage_reference",
+          },
+        ],
+      }),
+    ],
+  });
+  const item = result.review.items.find((candidate) =>
+    candidate.providerItemIndexes.includes(30)
+  );
+  assert.equal(item?.value.operator, "=");
+  assert.equal(item?.semanticComplete, true);
+});
+
+
 test("keeps semantic aliases closed and advisory hints non-authoritative", () => {
   const cases = [
     { kind: "request_field", text: "purpose prerequisite", leaves: [

@@ -328,6 +328,36 @@ type Mapping =
   | Readonly<{ kind: "relationship" }>
   | Readonly<{ kind: "semantic_only" }>;
 
+type ConditionAuthorityUnit = Readonly<{
+  messageId: string;
+  startCodePoint: number;
+  endCodePoint: number;
+  terminatorEndCodePoint: number;
+  terminator: string;
+  blockIndex: number;
+  unitIndex: number;
+  balancedQuotes: boolean;
+}>;
+
+type OrdinaryDraft = Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem & {
+    kind: keyof typeof arrayFactByKind;
+  };
+  draft: Draft;
+  rejectionFree: boolean;
+}>;
+
+type ConditionAuthoritySymbols = Readonly<{
+  fieldLabels: ReadonlySet<string>;
+  stageReferences: ReadonlySet<string>;
+}>;
+
+const emptyConditionAuthoritySymbols: ConditionAuthoritySymbols =
+  Object.freeze({
+    fieldLabels: new Set<string>(),
+    stageReferences: new Set<string>(),
+  });
+
 export function assembleTemplateCopilotV3Review({ items, sourceMessages, sourceMessageOrder }: {
   items: readonly TemplateCopilotV3LocatedQuoteItem[];
   sourceMessages: Readonly<Record<string, string>>;
@@ -342,14 +372,63 @@ export function assembleTemplateCopilotV3Review({ items, sourceMessages, sourceM
   const drafts: Draft[] = [];
   const scalarFacts: TemplateCopilotV3SemanticReviewItem[] = [];
   const policyItems: TemplateCopilotV3SemanticReviewItem[] = [];
-  for (const item of [...items].sort((a, b) => compareSpans(a.anchor, b.anchor) || compareText(a.kind, b.kind) || a.itemIndex - b.itemIndex)) {
+  const ordinaryDrafts: OrdinaryDraft[] = [];
+  const deferredSplitConditions: Array<
+    TemplateCopilotV3LocatedQuoteItem & {
+      kind: keyof typeof arrayFactByKind;
+    }
+  > = [];
+  const orderedItems = [...items].sort((a, b) =>
+    compareSpans(a.anchor, b.anchor) || compareText(a.kind, b.kind) ||
+    a.itemIndex - b.itemIndex
+  );
+  for (const item of orderedItems) {
     if (Object.hasOwn(arrayFactByKind, item.kind)) {
-      const draft = compileArrayItem(item as TemplateCopilotV3LocatedQuoteItem & { kind: keyof typeof arrayFactByKind }, sourceMessages, compareSpans, rejections);
-      if (draft) drafts.push(draft);
+      const arrayItem = item as TemplateCopilotV3LocatedQuoteItem & {
+        kind: keyof typeof arrayFactByKind;
+      };
+      if (isSimplifiedCjkYesOperatorSplitShape(arrayItem)) {
+        deferredSplitConditions.push(arrayItem);
+        continue;
+      }
+      const rejectionCountBeforeCompile = rejections.length;
+      const draft = compileArrayItem(
+        arrayItem,
+        sourceMessages,
+        compareSpans,
+        rejections,
+      );
+      if (draft) {
+        drafts.push(draft);
+        ordinaryDrafts.push(Object.freeze({
+          item: arrayItem,
+          draft,
+          rejectionFree: rejections.length === rejectionCountBeforeCompile,
+        }));
+      }
     } else if (Object.hasOwn(semanticFactByKind, item.kind)) {
       const projected = compileSemanticItem(item as TemplateCopilotV3LocatedQuoteItem & { kind: keyof typeof semanticFactByKind }, sourceMessages, order, rejections);
       if (projected) (policyKinds.has(item.kind) ? policyItems : scalarFacts).push(projected);
     }
+  }
+  const conditionAuthorityCoverage = buildConditionAuthorityCoverage(
+    ordinaryDrafts,
+    sourceMessages,
+  );
+  const conditionAuthoritySymbols = buildConditionAuthoritySymbols(
+    ordinaryDrafts,
+    sourceMessages,
+  );
+  for (const item of deferredSplitConditions) {
+    const draft = compileArrayItem(
+      item,
+      sourceMessages,
+      compareSpans,
+      rejections,
+      conditionAuthorityCoverage,
+      conditionAuthoritySymbols,
+    );
+    if (draft) drafts.push(draft);
   }
   const groups = new Map<string, Draft[]>();
   for (const draft of drafts) {
@@ -410,13 +489,16 @@ function compileArrayItem(
   messages: Readonly<Record<string, string>>,
   compareSpans: (left: TemplateCopilotV3SourceSpan, right: TemplateCopilotV3SourceSpan) => number,
   rejections: TemplateCopilotV3ReviewRejection[],
+  conditionAuthorityCoverage: ReadonlySet<string> = new Set<string>(),
+  conditionAuthoritySymbols: ConditionAuthoritySymbols =
+    emptyConditionAuthoritySymbols,
 ): Draft | null {
   if (!validSpan(item.anchor, messages)) {
     rejections.push(rejection(item, "untraceable_span", `${item.kind}:anchor`));
     return null;
   }
   const factId = arrayFactByKind[item.kind];
-  const semanticContexts = semanticContextsForArrayItem(
+  let semanticContexts = semanticContextsForArrayItem(
     factId,
     item.anchor,
     messages,
@@ -426,6 +508,25 @@ function compileArrayItem(
       rejection(item, "untraceable_span", `${item.kind}:semantic_context`),
     );
     return null;
+  }
+  if (isDeferredSimplifiedCjkYesOperatorCandidate(item)) {
+    const field = item.leaves.find((leaf) => leaf.role === "field");
+    const matchingRoute = item.leaves.find(
+      (leaf) => leaf.role === "matching_route",
+    );
+    if (field && matchingRoute) {
+      const authorityEnvelope = deriveClosedConditionAuthorityEnvelope({
+        item,
+        field,
+        matchingRoute,
+        messages,
+        conditionAuthorityCoverage,
+        conditionAuthoritySymbols,
+      });
+      if (authorityEnvelope) {
+        semanticContexts = [authorityEnvelope.context];
+      }
+    }
   }
   const semanticAuthorityContexts = semanticAuthorityContextsForArrayItem(
     factId,
@@ -530,14 +631,18 @@ function compileArrayItem(
           item,
           supplied,
           messages,
-          semanticContexts,
           semanticAuthorityBlocked: draft.semanticAuthorityBlocked,
+          conditionAuthorityCoverage,
+          conditionAuthoritySymbols,
         });
       if (closedCjkYesOperator) {
-        evidenceSpan = closedCjkYesOperator.sourceSpan;
+        evidenceSpan = closedCjkYesOperator.observation.sourceSpan;
         derived = deriveLeaf(factId, mapping, supplied.hint, evidenceSpan);
         if (derived) {
-          draft.semanticObservations.push(closedCjkYesOperator);
+          draft.semanticObservations.push(closedCjkYesOperator.observation);
+          if (closedCjkYesOperator.authorityContext) {
+            draft.semanticContexts = [closedCjkYesOperator.authorityContext];
+          }
         }
       }
     }
@@ -829,17 +934,22 @@ function deriveClosedSimplifiedCjkYesOperatorObservation({
   item,
   supplied,
   messages,
-  semanticContexts,
   semanticAuthorityBlocked,
+  conditionAuthorityCoverage,
+  conditionAuthoritySymbols,
 }: Readonly<{
   item: TemplateCopilotV3LocatedQuoteItem & {
     kind: keyof typeof arrayFactByKind;
   };
   supplied: TemplateCopilotV3LocatedQuoteItem["leaves"][number];
   messages: Readonly<Record<string, string>>;
-  semanticContexts: readonly TemplateCopilotV3SourceSpan[];
   semanticAuthorityBlocked: boolean;
-}>): TemplateCopilotV3ReviewObservation | null {
+  conditionAuthorityCoverage: ReadonlySet<string>;
+  conditionAuthoritySymbols: ConditionAuthoritySymbols;
+}>): Readonly<{
+  observation: TemplateCopilotV3ReviewObservation;
+  authorityContext: TemplateCopilotV3SourceSpan | null;
+}> | null {
   if (
     item.kind !== "condition" ||
     item.slot !== "conditions_exceptions" ||
@@ -899,6 +1009,15 @@ function deriveClosedSimplifiedCjkYesOperatorObservation({
   const message = messages[messageId];
   if (typeof message !== "string") return null;
   const codePoints = Array.from(message);
+  const authorityEnvelope = deriveClosedConditionAuthorityEnvelope({
+    item,
+    field,
+    matchingRoute,
+    messages,
+    conditionAuthorityCoverage,
+    conditionAuthoritySymbols,
+  });
+  if (!authorityEnvelope) return null;
   const comparatorStart = field.sourceSpan.endCodePoint;
   const comparatorEnd = comparatorStart + 2;
   const operatorIsLeadingCopula = operator.sourceSpan.exactText === "为";
@@ -961,27 +1080,33 @@ function deriveClosedSimplifiedCjkYesOperatorObservation({
     advisoryHint: matchingRoute.hint,
     sourceSpan: matchingRoute.sourceSpan,
   });
-  const clause = semanticObservationClause(fieldObservation, semanticContexts);
+  const verificationSemanticContexts = [authorityEnvelope.context];
+  const clause = semanticObservationClause(
+    fieldObservation,
+    verificationSemanticContexts,
+  );
+  const normalizedClause = clause === null
+    ? ""
+    : templateCopilotV3NormalizeLexicalText(clause);
   if (
     clause === null ||
-    /(?:^|\b)(?:example|for example|e\.g\.|historical|previously quoted)(?:\b|$)|(?:示例|例子|例如|歷史|历史)/u
-      .test(templateCopilotV3NormalizeLexicalText(clause)) ||
+    conditionAuthorityTextIsIllustrativeMeta(normalizedClause) ||
     exactSemanticOccurrenceCount(clause, "为是") !== 1 ||
     !semanticHintIsVerified(
       "workflow.conditions",
       observation,
-      semanticContexts,
+      verificationSemanticContexts,
     ) ||
     !semanticHintIsVerified(
       "workflow.conditions",
       routeObservation,
-      semanticContexts,
+      verificationSemanticContexts,
     ) ||
     !semanticConditionPredicateGroupsHaveAffinity(
       [fieldObservation],
       [observation],
       [valueObservation],
-      semanticContexts,
+      verificationSemanticContexts,
     ) ||
     !semanticConditionRoutesHaveAffinity(
       [fieldObservation],
@@ -989,16 +1114,1319 @@ function deriveClosedSimplifiedCjkYesOperatorObservation({
       [valueObservation],
       [routeObservation],
       [],
-      semanticContexts,
+      verificationSemanticContexts,
     ) ||
     semanticConditionHasCompoundPredicateContext(
       [fieldObservation, observation, valueObservation, routeObservation],
-      semanticContexts,
+      verificationSemanticContexts,
     )
   ) {
     return null;
   }
-  return observation;
+  return Object.freeze({
+    observation,
+    authorityContext: authorityEnvelope.context,
+  });
+}
+
+const conditionAuthorityClosingByOpening = Object.freeze({
+  '"': '"',
+  "“": "”",
+  "‘": "’",
+  "「": "」",
+  "『": "』",
+} as const);
+
+const conditionAuthorityClosingQuotes = new Set<string>(
+  Object.values(conditionAuthorityClosingByOpening),
+);
+
+function isDeferredSimplifiedCjkYesOperatorCandidate(
+  item: TemplateCopilotV3LocatedQuoteItem & {
+    kind: keyof typeof arrayFactByKind;
+  },
+) {
+  if (
+    !isSimplifiedCjkYesOperatorSplitShape(item) ||
+    item.slot !== "conditions_exceptions" ||
+    item.ambiguity !== "none" ||
+    item.anchorExpanded === true ||
+    item.sameLocalClauseRecoveredLeafCount !== 0 ||
+    item.leaves.some((leaf) => leaf.sameLocalClauseRecovered === true)
+  ) {
+    return false;
+  }
+  const operators = item.leaves.filter((leaf) => leaf.role === "operator");
+  const matchingRoutes = item.leaves.filter(
+    (leaf) => leaf.role === "matching_route",
+  );
+  const operator = operators[0];
+  return (
+    operator?.hint === "=" &&
+    matchingRoutes[0]?.hint === "stage_reference"
+  );
+}
+
+function isSimplifiedCjkYesOperatorSplitShape(
+  item: TemplateCopilotV3LocatedQuoteItem & {
+    kind: keyof typeof arrayFactByKind;
+  },
+) {
+  if (item.kind !== "condition") return false;
+  const fields = item.leaves.filter((leaf) => leaf.role === "field");
+  const operators = item.leaves.filter((leaf) => leaf.role === "operator");
+  const values = item.leaves.filter((leaf) => leaf.role === "value");
+  const matchingRoutes = item.leaves.filter(
+    (leaf) => leaf.role === "matching_route",
+  );
+  const operator = operators[0];
+  return (
+    fields.length === 1 &&
+    operators.length === 1 &&
+    values.length === 1 &&
+    matchingRoutes.length === 1 &&
+    !item.leaves.some((leaf) => leaf.role === "otherwise_route") &&
+    (operator?.sourceSpan.exactText === "为" ||
+      operator?.sourceSpan.exactText === "是") &&
+    values[0]?.sourceSpan.exactText === "是"
+  );
+}
+
+function conditionAuthorityUnits(
+  messageId: string,
+  message: string,
+): readonly ConditionAuthorityUnit[] {
+  const codePoints = Array.from(message);
+  const units: ConditionAuthorityUnit[] = [];
+  const quoteStack: string[] = [];
+  let startCodePoint = 0;
+  let blockIndex = 0;
+  let unitIndex = 0;
+  let quoteError = false;
+  let previousBoundaryWasNewline = false;
+
+  const finish = (
+    endCodePoint: number,
+    terminatorEndCodePoint: number,
+    terminator: string,
+  ) => {
+    let trimmedStart = startCodePoint;
+    let trimmedEnd = endCodePoint;
+    while (
+      trimmedStart < trimmedEnd &&
+      /\s/u.test(codePoints[trimmedStart] ?? "")
+    ) {
+      trimmedStart += 1;
+    }
+    while (
+      trimmedEnd > trimmedStart &&
+      /\s/u.test(codePoints[trimmedEnd - 1] ?? "")
+    ) {
+      trimmedEnd -= 1;
+    }
+    const hasContent = trimmedEnd > trimmedStart;
+    if (hasContent) {
+      units.push(Object.freeze({
+        messageId,
+        startCodePoint: trimmedStart,
+        endCodePoint: trimmedEnd,
+        terminatorEndCodePoint,
+        terminator,
+        blockIndex,
+        unitIndex,
+        balancedQuotes: quoteStack.length === 0 && !quoteError,
+      }));
+      unitIndex += 1;
+    }
+    const newlineBoundary = /[\r\n]/u.test(terminator);
+    if (
+      newlineBoundary &&
+      previousBoundaryWasNewline &&
+      !hasContent
+    ) {
+      blockIndex += 1;
+    }
+    previousBoundaryWasNewline = newlineBoundary;
+    startCodePoint = terminatorEndCodePoint;
+    quoteError = false;
+  };
+
+  for (let index = 0; index < codePoints.length; index += 1) {
+    const character = codePoints[index] ?? "";
+    const expectedClosing =
+      conditionAuthorityClosingByOpening[
+        character as keyof typeof conditionAuthorityClosingByOpening
+      ];
+    if (expectedClosing !== undefined) {
+      if (expectedClosing === character && quoteStack.at(-1) === character) {
+        quoteStack.pop();
+      } else {
+        quoteStack.push(expectedClosing);
+      }
+      continue;
+    }
+    if (conditionAuthorityClosingQuotes.has(character)) {
+      if (quoteStack.at(-1) === character) quoteStack.pop();
+      else quoteError = true;
+      continue;
+    }
+    if (
+      quoteStack.length > 0 ||
+      !semanticHardClauseSeparator(character)
+    ) {
+      continue;
+    }
+    let terminator = character;
+    let terminatorEndCodePoint = index + 1;
+    if (
+      character === "\r" &&
+      codePoints[index + 1] === "\n"
+    ) {
+      terminator = "\r\n";
+      terminatorEndCodePoint += 1;
+      index += 1;
+    }
+    finish(
+      terminatorEndCodePoint - Array.from(terminator).length,
+      terminatorEndCodePoint,
+      terminator,
+    );
+  }
+  finish(codePoints.length, codePoints.length, "");
+  return Object.freeze(units);
+}
+
+function conditionAuthorityUnitKey(unit: ConditionAuthorityUnit) {
+  return stableJson([
+    unit.messageId,
+    unit.blockIndex,
+    unit.unitIndex,
+    unit.startCodePoint,
+    unit.endCodePoint,
+  ]);
+}
+
+function conditionAuthorityTerminatorIsDeclarative(
+  terminator: string,
+) {
+  return /^(?:|[.!。！]|\r?\n)$/u.test(terminator);
+}
+
+function conditionAnchorExactlyConsumesUnit(
+  anchor: TemplateCopilotV3SourceSpan,
+  unit: ConditionAuthorityUnit,
+) {
+  if (
+    anchor.messageId !== unit.messageId ||
+    anchor.startCodePoint !== unit.startCodePoint
+  ) {
+    return false;
+  }
+  if (anchor.endCodePoint === unit.endCodePoint) return true;
+  return (
+    /^[.!。！]$/u.test(unit.terminator) &&
+    anchor.endCodePoint === unit.terminatorEndCodePoint
+  );
+}
+
+function conditionAuthorityUnitForAnchor(
+  anchor: TemplateCopilotV3SourceSpan,
+  units: readonly ConditionAuthorityUnit[],
+) {
+  const matches = units.filter((unit) =>
+    conditionAnchorExactlyConsumesUnit(anchor, unit)
+  );
+  return matches.length === 1 ? matches[0] ?? null : null;
+}
+
+function conditionAuthoritySymbolTerminatorIsDeclarative(
+  terminator: string,
+) {
+  return /^(?:|[.!;。！；]|\r?\n)$/u.test(terminator);
+}
+
+function conditionAuthoritySymbolUnitForAnchor(
+  anchor: TemplateCopilotV3SourceSpan,
+  units: readonly ConditionAuthorityUnit[],
+) {
+  const matches = units.filter((unit) =>
+    anchor.messageId === unit.messageId &&
+    anchor.startCodePoint === unit.startCodePoint &&
+    (
+      anchor.endCodePoint === unit.endCodePoint ||
+      (
+        /^[.!;。！；]$/u.test(unit.terminator) &&
+        anchor.endCodePoint === unit.terminatorEndCodePoint
+      )
+    )
+  );
+  return matches.length === 1 ? matches[0] ?? null : null;
+}
+
+function conditionAuthorityUnitSpan(
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (typeof message !== "string") return null;
+  const exactText = Array.from(message)
+    .slice(unit.startCodePoint, unit.endCodePoint)
+    .join("");
+  const supplied = {
+    messageId: unit.messageId,
+    startCodePoint: unit.startCodePoint,
+    endCodePoint: unit.endCodePoint,
+    exactText,
+  };
+  const parsed = templateCopilotV3SourceSpanSchema.safeParse({
+    spanId: templateCopilotV3SourceSpanId(supplied),
+    ...supplied,
+  });
+  return parsed.success &&
+      validateTemplateCopilotV3SourceSpan(parsed.data, messages)
+    ? Object.freeze(parsed.data)
+    : null;
+}
+
+function conditionAuthorityUnitBeginsConnector(
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (typeof message !== "string") return true;
+  const normalized = templateCopilotV3NormalizeLexicalText(
+    Array.from(message)
+      .slice(unit.startCodePoint, unit.endCodePoint)
+      .join(""),
+  );
+  return /^(?:and|or|also|moreover|furthermore|then|but|while|whereas)\b|^(?:并且|並且|且|以及|和|与|與|或|同时|同時|另外|此外|然后|然後|并|並)/u
+    .test(normalized);
+}
+
+function ordinaryDraftHasClosedSemanticCore(
+  ordinary: OrdinaryDraft,
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const { item, draft } = ordinary;
+  if (
+    (draft.factId !== "workflow.conditions" &&
+      draft.factId !== "workflow.stages") ||
+    isSimplifiedCjkYesOperatorSplitShape(item) ||
+    item.ambiguity !== "none" ||
+    item.anchorExpanded === true ||
+    item.sameLocalClauseRecoveredLeafCount !== 0 ||
+    draft.semanticAuthorityBlocked ||
+    !unit.balancedQuotes ||
+    !conditionAuthorityTerminatorIsDeclarative(unit.terminator) ||
+    !conditionAnchorExactlyConsumesUnit(item.anchor, unit) ||
+    conditionAuthorityUnitBeginsConnector(unit, messages)
+  ) {
+    return false;
+  }
+  const context = conditionAuthorityUnitSpan(unit, messages);
+  if (!context) return false;
+  if (!conditionAuthorityStructuralTextIsClean(context.exactText)) {
+    return false;
+  }
+  const core = draft.semanticObservations.filter((observation) =>
+    semanticCoreRole(draft.factId, observation.role)
+  );
+  if (
+    core.length === 0 ||
+    core.some(
+      (observation) =>
+        observation.sourceSpan.messageId !== unit.messageId ||
+        observation.sourceSpan.startCodePoint < unit.startCodePoint ||
+        observation.sourceSpan.endCodePoint > unit.endCodePoint,
+    )
+  ) {
+    return false;
+  }
+  const subject = draft.semanticObservations.find(
+    (observation) => observation.role === "label",
+  ) ?? null;
+  if (
+    core.some((observation) =>
+      semanticObservationIsContradicted(
+        draft.factId,
+        observation,
+        [context],
+        [context],
+        subject,
+      )
+    )
+  ) {
+    return false;
+  }
+  if (draft.factId === "workflow.stages") {
+    if (
+      !ordinaryStageAuthorityUnitIsClosed(
+        draft.semanticObservations,
+        unit,
+        messages,
+      )
+    ) {
+      return false;
+    }
+    return semanticallyComplete(
+      draft.factId,
+      draft.semanticObservations,
+      [context],
+      draft.ambiguity,
+      false,
+      false,
+    );
+  }
+  const raw = (role: TemplateCopilotV3ProviderQuoteRole) =>
+    draft.semanticObservations.filter(
+      (observation) =>
+        observation.role === role &&
+        templateCopilotV3NormalizeTrimCollapseText(observation.quote).length >
+          0,
+    );
+  const fields = raw("field");
+  const operators = raw("operator").filter(
+    (observation) =>
+      semanticHintIsVerified(
+        draft.factId,
+        observation,
+        [context],
+      ),
+  );
+  const values = raw("value");
+  const matchingRoutes = raw("matching_route").filter(
+    (observation) =>
+      semanticHintIsVerified(
+        draft.factId,
+        observation,
+        [context],
+      ) ||
+      observation.advisoryHint === "unsupported_outcome",
+  );
+  const otherwiseRoutes = raw("otherwise_route").filter(
+    (observation) =>
+      semanticHintIsVerified(
+        draft.factId,
+        observation,
+        [context],
+      ) ||
+      observation.advisoryHint === "unsupported_outcome",
+  );
+  return (
+    fields.length === 1 &&
+    operators.length === 1 &&
+    values.length === 1 &&
+    matchingRoutes.length === 1 &&
+    ordinaryConditionAuthorityUnitIsClosed(
+      fields[0],
+      operators[0],
+      values[0],
+      matchingRoutes[0],
+      unit,
+      messages,
+    ) &&
+    semanticConditionPredicateGroupsHaveAffinity(
+      fields,
+      operators,
+      values,
+      [context],
+    ) &&
+    semanticConditionRoutesHaveAffinity(
+      fields,
+      operators,
+      values,
+      matchingRoutes,
+      otherwiseRoutes,
+      [context],
+    ) &&
+    !semanticConditionHasCompoundPredicateContext(
+      [...fields, ...operators, ...values, ...matchingRoutes, ...otherwiseRoutes],
+      [context],
+    )
+  );
+}
+
+function buildConditionAuthorityCoverage(
+  ordinaryDrafts: readonly OrdinaryDraft[],
+  messages: Readonly<Record<string, string>>,
+) {
+  const coverage = new Set<string>();
+  const unitCache = new Map<string, readonly ConditionAuthorityUnit[]>();
+  for (const ordinary of ordinaryDrafts) {
+    const messageId = ordinary.item.anchor.messageId;
+    const message = messages[messageId];
+    if (typeof message !== "string") continue;
+    let units = unitCache.get(messageId);
+    if (!units) {
+      units = conditionAuthorityUnits(messageId, message);
+      unitCache.set(messageId, units);
+    }
+    const unit = conditionAuthorityUnitForAnchor(
+      ordinary.item.anchor,
+      units,
+    );
+    if (
+      unit &&
+      ordinaryDraftHasClosedSemanticCore(ordinary, unit, messages)
+    ) {
+      coverage.add(conditionAuthorityUnitKey(unit));
+    }
+  }
+  return coverage;
+}
+
+function requestFieldConditionAuthoritySymbolHasClosedRequiredScope(
+  item: TemplateCopilotV3LocatedQuoteItem & {
+    kind: keyof typeof arrayFactByKind;
+  },
+  draft: Draft,
+  labelSpan: TemplateCopilotV3SourceSpan,
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  const requiredLeaves = item.leaves.filter(
+    (leaf) => leaf.role === "required" && leaf.hint === "true",
+  );
+  const requiredObservations = draft.semanticObservations.filter(
+    (observation) =>
+      observation.role === "required" &&
+      observation.advisoryHint === "true",
+  );
+  const requiredLeaf = requiredLeaves[0];
+  const requiredObservation = requiredObservations[0];
+  const derivedRequired = draft.leaves.get("/required");
+  if (
+    typeof message !== "string" ||
+    requiredLeaves.length !== 1 ||
+    requiredObservations.length !== 1 ||
+    !requiredLeaf ||
+    !requiredObservation ||
+    requiredLeaf.sourceSpan.exactText !== "必填" ||
+    requiredObservation.sourceSpan.spanId !== requiredLeaf.sourceSpan.spanId ||
+    derivedRequired?.value !== true ||
+    !derivedRequired.spans.some(
+      (span) => span.spanId === requiredLeaf.sourceSpan.spanId,
+    ) ||
+    requiredLeaf.sourceSpan.messageId !== unit.messageId ||
+    labelSpan.messageId !== unit.messageId
+  ) {
+    return false;
+  }
+  if (
+    labelSpan.startCodePoint === unit.startCodePoint &&
+    labelSpan.endCodePoint === requiredLeaf.sourceSpan.startCodePoint &&
+    requiredLeaf.sourceSpan.endCodePoint === unit.endCodePoint
+  ) {
+    return true;
+  }
+  if (
+    requiredLeaf.sourceSpan.startCodePoint !== unit.startCodePoint ||
+    requiredLeaf.sourceSpan.endCodePoint > labelSpan.startCodePoint
+  ) {
+    return false;
+  }
+  const codePoints = Array.from(message);
+  const fieldList = codePoints
+    .slice(requiredLeaf.sourceSpan.endCodePoint, unit.endCodePoint)
+    .join("");
+  if (
+    !/^[\p{Script=Han}\p{N}]+(?:[、，,][\p{Script=Han}\p{N}]+)*$/u
+      .test(fieldList)
+  ) {
+    return false;
+  }
+  const beforeLabel = codePoints[labelSpan.startCodePoint - 1] ?? "";
+  const afterLabel = codePoints[labelSpan.endCodePoint] ?? "";
+  return (
+    labelSpan.startCodePoint === requiredLeaf.sourceSpan.endCodePoint ||
+    /[、，,和及与與或]/u.test(beforeLabel)
+  ) && (
+    labelSpan.endCodePoint === unit.endCodePoint ||
+    /[、，,和及与與或]/u.test(afterLabel)
+  );
+}
+
+function conditionAuthorityCompositeStageReferenceIsClosed(
+  labelSpan: TemplateCopilotV3SourceSpan,
+  kindSpan: TemplateCopilotV3SourceSpan,
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (
+    typeof message !== "string" ||
+    labelSpan.messageId !== unit.messageId ||
+    kindSpan.messageId !== unit.messageId ||
+    labelSpan.startCodePoint < unit.startCodePoint ||
+    kindSpan.endCodePoint > unit.endCodePoint ||
+    labelSpan.endCodePoint > kindSpan.startCodePoint ||
+    !conditionAuthorityTextIsUnobscured(labelSpan.exactText) ||
+    !conditionAuthorityTextIsUnobscured(kindSpan.exactText) ||
+    !observations.some(
+      (observation) =>
+        observation.role === "participant" &&
+        observation.quote === labelSpan.exactText &&
+        observation.sourceSpan.spanId === labelSpan.spanId,
+    )
+  ) {
+    return false;
+  }
+  const codePoints = Array.from(message);
+  const exactUnit = codePoints
+    .slice(unit.startCodePoint, unit.endCodePoint)
+    .join("");
+  if (
+    exactSemanticOccurrenceCount(exactUnit, labelSpan.exactText) !== 1 ||
+    exactSemanticOccurrenceCount(exactUnit, kindSpan.exactText) !== 1
+  ) {
+    return false;
+  }
+  const actorListPrefix = codePoints
+    .slice(unit.startCodePoint, labelSpan.startCodePoint)
+    .join("");
+  const relationship = codePoints
+    .slice(labelSpan.endCodePoint, kindSpan.startCodePoint)
+    .join("");
+  const scope = codePoints
+    .slice(kindSpan.endCodePoint, unit.endCodePoint)
+    .join("");
+  return (
+    actorListPrefix === "" ||
+    /^(?:[\p{Script=Han}\p{N}]+、)*[\p{Script=Han}\p{N}]+(?:和|及|与|與)$/u
+      .test(actorListPrefix)
+  ) && relationship === "并行" && scope === "各自影响";
+}
+
+function conditionAuthorityExactStageReferenceIsClosed(
+  labelSpan: TemplateCopilotV3SourceSpan,
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (
+    typeof message !== "string" ||
+    labelSpan.messageId !== unit.messageId ||
+    labelSpan.startCodePoint < unit.startCodePoint ||
+    labelSpan.endCodePoint > unit.endCodePoint
+  ) {
+    return false;
+  }
+  const codePoints = Array.from(message);
+  const exactUnit = codePoints
+    .slice(unit.startCodePoint, unit.endCodePoint)
+    .join("");
+  if (exactSemanticOccurrenceCount(exactUnit, labelSpan.exactText) !== 1) {
+    return false;
+  }
+  const sameParticipant = observations.some(
+    (observation) =>
+      observation.role === "participant" &&
+      observation.quote === labelSpan.exactText &&
+      observation.sourceSpan.spanId === labelSpan.spanId,
+  );
+  const participantModes = observations.filter(
+    (observation) =>
+      observation.role === "participant_mode" &&
+      observation.sourceSpan.messageId === unit.messageId &&
+      observation.sourceSpan.startCodePoint >= unit.startCodePoint &&
+      observation.sourceSpan.endCodePoint <= unit.endCodePoint &&
+      conditionAuthorityTextIsUnobscured(observation.quote),
+  );
+  if (!sameParticipant && participantModes.length === 0) return false;
+  for (const kind of observations.filter(
+    (observation) => observation.role === "kind",
+  )) {
+    if (
+      kind.sourceSpan.messageId !== unit.messageId ||
+      kind.sourceSpan.startCodePoint < labelSpan.endCodePoint ||
+      kind.sourceSpan.endCodePoint > unit.endCodePoint ||
+      !conditionAuthorityTextIsUnobscured(kind.quote) ||
+      exactSemanticOccurrenceCount(exactUnit, kind.quote) !== 1
+    ) {
+      continue;
+    }
+    const prefix = codePoints
+      .slice(unit.startCodePoint, labelSpan.startCodePoint)
+      .join("");
+    const bridge = codePoints
+      .slice(labelSpan.endCodePoint, kind.sourceSpan.startCodePoint)
+      .join("");
+    const suffix = codePoints
+      .slice(kind.sourceSpan.endCodePoint, unit.endCodePoint)
+      .join("");
+    const prefixIsClosed = prefix === "" ||
+      /^(?:涉及[\p{Script=Han}\p{N}]+时|之后|然后|随后|由|再由)$/u
+        .test(prefix);
+    const bridgeIsClosed = /^(?:|先|再|也)$/u.test(bridge);
+    const suffixIsClosed = sameParticipant
+      ? suffix === ""
+      : participantModes.some(
+        (mode) =>
+          mode.sourceSpan.startCodePoint === kind.sourceSpan.endCodePoint &&
+          mode.sourceSpan.endCodePoint === unit.endCodePoint &&
+          suffix === mode.quote,
+      );
+    if (prefixIsClosed && bridgeIsClosed && suffixIsClosed) return true;
+  }
+  return false;
+}
+
+function buildConditionAuthoritySymbols(
+  ordinaryDrafts: readonly OrdinaryDraft[],
+  messages: Readonly<Record<string, string>>,
+): ConditionAuthoritySymbols {
+  const fieldCandidates = new Map<string, Set<string>>();
+  const stageCandidates = new Map<string, Set<string>>();
+  for (const ordinary of ordinaryDrafts) {
+    const { item, draft, rejectionFree } = ordinary;
+    const isField = item.kind === "request_field" &&
+      item.slot === "initiators_fields";
+    const isStage = item.kind === "stage" &&
+      item.slot === "stages_participants";
+    if (
+      (!isField && !isStage) ||
+      !rejectionFree ||
+      item.ambiguity !== "none" ||
+      item.anchorExpanded === true ||
+      item.sameLocalClauseRecoveredLeafCount !== 0 ||
+      item.leaves.some((leaf) => leaf.sameLocalClauseRecovered === true) ||
+      draft.semanticAuthorityBlocked ||
+      !semanticallyComplete(
+        draft.factId,
+        draft.semanticObservations,
+        draft.semanticContexts,
+        draft.ambiguity,
+        false,
+        draft.semanticAuthorityBlocked,
+      )
+    ) {
+      continue;
+    }
+    const suppliedLabels = item.leaves.filter((leaf) => leaf.role === "label");
+    const observedLabels = draft.semanticObservations.filter(
+      (observation) => observation.role === "label",
+    );
+    const label = suppliedLabels[0];
+    const observation = observedLabels[0];
+    const derived = draft.leaves.get("/label");
+    const message = messages[item.anchor.messageId];
+    const symbolUnit = typeof message === "string"
+      ? conditionAuthoritySymbolUnitForAnchor(
+        item.anchor,
+        conditionAuthorityUnits(item.anchor.messageId, message),
+      )
+      : null;
+    const symbolContext = symbolUnit
+      ? conditionAuthorityUnitSpan(symbolUnit, messages)
+      : null;
+    if (
+      suppliedLabels.length !== 1 ||
+      observedLabels.length !== 1 ||
+      !label ||
+      !observation ||
+      !symbolUnit ||
+      !symbolContext ||
+      !symbolUnit.balancedQuotes ||
+      !conditionAuthoritySymbolTerminatorIsDeclarative(
+        symbolUnit.terminator,
+      ) ||
+      conditionAuthorityUnitBeginsConnector(symbolUnit, messages) ||
+      !conditionAuthoritySymbolTextHasClosedEdges(symbolContext.exactText) ||
+      !conditionAuthorityTextIsUnobscured(symbolContext.exactText) ||
+      conditionAuthorityTextBeforeTrustedSpanIsIllustrativeMeta(
+        symbolUnit,
+        label.sourceSpan,
+        messages,
+      ) ||
+      templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority(
+        templateCopilotV3NormalizeLexicalText(symbolContext.exactText),
+      ) ||
+      typeof derived?.value !== "string" ||
+      derived.value !== label.sourceSpan.exactText ||
+      observation.sourceSpan.spanId !== label.sourceSpan.spanId ||
+      exactSemanticOccurrenceCount(
+        item.anchor.exactText,
+        label.sourceSpan.exactText,
+      ) !== 1 ||
+      !conditionAuthorityTextIsUnobscured(label.sourceSpan.exactText) ||
+      Array.from(label.sourceSpan.exactText).some((character) =>
+        semanticHardClauseSeparator(character)
+      ) ||
+      templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority(
+        templateCopilotV3NormalizeLexicalText(label.sourceSpan.exactText),
+      )
+    ) {
+      continue;
+    }
+    if (
+      isField &&
+      !requestFieldConditionAuthoritySymbolHasClosedRequiredScope(
+        item,
+        draft,
+        label.sourceSpan,
+        symbolUnit,
+        messages,
+      )
+    ) {
+      continue;
+    }
+    const signature = stableJson([
+      item.anchor.spanId,
+      canonicalDraftContentKey(draft),
+    ]);
+    const candidates = (isField ? fieldCandidates : stageCandidates);
+    const aliases = new Set<string>();
+    if (
+      isField ||
+      conditionAuthorityExactStageReferenceIsClosed(
+        label.sourceSpan,
+        draft.semanticObservations,
+        symbolUnit,
+        messages,
+      )
+    ) {
+      aliases.add(label.sourceSpan.exactText);
+    }
+    if (isStage) {
+      // A CJK condition may name a stage as its accepted label plus its exact
+      // accepted kind (for example 安全 + 评审). Keep that reference closed to
+      // two clean observations from the same independently compiled stage.
+      for (const kind of draft.semanticObservations.filter(
+        (entry) => entry.role === "kind",
+      )) {
+        const labelText = templateCopilotV3NormalizeTrimCollapseText(
+          label.sourceSpan.exactText,
+        );
+        const kindText = templateCopilotV3NormalizeTrimCollapseText(
+          kind.quote,
+        );
+        if (
+          labelText.length > 0 &&
+          kindText.length > 0 &&
+          labelText.length + kindText.length <= 64 &&
+          labelText === label.sourceSpan.exactText &&
+          kindText === kind.quote &&
+          /^[\p{Script=Han}\p{N}]+$/u.test(labelText) &&
+          /^[\p{Script=Han}\p{N}]+$/u.test(kindText) &&
+          conditionAuthorityCompositeStageReferenceIsClosed(
+            label.sourceSpan,
+            kind.sourceSpan,
+            draft.semanticObservations,
+            symbolUnit,
+            messages,
+          )
+        ) {
+          aliases.add(
+            labelText.endsWith(kindText)
+              ? labelText
+              : labelText + kindText,
+          );
+        }
+      }
+    }
+    for (const alias of aliases) {
+      const current = candidates.get(alias) ?? new Set<string>();
+      current.add(signature);
+      candidates.set(alias, current);
+    }
+  }
+  const uniqueLabels = (candidates: ReadonlyMap<string, ReadonlySet<string>>) =>
+    new Set(
+      [...candidates.entries()]
+        .filter(([, signatures]) => signatures.size === 1)
+        .map(([label]) => label),
+    );
+  return Object.freeze({
+    fieldLabels: uniqueLabels(fieldCandidates),
+    stageReferences: uniqueLabels(stageCandidates),
+  });
+}
+
+function conditionAdjacentAuthorityUnitsAreCovered(
+  units: readonly ConditionAuthorityUnit[],
+  target: ConditionAuthorityUnit,
+  coverage: ReadonlySet<string>,
+  messages: Readonly<Record<string, string>>,
+) {
+  const targetKey = conditionAuthorityUnitKey(target);
+  const targetIndex = units.findIndex(
+    (unit) => conditionAuthorityUnitKey(unit) === targetKey,
+  );
+  if (targetIndex < 0) return false;
+  for (const offset of [-1, 1]) {
+    const adjacent = units[targetIndex + offset];
+    if (!adjacent || adjacent.blockIndex !== target.blockIndex) continue;
+    if (
+      conditionAuthorityUnitBeginsConnector(adjacent, messages) ||
+      !coverage.has(conditionAuthorityUnitKey(adjacent))
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function conditionAuthorityIntroducerIsClosed(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return normalized === "" ||
+    /^(?:if|when|whenever|如果|若|当|當|每当|每當)$/u.test(normalized);
+}
+
+function conditionAuthorityRouteTailIsClosed(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return normalized === "" ||
+    /^(?:(?:must|shall|will|has\s+to|is\s+required\s+to)\s+)?(?:block|stop|pause)(?:\s+the)?\s+(?:workflow|process)$/u
+      .test(normalized) ||
+    /^(?:(?:必须|須|须|需|應|应|应该)\s*)?(?:阻塞|暫停|暂停|停止)(?:該|该|本)?(?:流程|工作流)$/u
+      .test(normalized);
+}
+
+function conditionAuthorityEmptyGapIsClosed(value: string) {
+  return conditionAuthorityTextIsUnobscured(value) &&
+    templateCopilotV3NormalizeLexicalText(value) === "";
+}
+
+function conditionAuthorityOperatorValueGapIsClosed(value: string) {
+  if (!conditionAuthorityStructuralTextIsClean(value)) return false;
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return /^(?:|港币|港幣|人民币|人民幣|美元|欧元|歐元|hkd|rmb|cny|usd|eur|hk\$|us\$|[$¥￥])$/u
+    .test(normalized);
+}
+
+function conditionAuthorityValueRouteGapIsClosed(value: string) {
+  if (!conditionAuthorityStructuralTextIsClean(value)) return false;
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return /^(?:[,，])?(?:(?:时|時)(?:则|則)?)?(?:走|增加|加入|转至|轉至|送至|进入|進入|触发|觸發)$/u
+      .test(normalized) ||
+    /^(?:then\s+)?(?:routes?|sends?|goes?)\s+to$/u.test(normalized);
+}
+
+function ordinaryConditionAuthorityUnitIsClosed(
+  field: TemplateCopilotV3ReviewObservation | undefined,
+  operator: TemplateCopilotV3ReviewObservation | undefined,
+  value: TemplateCopilotV3ReviewObservation | undefined,
+  matchingRoute: TemplateCopilotV3ReviewObservation | undefined,
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (
+    typeof message !== "string" ||
+    !field ||
+    !operator ||
+    !value ||
+    !matchingRoute ||
+    field.sourceSpan.messageId !== unit.messageId ||
+    operator.sourceSpan.messageId !== unit.messageId ||
+    value.sourceSpan.messageId !== unit.messageId ||
+    matchingRoute.sourceSpan.messageId !== unit.messageId
+  ) {
+    return false;
+  }
+  if (
+    !conditionAuthorityObservationTextIsClean(field.quote) ||
+    !conditionAuthorityStructuralTextIsClean(operator.quote) ||
+    !conditionAuthorityStructuralTextIsClean(value.quote) ||
+    !conditionAuthorityObservationTextIsClean(matchingRoute.quote)
+  ) {
+    return false;
+  }
+  const codePoints = Array.from(message);
+  if (
+    field.sourceSpan.endCodePoint > operator.sourceSpan.startCodePoint ||
+    operator.sourceSpan.endCodePoint > value.sourceSpan.startCodePoint ||
+    value.sourceSpan.endCodePoint > matchingRoute.sourceSpan.startCodePoint
+  ) {
+    return false;
+  }
+  return conditionAuthorityIntroducerIsClosed(
+    codePoints
+      .slice(unit.startCodePoint, field.sourceSpan.startCodePoint)
+      .join(""),
+  ) && conditionAuthorityEmptyGapIsClosed(
+    codePoints
+      .slice(field.sourceSpan.endCodePoint, operator.sourceSpan.startCodePoint)
+      .join(""),
+  ) && conditionAuthorityOperatorValueGapIsClosed(
+    codePoints
+      .slice(operator.sourceSpan.endCodePoint, value.sourceSpan.startCodePoint)
+      .join(""),
+  ) && conditionAuthorityValueRouteGapIsClosed(
+    codePoints
+      .slice(value.sourceSpan.endCodePoint, matchingRoute.sourceSpan.startCodePoint)
+      .join(""),
+  ) && conditionAuthorityRouteTailIsClosed(
+    codePoints
+      .slice(matchingRoute.sourceSpan.endCodePoint, unit.endCodePoint)
+      .join(""),
+  );
+}
+
+function ordinaryStageAuthorityUnitIsClosed(
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (typeof message !== "string") return false;
+  const exactUnitText = Array.from(message)
+    .slice(unit.startCodePoint, unit.endCodePoint)
+    .join("");
+  if (!conditionAuthorityStructuralTextIsClean(exactUnitText)) return false;
+  if (
+    observations
+      .filter((observation) =>
+        observation.role === "label" ||
+        observation.role === "kind" ||
+        observation.role === "participant" ||
+        observation.role === "participant_mode"
+      )
+      .some((observation) =>
+        !conditionAuthorityObservationTextIsClean(observation.quote)
+      )
+  ) {
+    return false;
+  }
+  const unitText = templateCopilotV3NormalizeLexicalText(
+    exactUnitText,
+  ).replace(/\s/gu, "");
+  const kinds = observations
+    .filter((observation) => observation.role === "kind")
+    .map((observation) =>
+      templateCopilotV3NormalizeLexicalText(observation.quote)
+        .replace(/\s/gu, "")
+    )
+    .filter(Boolean);
+  const actors = observations
+    .filter(
+      (observation) =>
+        observation.role === "label" ||
+        observation.role === "participant" ||
+        observation.role === "participant_mode",
+    )
+    .map((observation) =>
+      templateCopilotV3NormalizeLexicalText(observation.quote)
+        .replace(/\s/gu, "")
+    )
+    .filter(Boolean);
+  if (kinds.length === 0 || actors.length === 0) return false;
+  for (const kind of kinds) {
+    for (const actor of actors) {
+      if (
+        unitText === actor + kind ||
+        unitText === kind + actor ||
+        unitText === "性能声明必须经过" + actor + kind ||
+        unitText === "性能聲明必須經過" + actor + kind
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function conditionAuthorityWrapperIsClosed(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return /^(?:enforce|apply|execute) the following quoted requirement$/u
+      .test(normalized) ||
+    /^(?:引用|引述)(?:并|並)(?:执行|執行)以下要求$/u.test(normalized);
+}
+
+function conditionAuthorityContainsQuoteDelimiter(value: string) {
+  return /["'`<>＜＞＂＇〝〞❝❞❛❜｟｠⟪⟫﹁﹂]|[\u2032-\u2037\u2057]|[\p{Pi}\p{Pf}\p{Ps}\p{Pe}]/u
+    .test(value);
+}
+
+function conditionAuthoritySymbolTextHasClosedEdges(value: string) {
+  const codePoints = Array.from(value.trim());
+  return codePoints.length > 0 &&
+    /[\p{L}\p{N}]/u.test(codePoints[0] ?? "") &&
+    /[\p{L}\p{N}]/u.test(codePoints.at(-1) ?? "");
+}
+
+function conditionAuthorityTextIsIllustrativeMeta(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  const compactCjk = conditionAuthorityCjkSecurityFold(value);
+  return /(?:^|\b)(?:example|for example|e\.g\.|historical|previously quoted|draft|archived?|demo|sample|hypothetical|memo|retelling|excerpt(?:ed)?)(?:\b|$)/u
+    .test(normalized) ||
+    /(?:示例|例子|例如|歷史|历史|供參考|供参考|參考資料|参考资料|背景資料|背景资料|示意|摘錄|摘录|原文|以下為引述|以下为引述|草稿|舊版|旧版|存檔|存档|演示|樣本|样本|假設|假设|備忘|备忘|轉述|转述|節選|节选|摘自)/u
+      .test(compactCjk);
+}
+
+function conditionAuthorityCjkSecurityFold(value: string) {
+  return value.normalize("NFKD")
+    .replace(
+      /[\p{White_Space}\p{Default_Ignorable_Code_Point}\p{M}\u00AD]+/gu,
+      "",
+    );
+}
+
+function conditionAuthorityTextHasObscuringCharacters(value: string) {
+  return /[\p{Cc}\p{Cf}\p{M}\p{Default_Ignorable_Code_Point}\u00AD]/u
+      .test(value) ||
+    /[\p{Script=Han}]\p{White_Space}+[\p{Script=Han}]/u.test(value);
+}
+
+function conditionAuthorityTextIsUnobscured(value: string) {
+  return !conditionAuthorityContainsQuoteDelimiter(value) &&
+    !conditionAuthorityTextHasObscuringCharacters(value);
+}
+
+function conditionAuthorityStructuralTextIsClean(value: string) {
+  return conditionAuthorityTextIsUnobscured(value) &&
+    !conditionAuthorityTextIsIllustrativeMeta(value);
+}
+
+function conditionAuthorityTextBeforeTrustedSpanIsIllustrativeMeta(
+  unit: ConditionAuthorityUnit,
+  trustedSpan: TemplateCopilotV3SourceSpan,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (
+    typeof message !== "string" ||
+    trustedSpan.messageId !== unit.messageId ||
+    trustedSpan.startCodePoint < unit.startCodePoint ||
+    trustedSpan.endCodePoint > unit.endCodePoint
+  ) {
+    return true;
+  }
+  const codePoints = Array.from(message);
+  const prefix = codePoints
+    .slice(unit.startCodePoint, trustedSpan.startCodePoint)
+    .join("");
+  return conditionAuthorityTextIsIllustrativeMeta(prefix);
+}
+
+function conditionAuthorityObservationTextIsClean(value: string) {
+  return conditionAuthorityStructuralTextIsClean(value) &&
+    !templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority(
+      templateCopilotV3NormalizeLexicalText(value),
+    );
+}
+
+function conditionAuthorityContextSpan(
+  messageId: string,
+  startCodePoint: number,
+  endCodePoint: number,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[messageId];
+  if (typeof message !== "string" || endCodePoint <= startCodePoint) {
+    return null;
+  }
+  const exactText = Array.from(message)
+    .slice(startCodePoint, endCodePoint)
+    .join("");
+  const supplied = {
+    messageId,
+    startCodePoint,
+    endCodePoint,
+    exactText,
+  };
+  const parsed = templateCopilotV3SourceSpanSchema.safeParse({
+    spanId: templateCopilotV3SourceSpanId(supplied),
+    ...supplied,
+  });
+  return parsed.success &&
+      validateTemplateCopilotV3SourceSpan(parsed.data, messages)
+    ? Object.freeze(parsed.data)
+    : null;
+}
+
+function deriveClosedConditionAuthorityEnvelope({
+  item,
+  field,
+  matchingRoute,
+  messages,
+  conditionAuthorityCoverage,
+  conditionAuthoritySymbols,
+}: Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem & {
+    kind: keyof typeof arrayFactByKind;
+  };
+  field: TemplateCopilotV3LocatedQuoteItem["leaves"][number];
+  matchingRoute: TemplateCopilotV3LocatedQuoteItem["leaves"][number];
+  messages: Readonly<Record<string, string>>;
+  conditionAuthorityCoverage: ReadonlySet<string>;
+  conditionAuthoritySymbols: ConditionAuthoritySymbols;
+}>): Readonly<{
+  context: TemplateCopilotV3SourceSpan;
+  unit: ConditionAuthorityUnit;
+}> | null {
+  const messageId = item.anchor.messageId;
+  const message = messages[messageId];
+  if (typeof message !== "string") return null;
+  const codePoints = Array.from(message);
+  if (
+    item.leaves.length !== 4 ||
+    item.leaves.some((leaf) => leaf.sameLocalClauseRecovered === true) ||
+    !conditionAuthoritySymbols.fieldLabels.has(field.sourceSpan.exactText) ||
+    !conditionAuthoritySymbols.stageReferences.has(
+      matchingRoute.sourceSpan.exactText,
+    )
+  ) {
+    return null;
+  }
+  const units = conditionAuthorityUnits(messageId, message);
+  const unit = conditionAuthorityUnitForAnchor(item.anchor, units);
+  if (
+    !unit ||
+    !unit.balancedQuotes ||
+    !conditionAuthorityTerminatorIsDeclarative(unit.terminator) ||
+    !conditionAdjacentAuthorityUnitsAreCovered(
+      units,
+      unit,
+      conditionAuthorityCoverage,
+      messages,
+    )
+  ) {
+    return null;
+  }
+
+  const unitCodePoints = codePoints.slice(
+    unit.startCodePoint,
+    unit.endCodePoint,
+  );
+  const colonIndex = unitCodePoints.findIndex(
+    (character) => character === ":" || character === "：",
+  );
+  let payloadStartCodePoint = unit.startCodePoint;
+  let payloadEndCodePoint = unit.endCodePoint;
+  let governingWrapper = false;
+
+  if (colonIndex >= 0) {
+    const wrapper = unitCodePoints.slice(0, colonIndex).join("");
+    if (conditionAuthorityWrapperIsClosed(wrapper)) {
+      governingWrapper = true;
+      let payloadStart = colonIndex + 1;
+      while (
+        payloadStart < unitCodePoints.length &&
+        /\s/u.test(unitCodePoints[payloadStart] ?? "")
+      ) {
+        payloadStart += 1;
+      }
+      const opening = unitCodePoints[payloadStart] ?? "";
+      const closing =
+        conditionAuthorityClosingByOpening[
+          opening as keyof typeof conditionAuthorityClosingByOpening
+        ];
+      if (closing !== undefined) {
+        let closingIndex = unitCodePoints.length - 1;
+        while (
+          closingIndex > payloadStart &&
+          /\s/u.test(unitCodePoints[closingIndex] ?? "")
+        ) {
+          closingIndex -= 1;
+        }
+        if (
+          unitCodePoints[closingIndex] !== closing ||
+          closingIndex <= payloadStart + 1 ||
+          conditionAuthorityContainsQuoteDelimiter(
+            unitCodePoints
+              .slice(payloadStart + 1, closingIndex)
+              .join(""),
+          )
+        ) {
+          return null;
+        }
+        payloadStart += 1;
+        payloadEndCodePoint = unit.startCodePoint + closingIndex;
+      } else {
+        if (
+          conditionAuthorityContainsQuoteDelimiter(
+            unitCodePoints.slice(payloadStart).join(""),
+          )
+        ) {
+          return null;
+        }
+        payloadEndCodePoint = unit.endCodePoint;
+      }
+      payloadStartCodePoint = unit.startCodePoint + payloadStart;
+    }
+  }
+
+  if (!governingWrapper) {
+    if (
+      colonIndex >= 0 ||
+      conditionAuthorityContainsQuoteDelimiter(unitCodePoints.join(""))
+    ) {
+      return null;
+    }
+  }
+
+  while (
+    payloadStartCodePoint < payloadEndCodePoint &&
+    /\s/u.test(codePoints[payloadStartCodePoint] ?? "")
+  ) {
+    payloadStartCodePoint += 1;
+  }
+  while (
+    payloadEndCodePoint > payloadStartCodePoint &&
+    /\s/u.test(codePoints[payloadEndCodePoint - 1] ?? "")
+  ) {
+    payloadEndCodePoint -= 1;
+  }
+  if (
+    governingWrapper &&
+    /^[.!。！]$/u.test(codePoints[payloadEndCodePoint - 1] ?? "")
+  ) {
+    payloadEndCodePoint -= 1;
+    while (
+      payloadEndCodePoint > payloadStartCodePoint &&
+      /\s/u.test(codePoints[payloadEndCodePoint - 1] ?? "")
+    ) {
+      payloadEndCodePoint -= 1;
+    }
+  }
+  if (
+    payloadEndCodePoint <= payloadStartCodePoint ||
+    codePoints
+      .slice(payloadStartCodePoint, payloadEndCodePoint)
+      .some((character) => semanticHardClauseSeparator(character))
+  ) {
+    return null;
+  }
+  const coreLeaves = item.leaves.filter((leaf) =>
+    leaf.role === "field" ||
+    leaf.role === "operator" ||
+    leaf.role === "value" ||
+    leaf.role === "matching_route"
+  );
+  if (
+    coreLeaves.length !== 4 ||
+    coreLeaves.some(
+      (leaf) =>
+        leaf.sourceSpan.messageId !== messageId ||
+        leaf.sourceSpan.startCodePoint < payloadStartCodePoint ||
+        leaf.sourceSpan.endCodePoint > payloadEndCodePoint,
+    )
+  ) {
+    return null;
+  }
+  const prefix = codePoints
+    .slice(payloadStartCodePoint, field.sourceSpan.startCodePoint)
+    .join("");
+  const suffix = codePoints
+    .slice(matchingRoute.sourceSpan.endCodePoint, payloadEndCodePoint)
+    .join("");
+  if (
+    !conditionAuthorityIntroducerIsClosed(prefix) ||
+    !conditionAuthorityRouteTailIsClosed(suffix)
+  ) {
+    return null;
+  }
+  const context = conditionAuthorityContextSpan(
+    messageId,
+    payloadStartCodePoint,
+    payloadEndCodePoint,
+    messages,
+  );
+  return context ? Object.freeze({ context, unit }) : null;
 }
 
 function exactSemanticOccurrenceCount(value: string, needle: string) {

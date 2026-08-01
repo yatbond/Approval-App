@@ -65,6 +65,76 @@ function locateFormalCondition(caseId, source, quote, leaves) {
   return { located, sourceSlots };
 }
 
+function locateFormalSc01ConditionSymbols(caseId) {
+  const fieldSource =
+    "设计经理、项目工程师或客户代表可以发起。必填项目、图纸编号、变更说明、变更原因、成本影响、工期影响天数、安全影响、客户指令编号和紧急选项。";
+  const fieldAnchor =
+    "必填项目、图纸编号、变更说明、变更原因、成本影响、工期影响天数、安全影响、客户指令编号和紧急选项";
+  const intakeSources = templateCopilotV3ProviderQuoteBatches
+    .intake_documents.slots.map((slot) => ({
+      slot,
+      messageId: `real-path-formal:${caseId}:field:${slot}`,
+      text: slot === "initiators_fields"
+        ? fieldSource
+        : `No ${slot} requirements supplied.`,
+    }));
+  const fieldLocated = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "intake_documents",
+    sourceSlots: intakeSources,
+    output: {
+      contractVersion: 1,
+      items: [{
+        kind: "request_field",
+        quote: fieldAnchor,
+        leaves: [
+          leaf("label", "安全影响"),
+          leaf("required", "必填", "true"),
+        ],
+        confidence: "high",
+        ambiguity: "none",
+      }],
+    },
+  });
+
+  const stageSource =
+    "设计经理先审查；工程、商务和安全并行评审各自影响；之后项目经理批准。成本增加超过港币一百万元时再由商业总监批准。每个评审人只看相关字段和文件。";
+  const stageAnchor = "工程、商务和安全并行评审各自影响";
+  const stageSources = templateCopilotV3ProviderQuoteBatches
+    .routing_stages_participants.slots.map((slot) => ({
+      slot,
+      messageId: `real-path-formal:${caseId}:stage:${slot}`,
+      text: slot === "stages_participants"
+        ? stageSource
+        : `No ${slot} requirements supplied.`,
+    }));
+  const stageLocated = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_stages_participants",
+    sourceSlots: stageSources,
+    output: {
+      contractVersion: 1,
+      items: [{
+        kind: "stage",
+        quote: stageAnchor,
+        leaves: [
+          leaf("label", "安全"),
+          leaf("kind", "评审", "review"),
+          leaf("participant", "安全"),
+        ],
+        confidence: "high",
+        ambiguity: "none",
+      }],
+    },
+  });
+  return {
+    accepted: [
+      ...fieldLocated.accepted.map((item) => ({ ...item, itemIndex: 100 })),
+      ...stageLocated.accepted.map((item) => ({ ...item, itemIndex: 101 })),
+    ],
+    rejected: [...fieldLocated.rejected, ...stageLocated.rejected],
+    sourceSlots: [...intakeSources, ...stageSources],
+  };
+}
+
 function assembleLocated(located, sourceSlots) {
   const sourceMessages = Object.fromEntries(
     sourceSlots.map(({ messageId, text }) => [messageId, text]),
@@ -1672,8 +1742,21 @@ test("the formal real path binds provider-split simplified CJK yes to the comple
       operatorQuote,
       operatorQuote,
     );
-    const assembled = assembleLocated(located, sourceSlots);
-    const item = assembled.review.items[0];
+    const symbols = locateFormalSc01ConditionSymbols(
+      `cjk-yes-${caseId}`,
+    );
+    assert.deepEqual(symbols.rejected, [], `${operatorQuote}: symbols`);
+    assert.equal(symbols.accepted.length, 2, `${operatorQuote}: symbols`);
+    const assembled = assembleLocated(
+      {
+        ...located,
+        accepted: [...symbols.accepted, ...located.accepted],
+      },
+      [...symbols.sourceSlots, ...sourceSlots],
+    );
+    const item = assembled.review.items.find((entry) =>
+      entry.factId === "workflow.conditions"
+    );
     assert.ok(item, `${operatorQuote}: ${JSON.stringify(assembled.review.rejections)}`);
     assert.equal(item.value.operator, "=", operatorQuote);
     assert.equal(item.semanticComplete, true, operatorQuote);
