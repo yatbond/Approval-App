@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { parse, parsePlPgSQL } from "libpg-query";
+import { templateCopilotV3LexicalAliases } from "./template-copilot-v3-evidence.ts";
 
 const sql = await readFile(
   new URL(
@@ -881,6 +882,11 @@ test("scope-keyed aliases isolate shared canonical tokens by exact fact and path
   );
   assert.ok(aliasMatch);
   const aliases = JSON.parse(aliasMatch[1]);
+  assert.deepEqual(
+    aliases,
+    templateCopilotV3LexicalAliases,
+    "the pending PostgreSQL contract must exactly match the TypeScript alias source",
+  );
   assert.equal(Object.hasOwn(aliases, "enum"), false);
   const typeEmail =
     aliases.enumByScope["request.fields:/type"].email;

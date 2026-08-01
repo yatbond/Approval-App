@@ -203,13 +203,11 @@ test("EN-05 narrow field and attachment anchors remain exact and assemble semant
   const redline = documentByLabel.get("redline PDF");
   const deviation = documentByLabel.get("native deviation form");
   assert.ok(contract && redline && deviation);
+  assert.ok(!contract.bindings.some((binding) => binding.path === "/kind"));
   assert.ok(
-    [contract, redline].every(
-      (entry) => !entry.bindings.some((binding) => binding.path === "/kind"),
+    [redline, deviation].every((entry) =>
+      entry.bindings.some((binding) => binding.path === "/kind"),
     ),
-  );
-  assert.ok(
-    deviation.bindings.some((binding) => binding.path === "/kind"),
   );
   assert.ok(
     [contract, redline, deviation].every(
@@ -259,12 +257,6 @@ test("a Go/No-Go title does not turn a legitimate required native form into nega
       itemIndex: 0,
       kind: "attachment",
       code: "unverifiable_leaf",
-      detail: "attachment:kind",
-    },
-    {
-      itemIndex: 0,
-      kind: "attachment",
-      code: "unverifiable_leaf",
       detail: "attachment:required",
     },
   ]);
@@ -298,7 +290,7 @@ test("local-clause recovery cannot turn an optional sibling into a required atta
   }]);
 });
 
-test("contextual recovered aliases remain semantic-only evidence", () => {
+test("unpromoted recovered hints stay semantic-only while fixed-corpus aliases are direct evidence", () => {
   const booleanEvidence = (sourceText) =>
     templateCopilotV3DirectEvidenceDerivesLeaf({
       factId: "request.fields",
@@ -319,7 +311,7 @@ test("contextual recovered aliases remain semantic-only evidence", () => {
   assert.equal(booleanEvidence("Require"), false);
   assert.equal(booleanEvidence("Add"), false);
   assert.equal(attachmentKindEvidence("file", "attachment"), false);
-  assert.equal(attachmentKindEvidence("PDF", "attachment"), false);
+  assert.equal(attachmentKindEvidence("PDF", "attachment"), true);
   assert.equal(attachmentKindEvidence("form", "form"), true);
 });
 
@@ -358,7 +350,7 @@ test("direct Chinese boolean aliases also satisfy semantic verification", () => 
   );
 });
 
-test("a non-expanded attachment cannot turn contextual aliases into bindings", () => {
+test("a non-expanded attachment binds a fixed-corpus alias without admitting recovered hints", () => {
   const sourceSlots = structureSources({
     initiatorsFields: "Require purpose.",
     attachments: "An optional redline PDF is allowed.",
@@ -385,15 +377,8 @@ test("a non-expanded attachment cannot turn contextual aliases into bindings", (
   const document = assembly.review.items[0];
   assert.equal(document.semanticComplete, true);
   assert.equal(document.complete, false);
-  assert.ok(
-    !document.bindings.some((binding) => binding.path === "/kind"),
-  );
-  assert.deepEqual(assembly.review.rejections, [{
-    itemIndex: 0,
-    kind: "attachment",
-    code: "unverifiable_leaf",
-    detail: "attachment:kind",
-  }]);
+  assert.ok(document.bindings.some((binding) => binding.path === "/kind"));
+  assert.deepEqual(assembly.review.rejections, []);
 });
 
 test("contradicted recovered required evidence stays rejected and incomplete", () => {

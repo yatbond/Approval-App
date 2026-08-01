@@ -321,11 +321,12 @@ export const templateCopilotV3LexicalAliases = deepFreezeAcyclic({
       table: ["表格"],
     }),
     "attachments.requirements:/kind": Object.freeze({
-      attachment: ["uploaded file", "上載檔案", "上传文件"],
+      attachment: ["uploaded file", "pdf", "上載檔案", "上传文件"],
       form: [
         "in-app form",
         "in app form",
         "complete a form in the app",
+        "原生",
         "應用程式內表格",
         "在應用程式填寫表格",
         "应用内表单",
@@ -385,7 +386,7 @@ export const templateCopilotV3LexicalAliases = deepFreezeAcyclic({
     }),
     "workflow.stages:/kind": Object.freeze({
       approval: ["approve", "審批", "审批", "核准", "批准"],
-      review: ["審核", "审核", "覆核", "复核"],
+      review: ["審核", "审核", "覆核", "复核", "審查", "审查", "評審", "评审"],
       for_information: [
         "for information",
         "informational",
@@ -418,9 +419,9 @@ export const templateCopilotV3LexicalAliases = deepFreezeAcyclic({
       ],
     }),
     "workflow.conditions:/operator": Object.freeze({
-      "=": ["equals", "equal", "等於", "等于"],
+      "=": ["equals", "equal", "等於", "等于", "为是"],
       "!=": ["not equal", "不等於", "不等于"],
-      ">": ["greater than", "大於", "大于"],
+      ">": ["greater than", "大於", "大于", "超過", "超过"],
       ">=": ["at least", "大於或等於", "大于或等于"],
       "<": ["less than", "小於", "小于"],
       "<=": ["at most", "小於或等於", "小于或等于"],
@@ -436,13 +437,38 @@ export const templateCopilotV3LexicalAliases = deepFreezeAcyclic({
     }),
     "notifications.rules:/event": Object.freeze({
       request_submitted: ["request submitted", "申請已提交", "申请已提交"],
-      stage_assigned: ["work assigned", "工作已分派", "工作已分配"],
+      stage_assigned: [
+        "work assigned",
+        "assignment",
+        "獲指派",
+        "分配",
+        "工作已分派",
+        "工作已分配",
+      ],
       stage_completed: ["step completed", "步驟已完成", "步骤已完成"],
-      request_rejected: ["request rejected", "申請被拒絕", "申请被拒绝"],
-      correction_requested: ["correction requested", "要求更正"],
-      request_completed: ["workflow completed", "流程已完成"],
+      request_rejected: [
+        "request rejected",
+        "rejection",
+        "拒絕",
+        "拒绝",
+        "申請被拒絕",
+        "申请被拒绝",
+      ],
+      correction_requested: [
+        "correction requested",
+        "correction",
+        "補正",
+        "补正",
+        "要求更正",
+      ],
+      request_completed: [
+        "workflow completed",
+        "completion",
+        "完成",
+        "流程已完成",
+      ],
       due_soon: ["due soon", "即將到期", "即将到期"],
-      overdue: ["已逾期"],
+      overdue: ["逾期", "已逾期"],
     }),
     "notifications.rules:/recipients/*": Object.freeze({
       requester: ["申請人", "申请人", "發起人", "发起人"],
@@ -498,7 +524,18 @@ export const templateCopilotV3LexicalAliases = deepFreezeAcyclic({
     "notifications.rules:/stage": Object.freeze({}),
   } as const),
   boolean: Object.freeze({
-    true: ["true", "yes", "required", "是", "需要", "必須", "必须", "必須提供", "必须提供"],
+    true: [
+      "true",
+      "yes",
+      "required",
+      "是",
+      "需要",
+      "必填",
+      "必須",
+      "必须",
+      "必須提供",
+      "必须提供",
+    ],
     false: ["false", "no", "not required", "optional", "否", "不需要", "非必須", "非必须", "選填", "选填"],
   } as const),
   ordinal: Object.freeze({

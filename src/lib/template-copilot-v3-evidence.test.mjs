@@ -1372,6 +1372,85 @@ test("enum aliases are exact fact-and-path scopes with isolated email wording", 
   );
 });
 
+test("fixed-corpus semantic aliases derive only their scoped canonical leaves", () => {
+  const derivesEnum = (factId, path, leafName, canonical, sourceText) =>
+    templateCopilotV3DirectEvidenceDerivesLeaf({
+      factId,
+      path,
+      rule: "enum_lexical",
+      value: { [leafName]: canonical },
+      sourceText,
+    });
+  const derivesBoolean = (canonical, sourceText) =>
+    templateCopilotV3DirectEvidenceDerivesLeaf({
+      factId: "request.fields",
+      path: "/required",
+      rule: "boolean_lexical",
+      value: { required: canonical },
+      sourceText,
+    });
+
+  const positives = [
+    ["attachments.requirements", "/kind", "kind", "attachment", "PDF"],
+    ["attachments.requirements", "/kind", "kind", "form", "原生"],
+    ["workflow.stages", "/kind", "kind", "review", "審查"],
+    ["workflow.stages", "/kind", "kind", "review", "审查"],
+    ["workflow.stages", "/kind", "kind", "review", "評審"],
+    ["workflow.stages", "/kind", "kind", "review", "评审"],
+    ["workflow.conditions", "/operator", "operator", "=", "为是"],
+    ["workflow.conditions", "/operator", "operator", ">", "超過"],
+    ["workflow.conditions", "/operator", "operator", ">", "超过"],
+    ["notifications.rules", "/event", "event", "stage_assigned", "assignment"],
+    ["notifications.rules", "/event", "event", "stage_assigned", "獲指派"],
+    ["notifications.rules", "/event", "event", "stage_assigned", "分配"],
+    ["notifications.rules", "/event", "event", "request_rejected", "rejection"],
+    ["notifications.rules", "/event", "event", "request_rejected", "拒絕"],
+    ["notifications.rules", "/event", "event", "request_rejected", "拒绝"],
+    ["notifications.rules", "/event", "event", "correction_requested", "correction"],
+    ["notifications.rules", "/event", "event", "correction_requested", "補正"],
+    ["notifications.rules", "/event", "event", "correction_requested", "补正"],
+    ["notifications.rules", "/event", "event", "request_completed", "completion"],
+    ["notifications.rules", "/event", "event", "request_completed", "完成"],
+    ["notifications.rules", "/event", "event", "overdue", "逾期"],
+  ];
+  for (const [factId, path, leafName, canonical, sourceText] of positives) {
+    assert.equal(
+      derivesEnum(factId, path, leafName, canonical, sourceText),
+      true,
+      `${factId}:${path}:${canonical}:${sourceText}`,
+    );
+  }
+  assert.equal(derivesBoolean(true, "必填"), true);
+
+  const crossCanonicalNegatives = [
+    ["attachments.requirements", "/kind", "kind", "form", "PDF"],
+    ["attachments.requirements", "/kind", "kind", "attachment", "上載"],
+    ["attachments.requirements", "/kind", "kind", "attachment", "上传"],
+    ["attachments.requirements", "/kind", "kind", "form", "上传"],
+    ["attachments.requirements", "/kind", "kind", "attachment", "原生"],
+    ["workflow.stages", "/kind", "kind", "approval", "审查"],
+    ["workflow.conditions", "/operator", "operator", ">=", "超过"],
+    ["notifications.rules", "/event", "event", "request_submitted", "分配"],
+    ["notifications.rules", "/event", "event", "stage_completed", "完成"],
+    ["notifications.rules", "/event", "event", "request_rejected", "補正"],
+    ["notifications.rules", "/event", "event", "correction_requested", "拒绝"],
+    ["notifications.rules", "/event", "event", "due_soon", "逾期"],
+  ];
+  for (const [factId, path, leafName, canonical, sourceText] of crossCanonicalNegatives) {
+    assert.equal(
+      derivesEnum(factId, path, leafName, canonical, sourceText),
+      false,
+      `${factId}:${path}:${canonical}:${sourceText}`,
+    );
+  }
+  assert.equal(
+    derivesEnum("workflow.stages", "/kind", "kind", "review", "assignment"),
+    false,
+    "a notification alias cannot leak into the workflow-stage scope",
+  );
+  assert.equal(derivesBoolean(false, "必填"), false);
+});
+
 test("exported lexical contracts are recursively runtime immutable", () => {
   const visited = new Set();
   const assertDeepFrozen = (value, path = "aliases") => {
