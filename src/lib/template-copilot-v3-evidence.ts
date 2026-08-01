@@ -111,23 +111,20 @@ export function templateCopilotV3StringHasOuterTrimWhitespace(value: string) {
  * lowercase. No locale-sensitive case conversion is permitted. */
 export function templateCopilotV3NormalizeLexicalText(value: string) {
   const codePoints = Array.from(value.normalize("NFKC"));
+  let start = 0;
+  let end = codePoints.length;
   while (
-    codePoints.length > 0 &&
-    ecmaTrimWhitespaceCodePoints.has(codePoints[0].codePointAt(0) ?? 0)
-  ) {
-    codePoints.shift();
-  }
+    start < end &&
+    ecmaTrimWhitespaceCodePoints.has(codePoints[start].codePointAt(0) ?? 0)
+  ) start += 1;
   while (
-    codePoints.length > 0 &&
-    ecmaTrimWhitespaceCodePoints.has(
-      codePoints[codePoints.length - 1].codePointAt(0) ?? 0,
-    )
-  ) {
-    codePoints.pop();
-  }
+    end > start &&
+    ecmaTrimWhitespaceCodePoints.has(codePoints[end - 1].codePointAt(0) ?? 0)
+  ) end -= 1;
   let collapsed = "";
   let pendingSpace = false;
-  for (const character of codePoints) {
+  for (let index = start; index < end; index += 1) {
+    const character = codePoints[index];
     if (ecmaTrimWhitespaceCodePoints.has(character.codePointAt(0) ?? 0)) {
       pendingSpace = true;
       continue;
@@ -143,23 +140,20 @@ export function templateCopilotV3NormalizeLexicalText(value: string) {
  * The normalized source must then equal the already-canonical fragment leaf. */
 export function templateCopilotV3NormalizeTrimCollapseText(value: string) {
   const codePoints = Array.from(value.normalize("NFKC"));
+  let start = 0;
+  let end = codePoints.length;
   while (
-    codePoints.length > 0 &&
-    ecmaTrimWhitespaceCodePoints.has(codePoints[0].codePointAt(0) ?? 0)
-  ) {
-    codePoints.shift();
-  }
+    start < end &&
+    ecmaTrimWhitespaceCodePoints.has(codePoints[start].codePointAt(0) ?? 0)
+  ) start += 1;
   while (
-    codePoints.length > 0 &&
-    ecmaTrimWhitespaceCodePoints.has(
-      codePoints[codePoints.length - 1].codePointAt(0) ?? 0,
-    )
-  ) {
-    codePoints.pop();
-  }
+    end > start &&
+    ecmaTrimWhitespaceCodePoints.has(codePoints[end - 1].codePointAt(0) ?? 0)
+  ) end -= 1;
   let collapsed = "";
   let pendingSpace = false;
-  for (const character of codePoints) {
+  for (let index = start; index < end; index += 1) {
+    const character = codePoints[index];
     if (ecmaTrimWhitespaceCodePoints.has(character.codePointAt(0) ?? 0)) {
       pendingSpace = true;
       continue;

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -20,6 +19,7 @@ import {
   selectTemplateCopilotV3QualificationScenarios,
   summarizeQualification,
   templateCopilotV3QualificationBaselineModel,
+  templateCopilotV3QualificationFixtureFingerprint,
   templateCopilotV3QualificationSourceStateMatches,
 } from "./template-copilot-v3-live-semantic-qualification-runner.mjs";
 import {
@@ -104,9 +104,6 @@ if (
   );
 }
 
-const fixtureFingerprint = createHash("sha256")
-  .update(JSON.stringify(templateCopilotQualificationScenarios))
-  .digest("hex");
 const output = await resolveTemplateCopilotV3QualificationOutput({
   repositoryRoot,
   requestedOutputDirectory: process.env.QUALIFICATION_OUTPUT_DIR?.trim(),
@@ -140,7 +137,7 @@ const metadata = {
   scoringBatchIds: [
     ...templateCopilotV3LiveSemanticScoringContract.expectedBatchIds,
   ],
-  fixtureFingerprint: `sha256:${fixtureFingerprint}`,
+  fixtureFingerprint: templateCopilotV3QualificationFixtureFingerprint,
   selectionMode: hardSubset
     ? "hard_subset"
     : scenarioIds.length > 0 || scenarioLimit > 0

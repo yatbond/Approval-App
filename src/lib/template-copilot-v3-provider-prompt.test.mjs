@@ -104,8 +104,8 @@ test("the prompt demands complete entity coverage and source-language fidelity",
   for (const prompt of [traditional, simplified]) {
     assert.match(prompt, /one semantic entity per item/u);
     assert.match(prompt, /smallest unique contiguous exact source passage/u);
-    assert.match(prompt, /occurs exactly once inside the item quote/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-6/u);
+    assert.match(prompt, /Every leaf inside item.quote must occur exactly once/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-7/u);
     assert.match(
       prompt,
       /threshold operator or value quote may repeat only in adjacent affirmative threshold branches/u,
@@ -149,6 +149,11 @@ test("the prompt demands complete entity coverage and source-language fidelity",
     /request_field=label\+required;attachment=label\+kind\+required;stage=label\+kind\+\(participant OR participant_mode\);condition=field\+operator\+value\+matching_route;notification=event\+recipient/u,
   );
   assert.match(traditional, /all roles in ONE item; never split a core/u);
+  assert.match(traditional, /one exact shared required marker precedes the named fields/u);
+  assert.match(
+    traditional,
+    /attachment\.kind may occur outside only when its exact marker immediately precedes the entity label/u,
+  );
   assert.match(traditional, /For a named stage, include its exact participant leaf/u);
   assert.match(
     simplified,
@@ -224,6 +229,24 @@ test("the quote extractor remains outside application and server-data imports", 
     assert.doesNotMatch(
       source,
       /\bextractTemplateCopilotV3QuoteBatch\b/u,
+      path.relative(sourceRoot, file),
+    );
+  }
+  const productionV3Files = (await readdir(path.join(sourceRoot, "lib"), {
+    withFileTypes: true,
+  }))
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        /^template-copilot-v3-.*\.ts$/u.test(entry.name) &&
+        !/\.test\./u.test(entry.name),
+    )
+    .map((entry) => path.join(sourceRoot, "lib", entry.name));
+  for (const file of productionV3Files) {
+    const source = await readFile(file, "utf8");
+    assert.doesNotMatch(
+      source,
+      /template-copilot-(?:qualification-scenarios|v3-semantic-scenario-manifests)/u,
       path.relative(sourceRoot, file),
     );
   }

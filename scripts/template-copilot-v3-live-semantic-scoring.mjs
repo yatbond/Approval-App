@@ -500,6 +500,8 @@ function scoreBatchGate(batches) {
       "providerRequestFailureCount",
       "acceptedItemCount",
       "rejectedItemCount",
+      "expandedAnchorItemCount",
+      "sameLocalClauseRecoveredLeafCount",
     ];
     for (const field of countFields) {
       if (!Number.isInteger(batch[field]) || batch[field] < 0) {
@@ -514,6 +516,13 @@ function scoreBatchGate(batches) {
     const providerFailures = strictNonnegativeInteger(
       batch.providerRequestFailureCount,
     );
+    const acceptedItems = strictNonnegativeInteger(batch.acceptedItemCount);
+    const expandedAnchors = strictNonnegativeInteger(
+      batch.expandedAnchorItemCount,
+    );
+    const recoveredLeaves = strictNonnegativeInteger(
+      batch.sameLocalClauseRecoveredLeafCount,
+    );
     batchFailureCount += batchFailures ?? 0;
     providerRequestFailureCount += providerFailures ?? 0;
     if (
@@ -524,6 +533,21 @@ function scoreBatchGate(batches) {
     ) {
       failures.push(
         `Qualification batch ${id} provider request counts are inconsistent.`,
+      );
+    }
+    if (
+      acceptedItems !== null &&
+      expandedAnchors !== null &&
+      recoveredLeaves !== null &&
+      (
+        expandedAnchors > acceptedItems ||
+        (expandedAnchors === 0) !== (recoveredLeaves === 0) ||
+        recoveredLeaves < expandedAnchors ||
+        recoveredLeaves > acceptedItems * 2
+      )
+    ) {
+      failures.push(
+        `Qualification batch ${id} local-clause recovery counts are inconsistent.`,
       );
     }
     if (batch.status !== "applied") {

@@ -1419,6 +1419,38 @@ test("strict envelope, version, fragment, source, kind, role, slot, and batch au
     /providerRequestSuccessCount/i,
   );
 
+  const provenance = makeActualFixture(scenario("EN-01"));
+  delete provenance.batches[0].sameLocalClauseRecoveredLeafCount;
+  assert.match(
+    scoreTemplateCopilotV3LiveSemantic(provenance).failures.join("\n"),
+    /sameLocalClauseRecoveredLeafCount/i,
+  );
+
+  for (const invalid of [-1, 0.5, "1"]) {
+    const malformed = makeActualFixture(scenario("EN-01"));
+    malformed.batches[0].expandedAnchorItemCount = invalid;
+    assert.match(
+      scoreTemplateCopilotV3LiveSemantic(malformed).failures.join("\n"),
+      /expandedAnchorItemCount/i,
+    );
+  }
+
+  const inconsistent = makeActualFixture(scenario("EN-01"));
+  inconsistent.batches[0].expandedAnchorItemCount = 0;
+  inconsistent.batches[0].sameLocalClauseRecoveredLeafCount = 1;
+  assert.match(
+    scoreTemplateCopilotV3LiveSemantic(inconsistent).failures.join("\n"),
+    /local-clause recovery counts are inconsistent/i,
+  );
+
+  const validProvenance = makeActualFixture(scenario("EN-01"));
+  validProvenance.batches[0].expandedAnchorItemCount = 1;
+  validProvenance.batches[0].sameLocalClauseRecoveredLeafCount = 2;
+  assert.equal(
+    scoreTemplateCopilotV3LiveSemantic(validProvenance).passed,
+    true,
+  );
+
   const outcome = makeActualFixture(scenario("EN-01"));
   outcome.batches[1].providerOutcome = "timeout";
   outcome.batches[1].providerRequestSuccessCount = 0;
@@ -1908,6 +1940,7 @@ function makeActualFixture(
       requirement.required ? requiredTrueAliases : requiredFalseAliases,
       labelLeaf.startCodeUnit,
       `${item.id} attachment ${requirement.label} required`,
+      requirement.required,
     );
     const kindLeaf = findAliasInEvidenceClausesNear(
       attachmentText,
@@ -2089,6 +2122,8 @@ function cleanBatch(id, acceptedItemCount) {
     averageProviderRequestLatencyMs: 100,
     acceptedItemCount,
     rejectedItemCount: 0,
+    expandedAnchorItemCount: 0,
+    sameLocalClauseRecoveredLeafCount: 0,
     rejectionCodes: [],
     failureCount: 0,
     failures: [],
@@ -2146,7 +2181,14 @@ function findTermInEvidenceClausesNear(text, clauses, term, pivot, label) {
   return findTermInRangesNear(text, ranges, term, pivot, label);
 }
 
-function findAliasInEvidenceClausesNear(text, clauses, aliases, pivot, label) {
+function findAliasInEvidenceClausesNear(
+  text,
+  clauses,
+  aliases,
+  pivot,
+  label,
+  preferAtOrBeforePivot = false,
+) {
   const ranges = exactEvidenceClauseRanges(text, clauses);
   assert.ok(ranges.length > 0, `Missing exact evidence clause for ${label}`);
   const candidates = aliases.flatMap((alias) => {
@@ -2164,15 +2206,19 @@ function findAliasInEvidenceClausesNear(text, clauses, aliases, pivot, label) {
       }));
     return located;
   });
-  candidates.sort(
+  const preferred = preferAtOrBeforePivot
+    ? candidates.filter((candidate) => candidate.startCodeUnit <= pivot)
+    : [];
+  const pool = preferred.length > 0 ? preferred : candidates;
+  pool.sort(
     (left, right) =>
       Math.abs(left.startCodeUnit - pivot) -
         Math.abs(right.startCodeUnit - pivot) ||
       right.term.length - left.term.length ||
       left.startCodeUnit - right.startCodeUnit,
   );
-  assert.ok(candidates[0], `Missing exact evidence-scoped ${label}`);
-  return candidates[0];
+  assert.ok(pool[0], `Missing exact evidence-scoped ${label}`);
+  return pool[0];
 }
 
 function sourceClauseRanges(text) {

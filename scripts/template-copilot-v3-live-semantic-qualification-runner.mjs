@@ -13,12 +13,18 @@ import {
   templateCopilotV3ProviderQuoteContractVersion,
   templateCopilotV3ProviderQuoteRejectionCodes,
 } from "../src/lib/template-copilot-v3-provider-quotes.ts";
+import {
+  templateCopilotV3ProviderPromptVersion,
+} from "../src/lib/template-copilot-v3-provider-prompt.ts";
 import { templateCopilotV3ReviewRejectionCodes } from "../src/lib/template-copilot-v3-review-assembly.ts";
-import { answersForScenario } from "./template-copilot-qualification-scenarios.mjs";
+import {
+  answersForScenario,
+  templateCopilotQualificationScenarios,
+} from "./template-copilot-qualification-scenarios.mjs";
 import { templateCopilotV3LiveSemanticScoringContract } from "./template-copilot-v3-live-semantic-scoring.mjs";
 
 export const templateCopilotV3QualificationRunnerVersion =
-  "template-copilot-v3-live-semantic-qualification.2";
+  "template-copilot-v3-live-semantic-qualification.3";
 export const templateCopilotV3QualificationExpectedScenarioCount = 24;
 export const templateCopilotV3QualificationExpectedGovernedHoldCount = 64;
 export const templateCopilotV3QualificationExpectedLocaleCount = 3;
@@ -30,6 +36,10 @@ if (
 ) throw new Error("The qualification locale distribution is inconsistent.");
 export const templateCopilotV3QualificationBaselineModel =
   "qwen/qwen3.5-35b-a3b";
+export const templateCopilotV3QualificationFixtureFingerprint =
+  `sha256:${createHash("sha256")
+    .update(JSON.stringify(templateCopilotQualificationScenarios))
+    .digest("hex")}`;
 export const templateCopilotV3QualificationHardScenarioIds = Object.freeze([
   "EN-01",
   "EN-07",
@@ -484,7 +494,47 @@ export async function runTemplateCopilotV3LiveSemanticQualificationScenario({
           "The provider batch did not use exactly one successful request.",
         );
       }
+      if (
+        extracted.accepted.some(
+          (entry) =>
+            !isRecord(entry) ||
+            typeof entry.anchorExpanded !== "boolean" ||
+            !Array.isArray(entry.leaves) ||
+            entry.leaves.some(
+              (leaf) =>
+                !isRecord(leaf) ||
+                typeof leaf.sameLocalClauseRecovered !== "boolean",
+            ) ||
+            !isNonnegativeInteger(
+              entry.sameLocalClauseRecoveredLeafCount,
+            ) ||
+            entry.sameLocalClauseRecoveredLeafCount > 2 ||
+            entry.sameLocalClauseRecoveredLeafCount !==
+              entry.leaves.filter(
+                (leaf) => leaf.sameLocalClauseRecovered === true,
+              ).length ||
+            entry.anchorExpanded !==
+              (entry.sameLocalClauseRecoveredLeafCount > 0),
+        )
+      ) {
+        throw new Error(
+          "The provider batch recovery provenance is invalid.",
+        );
+      }
       acceptedItems.push(...extracted.accepted);
+      const expandedAnchorItemCount = extracted.accepted.filter(
+        (entry) => entry?.anchorExpanded === true,
+      ).length;
+      const sameLocalClauseRecoveredLeafCount = extracted.accepted.reduce(
+        (total, entry) =>
+          total + (
+            Number.isInteger(entry?.sameLocalClauseRecoveredLeafCount) &&
+              entry.sameLocalClauseRecoveredLeafCount >= 0
+              ? entry.sameLocalClauseRecoveredLeafCount
+              : 0
+          ),
+        0,
+      );
       batches.push({
         batchId,
         status: "applied",
@@ -500,6 +550,8 @@ export async function runTemplateCopilotV3LiveSemanticQualificationScenario({
         rejectedItemCount: Array.isArray(extracted.rejected)
           ? extracted.rejected.length
           : 0,
+        expandedAnchorItemCount,
+        sameLocalClauseRecoveredLeafCount,
         rejectionCodes: countBy(extracted.rejected, (entry) =>
           safeCode(entry?.code, providerRejectionCodeSet),
         ),
@@ -521,6 +573,8 @@ export async function runTemplateCopilotV3LiveSemanticQualificationScenario({
         averageProviderRequestLatencyMs: provider.averageLatencyMs,
         acceptedItemCount: 0,
         rejectedItemCount: 0,
+        expandedAnchorItemCount: 0,
+        sameLocalClauseRecoveredLeafCount: 0,
         rejectionCodes: {},
         failureCount: 1,
       });
@@ -635,6 +689,28 @@ export function summarizeQualification(report) {
       0,
     ),
   );
+  const expandedAnchorItemCount = sumScenario((item) =>
+    item.batches.reduce(
+      (total, batch) =>
+        total + (
+          isNonnegativeInteger(batch.expandedAnchorItemCount)
+            ? batch.expandedAnchorItemCount
+            : 0
+        ),
+      0,
+    ),
+  );
+  const sameLocalClauseRecoveredLeafCount = sumScenario((item) =>
+    item.batches.reduce(
+      (total, batch) =>
+        total + (
+          isNonnegativeInteger(batch.sameLocalClauseRecoveredLeafCount)
+            ? batch.sameLocalClauseRecoveredLeafCount
+            : 0
+        ),
+      0,
+    ),
+  );
   const sourceCapturePassCount = scenarios.filter(
     (item) =>
       item.semanticCapture?.resultValid === true &&
@@ -713,6 +789,18 @@ export function summarizeQualification(report) {
     report.metadata.sourceWorktreeClean === true &&
     report.metadata.comparableCleanSource === true &&
     report.metadata.qualificationMode === "clean_source" &&
+    report.metadata.runnerVersion ===
+      templateCopilotV3QualificationRunnerVersion &&
+    report.metadata.providerQuoteContractVersion ===
+      templateCopilotV3ProviderQuoteContractVersion &&
+    report.metadata.providerPromptVersion ===
+      templateCopilotV3ProviderPromptVersion &&
+    sameStringArray(
+      report.metadata.scoringBatchIds,
+      templateCopilotV3LiveSemanticScoringContract.expectedBatchIds,
+    ) &&
+    report.metadata.fixtureFingerprint ===
+      templateCopilotV3QualificationFixtureFingerprint &&
     report.metadata.modelMatchesBaseline === true &&
     report.metadata.model === templateCopilotV3QualificationBaselineModel &&
     report.metadata.baselineModel ===
@@ -797,6 +885,8 @@ export function summarizeQualification(report) {
     providerRequestCount,
     providerRequestSuccessCount,
     providerRequestFailureCount,
+    expandedAnchorItemCount,
+    sameLocalClauseRecoveredLeafCount,
     strictBatchScenarioCount,
     languageSummaries,
     failedScenarioIds: semanticCaptureGate.failedScenarioIds,
@@ -1445,6 +1535,23 @@ function scenarioBatchesPass(item) {
   ) {
     return false;
   }
+  const acceptedBatchItemCount = item.batches.every(
+    (batch) =>
+      isRecord(batch) && isNonnegativeInteger(batch.acceptedItemCount),
+  )
+    ? item.batches.reduce(
+        (total, batch) => total + batch.acceptedItemCount,
+        0,
+      )
+    : null;
+  if (
+    acceptedBatchItemCount === null ||
+    !isRecord(item.projection) ||
+    !isNonnegativeInteger(item.projection.acceptedProviderItemCount) ||
+    acceptedBatchItemCount !== item.projection.acceptedProviderItemCount
+  ) {
+    return false;
+  }
   return item.batches.every(
     (batch, index) =>
       isRecord(batch) &&
@@ -1454,6 +1561,16 @@ function scenarioBatchesPass(item) {
       batch.providerRequestSuccessCount === 1 &&
       batch.providerRequestFailureCount === 0 &&
       batch.providerOutcome === "success" &&
+      isNonnegativeInteger(batch.acceptedItemCount) &&
+      isNonnegativeInteger(batch.expandedAnchorItemCount) &&
+      isNonnegativeInteger(batch.sameLocalClauseRecoveredLeafCount) &&
+      batch.expandedAnchorItemCount <= batch.acceptedItemCount &&
+      (batch.expandedAnchorItemCount === 0) ===
+        (batch.sameLocalClauseRecoveredLeafCount === 0) &&
+      batch.sameLocalClauseRecoveredLeafCount >=
+        batch.expandedAnchorItemCount &&
+      batch.sameLocalClauseRecoveredLeafCount <=
+        batch.acceptedItemCount * 2 &&
       batch.failureCount === 0,
   );
 }

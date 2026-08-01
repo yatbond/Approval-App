@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { templateCopilotMaximumSourceCodePoints } from "./template-copilot-unicode.ts";
 import type {
   TemplateCopilotV3LocatedQuoteItem,
   TemplateCopilotV3ProviderQuoteKind,
@@ -30,6 +31,22 @@ import {
   templateCopilotV3SliceConditionRouteClause,
   type TemplateCopilotV3ConditionRouteHint,
 } from "./template-copilot-v3-condition-route-grammar.ts";
+import {
+  templateCopilotV3HardClauseSeparator,
+  templateCopilotV3LocalClauseBoundaryPattern,
+  templateCopilotV3NormalizedPrefixNegatesFollowingPredicate,
+  templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority,
+  templateCopilotV3RequirementAffirmativeContrast,
+  templateCopilotV3RequirementAuthorityPairIsNonAffirmative,
+  templateCopilotV3RequirementGapIsClosedPunctuation,
+  templateCopilotV3RequirementGoverningPrefixIsNonAffirmative,
+  templateCopilotV3RequirementPrefixNamesCompetingSibling,
+  templateCopilotV3RequirementSameHardTailIsQualified,
+  templateCopilotV3RequirementAuthorityContinuationIsQualified,
+  templateCopilotV3RequirementTextContainsSameSubjectContradiction,
+  templateCopilotV3RequirementTextContainsUnresolvedSameSubjectAssertion,
+  templateCopilotV3RoleClauseBoundaryPattern,
+} from "./template-copilot-v3-clause-boundaries.ts";
 
 type Confidence = "low" | "medium" | "high";
 type Ambiguity = "none" | "possible" | "ambiguous";
@@ -410,6 +427,23 @@ function compileArrayItem(
     );
     return null;
   }
+  const semanticAuthorityContexts = semanticAuthorityContextsForArrayItem(
+    factId,
+    item.anchor,
+    item.leaves.map((leaf) => leaf.sourceSpan),
+    messages,
+    semanticContexts,
+  );
+  if (semanticAuthorityContexts === null) {
+    rejections.push(
+      rejection(
+        item,
+        "untraceable_span",
+        `${item.kind}:semantic_authority_context`,
+      ),
+    );
+    return null;
+  }
   const draft: Draft = { itemIndex: item.itemIndex, kind: item.kind, factId, anchor: item.anchor, leaves: new Map(), arrays: new Map(), relationships: [], observedRoles: new Set(), semanticObservations: [], semanticAuthorityBlocked: false, semanticContexts, sourceAnchors: [item.anchor], confidence: item.confidence, ambiguity: item.ambiguity };
   const suppliedObservations = item.leaves.map((supplied) =>
     Object.freeze({
@@ -419,6 +453,9 @@ function compileArrayItem(
       sourceSpan: supplied.sourceSpan,
     }),
   );
+  const semanticSubjectObservation =
+    suppliedObservations.find((observation) => observation.role === "label") ??
+    null;
   draft.semanticAuthorityBlocked =
     semanticCoreObservationsCrossHardClause(
       factId,
@@ -432,6 +469,8 @@ function compileArrayItem(
           factId,
           observation,
           semanticContexts,
+          semanticAuthorityContexts,
+          semanticSubjectObservation,
         ),
     );
   const conflictedPaths = new Set<string>();
@@ -446,14 +485,13 @@ function compileArrayItem(
       continue;
     }
     draft.observedRoles.add(supplied.role);
-    draft.semanticObservations.push(
-      Object.freeze({
-        role: supplied.role,
-        quote: supplied.sourceSpan.exactText,
-        advisoryHint: supplied.hint,
-        sourceSpan: supplied.sourceSpan,
-      }),
-    );
+    const semanticObservation = Object.freeze({
+      role: supplied.role,
+      quote: supplied.sourceSpan.exactText,
+      advisoryHint: supplied.hint,
+      sourceSpan: supplied.sourceSpan,
+    });
+    draft.semanticObservations.push(semanticObservation);
     if (mapping.kind === "semantic_only") continue;
     if (mapping.kind === "relationship") {
       const relationship = deriveRelationship(supplied.hint, supplied.sourceSpan.exactText);
@@ -469,8 +507,34 @@ function compileArrayItem(
       draft.leaves.set(mapping.path, { value: [], rule: "explicit_empty_collection", spans: [supplied.sourceSpan] });
       continue;
     }
+    if (supplied.sameLocalClauseRecovered === true) {
+      if (
+        contextualRecoveredCoreEvidenceCanRemainReviewOnly(
+          item,
+          factId,
+          semanticObservation,
+          semanticContexts,
+          draft.semanticAuthorityBlocked,
+        )
+      ) {
+        continue;
+      }
+      rejections.push(rejection(item, "unverifiable_leaf", `${item.kind}:${supplied.role}`));
+      continue;
+    }
     const derived = deriveLeaf(factId, mapping, supplied.hint, supplied.sourceSpan);
     if (!derived) {
+      if (
+        contextualRecoveredCoreEvidenceCanRemainReviewOnly(
+          item,
+          factId,
+          semanticObservation,
+          semanticContexts,
+          draft.semanticAuthorityBlocked,
+        )
+      ) {
+        continue;
+      }
       rejections.push(rejection(item, "unverifiable_leaf", `${item.kind}:${supplied.role}`));
       continue;
     }
@@ -508,6 +572,45 @@ function compileArrayItem(
   }
   draft.relationships = dedupeRelationships(draft.relationships, compareSpans);
   return draft;
+}
+
+function contextualRecoveredCoreEvidenceCanRemainReviewOnly(
+  item: TemplateCopilotV3LocatedQuoteItem,
+  factId: TemplateCopilotV3FragmentFactId,
+  observation: TemplateCopilotV3ReviewObservation,
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+  semanticAuthorityBlocked: boolean,
+) {
+  const scopedRole =
+    (factId === "request.fields" && observation.role === "required") ||
+    (
+      factId === "attachments.requirements" &&
+      (observation.role === "kind" || observation.role === "required")
+    );
+  const label = item.leaves.find((leaf) => leaf.role === "label");
+  const subjectObservation = label
+    ? Object.freeze({
+      role: label.role,
+      quote: label.sourceSpan.exactText,
+      advisoryHint: label.hint,
+      sourceSpan: label.sourceSpan,
+    })
+    : null;
+  return (
+    item.anchorExpanded === true &&
+    item.sameLocalClauseRecoveredLeafCount > 0 &&
+    scopedRole &&
+    !semanticAuthorityBlocked &&
+    observation.sourceSpan.messageId === item.anchor.messageId &&
+    observation.sourceSpan.startCodePoint >= item.anchor.startCodePoint &&
+    observation.sourceSpan.endCodePoint <= item.anchor.endCodePoint &&
+    semanticHintIsVerified(
+      factId,
+      observation,
+      semanticContexts,
+      subjectObservation,
+    )
+  );
 }
 
 function compileSemanticItem(
@@ -1102,9 +1205,15 @@ function semanticallyComplete(
       (leaf) =>
         templateCopilotV3NormalizeTrimCollapseText(leaf.quote).length > 0,
     );
+  const semanticSubjectObservation = raw("label")[0] ?? null;
   const verified = (role: TemplateCopilotV3ProviderQuoteRole) =>
     leaves(role).filter((leaf) =>
-      semanticHintIsVerified(factId, leaf, sourceAnchors)
+      semanticHintIsVerified(
+        factId,
+        leaf,
+        sourceAnchors,
+        semanticSubjectObservation,
+      )
     );
   if (factId === "request.fields") {
     const groups = [raw("label"), verified("required")] as const;
@@ -1600,7 +1709,12 @@ function semanticAttachmentHasConditionalRequirementContext(
         /^(?:申請時|申请时|提交時|提交时|呈交時|呈交时|最後呈交前|最后呈交前|最終呈交前|最终呈交前|完成後|完成后)(?:再)?/u
           .test(wording);
       if (stageTimed) return false;
-      if (explicitConditional) return true;
+      if (explicitConditional) {
+        return !semanticAttachmentConditionalSegmentNamesCompetingEntity(
+          wording,
+          labels,
+        );
+      }
 
       if (englishAction?.index !== undefined) {
         const prefix = wording.slice(0, englishAction.index).trim();
@@ -1626,6 +1740,78 @@ function semanticAttachmentHasConditionalRequirementContext(
       );
     })
   );
+}
+
+function semanticAttachmentConditionalSegmentNamesCompetingEntity(
+  wording: string,
+  labels: readonly string[],
+) {
+  if (
+    /\b(?:replace|replaces|replacement|instead|substitute|substitution|alternative|supersede|supersedes|superseded)\b|\b(?:in\s+(?:lieu|place)\s+of|stand(?:s|ing)?\s+in\s+for|take(?:s|n|ing)?\s+the\s+place\s+of|serve(?:s|d|ing)?\s+as\s+(?:the\s+)?equivalent\s+of)\b|(?:取代|替代|代替|替換|替换|頂替|顶替|代用|抵替)/u.test(
+      wording,
+    )
+  ) {
+    return false;
+  }
+  const conditional = /\b(?:if|when|whenever|unless|only\s+if|provided(?:\s+that)?|in\s+case(?:\s+of)?|depending\s+on)\b|(?:若|如果|倘若|除非|只有|僅當|仅当|才)/u
+    .exec(wording);
+  if (conditional?.index === undefined) return false;
+  const fullConditionalTail = wording.slice(
+    conditional.index + conditional[0].length,
+  );
+  for (const label of labels) {
+    if (
+      label.length === 0 ||
+      !semanticAttachmentActionContainsLexicalTerm(fullConditionalTail, label)
+    ) continue;
+    let offset = fullConditionalTail.indexOf(label);
+    while (offset >= 0) {
+      const before = fullConditionalTail.slice(0, offset);
+      const after = fullConditionalTail.slice(offset + label.length);
+      const independentRequirement =
+        /(?:^|[,，;；])\s*(?:and|but|or|whereas|及|和|與|与|並|并|但)\s*$/u
+          .test(before) &&
+        /^(?:\s+(?:(?:is|are|was|were|remains?|becomes?)\s+)?(?:required|mandatory|compulsory)|\s+(?:must|shall|needs?\s+to|has\s+to)\s+(?:be\s+)?(?:provided|uploaded|required)|\s*(?:為|为|是)?(?:必填|必須|必须|需要|須|须))/u
+          .test(after);
+      if (!independentRequirement) return false;
+      offset = fullConditionalTail.indexOf(label, offset + label.length);
+    }
+  }
+  const preceding = wording.slice(0, conditional.index);
+  const boundary = [
+    ...preceding.matchAll(/\b(?:and|but|or|whereas|while)\b|[,，;；]/gu),
+  ].at(-1);
+  const segmentStart = boundary?.index === undefined
+    ? 0
+    : boundary.index + boundary[0].length;
+  const followingBoundary = /\b(?:and|but|or|whereas|while)\b|[,，;；]/u
+    .exec(wording.slice(conditional.index + conditional[0].length));
+  const segmentEnd = followingBoundary?.index === undefined
+    ? wording.length
+    : conditional.index + conditional[0].length + followingBoundary.index;
+  const segment = wording.slice(segmentStart, segmentEnd);
+  if (
+    labels.some((label) =>
+      label.length > 0 &&
+      semanticAttachmentActionContainsLexicalTerm(segment, label)
+    )
+  ) {
+    return false;
+  }
+  const beforeConditional = segment.slice(
+    0,
+    Math.max(0, conditional.index - segmentStart),
+  ).trim();
+  if (
+    /^(?!(?:it|this|that|the\s+(?:same\s+)?(?:attachment|document|file|form|upload))\b)[\p{L}\p{N}_'’\-]+(?:\s+[\p{L}\p{N}_'’\-]+){0,8}\s+(?:is|are|was|were|becomes?|remains?)\s+(?:optional|required|waived|exempt|unnecessary)\b/u
+      .test(beforeConditional)
+  ) {
+    return true;
+  }
+  return /\b(?:[\p{L}\p{N}_'’\-]+\s+){0,8}(?:pdf|document|file|attachment|form|spreadsheet|image|photo)\b/u
+      .test(segment) ||
+    /(?:[\p{L}\p{N}\p{M}]{1,32})(?:pdf|附件|文件|檔案|档案|表格|表单)/u
+      .test(segment);
 }
 
 function semanticAttachmentHasClosedConditionalState(
@@ -3329,24 +3515,39 @@ function semanticClauseIndexInAnchor(
     .join("");
   const hardBoundaries = Array.from(prefix)
     .filter((character) => semanticHardClauseSeparator(character)).length;
+  const affirmativeContrast =
+    templateCopilotV3RequirementAffirmativeContrast(anchor.exactText);
   const roleBoundaries = [...prefix.matchAll(semanticRoleClauseBoundaryPattern())]
-    .length;
+    .filter((match) =>
+      !(
+        affirmativeContrast &&
+        /^but$/iu.test(match[0])
+      )
+    ).length;
   return hardBoundaries + roleBoundaries;
 }
 
 function semanticHardClauseSeparator(character: string) {
-  return /[\r\n.!?;。！？；]/u.test(character);
+  return templateCopilotV3HardClauseSeparator(character);
 }
 
 function semanticRoleClauseBoundaryPattern() {
-  return /\b(?:but|whereas|while|when|if|unless|although|except)\b|(?:但是|但係|但|可是|然而|如果|若|(?<![\p{L}\p{N}])[當当](?!地)|除非)/giu;
+  return templateCopilotV3RoleClauseBoundaryPattern();
 }
 
 function semanticLocalClauseBoundaryPattern() {
-  return /\b(?:but|whereas|while|when|if|unless|although|except|and\s+(?:an?\s+)?optional)\b|(?:但是|但係|但|可是|然而|如果|若|(?<![\p{L}\p{N}])[當当](?!地)|除非|(?:及|和|與|与|並|并)(?:一份|一個|一个)?(?:可選擇|可选择|可選|可选|選填|选填))/giu;
+  return templateCopilotV3LocalClauseBoundaryPattern();
 }
 
 function semanticObservationClause(
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return semanticObservationClauseDetails(observation, sourceAnchors)?.text ??
+    null;
+}
+
+function semanticObservationClauseDetails(
   observation: TemplateCopilotV3ReviewObservation,
   sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
 ) {
@@ -3381,14 +3582,25 @@ function semanticObservationClause(
     end += 1;
   }
   const segment = codePoints.slice(start, end).join("");
+  const hardTerminator = codePoints[end] ?? "";
   const observationStart = relativeStart - start;
   const observationEnd = relativeEnd - start;
+  const segmentCodePointLength = Array.from(segment).length;
+  const affirmativeContrast =
+    templateCopilotV3RequirementAffirmativeContrast(segment);
   const boundaries = [
     0,
-    ...[...segment.matchAll(semanticLocalClauseBoundaryPattern())].map(
-      (match) => Array.from(segment.slice(0, match.index)).length,
-    ),
-    Array.from(segment).length,
+    ...[...segment.matchAll(semanticLocalClauseBoundaryPattern())]
+      .filter((match) =>
+        !(
+          affirmativeContrast &&
+          /^but$/iu.test(match[0])
+        )
+      )
+      .map(
+        (match) => Array.from(segment.slice(0, match.index)).length,
+      ),
+    segmentCodePointLength,
   ]
     .filter((value, index, values) => values.indexOf(value) === index)
     .sort((left, right) => left - right);
@@ -3399,16 +3611,100 @@ function semanticObservationClause(
       observationStart >= localStart &&
       observationEnd <= localEnd
     ) {
-      return Array.from(segment).slice(localStart, localEnd).join("");
+      return Object.freeze({
+        text: Array.from(segment).slice(localStart, localEnd).join(""),
+        observationStartCodePoint: observationStart - localStart,
+        observationEndCodePoint: observationEnd - localStart,
+        sourceStartCodePoint: containing.startCodePoint + start + localStart,
+        sourceEndCodePoint: containing.startCodePoint + start + localEnd,
+        hardText: segment,
+        hardSourceStartCodePoint: containing.startCodePoint + start,
+        hardSourceEndCodePoint: containing.startCodePoint + end,
+        hardTerminator,
+        authorityContinuation: codePoints
+          .slice(start + localEnd)
+          .join(""),
+        hardAuthorityContinuation: codePoints.slice(end).join(""),
+        terminator: localEnd === segmentCodePointLength
+          ? hardTerminator
+          : "",
+      });
     }
   }
-  return segment;
+  return Object.freeze({
+    text: segment,
+    observationStartCodePoint: observationStart,
+    observationEndCodePoint: observationEnd,
+    sourceStartCodePoint: containing.startCodePoint + start,
+    sourceEndCodePoint: containing.startCodePoint + end,
+    hardText: segment,
+    hardSourceStartCodePoint: containing.startCodePoint + start,
+    hardSourceEndCodePoint: containing.startCodePoint + end,
+    hardTerminator,
+    authorityContinuation: codePoints.slice(end).join(""),
+    hardAuthorityContinuation: codePoints.slice(end).join(""),
+    terminator: hardTerminator,
+  });
+}
+
+function semanticObservationAuthorityClauseDetails(
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const ordered = sourceAnchors
+    .filter((anchor) => anchor.messageId === observation.sourceSpan.messageId)
+    .sort(
+      (left, right) =>
+        left.startCodePoint - right.startCodePoint ||
+        left.endCodePoint - right.endCodePoint ||
+        compareText(left.spanId, right.spanId),
+    );
+  if (ordered.length === 0) return null;
+  const startCodePoint = ordered[0].startCodePoint;
+  let endCodePoint = ordered[0].endCodePoint;
+  const stitchedCodePoints = Array.from(ordered[0].exactText);
+  for (let index = 1; index < ordered.length; index += 1) {
+    const next = ordered[index];
+    if (next.startCodePoint > endCodePoint) return null;
+    if (next.endCodePoint <= endCodePoint) continue;
+    const overlap = endCodePoint - next.startCodePoint;
+    stitchedCodePoints.push(...Array.from(next.exactText).slice(overlap));
+    endCodePoint = next.endCodePoint;
+  }
+  if (
+    observation.sourceSpan.startCodePoint < startCodePoint ||
+    observation.sourceSpan.endCodePoint > endCodePoint
+  ) {
+    return null;
+  }
+  const stitched = {
+    spanId: ordered[0].spanId,
+    messageId: observation.sourceSpan.messageId,
+    startCodePoint,
+    endCodePoint,
+    exactText: stitchedCodePoints.join(""),
+  } satisfies TemplateCopilotV3SourceSpan;
+  const details = semanticObservationClauseDetails(observation, [stitched]);
+  if (!details) return null;
+  const priorStartCodePoint = Math.max(
+    startCodePoint,
+    details.hardSourceStartCodePoint - 80_000,
+  );
+  return Object.freeze({
+    ...details,
+    hardAuthorityPrefix: stitchedCodePoints.slice(
+      priorStartCodePoint - startCodePoint,
+      details.hardSourceStartCodePoint - startCodePoint,
+    ).join(""),
+  });
 }
 
 function semanticObservationIsContradicted(
   factId: TemplateCopilotV3FragmentFactId,
   observation: TemplateCopilotV3ReviewObservation,
   sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+  authoritySourceAnchors: readonly TemplateCopilotV3SourceSpan[] = sourceAnchors,
+  subjectObservation: TemplateCopilotV3ReviewObservation | null = null,
 ) {
   const clause = semanticObservationClause(observation, sourceAnchors);
   if (clause === null) return true;
@@ -3418,16 +3714,24 @@ function semanticObservationIsContradicted(
     observation.role === "required" &&
     observation.advisoryHint === "true"
   ) {
-    return semanticOptionalityIsExplicit(wording) ||
-      semanticFieldActionIsProhibited(wording);
+    return !semanticRequiredTrueObservationIsAffirmed(
+      observation,
+      sourceAnchors,
+      authoritySourceAnchors,
+      subjectObservation,
+      "request_field",
+    );
   }
   if (factId === "attachments.requirements") {
-    const prohibited = semanticAttachmentActionIsProhibited(wording);
-    if (observation.role === "kind") return prohibited;
     if (observation.role === "required") {
-      return prohibited ||
-        (observation.advisoryHint === "true" &&
-          semanticOptionalityIsExplicit(wording));
+      return observation.advisoryHint === "true" &&
+        !semanticRequiredTrueObservationIsAffirmed(
+          observation,
+          sourceAnchors,
+          authoritySourceAnchors,
+          subjectObservation,
+          "attachment",
+        );
     }
   }
   if (
@@ -3487,39 +3791,325 @@ function semanticConditionOperatorIsExternallyNegated(
   const prefix = templateCopilotV3NormalizeLexicalText(
     codePoints.slice(start, relativeStart).join(""),
   );
-  return /(?:\b(?:(?:do|does|did|is|are|was|were|has|have|had|can|could|may|might|must|shall|should|will|would)\s+not|(?:do|does|did|is|are|was|were|has|have|had|can|could|may|might|must|shall|should|would)n['’]t|cannot|won['’]t|never|not|no|without|fails?\s+to))(?:\s+(?:directly|necessarily|actually|ever|explicitly|clearly|normally|usually|automatically|expected|likely|intended|permitted|allowed)){0,2}(?:\s+to)?\s*$/u
+  return /(?:\b(?:(?:do|does|did|is|are|was|were|has|have|had|can|could|may|might|must|shall|should|will|would)\s+not|(?:don|doesn|didn|isn|aren|wasn|weren|hasn|haven|hadn|can|couldn|mayn|mightn|mustn|shalln|shouldn|wouldn|won|needn)(?:['’ʼ]|\s*)t|cannot|never|not|no|without|no\s+need\s+to|need\s+not|fails?\s+to))(?:\s+(?:directly|necessarily|actually|ever|explicitly|clearly|normally|usually|automatically|expected|likely|intended|permitted|allowed)){0,2}(?:\s+to)?\s*$/u
     .test(prefix) ||
     /(?:並非|并非|沒有|没有|不|未|無|无|毋|勿|非)(?:(?:直接|明確|明确|實際|实际|必然|一定|自動|自动)){0,2}\s*$/u
       .test(prefix);
 }
 
-function semanticOptionalityIsExplicit(wording: string) {
-  return /\b(?:optional|not required|is not required|isn't required|need not)\b/u
-    .test(wording) ||
-    /(?:可選擇|可选择|可選|可选|選填|选填|非必須|非必须|不需要|毋須|毋须|無須|无须)/u
-      .test(wording);
+const semanticRequiredTrueAliases = Object.freeze([
+  "true", "yes", "required", "require", "requires", "mandatory", "must",
+  "must upload", "must provide", "must include", "must also include",
+  "must submit", "must attach", "required upload", "add", "include",
+  "upload", "attach", "submit", "provide", "fill in", "必須", "必须",
+  "需要", "必填", "上載", "上传", "提交", "附上", "提供", "填寫",
+  "填写", "要填", "須填", "须填", "必須填寫", "必须填写", "必須提供",
+  "必须提供", "必須上載", "必须上传", "須上載", "须上传", "要上載",
+  "要上传", "必須提交", "必须提交", "須提交", "须提交", "必須附上",
+  "必须附上", "是",
+].map((alias) => templateCopilotV3NormalizeLexicalText(alias)));
+
+function semanticRequiredTrueAliasMatches(value: string) {
+  return semanticRequiredTrueAliases.includes(
+    templateCopilotV3NormalizeLexicalText(value),
+  );
 }
 
-function semanticFieldActionIsProhibited(wording: string) {
-  return /\b(?:do|does|did|must|shall|should|may|can|will|would)\s+not\s+(?:add|collect|complete|enter|fill(?:\s+in)?|include|provide|record|require|supply)\b/u
-    .test(wording) ||
-    /(?:不要|不得|不准|禁止|切勿)\s*(?:加入|添加|收集|完成|輸入|输入|填寫|填写|提供|記錄|记录)/u
-      .test(wording);
+function semanticRequiredAuthorityExplicitlySupersedes(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  if (!normalized || normalized.length > 1_000) return false;
+  const markers = [
+    ...normalized.matchAll(
+      /(?:^|[.!?;:，,。！？；：]\s*)(?:now\b|correction\b|corrected\b|updated\s+requirement\b|final\s+requirement\b|this\s+(?:supersedes?|overrides?)\s+(?:the\s+)?prior\s+requirement\b|replaces?\s+the\s+prior\s+requirement\b)/gu,
+    ),
+    ...normalized.matchAll(
+      /(?:^|[.!?;:，,。！？；：]\s*)(?:更正|修正|現改為|现改为|改為|改为|以此為準|以此为准|(?:此|本)?(?:要求|規定|规定)取代(?:先前|之前)(?:要求|規定|规定))/gu,
+    ),
+  ].sort((left, right) => (left.index ?? 0) - (right.index ?? 0));
+  const marker = markers.at(-1);
+  if (marker?.index === undefined) return false;
+  const suffix = normalized.slice(marker.index + marker[0].length)
+    .replace(/^[\s:：,，\-–—]+/u, "")
+    .trim();
+  if (!suffix || suffix.length > 240) return false;
+  if (
+    /^(?:rejected|denied|refused|withdrawn|cancelled|canceled|proposed|possible|potential|draft|tentative|pending|subject\s+to)\b/u.test(suffix) ||
+    /^(?:被拒|已拒絕|已拒绝|遭拒|建議|建议|擬議|拟议|可能|暫定|暂定|待定|有待)/u.test(suffix)
+  ) return false;
+  return !/[.!?;，,。！？；]/u.test(suffix) &&
+    !/\b(?:required|mandatory|compulsory|must|shall|optional|not\s+required)\b|(?:必填|必須|必须|需要|選填|选填|非必須|非必须)/u.test(
+      suffix,
+    );
 }
 
-function semanticAttachmentActionIsProhibited(wording: string) {
-  return /\b(?:do|does|did|must|shall|should|may|can|will|would)\s+not\s+(?:add|attach|complete|fill(?:\s+in)?|include|provide|submit|upload)\b/u
-    .test(wording) ||
-    /\b(?:do|does|did)\s+not\s+need\s+to\s+(?:add|attach|complete|fill(?:\s+in)?|include|provide|submit|upload)\b/u
-      .test(wording) ||
-    /\b(?:no\s+need\s+to|need\s+not)\s+(?:add|attach|complete|fill(?:\s+in)?|include|provide|submit|upload)\b/u
-      .test(wording) ||
-    /\bno\s+(?:attachment|document|file|upload)s?\s+(?:is|are)?\s*allowed\b/u
-      .test(wording) ||
-    /(?:不要|不得|不准|禁止|切勿)\s*(?:上載|上传|附上|提交|提供|加入|添加|填寫|填写)/u
-      .test(wording) ||
-    /(?:不需要|毋須|毋须|無需|无需|無須|无须)\s*(?:上載|上传|附上|提交|提供|加入|添加|填寫|填写)/u
-      .test(wording);
+function semanticRequiredTrueObservationIsAffirmed(
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+  authoritySourceAnchors: readonly TemplateCopilotV3SourceSpan[] = sourceAnchors,
+  subjectObservation: TemplateCopilotV3ReviewObservation | null = null,
+  subjectKind: "request_field" | "attachment" = "request_field",
+) {
+  const clause = semanticObservationClauseDetails(observation, sourceAnchors);
+  if (!clause) return false;
+  const marker = templateCopilotV3NormalizeLexicalText(
+    observation.sourceSpan.exactText,
+  );
+  const markerIsBareCjkNativeFormFill = marker === "填";
+  if (
+    !semanticRequiredTrueAliasMatches(marker) &&
+    !markerIsBareCjkNativeFormFill
+  ) return false;
+  const authorityClause = semanticObservationAuthorityClauseDetails(
+    observation,
+    authoritySourceAnchors,
+  );
+  if (!authorityClause) return false;
+  const subjectSharesLocalClause =
+    subjectObservation?.sourceSpan.messageId === observation.sourceSpan.messageId &&
+    subjectObservation.sourceSpan.startCodePoint >=
+      authorityClause.sourceStartCodePoint &&
+    subjectObservation.sourceSpan.endCodePoint <=
+      authorityClause.sourceEndCodePoint;
+  const pairStartCodePoint = subjectSharesLocalClause
+    ? Math.min(
+      observation.sourceSpan.startCodePoint,
+      subjectObservation.sourceSpan.startCodePoint,
+    )
+    : observation.sourceSpan.startCodePoint;
+  const pairEndCodePoint = subjectSharesLocalClause
+    ? Math.max(
+      observation.sourceSpan.endCodePoint,
+      subjectObservation.sourceSpan.endCodePoint,
+    )
+    : observation.sourceSpan.endCodePoint;
+  const hardCodePoints = Array.from(authorityClause.hardText);
+  const hardSlice = (startCodePoint: number, endCodePoint: number) =>
+    hardCodePoints.slice(
+      startCodePoint - authorityClause.hardSourceStartCodePoint,
+      endCodePoint - authorityClause.hardSourceStartCodePoint,
+    ).join("");
+  const fullAuthorityPrefix = hardSlice(
+    authorityClause.sourceStartCodePoint,
+    pairStartCodePoint,
+  );
+  const lastCoordination = [
+    ...fullAuthorityPrefix.matchAll(
+      /\b(?:and|or)\b|(?:及|和|與|与|並|并)/giu,
+    ),
+  ].at(-1);
+  const coordinationPrefix = lastCoordination?.index === undefined
+    ? ""
+    : fullAuthorityPrefix.slice(0, lastCoordination.index);
+  const coordinationStartsIndependentClause =
+    /[,，]\s*$/u.test(coordinationPrefix) ||
+    /\b(?:is|are|was|were|has|have|had|do|does|did|upload|attach|submit|provide|include|add|require|requires|required|optional|collect|enter|fill|record)\b/u
+      .test(templateCopilotV3NormalizeLexicalText(coordinationPrefix)) ||
+    /(?:是|為|为|需要|必須|必须|上載|上传|附上|提交|提供|加入|添加|填寫|填写|要求)/u
+      .test(coordinationPrefix);
+  const coordinationReducedAuthorityPrefix =
+      lastCoordination?.index === undefined ||
+      !coordinationStartsIndependentClause
+    ? fullAuthorityPrefix
+    : fullAuthorityPrefix.slice(
+      lastCoordination.index + lastCoordination[0].length,
+    );
+  const authorityPair = hardSlice(pairStartCodePoint, pairEndCodePoint);
+  const authorityTail = hardSlice(
+    pairEndCodePoint,
+    authorityClause.hardSourceEndCodePoint,
+  );
+  const requirementOrientation = !subjectSharesLocalClause ||
+      !subjectObservation
+    ? "unknown" as const
+    : observation.sourceSpan.endCodePoint <=
+        subjectObservation.sourceSpan.startCodePoint
+      ? "marker_before_subject" as const
+      : subjectObservation.sourceSpan.endCodePoint <=
+          observation.sourceSpan.startCodePoint
+        ? "subject_before_marker" as const
+        : "unknown" as const;
+  const positivePrefix = templateCopilotV3NormalizeLexicalText(
+    hardSlice(
+      subjectSharesLocalClause &&
+          subjectObservation.sourceSpan.startCodePoint <
+            observation.sourceSpan.startCodePoint
+        ? subjectObservation.sourceSpan.startCodePoint
+        : authorityClause.sourceStartCodePoint,
+      observation.sourceSpan.startCodePoint,
+    ),
+  );
+  const explicitPrecedence = semanticRequiredAuthorityExplicitlySupersedes(
+    `${fullAuthorityPrefix} ${positivePrefix}`,
+  );
+  const prefixNamesCompetingSibling =
+    subjectObservation !== null &&
+    templateCopilotV3RequirementPrefixNamesCompetingSibling(
+      fullAuthorityPrefix,
+      subjectObservation.quote,
+      subjectKind,
+    );
+  const authorityPrefix = explicitPrecedence || prefixNamesCompetingSibling
+    ? ""
+    : coordinationReducedAuthorityPrefix;
+  const currentPrefixContradictsSubject =
+    subjectObservation !== null &&
+    templateCopilotV3RequirementTextContainsSameSubjectContradiction(
+      fullAuthorityPrefix,
+      subjectObservation.quote,
+      subjectKind,
+    );
+  const priorAuthorityContradictsSubject =
+    subjectObservation !== null &&
+    (
+      templateCopilotV3RequirementTextContainsSameSubjectContradiction(
+        authorityClause.hardAuthorityPrefix,
+        subjectObservation.quote,
+        subjectKind,
+      ) ||
+      templateCopilotV3RequirementTextContainsUnresolvedSameSubjectAssertion(
+        authorityClause.hardAuthorityPrefix,
+        subjectObservation.quote,
+        subjectKind,
+      )
+    );
+  const subjectPrecedesMarker = subjectSharesLocalClause &&
+    subjectObservation !== null &&
+    subjectObservation.sourceSpan.endCodePoint <=
+      observation.sourceSpan.startCodePoint;
+  const subjectMarkerGap = subjectPrecedesMarker && subjectObservation
+    ? hardSlice(
+      subjectObservation.sourceSpan.endCodePoint,
+      observation.sourceSpan.startCodePoint,
+    )
+    : "";
+  const closedPunctuationGap = subjectPrecedesMarker &&
+    templateCopilotV3RequirementGapIsClosedPunctuation(
+      subjectMarkerGap,
+      authorityTail,
+    );
+  const wrappedPunctuationGap = closedPunctuationGap &&
+    /^[\s([{（【]+$/u.test(subjectMarkerGap);
+  const authorityTailForQualification = wrappedPunctuationGap
+    ? authorityTail.replace(/^\s*[)\]}）】]/u, "")
+    : authorityTail;
+  if (
+    markerIsBareCjkNativeFormFill &&
+    !(
+      subjectKind === "attachment" &&
+      requirementOrientation === "marker_before_subject" &&
+      subjectObservation !== null &&
+      /^原生[^。！？；;]{0,80}(?:表|表格|表單|表单|form)$/u.test(
+        templateCopilotV3NormalizeLexicalText(subjectObservation.quote),
+      ) &&
+      templateCopilotV3NormalizeLexicalText(authorityPrefix) === ""
+    )
+  ) {
+    return false;
+  }
+  const legitimateAuthorityAdditiveNegation =
+    /\bnot\s+(?:only|merely|simply)\b/u.test(
+      templateCopilotV3NormalizeLexicalText(authorityPair),
+    );
+  const legitimateAuthorityAffirmativeContrast =
+    templateCopilotV3RequirementAffirmativeContrast(authorityPair);
+  const authorityPairIsNonAffirmative = subjectSharesLocalClause &&
+      subjectObservation
+    ? templateCopilotV3RequirementAuthorityPairIsNonAffirmative(
+      authorityPair,
+      subjectObservation.sourceSpan.startCodePoint - pairStartCodePoint,
+      subjectObservation.sourceSpan.endCodePoint - pairStartCodePoint,
+      observation.sourceSpan.startCodePoint - pairStartCodePoint,
+      observation.sourceSpan.endCodePoint - pairStartCodePoint,
+    )
+    : templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority(
+      templateCopilotV3NormalizeLexicalText(authorityPair),
+    );
+  const legitimateAuthorityPrefixAdditiveNegation =
+    /\bnot\s+(?:only|merely|simply)\s*$/u.test(
+      templateCopilotV3NormalizeLexicalText(authorityPrefix),
+    );
+  if (
+    (
+      !explicitPrecedence &&
+      (currentPrefixContradictsSubject || priorAuthorityContradictsSubject)
+    ) ||
+    /[?？]/u.test(authorityClause.hardTerminator) ||
+    templateCopilotV3RequirementGoverningPrefixIsNonAffirmative(
+      authorityPrefix,
+    ) ||
+    (
+      !legitimateAuthorityPrefixAdditiveNegation &&
+      templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority(
+        templateCopilotV3NormalizeLexicalText(authorityPrefix),
+      )
+    ) ||
+    (
+      !legitimateAuthorityAdditiveNegation &&
+      !legitimateAuthorityAffirmativeContrast &&
+      authorityPairIsNonAffirmative
+    ) ||
+    templateCopilotV3RequirementSameHardTailIsQualified(
+      authorityTailForQualification,
+      subjectObservation?.quote ?? "",
+      subjectKind,
+      requirementOrientation,
+    )
+  ) {
+    return false;
+  }
+  const authorityContinuation = semanticObservationAuthorityContinuation(
+    observation,
+    authoritySourceAnchors,
+  );
+  if (
+    authorityContinuation === null ||
+    templateCopilotV3RequirementAuthorityContinuationIsQualified(
+      authorityContinuation,
+      subjectObservation?.quote ?? "",
+      subjectKind,
+    )
+  ) {
+    return false;
+  }
+  if (
+    /[?？]/u.test(clause.terminator)
+  ) {
+    return false;
+  }
+
+  const legitimateAdditiveNegation =
+    /(?:\b(?:is|are|was|were)\s+)?not\s+(?:only|merely|simply)\s*$/u
+      .test(positivePrefix);
+
+  if (/^(?:true|yes|是)$/u.test(marker)) {
+    return /(?:[:：=]|\b(?:is|are|was|were)|為|为|是)\s*$/u.test(positivePrefix);
+  }
+  if (/^(?:required|mandatory)$/u.test(marker)) {
+    if (legitimateAdditiveNegation) return true;
+    if (legitimateAuthorityAffirmativeContrast) return true;
+    if (/^(?:(?:please|kindly|also|then|and|or)\s*)?$/u.test(positivePrefix)) {
+      return true;
+    }
+    if (/[:：=]\s*$/u.test(positivePrefix)) return true;
+    if (closedPunctuationGap) return true;
+    const terseLabelPrefix =
+      /^(?:[\p{L}\p{N}_'’ʼ\p{Pd}]+\s+){0,5}[\p{L}\p{N}_'’ʼ\p{Pd}]+$/u
+        .test(positivePrefix) &&
+      !/\b(?:is|are|was|were|be|been|being|to|from|have|has|had|do|does|did|become|remain|expect|expected|intend|intended|consider|considered|deem|deemed|regard|regarded|treat|treated|mark|marked)\b/u
+        .test(positivePrefix);
+    if (terseLabelPrefix) return true;
+    return /(?:\b(?:is|are|was|were)(?:\s+(?:absolutely|definitely|clearly|explicitly|always|still|indeed|invariably|categorically|normally|ordinarily|generally|legally|strictly|expressly|unequivocally))*|\b(?:will|shall|must|should)\s+(?:(?:always|definitely|clearly|explicitly|still|indeed|invariably|categorically|normally|ordinarily|generally|legally|strictly|expressly|unequivocally)\s+)*be|\b(?:has|have|needs?|need)\s+to\s+be|\bcontinues?\s+to\s+be|\b(?:is|are|was|were)\s+(?:expected|intended)\s+to\s+be|\b(?:is|are|was|were)\s+(?:considered|deemed)(?:\s+to\s+be)?|\b(?:is|are|was|were)\s+(?:regarded|treated)\s+as|\bmarked\s+as|\b(?:remains?|becomes?)|\bindeed|一律|一概|為|为|是)\s*$/u
+      .test(positivePrefix);
+  }
+  return true;
+}
+
+function semanticObservationAuthorityContinuation(
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return semanticObservationAuthorityClauseDetails(observation, sourceAnchors)
+    ?.hardAuthorityContinuation ?? null;
 }
 
 function semanticStageActionIsNegated(
@@ -3585,11 +4175,10 @@ function semanticPhraseIsImmediatelyNegated(
   const normalizedPhrase = templateCopilotV3NormalizeLexicalText(phrase);
   let offset = wording.indexOf(normalizedPhrase);
   while (offset >= 0) {
-    const prefix = wording.slice(Math.max(0, offset - 48), offset);
+    const prefix = wording.slice(0, offset);
     if (
-      /\b(?:do|does|did|is|are|was|were|will|would|should|can|could|may|might|must|shall)\s+not\s*$/u
-        .test(prefix) ||
-      /(?:不|未|不要|不得|不准|禁止|切勿|毋須|毋须|無須|无须)\s*(?:由[^，。；;\r\n]{1,24})?\s*$/u
+      templateCopilotV3NormalizedPrefixNegatesFollowingPredicate(prefix) ||
+      /(?:不|未|不要|不得|不准|禁止|切勿|毋須|毋须|無須|无须|毋需|無需|无需)\s*(?:由[^，。；;\r\n]{1,24})?\s*$/u
         .test(prefix)
     ) {
       return true;
@@ -3600,11 +4189,11 @@ function semanticPhraseIsImmediatelyNegated(
 }
 
 function semanticNotificationActionIsProhibited(wording: string) {
-  return /\b(?:do|does|did|must|shall|should|may|can|will|would)\s+not\s+(?:email|inform|message|notify|send)\b/u
+  return /\b(?:(?:do|does|did|must|shall|should|may|can|will|would)\s+not|(?:don|doesn|didn|mustn|shalln|shouldn|mayn|can|won|wouldn)(?:['’ʼ]|\s*)t|never|no\s+need\s+to|need\s+not)\s+(?:to\s+)?(?:email|inform|message|notify|send)\b/u
     .test(wording) ||
     /\bno\s+notifications?\s+(?:is|are)?\s*(?:allowed|required|sent)?\b/u
       .test(wording) ||
-    /(?:不要|不得|不准|禁止|切勿|不應|不应|毋須|毋须|無須|无须)\s*(?:向[^，。；;\r\n]{1,24})?\s*(?:通知|知會|知会|電郵|电邮|發送|发送)/u
+    /(?:不要|不得|不准|禁止|切勿|不應|不应|毋須|毋须|無須|无须|毋需|無需|无需)\s*(?:向[^，。；;\r\n]{1,24})?\s*(?:通知|知會|知会|電郵|电邮|發送|发送)/u
       .test(wording);
 }
 
@@ -3612,15 +4201,43 @@ function semanticHintIsVerified(
   factId: TemplateCopilotV3FragmentFactId,
   leaf: TemplateCopilotV3ReviewObservation,
   sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+  subjectObservation: TemplateCopilotV3ReviewObservation | null = null,
 ) {
-  if (semanticObservationIsContradicted(factId, leaf, sourceAnchors)) {
+  if (
+    semanticObservationIsContradicted(
+      factId,
+      leaf,
+      sourceAnchors,
+      sourceAnchors,
+      subjectObservation,
+    )
+  ) {
     return false;
+  }
+  const directMapping = mappingFor(
+    kindForFact(factId),
+    leaf.role,
+    leaf.advisoryHint,
+  );
+  if (
+    directMapping &&
+    directMapping.kind !== "relationship" &&
+    directMapping.kind !== "semantic_only" &&
+    deriveLeaf(
+      factId,
+      directMapping,
+      leaf.advisoryHint,
+      leaf.sourceSpan,
+    ) !== null
+  ) {
+    return true;
   }
   const wording = templateCopilotV3NormalizeLexicalText(leaf.quote);
   const matches = (...aliases: string[]) => aliases.some((alias) => templateCopilotV3NormalizeLexicalText(alias) === wording);
   if (leaf.role === "required") {
     return leaf.advisoryHint === "true"
-      ? matches("true", "yes", "required", "require", "requires", "mandatory", "must", "must upload", "must provide", "must include", "must also include", "must submit", "must attach", "required upload", "add", "include", "upload", "attach", "submit", "provide", "fill in", "必須", "必须", "需要", "必填", "上載", "上传", "提交", "附上", "提供", "填寫", "填写", "要填", "須填", "须填", "必須填寫", "必须填写", "必須提供", "必须提供", "必須上載", "必须上传", "須上載", "须上传", "要上載", "要上传", "必須提交", "必须提交", "須提交", "须提交", "必須附上", "必须附上")
+      ? semanticRequiredTrueAliasMatches(wording) ||
+        (factId === "attachments.requirements" && wording === "填")
       : leaf.advisoryHint === "false" && matches("false", "no", "optional", "not required", "選填", "选填", "非必須", "非必须", "不需要", "毋須", "毋须", "無須", "无须", "可選擇上載", "可選上載", "可选上传");
   }
   if (leaf.role === "kind" && factId === "attachments.requirements") {
@@ -3764,23 +4381,53 @@ function semanticContextsForArrayItem(
     const message = messages[anchor.messageId];
     if (typeof message !== "string") return null;
     const codePoints = Array.from(message);
-    if (codePoints.length > maximumConditionSemanticContextCodePoints) {
-      return null;
+    if (
+      codePoints.length === 0 ||
+      codePoints.length > templateCopilotMaximumSourceCodePoints
+    ) return null;
+    const contexts: TemplateCopilotV3SourceSpan[] = [];
+    const anchorLength = anchor.endCodePoint - anchor.startCodePoint;
+    if (anchorLength < 0 || anchorLength > 8_000) return null;
+    const anchorAlignedStart = Math.max(
+      0,
+      Math.min(
+        Math.max(0, codePoints.length - 8_000),
+        anchor.startCodePoint - Math.floor((8_000 - anchorLength) / 2),
+      ),
+    );
+    const contextRanges: Array<readonly [number, number]> = [];
+    let backwardEnd = anchorAlignedStart;
+    while (backwardEnd > 0) {
+      const backwardStart = Math.max(0, backwardEnd - 8_000);
+      contextRanges.push([backwardStart, backwardEnd]);
+      backwardEnd = backwardStart;
     }
-    const supplied = {
-      messageId: anchor.messageId,
-      startCodePoint: 0,
-      endCodePoint: codePoints.length,
-      exactText: message,
-    };
-    const parsed = templateCopilotV3SourceSpanSchema.safeParse({
-      spanId: templateCopilotV3SourceSpanId(supplied),
-      ...supplied,
-    });
-    return parsed.success &&
-        validateTemplateCopilotV3SourceSpan(parsed.data, messages)
-      ? [Object.freeze(parsed.data)]
-      : null;
+    let forwardStart = anchorAlignedStart;
+    while (forwardStart < codePoints.length) {
+      const forwardEnd = Math.min(codePoints.length, forwardStart + 8_000);
+      contextRanges.push([forwardStart, forwardEnd]);
+      forwardStart = forwardEnd;
+    }
+    for (const [startCodePoint, endCodePoint] of contextRanges.sort(
+      (left, right) => left[0] - right[0],
+    )) {
+      const supplied = {
+        messageId: anchor.messageId,
+        startCodePoint,
+        endCodePoint,
+        exactText: codePoints.slice(startCodePoint, endCodePoint).join(""),
+      };
+      const parsed = templateCopilotV3SourceSpanSchema.safeParse({
+        spanId: templateCopilotV3SourceSpanId(supplied),
+        ...supplied,
+      });
+      if (
+        !parsed.success ||
+        !validateTemplateCopilotV3SourceSpan(parsed.data, messages)
+      ) return null;
+      contexts.push(Object.freeze(parsed.data));
+    }
+    return contexts;
   }
   if (
     factId !== "workflow.conditions" &&
@@ -3872,6 +4519,84 @@ function semanticContextsForArrayItem(
   return parsed.success && validateTemplateCopilotV3SourceSpan(parsed.data, messages)
     ? [Object.freeze(parsed.data)]
     : null;
+}
+
+function semanticAuthorityContextsForArrayItem(
+  factId: TemplateCopilotV3FragmentFactId,
+  anchor: TemplateCopilotV3SourceSpan,
+  leafSpans: readonly TemplateCopilotV3SourceSpan[],
+  messages: Readonly<Record<string, string>>,
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+) {
+  if (
+    factId !== "request.fields" &&
+    factId !== "attachments.requirements"
+  ) {
+    return semanticContexts;
+  }
+  const message = messages[anchor.messageId];
+  if (typeof message !== "string") return null;
+  const codePoints = Array.from(message);
+  if (codePoints.length > templateCopilotMaximumSourceCodePoints) return null;
+  const validLeafSpans = leafSpans.filter(
+    (span) => span.messageId === anchor.messageId && validSpan(span, messages),
+  );
+  const authorityCoreSpans = validLeafSpans.length > 0
+    ? validLeafSpans
+    : [anchor];
+  const coreStartCodePoint = Math.min(
+    ...authorityCoreSpans.map((span) => span.startCodePoint),
+  );
+  let startCodePoint = coreStartCodePoint;
+  while (
+    startCodePoint > 0 &&
+    !semanticHardClauseSeparator(codePoints[startCodePoint - 1])
+  ) {
+    startCodePoint -= 1;
+  }
+  const currentHardStartCodePoint = startCodePoint;
+  startCodePoint = Math.max(0, currentHardStartCodePoint - 80_000);
+  while (
+    startCodePoint > 0 &&
+    startCodePoint < currentHardStartCodePoint &&
+    !semanticHardClauseSeparator(codePoints[startCodePoint - 1])
+  ) {
+    startCodePoint += 1;
+  }
+  const endCodePoint = codePoints.length;
+  if (endCodePoint <= startCodePoint) return null;
+  const maximumAuthoritySpanCodePoints = 8_000;
+  const chunks: TemplateCopilotV3SourceSpan[] = [];
+  for (
+    let chunkStartCodePoint = startCodePoint;
+    chunkStartCodePoint < endCodePoint;
+    chunkStartCodePoint += maximumAuthoritySpanCodePoints
+  ) {
+    const chunkEndCodePoint = Math.min(
+      endCodePoint,
+      chunkStartCodePoint + maximumAuthoritySpanCodePoints,
+    );
+    const supplied = {
+      messageId: anchor.messageId,
+      startCodePoint: chunkStartCodePoint,
+      endCodePoint: chunkEndCodePoint,
+      exactText: codePoints
+        .slice(chunkStartCodePoint, chunkEndCodePoint)
+        .join(""),
+    };
+    const parsed = templateCopilotV3SourceSpanSchema.safeParse({
+      spanId: templateCopilotV3SourceSpanId(supplied),
+      ...supplied,
+    });
+    if (
+      !parsed.success ||
+      !validateTemplateCopilotV3SourceSpan(parsed.data, messages)
+    ) {
+      return null;
+    }
+    chunks.push(Object.freeze(parsed.data));
+  }
+  return chunks.length > 0 ? Object.freeze(chunks) : null;
 }
 
 function validSpan(span: TemplateCopilotV3SourceSpan, messages: Readonly<Record<string, string>>) {

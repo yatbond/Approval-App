@@ -20,6 +20,19 @@ import {
   templateCopilotV3SliceConditionRouteClause,
   type TemplateCopilotV3ConditionRouteHint,
 } from "./template-copilot-v3-condition-route-grammar.ts";
+import {
+  templateCopilotV3HardClauseSeparator,
+  templateCopilotV3LocalClauseBoundaryPattern,
+  templateCopilotV3NormalizedPrefixNegatesFollowingPredicate,
+  templateCopilotV3NormalizedTextBeginsPostRequirementQualification,
+  templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority,
+  templateCopilotV3RequirementAffirmativeContrast,
+  templateCopilotV3RequirementAuthorityContinuationIsQualified,
+  templateCopilotV3RequirementGapIsAffirmative,
+  templateCopilotV3RequirementGapIsClosedPunctuation,
+  templateCopilotV3RequirementGoverningPrefixIsNonAffirmative,
+  templateCopilotV3RequirementPrefixNamesCompetingSibling,
+} from "./template-copilot-v3-clause-boundaries.ts";
 
 export const templateCopilotV3ProviderQuoteContractVersion = 1 as const;
 
@@ -550,6 +563,23 @@ export function templateCopilotV3ProviderQuoteMinimumSemanticCore(
   ];
 }
 
+const sameLocalClauseRecoveryRoles = Object.freeze({
+  request_field: Object.freeze(["required"] as const),
+  attachment: Object.freeze(["kind", "required"] as const),
+});
+
+function templateCopilotV3ProviderQuoteAllowsSameLocalClauseRecovery(
+  kind: TemplateCopilotV3ProviderQuoteKind,
+  role: TemplateCopilotV3ProviderQuoteRole,
+) {
+  if (!Object.hasOwn(sameLocalClauseRecoveryRoles, kind)) return false;
+  return (
+    sameLocalClauseRecoveryRoles[
+      kind as keyof typeof sameLocalClauseRecoveryRoles
+    ] as readonly TemplateCopilotV3ProviderQuoteRole[]
+  ).includes(role);
+}
+
 /**
  * Builds batch- and kind-discriminated JSON Schema used only to guide provider
  * generation. The locator below remains the authoritative runtime validator.
@@ -682,9 +712,12 @@ export type TemplateCopilotV3LocatedQuoteItem = Readonly<{
     role: TemplateCopilotV3ProviderQuoteRole;
     hint: string | null;
     sourceSpan: TemplateCopilotV3SourceSpan;
+    sameLocalClauseRecovered: boolean;
   }>[];
   confidence: "low" | "medium" | "high";
   ambiguity: "none" | "possible" | "ambiguous";
+  anchorExpanded: boolean;
+  sameLocalClauseRecoveredLeafCount: number;
 }>;
 
 export type TemplateCopilotV3ProviderQuoteRejection = Readonly<{
@@ -814,6 +847,11 @@ export function locateTemplateCopilotV3ProviderQuotes({
       leaf,
       match: uniqueOffset(item.quote, leaf.quote),
     }));
+    const localClause = localClauseAt(
+      anchorMatch.source.text,
+      anchorMatch.startCodeUnit,
+      anchorMatch.startCodeUnit + item.quote.length,
+    );
     const numericConditionValue = item.kind === "condition" &&
         item.leaves.some((leaf) =>
           leaf.role === "operator" &&
@@ -855,19 +893,100 @@ export function locateTemplateCopilotV3ProviderQuotes({
     const leafMatches: Array<{
       leaf: TemplateCopilotV3ProviderQuoteItem["leaves"][number];
       startCodeUnit: number;
+      recovered: boolean;
     }> = [];
     for (const staged of stagedLeafMatches) {
       if (staged.match.status === "none") {
-        rejected.push(
-          rejection(
-            itemIndex,
-            "leaf_not_found",
-            `${item.kind}:${staged.leaf.role}`,
-          ),
-        );
-        return;
+        if (
+          !templateCopilotV3ProviderQuoteAllowsSameLocalClauseRecovery(
+            item.kind,
+            staged.leaf.role,
+          )
+        ) {
+          rejected.push(
+            rejection(
+              itemIndex,
+              "leaf_not_found",
+              `${item.kind}:${staged.leaf.role}`,
+            ),
+          );
+          return;
+        }
+        const recovered = uniqueOffset(localClause.text, staged.leaf.quote);
+        if (recovered.status === "none") {
+          rejected.push(
+            rejection(
+              itemIndex,
+              "leaf_not_found",
+              `${item.kind}:${staged.leaf.role}`,
+            ),
+          );
+          return;
+        }
+        if (recovered.status === "ambiguous") {
+          rejected.push(
+            rejection(
+              itemIndex,
+              "leaf_ambiguous",
+              `${item.kind}:${staged.leaf.role}`,
+            ),
+          );
+          return;
+        }
+        if (
+          !sameLocalClauseRecoveredLeafIsLexicallyBounded(
+            localClause.text,
+            recovered.startCodeUnit,
+            staged.leaf.quote,
+          )
+        ) {
+          rejected.push(
+            rejection(
+              itemIndex,
+              "leaf_not_found",
+              `${item.kind}:${staged.leaf.role}`,
+            ),
+          );
+          return;
+        }
+        if (
+          !sameLocalClauseRecoveredLeafHasEntityAffinity({
+            kind: item.kind,
+            role: staged.leaf.role,
+            clauseText: localClause.text,
+            clauseTerminator:
+              anchorMatch.source.text[localClause.endCodeUnit] ?? "",
+            authorityContinuation: anchorMatch.source.text.slice(
+              localClause.endCodeUnit,
+            ),
+            anchorStartCodeUnit:
+              anchorMatch.startCodeUnit - localClause.startCodeUnit,
+            anchorEndCodeUnit:
+              anchorMatch.startCodeUnit - localClause.startCodeUnit +
+              item.quote.length,
+            leafStartCodeUnit: recovered.startCodeUnit,
+            leafEndCodeUnit:
+              recovered.startCodeUnit + staged.leaf.quote.length,
+          })
+        ) {
+          rejected.push(
+            rejection(
+              itemIndex,
+              "leaf_not_found",
+              `${item.kind}:${staged.leaf.role}`,
+            ),
+          );
+          return;
+        }
+        leafMatches.push({
+          leaf: staged.leaf,
+          startCodeUnit:
+            localClause.startCodeUnit + recovered.startCodeUnit,
+          recovered: true,
+        });
+        continue;
       }
-      const startCodeUnit = staged.match.status === "unique"
+      const relativeStartCodeUnit = staged.match.status === "unique"
         ? staged.match.startCodeUnit
         : (
           resolveAmbiguousConditionThresholdLeafWithoutOtherwise(
@@ -891,7 +1010,7 @@ export function locateTemplateCopilotV3ProviderQuotes({
             stagedLeafMatches,
           )
         );
-      if (startCodeUnit === null) {
+      if (relativeStartCodeUnit === null) {
         rejected.push(
           rejection(
             itemIndex,
@@ -901,13 +1020,101 @@ export function locateTemplateCopilotV3ProviderQuotes({
         );
         return;
       }
-      leafMatches.push({ leaf: staged.leaf, startCodeUnit });
+      leafMatches.push({
+        leaf: staged.leaf,
+        startCodeUnit:
+          anchorMatch.startCodeUnit + relativeStartCodeUnit,
+        recovered: false,
+      });
     }
 
+    const sameLocalClauseRecoveredLeafCount = leafMatches.filter(
+      (entry) => entry.recovered,
+    ).length;
+    const expandedStartCodeUnit = sameLocalClauseRecoveredLeafCount > 0
+      ? localClause.startCodeUnit
+      : Math.min(
+          anchorMatch.startCodeUnit,
+          ...leafMatches.map((entry) => entry.startCodeUnit),
+        );
+    const expandedEndCodeUnit = sameLocalClauseRecoveredLeafCount > 0
+      ? localClause.endCodeUnit
+      : Math.max(
+          anchorMatch.startCodeUnit + item.quote.length,
+          ...leafMatches.map(
+            (entry) => entry.startCodeUnit + entry.leaf.quote.length,
+          ),
+        );
+    const expandedQuote = anchorMatch.source.text.slice(
+      expandedStartCodeUnit,
+      expandedEndCodeUnit,
+    );
+    if (expandedQuote !== item.quote) {
+      for (const entry of leafMatches) {
+        if (!entry.recovered) continue;
+        const finalMatch = uniqueOffset(expandedQuote, entry.leaf.quote);
+        if (finalMatch.status !== "unique") {
+          rejected.push(
+            rejection(
+              itemIndex,
+              finalMatch.status === "none"
+                ? "leaf_not_found"
+                : "leaf_ambiguous",
+              `${item.kind}:${entry.leaf.role}`,
+            ),
+          );
+          return;
+        }
+        entry.startCodeUnit = expandedStartCodeUnit + finalMatch.startCodeUnit;
+      }
+    }
+    let quarantineContextStartCodeUnit = localClause.startCodeUnit;
+    let precedingCodeUnit = localClause.startCodeUnit - 1;
+    let remainingBoundaryGroups = 32;
+    let previousWasBoundary = false;
+    let inspectedCodeUnits = 0;
+    while (precedingCodeUnit >= 0 && inspectedCodeUnits < 8_000) {
+      const character = anchorMatch.source.text[precedingCodeUnit] ?? "";
+      const markupBang =
+        character === "!" &&
+        anchorMatch.source.text[precedingCodeUnit - 1] === "<";
+      if (/[.!?。！？]/u.test(character) && !markupBang) break;
+      const isBoundary = templateCopilotV3HardClauseSeparator(
+        character,
+      );
+      if (isBoundary && !previousWasBoundary) {
+        remainingBoundaryGroups -= 1;
+        if (remainingBoundaryGroups === 0) break;
+      }
+      previousWasBoundary = isBoundary;
+      precedingCodeUnit -= 1;
+      inspectedCodeUnits += 1;
+    }
+    quarantineContextStartCodeUnit = precedingCodeUnit + 1;
+    const quarantineInspectionQuote = anchorMatch.source.text.slice(
+      quarantineContextStartCodeUnit,
+      Math.max(expandedEndCodeUnit, localClause.endCodeUnit),
+    );
+    const sanitizedExpandedAnchor = quarantineTemplateCopilotRequirementText(
+      quarantineInspectionQuote,
+    );
+    const expandedUnsafeReasonCount = Object.values(
+      sanitizedExpandedAnchor.summary.reasonCounts,
+    ).reduce((total, count) => total + (count ?? 0), 0);
+    if (
+      quarantineInspectionQuote.includes("\u0000") ||
+      sanitizedExpandedAnchor.summary.quarantinedBlockCount > 0 ||
+      expandedUnsafeReasonCount > 0
+    ) {
+      rejected.push(
+        rejection(itemIndex, "anchor_unsafe_instruction", item.kind),
+      );
+      return;
+    }
     const anchor = locatedSpan(
       anchorMatch.source,
-      anchorMatch.startCodeUnit,
-      item.quote,
+      expandedStartCodeUnit,
+      expandedQuote,
     );
     if (!anchor) {
       rejected.push(
@@ -919,11 +1126,12 @@ export function locateTemplateCopilotV3ProviderQuotes({
       role: TemplateCopilotV3ProviderQuoteRole;
       hint: string | null;
       sourceSpan: TemplateCopilotV3SourceSpan;
+      sameLocalClauseRecovered: boolean;
     }> = [];
-    for (const { leaf, startCodeUnit } of leafMatches) {
+    for (const { leaf, startCodeUnit, recovered } of leafMatches) {
       const sourceSpan = locatedSpan(
         anchorMatch.source,
-        anchorMatch.startCodeUnit + startCodeUnit,
+        startCodeUnit,
         leaf.quote,
       );
       if (!sourceSpan) {
@@ -936,6 +1144,7 @@ export function locateTemplateCopilotV3ProviderQuotes({
         role: leaf.role,
         hint: leaf.hint,
         sourceSpan,
+        sameLocalClauseRecovered: recovered,
       });
     }
     located.push(Object.freeze({
@@ -946,6 +1155,8 @@ export function locateTemplateCopilotV3ProviderQuotes({
       leaves: Object.freeze(locatedLeaves.map((leaf) => Object.freeze(leaf))),
       confidence: item.confidence,
       ambiguity: item.ambiguity,
+      anchorExpanded: expandedQuote !== item.quote,
+      sameLocalClauseRecoveredLeafCount,
     }));
   });
 
@@ -2069,18 +2280,82 @@ function hardClauseAt(
   let startCodeUnit = containedStart;
   while (
     startCodeUnit > 0 &&
-    !/[\r\n.!?;。！？；]/u.test(value[startCodeUnit - 1])
+    !templateCopilotV3HardClauseSeparator(value[startCodeUnit - 1])
   ) {
     startCodeUnit -= 1;
   }
   let endCodeUnit = containedEnd;
   while (
     endCodeUnit < value.length &&
-    !/[\r\n.!?;。！？；]/u.test(value[endCodeUnit])
+    !templateCopilotV3HardClauseSeparator(value[endCodeUnit])
   ) {
     endCodeUnit += 1;
   }
   return { startCodeUnit, endCodeUnit };
+}
+
+function localClauseAt(
+  value: string,
+  containedStart: number,
+  containedEnd: number,
+) {
+  const hardClause = hardClauseAt(value, containedStart, containedEnd);
+  const segment = value.slice(
+    hardClause.startCodeUnit,
+    hardClause.endCodeUnit,
+  );
+  const relativeStart = containedStart - hardClause.startCodeUnit;
+  const relativeEnd = containedEnd - hardClause.startCodeUnit;
+  const affirmativeContrast =
+    templateCopilotV3RequirementAffirmativeContrast(segment);
+  const boundaries = [
+    0,
+    ...[...segment.matchAll(templateCopilotV3LocalClauseBoundaryPattern())]
+      .filter((match) =>
+        !(
+          affirmativeContrast &&
+          /^but$/iu.test(match[0])
+        )
+      )
+      .map((match) => match.index),
+    segment.length,
+  ]
+    .filter((entry, index, entries) => entries.indexOf(entry) === index)
+    .sort((left, right) => left - right);
+  for (let index = 0; index < boundaries.length - 1; index += 1) {
+    const localStart = boundaries[index];
+    const localEnd = boundaries[index + 1];
+    if (relativeStart >= localStart && relativeEnd <= localEnd) {
+      return {
+        ...trimmedLocalClauseRange(
+          value,
+          hardClause.startCodeUnit + localStart,
+          hardClause.startCodeUnit + localEnd,
+        ),
+      };
+    }
+  }
+  return trimmedLocalClauseRange(value, containedStart, containedEnd);
+}
+
+function trimmedLocalClauseRange(
+  value: string,
+  untrimmedStartCodeUnit: number,
+  untrimmedEndCodeUnit: number,
+) {
+  let startCodeUnit = untrimmedStartCodeUnit;
+  let endCodeUnit = untrimmedEndCodeUnit;
+  while (startCodeUnit < endCodeUnit && /\s/u.test(value[startCodeUnit])) {
+    startCodeUnit += 1;
+  }
+  while (endCodeUnit > startCodeUnit && /\s/u.test(value[endCodeUnit - 1])) {
+    endCodeUnit -= 1;
+  }
+  return {
+    startCodeUnit,
+    endCodeUnit,
+    text: value.slice(startCodeUnit, endCodeUnit),
+  };
 }
 
 function textTokenIsBounded(value: string, start: number, end: number) {
@@ -2090,9 +2365,154 @@ function textTokenIsBounded(value: string, start: number, end: number) {
     !/[\p{L}\p{N}_]/u.test(after);
 }
 
+function sameLocalClauseRecoveredLeafIsLexicallyBounded(
+  value: string,
+  startCodeUnit: number,
+  quote: string,
+) {
+  const quoteCharacters = Array.from(quote);
+  const first = quoteCharacters[0] ?? "";
+  const last = quoteCharacters.at(-1) ?? "";
+  const before = Array.from(value.slice(0, startCodeUnit)).at(-1) ?? "";
+  const after = Array.from(
+    value.slice(startCodeUnit + quote.length),
+  )[0] ?? "";
+  const requiresWordBoundary = (character: string) =>
+    /[\p{Script=Latin}\p{N}\p{M}_]/u.test(character);
+  const continuesWord = (character: string) =>
+    /[\p{L}\p{N}\p{M}_'’ʼ\p{Pd}]/u.test(character);
+  return (
+    (!requiresWordBoundary(first) || !continuesWord(before)) &&
+    (!requiresWordBoundary(last) || !continuesWord(after))
+  );
+}
+
+function sameLocalClauseRecoveredLeafHasEntityAffinity({
+  kind,
+  role,
+  clauseText,
+  clauseTerminator,
+  authorityContinuation,
+  anchorStartCodeUnit,
+  anchorEndCodeUnit,
+  leafStartCodeUnit,
+  leafEndCodeUnit,
+}: Readonly<{
+  kind: TemplateCopilotV3ProviderQuoteKind;
+  role: TemplateCopilotV3ProviderQuoteRole;
+  clauseText: string;
+  clauseTerminator: string;
+  authorityContinuation: string;
+  anchorStartCodeUnit: number;
+  anchorEndCodeUnit: number;
+  leafStartCodeUnit: number;
+  leafEndCodeUnit: number;
+}>) {
+  const leafBeforeAnchor = leafEndCodeUnit <= anchorStartCodeUnit;
+  const leafAfterAnchor = leafStartCodeUnit >= anchorEndCodeUnit;
+  if (!leafBeforeAnchor && !leafAfterAnchor) return false;
+  const rawGap = leafBeforeAnchor
+    ? clauseText.slice(leafEndCodeUnit, anchorStartCodeUnit)
+    : clauseText.slice(anchorEndCodeUnit, leafStartCodeUnit);
+  const gap = templateCopilotV3NormalizeLexicalText(rawGap);
+  if (kind === "attachment" && role === "kind") {
+    return gap === "";
+  }
+  if (role !== "required") return false;
+  if (/[?？]/u.test(clauseTerminator)) return false;
+  if (
+    templateCopilotV3RequirementAuthorityContinuationIsQualified(
+      authorityContinuation,
+      clauseText.slice(anchorStartCodeUnit, anchorEndCodeUnit),
+      kind === "attachment" ? "attachment" : "request_field",
+    )
+  ) {
+    return false;
+  }
+  if (leafAfterAnchor) {
+    const subjectText = clauseText.slice(
+      anchorStartCodeUnit,
+      anchorEndCodeUnit,
+    );
+    const anchorPrefix = templateCopilotV3NormalizeLexicalText(
+      clauseText.slice(0, anchorStartCodeUnit),
+    );
+    const prefixNamesCompetingSibling =
+      templateCopilotV3RequirementPrefixNamesCompetingSibling(
+        clauseText.slice(0, anchorStartCodeUnit),
+        subjectText,
+        kind === "attachment" ? "attachment" : "request_field",
+      );
+    const negativeDeterminerGovernsAnchor =
+      !prefixNamesCompetingSibling &&
+      (
+        /(?:^|\b)(?:no|without|not\s+any)(?:\s+[\p{L}\p{N}_'’ʼ\p{Pd}]+){0,10}$/u
+          .test(anchorPrefix) ||
+        /(?:沒有|没有|無|无|毋)(?:任何)?\s*$/u.test(anchorPrefix) ||
+        templateCopilotV3RequirementGoverningPrefixIsNonAffirmative(
+          anchorPrefix,
+        )
+      );
+    const rawLeafTail = clauseText.slice(leafEndCodeUnit);
+    const leafTail = templateCopilotV3NormalizeLexicalText(
+      rawLeafTail,
+    );
+    const closedPunctuationGap =
+      templateCopilotV3RequirementGapIsClosedPunctuation(rawGap, rawLeafTail);
+    if (
+      /^[)\]}）】]/u.test(rawLeafTail.trimStart()) &&
+      !closedPunctuationGap
+    ) {
+      return false;
+    }
+    const closedAffirmativeRequiredGap =
+      /^(?:|(?:is|are|was|were)(?:\s+(?:not\s+(?:only|merely|simply)|absolutely|definitely|clearly|explicitly|always|still|indeed|invariably|categorically|legally|strictly|expressly|unequivocally))*|(?:will|shall|must|should)\s+(?:(?:always|definitely|clearly|explicitly|still|indeed|invariably|categorically|legally|strictly|expressly|unequivocally)\s+)*(?:be|remain|become)|(?:has|have|needs?|need)\s+to\s+be|continues?\s+to\s+be|(?:is|are|was|were)\s+(?:expected|intended)\s+to\s+be|(?:is|are|was|were)\s+(?:considered|deemed)(?:\s+to\s+be)?|(?:is|are|was|were)\s+(?:regarded|treated)\s+as|(?:(?:is|are|was|were)|(?:has|have|had)\s+been)\s+marked\s+as|marked\s+as|remains?|becomes?|be|being|indeed|一律|一概|為|为|是)$/u;
+    return !negativeDeterminerGovernsAnchor &&
+      !templateCopilotV3NormalizedTextBeginsPostRequirementQualification(
+        leafTail,
+      ) &&
+      (
+        closedPunctuationGap ||
+        closedAffirmativeRequiredGap.test(gap) ||
+        templateCopilotV3RequirementGapIsAffirmative(gap)
+      );
+  }
+  const prefix = templateCopilotV3NormalizeLexicalText(
+    clauseText.slice(0, leafStartCodeUnit),
+  );
+  const tail = templateCopilotV3NormalizeLexicalText(
+    clauseText.slice(anchorEndCodeUnit),
+  ).replace(/^[,，:：([\]{}（）【】]+\s*/u, "");
+  const governingPrefixNegatesLeaf =
+    templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority(prefix) ||
+    templateCopilotV3NormalizedPrefixNegatesFollowingPredicate(prefix) ||
+    templateCopilotV3RequirementGoverningPrefixIsNonAffirmative(prefix);
+  if (governingPrefixNegatesLeaf) return false;
+  if (
+    templateCopilotV3NormalizedTextBeginsPostRequirementQualification(tail)
+  ) {
+    return false;
+  }
+  const tailStartsIndependentPredicate =
+    /^(?:(?:which|that)\s+)?(?:(?:don|doesn|didn|isn|aren|wasn|weren|hasn|haven|hadn|won|wouldn|shouldn|can|couldn|mayn|mightn|mustn|shalln|needn)(?:['’ʼ]|\s*)t|never|is|are|was|were|can|could|may|might|will|would|should|shall|must|has|have|had|need|needs|does|do)\b/u
+      .test(tail) ||
+    /^(?:optional|not required|no\s+need\s+to|need\s+not|可選擇|可选择|可選|可选|選填|选填|非必須|非必须|不需要|毋須|毋须|無須|无须|毋需|無需|无需|可)/u
+      .test(tail);
+  const leadingSharedQualifier =
+    /^(?:(?:please|kindly)|(?:and|or)(?:\s+(?:a|an|the|one))?|(?:及|和|與|与|並|并)(?:一份|一個|一个)?)?$/u
+      .test(prefix) &&
+    !/\b(?:is|are|was|were|can|could|may|might|will|would|should|shall|must|has|have|had|be|been|being)\b/u
+      .test(gap) &&
+    !tailStartsIndependentPredicate;
+  const directlyPrecedesEntity =
+    /^(?:|a|an|the|one|一份|一個|一个)$/u.test(gap);
+  return leadingSharedQualifier || directlyPrecedesEntity;
+}
+
 function hardClauseIndex(value: string, codeUnitOffset: number) {
   return Array.from(value.slice(0, codeUnitOffset))
-    .filter((character) => /[\r\n.!?;。！？；]/u.test(character)).length;
+    .filter((character) => templateCopilotV3HardClauseSeparator(character))
+    .length;
 }
 
 function exactOffsets(value: string, needle: string) {
