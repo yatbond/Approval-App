@@ -815,8 +815,8 @@ test("provider guidance uses required kind buckets for every formal schema", () 
       sha256: "7024d74220e4a5a8f37175cf4ec06a8bf1a81c6dd2d015182b87b04b6143b429",
     },
     routing_conditions: {
-      bytes: 3_519,
-      sha256: "53f483d2e5035ae141d185191419ebef0255a7bc04580a9544cc939e62c8b016",
+      bytes: 3_585,
+      sha256: "15eadfccc1dd1392e3f3b82dd02133a347e070ca6133df672151602ebd220e87",
     },
     routing_rejection: {
       bytes: 539,
@@ -948,7 +948,9 @@ test("provider guidance uses required kind buckets for every formal schema", () 
         }
         assert.equal(
           variant.properties.q.description,
-          "exact source lexeme",
+          batchId === "routing_conditions" && role === "operator"
+            ? "exact complete comparator lexeme; CJK yes uses 為是/为是, never 為/为/是 alone"
+            : "exact source lexeme",
           `${batchId}:${kind}:${role}:leaf-quote-description`,
         );
         assert.deepEqual(variant.required, ["r", "q", "h"]);

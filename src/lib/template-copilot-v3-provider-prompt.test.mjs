@@ -178,6 +178,14 @@ test("the prompt exposes exactly the closed quote batches", () => {
   );
   assert.match(
     routingConditions,
+    /CJK yes: operator q=為是\/为是 and value q=是 \(overlap\)/u,
+  );
+  assert.match(
+    routingConditions,
+    /never operator q=為\/为\/是/u,
+  );
+  assert.match(
+    routingConditions,
     /Condition anchor closure: item\.quote spans the earliest through latest condition leaf/u,
   );
   assert.match(
@@ -475,7 +483,7 @@ test("the prompt demands complete entity coverage and source-language fidelity",
       /add adjacent exact source text until unique, or omit/u,
     );
     assert.match(prompt, /Copy leaf.quote verbatim/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-24/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-25/u);
     assert.match(
       prompt,
       /quotations, quoted text, or proof that an employee or vendor followed named instructions/u,

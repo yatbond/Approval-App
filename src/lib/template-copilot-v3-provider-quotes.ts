@@ -1303,7 +1303,10 @@ function buildTemplateCopilotV3ProviderQuoteGuidanceItemSchema({
   maximumLeavesPerItem: number;
 }>) {
   const leafVariants =
-    buildTemplateCopilotV3ProviderQuoteGuidanceLeafVariants(allowedKinds);
+    buildTemplateCopilotV3ProviderQuoteGuidanceLeafVariants(
+      batchId,
+      allowedKinds,
+    );
   const onlyAllowedKind = allowedKinds.length === 1 ? allowedKinds[0] : null;
   const wholeSlotIntent = onlyAllowedKind
     ? batchLocalWholeSlotIntentPolicy(batchId, onlyAllowedKind)
@@ -1384,6 +1387,7 @@ function buildTemplateCopilotV3ProviderQuoteGuidanceItemSchema({
 }
 
 function buildTemplateCopilotV3ProviderQuoteGuidanceLeafVariants(
+  batchId: TemplateCopilotV3ProviderQuoteBatchId,
   allowedKinds: readonly TemplateCopilotV3ProviderQuoteKind[],
 ) {
   const rolePolicies = new Map<
@@ -1429,7 +1433,10 @@ function buildTemplateCopilotV3ProviderQuoteGuidanceLeafVariants(
           r: { type: "string" as const, const: role },
           q: {
             type: "string" as const,
-            description: "exact source lexeme",
+            description:
+              batchId === "routing_conditions" && role === "operator"
+                ? "exact complete comparator lexeme; CJK yes uses 為是/为是, never 為/为/是 alone"
+                : "exact source lexeme",
             minLength: 1,
             maxLength: templateCopilotV3ProviderQuoteMaximumCodePoints,
           },
