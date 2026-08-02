@@ -658,6 +658,19 @@ function compileArrayItem(
       ) {
         continue;
       }
+      if (
+        contextualDirectCoreEvidenceCanRemainReviewOnly(
+          item,
+          factId,
+          semanticObservation,
+          messages,
+          semanticContexts,
+          draft.semanticAuthorityBlocked,
+        )
+      ) {
+        // Keep this review-only exit before the value and binding writers below.
+        continue;
+      }
       rejections.push(rejection(item, "unverifiable_leaf", `${item.kind}:${supplied.role}`));
       continue;
     }
@@ -839,6 +852,115 @@ function recoveredConditionCoreEvidenceIsClosed({
     !semanticConditionHasCompoundPredicateContext(
       observations,
       semanticContexts,
+    )
+  );
+}
+
+function contextualDirectCoreEvidenceCanRemainReviewOnly(
+  item: TemplateCopilotV3LocatedQuoteItem,
+  factId: TemplateCopilotV3FragmentFactId,
+  observation: TemplateCopilotV3ReviewObservation,
+  messages: Readonly<Record<string, string>>,
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+  semanticAuthorityBlocked: boolean,
+) {
+  const candidateRoles: Readonly<
+    Partial<
+      Record<
+        TemplateCopilotV3FragmentFactId,
+        readonly TemplateCopilotV3ProviderQuoteRole[]
+      >
+    >
+  > = {
+    "request.fields": ["required"],
+    "attachments.requirements": ["kind", "required"],
+  };
+  if (
+    !(candidateRoles[factId] ?? []).includes(observation.role) ||
+    item.anchorExpanded === true ||
+    item.sameLocalClauseRecoveredLeafCount !== 0 ||
+    item.leaves.some((leaf) => leaf.sameLocalClauseRecovered === true) ||
+    item.ambiguity !== "none" ||
+    semanticAuthorityBlocked ||
+    /[?？]/u.test(item.anchor.exactText) ||
+    conditionAuthorityTextIsIllustrativeMeta(item.anchor.exactText)
+  ) {
+    return false;
+  }
+  const observations = item.leaves.map((leaf) =>
+    Object.freeze({
+      role: leaf.role,
+      quote: leaf.sourceSpan.exactText,
+      advisoryHint: leaf.hint,
+      sourceSpan: leaf.sourceSpan,
+    })
+  );
+  const core = observations.filter((entry) =>
+    semanticCoreRole(factId, entry.role)
+  );
+  if (
+    core.length === 0 ||
+    core.some(
+      (entry) =>
+        !validSpan(entry.sourceSpan, messages) ||
+        entry.sourceSpan.messageId !== item.anchor.messageId ||
+        entry.sourceSpan.startCodePoint < item.anchor.startCodePoint ||
+        entry.sourceSpan.endCodePoint > item.anchor.endCodePoint,
+    )
+  ) {
+    return false;
+  }
+  const role = (name: TemplateCopilotV3ProviderQuoteRole) =>
+    observations.filter((entry) => entry.role === name);
+  const labels = role("label");
+  const required = role("required");
+  const kinds = role("kind");
+  const exactCoreCardinality =
+    (factId === "request.fields" &&
+      labels.length === 1 &&
+      required.length === 1) ||
+    (factId === "attachments.requirements" &&
+      labels.length === 1 &&
+      kinds.length === 1 &&
+      required.length === 1);
+  if (!exactCoreCardinality) return false;
+  if (
+    item.leaves.some(
+      (leaf) =>
+        (item.kind === "attachment" &&
+          leaf.role === "required" &&
+          [
+            "conditional",
+            "required_with_conditional_extension",
+            "optional_conditional",
+          ].includes(leaf.hint ?? "")),
+    )
+  ) {
+    return false;
+  }
+  const subjectObservation = labels[0] ?? null;
+  const hintBearingCore = core.filter((entry) =>
+    (factId === "request.fields" && entry.role === "required") ||
+    (factId === "attachments.requirements" &&
+      (entry.role === "kind" || entry.role === "required"))
+  );
+  return (
+    hintBearingCore.length > 0 &&
+    hintBearingCore.every((entry) =>
+      semanticHintIsVerified(
+        factId,
+        entry,
+        semanticContexts,
+        subjectObservation,
+      )
+    ) &&
+    semanticallyComplete(
+      factId,
+      observations,
+      semanticContexts,
+      item.ambiguity,
+      false,
+      semanticAuthorityBlocked,
     )
   );
 }

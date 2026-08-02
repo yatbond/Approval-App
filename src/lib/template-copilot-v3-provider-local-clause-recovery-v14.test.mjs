@@ -15,7 +15,11 @@ import {
   templateCopilotV3RequirementSameHardTailIsQualified,
 } from "./template-copilot-v3-clause-boundaries.ts";
 
-function structureSources({ initiatorsFields, attachments }) {
+function structureSources({
+  initiatorsFields,
+  attachments,
+  stagesParticipants = "No stage or notification requirements supplied.",
+}) {
   return templateCopilotV3ProviderQuoteBatches.structure.slots.map((slot) => ({
     slot,
     messageId: `local-clause-v14:${slot}`,
@@ -23,6 +27,8 @@ function structureSources({ initiatorsFields, attachments }) {
       ? initiatorsFields
       : slot === "attachments"
         ? attachments
+        : slot === "stages_participants"
+          ? stagesParticipants
         : `No ${slot} requirements supplied.`,
   }));
 }
@@ -45,6 +51,39 @@ function assembleLocated(located, sourceSlots) {
     ),
     sourceMessageOrder: sourceSlots.map(({ messageId }) => messageId),
   });
+}
+
+function locatorAssemblyResult({ kind, source, anchorQuote, leaves }) {
+  const sourceSlots = structureSources({
+    initiatorsFields: kind === "request_field" ? source : "Require purpose.",
+    attachments: "No attachment requirements supplied.",
+    stagesParticipants:
+      kind === "stage" || kind === "notification"
+        ? source
+        : "No stage or notification requirements supplied.",
+  });
+  const located = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "structure",
+    sourceSlots,
+    output: {
+      contractVersion: 1,
+      items: [providerItem(kind, anchorQuote, leaves)],
+    },
+  });
+  return {
+    located,
+    assembly: assembleLocated(located, sourceSlots),
+  };
+}
+
+function valueAtPath(value, path) {
+  return path.split("/").slice(1).reduce(
+    (current, segment) =>
+      current !== null && typeof current === "object"
+        ? current[segment]
+        : undefined,
+    value,
+  );
 }
 
 function requestFieldSemanticResult({
@@ -251,25 +290,222 @@ test("a Go/No-Go title does not turn a legitimate required native form into nega
   assert.equal(assembly.review.items.length, 1);
   const [item] = assembly.review.items;
   assert.equal(item.semanticComplete, true);
+  assert.equal(item.complete, false);
+  assert.ok(item.fragmentId);
   assert.equal(item.persisted, false);
   assert.equal(item.executable, false);
   assert.equal(item.value.label, "Go/No-Go 評分表");
+  assert.equal(item.value.kind, undefined);
+  assert.equal(item.value.required, undefined);
   assert.deepEqual(item.semanticValue.kind, ["原生"]);
   assert.deepEqual(item.semanticValue.required, ["上載"]);
-  assert.deepEqual(assembly.review.rejections, [
+  assert.ok(
+    !item.bindings.some(
+      (binding) => binding.path === "/kind" || binding.path === "/required",
+    ),
+  );
+  const fragment = assembly.envelope.fragments.find(
+    (candidate) => candidate.fragmentId === item.fragmentId,
+  );
+  assert.ok(fragment);
+  assert.deepEqual(fragment.value, { label: "Go/No-Go 評分表" });
+  assert.deepEqual(fragment.bindings.map((binding) => binding.path), ["/label"]);
+  assert.deepEqual(assembly.review.rejections, []);
+});
+
+test("stage and notification semantic aliases stay rejected through the real locator path", () => {
+  const cases = [
     {
-      itemIndex: 0,
-      kind: "attachment",
-      code: "unverifiable_leaf",
-      detail: "attachment:kind",
+      caseId: "comma-cross-paired-notification",
+      kind: "notification",
+      source:
+        "Assignment alerts requester, completion alerts current stage participants.",
+      anchorQuote:
+        "Assignment alerts requester, completion alerts current stage participants",
+      leaves: [
+        { role: "event", quote: "Assignment", hint: "stage_assigned" },
+        {
+          role: "recipient",
+          quote: "current stage participants",
+          hint: "current_stage_participants",
+        },
+      ],
+      fallbackPaths: ["/event", "/recipients/0"],
+      expectedDetails: ["notification:event", "notification:recipient"],
     },
     {
-      itemIndex: 0,
-      kind: "attachment",
-      code: "unverifiable_leaf",
-      detail: "attachment:required",
+      caseId: "narrow-question-notification",
+      kind: "notification",
+      source: "Question: Should assignment alert current stage participants?",
+      anchorQuote: "assignment alert current stage participants",
+      leaves: [
+        { role: "event", quote: "assignment", hint: "stage_assigned" },
+        {
+          role: "recipient",
+          quote: "current stage participants",
+          hint: "current_stage_participants",
+        },
+      ],
+      fallbackPaths: ["/event", "/recipients/0"],
+      expectedDetails: ["notification:event", "notification:recipient"],
     },
-  ]);
+    {
+      caseId: "narrow-example-notification",
+      kind: "notification",
+      source: "Example: assignment alerts current stage participants.",
+      anchorQuote: "assignment alerts current stage participants",
+      leaves: [
+        { role: "event", quote: "assignment", hint: "stage_assigned" },
+        {
+          role: "recipient",
+          quote: "current stage participants",
+          hint: "current_stage_participants",
+        },
+      ],
+      fallbackPaths: ["/event", "/recipients/0"],
+      expectedDetails: ["notification:event", "notification:recipient"],
+    },
+    {
+      caseId: "narrow-negated-notification",
+      kind: "notification",
+      source: "Do not let assignment alert current stage participants.",
+      anchorQuote: "assignment alert current stage participants",
+      leaves: [
+        { role: "event", quote: "assignment", hint: "stage_assigned" },
+        {
+          role: "recipient",
+          quote: "current stage participants",
+          hint: "current_stage_participants",
+        },
+      ],
+      fallbackPaths: ["/event", "/recipients/0"],
+      expectedDetails: ["notification:event", "notification:recipient"],
+    },
+    {
+      caseId: "visibility-only-notification",
+      kind: "notification",
+      source: "Current stage participants can view assignment",
+      anchorQuote: "Current stage participants can view assignment",
+      leaves: [
+        { role: "event", quote: "assignment", hint: "stage_assigned" },
+        {
+          role: "recipient",
+          quote: "Current stage participants",
+          hint: "current_stage_participants",
+        },
+      ],
+      fallbackPaths: ["/event", "/recipients/0"],
+      expectedDetails: ["notification:event", "notification:recipient"],
+    },
+    {
+      caseId: "stage-visibility",
+      kind: "stage",
+      source: "申请人可查看核对记录",
+      anchorQuote: "申请人可查看核对记录",
+      leaves: [
+        { role: "label", quote: "记录", hint: null },
+        { role: "kind", quote: "核对", hint: "review" },
+        { role: "participant_mode", quote: "申请人", hint: "requester" },
+      ],
+      fallbackPaths: ["/kind"],
+      expectedDetails: ["stage:kind"],
+    },
+  ];
+
+  for (const entry of cases) {
+    const result = locatorAssemblyResult(entry);
+    assert.deepEqual(result.located.rejected, [], entry.caseId);
+    assert.equal(result.located.accepted.length, 1, entry.caseId);
+    const item = result.assembly.review.items[0];
+    assert.ok(item, entry.caseId);
+    for (const path of entry.fallbackPaths) {
+      assert.equal(valueAtPath(item.value, path), undefined, `${entry.caseId}:${path}:value`);
+      assert.equal(
+        item.bindings.some(
+          (binding) =>
+            binding.path === path || binding.path.startsWith(path + "/"),
+        ),
+        false,
+        `${entry.caseId}:${path}:binding`,
+      );
+      for (const fragment of result.assembly.envelope.fragments) {
+        assert.equal(valueAtPath(fragment.value, path), undefined, `${entry.caseId}:${path}:fragment-value`);
+        assert.equal(
+          fragment.bindings.some(
+            (binding) =>
+              binding.path === path || binding.path.startsWith(path + "/"),
+          ),
+          false,
+          `${entry.caseId}:${path}:fragment-binding`,
+        );
+      }
+    }
+    for (const detail of entry.expectedDetails) {
+      assert.ok(
+        result.assembly.review.rejections.some(
+          (rejection) =>
+            rejection.code === "unverifiable_leaf" &&
+            rejection.detail === detail,
+        ),
+        `${entry.caseId}:${detail}:${JSON.stringify(result.assembly.review.rejections)}`,
+      );
+    }
+  }
+});
+
+test("request fallback sees narrow framing through the full authority context", () => {
+  const cases = [
+    {
+      caseId: "question",
+      source: "Question: Should Purpose be must?",
+      anchorQuote: "Purpose be must",
+    },
+    {
+      caseId: "example",
+      source: "Example: Purpose must.",
+      anchorQuote: "Purpose must",
+    },
+    {
+      caseId: "negated",
+      source: "Do not treat Purpose as must.",
+      anchorQuote: "Purpose as must",
+    },
+  ];
+
+  for (const entry of cases) {
+    const result = locatorAssemblyResult({
+      ...entry,
+      kind: "request_field",
+      leaves: [
+        { role: "label", quote: "Purpose", hint: null },
+        { role: "required", quote: "must", hint: "true" },
+      ],
+    });
+    assert.deepEqual(result.located.rejected, [], entry.caseId);
+    assert.equal(result.located.accepted.length, 1, entry.caseId);
+    const item = result.assembly.review.items[0];
+    assert.ok(item, entry.caseId);
+    assert.equal(item.value.required, undefined, entry.caseId);
+    assert.ok(
+      !item.bindings.some((binding) => binding.path === "/required"),
+      entry.caseId,
+    );
+    for (const fragment of result.assembly.envelope.fragments) {
+      assert.equal(fragment.value.required, undefined, entry.caseId);
+      assert.ok(
+        !fragment.bindings.some((binding) => binding.path === "/required"),
+        entry.caseId,
+      );
+    }
+    assert.ok(
+      result.assembly.review.rejections.some(
+        (rejection) =>
+          rejection.code === "unverifiable_leaf" &&
+          rejection.detail === "request_field:required",
+      ),
+      `${entry.caseId}:${JSON.stringify(result.assembly.review.rejections)}`,
+    );
+  }
 });
 
 test("local-clause recovery cannot turn an optional sibling into a required attachment", () => {

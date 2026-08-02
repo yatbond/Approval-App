@@ -577,10 +577,7 @@ test("keeps unconditional optional uploads and safely holds conditional optional
     assert.ok(item.missingPaths.includes("/required"), entry.scenarioId);
     assert.deepEqual(
       result.review.rejections.map(({ code, detail }) => ({ code, detail })),
-      [
-        { code: "unverifiable_leaf", detail: "attachment:kind" },
-        { code: "unverifiable_leaf", detail: "attachment:required" },
-      ],
+      [],
       entry.scenarioId,
     );
   }
@@ -4945,4 +4942,469 @@ test("keeps ordinary required, kind, event, and stage leaves fail closed", () =>
   for (const entry of cases) {
     assert.ok(rejectedDetails.has(entry.detail), entry.detail);
   }
+});
+
+test("keeps exact direct semantic aliases review-only across supported locales", () => {
+  const valueAtPath = (value, path) =>
+    path.split("/").slice(1).reduce(
+      (current, segment) =>
+        current !== null && typeof current === "object"
+          ? current[segment]
+          : undefined,
+      value,
+    );
+  const cases = [
+    {
+      caseId: "en-request-required",
+      kind: "request_field",
+      text: "Purpose must",
+      leaves: [
+        { role: "label", quote: "Purpose" },
+        { role: "required", quote: "must", hint: "true" },
+      ],
+      fallbackPaths: ["/required"],
+      ordinaryPaths: ["/label"],
+    },
+    {
+      caseId: "tc-attachment-core",
+      kind: "attachment",
+      text: "必須上載護照副本",
+      leaves: [
+        { role: "label", quote: "護照副本" },
+        { role: "kind", quote: "上載", hint: "attachment" },
+        { role: "required", quote: "必須上載", hint: "true" },
+      ],
+      fallbackPaths: ["/kind", "/required"],
+      ordinaryPaths: ["/label"],
+    },
+    {
+      caseId: "sc-attachment-core",
+      kind: "attachment",
+      text: "必须上传护照副本",
+      leaves: [
+        { role: "label", quote: "护照副本" },
+        { role: "kind", quote: "上传", hint: "attachment" },
+        { role: "required", quote: "必须上传", hint: "true" },
+      ],
+      fallbackPaths: ["/kind", "/required"],
+      ordinaryPaths: ["/label"],
+    },
+  ];
+
+  for (const [itemIndex, entry] of cases.entries()) {
+    const messageId = `direct-review-only:${entry.caseId}`;
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: { [messageId]: entry.text },
+      items: [located({
+        itemIndex,
+        kind: entry.kind,
+        messageId,
+        text: entry.text,
+        leaves: entry.leaves,
+      })],
+    });
+    const item = result.review.items[0];
+    assert.ok(item, `${entry.caseId}:${JSON.stringify(result.review.rejections)}`);
+    assert.equal(item.semanticComplete, true, entry.caseId);
+    assert.equal(item.persisted, false, entry.caseId);
+    assert.equal(item.executable, false, entry.caseId);
+    assert.equal(item.defaulted, false, entry.caseId);
+    assert.equal(item.complete, false, entry.caseId);
+    for (const path of entry.fallbackPaths) {
+      assert.equal(
+        item.bindings.some(
+          (binding) =>
+            binding.path === path || binding.path.startsWith(path + "/"),
+        ),
+        false,
+        `${entry.caseId}:${path}:binding`,
+      );
+      assert.equal(
+        valueAtPath(item.value, path),
+        undefined,
+        `${entry.caseId}:${path}:value`,
+      );
+    }
+    if (entry.ordinaryPaths.length === 0) {
+      assert.equal(item.fragmentId, null, entry.caseId);
+      assert.deepEqual(result.envelope.fragments, [], entry.caseId);
+    } else {
+      assert.ok(item.fragmentId, entry.caseId);
+      const fragment = result.envelope.fragments.find(
+        (candidate) => candidate.fragmentId === item.fragmentId,
+      );
+      assert.ok(fragment, entry.caseId);
+      assert.deepEqual(
+        fragment.bindings.map((binding) => binding.path).sort(),
+        [...entry.ordinaryPaths].sort(),
+        `${entry.caseId}:ordinary-fragment-bindings`,
+      );
+      for (const path of entry.fallbackPaths) {
+        assert.equal(
+          fragment.bindings.some(
+            (binding) =>
+              binding.path === path || binding.path.startsWith(path + "/"),
+          ),
+          false,
+          `${entry.caseId}:${path}:fragment-binding`,
+        );
+        assert.equal(
+          valueAtPath(fragment.value, path),
+          undefined,
+          `${entry.caseId}:${path}:fragment-value`,
+        );
+      }
+    }
+    assert.deepEqual(result.review.rejections, [], entry.caseId);
+  }
+});
+
+test("keeps ordinarily derivable direct core leaves on the binding path", () => {
+  const cases = [
+    {
+      caseId: "request",
+      kind: "request_field",
+      text: "Amount required",
+      leaves: [
+        { role: "label", quote: "Amount" },
+        { role: "required", quote: "required", hint: "true" },
+      ],
+      boundPaths: ["/required"],
+    },
+    {
+      caseId: "attachment",
+      kind: "attachment",
+      text: "Contract PDF required",
+      leaves: [
+        { role: "label", quote: "Contract" },
+        { role: "kind", quote: "PDF", hint: "attachment" },
+        { role: "required", quote: "required", hint: "true" },
+      ],
+      boundPaths: ["/kind", "/required"],
+    },
+    {
+      caseId: "stage",
+      kind: "stage",
+      text: "財務審批申請人",
+      leaves: [
+        { role: "label", quote: "財務" },
+        { role: "kind", quote: "審批", hint: "approval" },
+        { role: "participant_mode", quote: "申請人", hint: "requester" },
+      ],
+      boundPaths: ["/kind", "/participant/mode"],
+    },
+    {
+      caseId: "notification",
+      kind: "notification",
+      text: "申請已提交時通知申請人",
+      leaves: [
+        { role: "event", quote: "申請已提交", hint: "request_submitted" },
+        { role: "recipient", quote: "申請人", hint: "requester" },
+      ],
+      boundPaths: ["/event", "/recipients/0"],
+    },
+  ];
+
+  for (const [itemIndex, entry] of cases.entries()) {
+    const messageId = `direct-binding-control:${entry.caseId}`;
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: { [messageId]: entry.text },
+      items: [located({
+        itemIndex,
+        kind: entry.kind,
+        messageId,
+        text: entry.text,
+        leaves: entry.leaves,
+      })],
+    });
+    const item = result.review.items[0];
+    assert.ok(item, entry.caseId);
+    for (const path of entry.boundPaths) {
+      assert.ok(
+        item.bindings.some((binding) => binding.path === path),
+        `${entry.caseId}:${path}`,
+      );
+    }
+  }
+});
+
+test("direct review-only aliases fail closed for authority and scope adversaries", () => {
+  const cases = [
+    {
+      caseId: "hint-mismatch",
+      kind: "request_field",
+      text: "Purpose sometimes",
+      leaves: [
+        { role: "label", quote: "Purpose" },
+        { role: "required", quote: "sometimes", hint: "true" },
+      ],
+      expectedDetail: "request_field:required",
+    },
+    {
+      caseId: "hard-clause-sibling",
+      kind: "request_field",
+      text: "Purpose optional. Budget must",
+      leaves: [
+        { role: "label", quote: "Purpose" },
+        { role: "required", quote: "must", hint: "true" },
+      ],
+      expectedDetail: "request_field:required",
+    },
+    {
+      caseId: "question",
+      kind: "request_field",
+      text: "Should Purpose be must?",
+      leaves: [
+        { role: "label", quote: "Purpose" },
+        { role: "required", quote: "must", hint: "true" },
+      ],
+      expectedDetail: "request_field:required",
+    },
+    {
+      caseId: "example",
+      kind: "request_field",
+      text: "Example: Purpose must",
+      leaves: [
+        { role: "label", quote: "Purpose" },
+        { role: "required", quote: "must", hint: "true" },
+      ],
+      expectedDetail: "request_field:required",
+    },
+    {
+      caseId: "instruction-negation",
+      kind: "request_field",
+      text: "Do not treat Purpose as must",
+      leaves: [
+        { role: "label", quote: "Purpose" },
+        { role: "required", quote: "must", hint: "true" },
+      ],
+      expectedDetail: "request_field:required",
+    },
+    {
+      caseId: "multiple-recipients",
+      kind: "notification",
+      text: "Assignment alerts requester and workflow owner",
+      leaves: [
+        { role: "event", quote: "Assignment", hint: "stage_assigned" },
+        { role: "recipient", quote: "requester", hint: "requester" },
+        {
+          role: "recipient",
+          quote: "workflow owner",
+          hint: "workflow_owner",
+        },
+      ],
+      expectedDetail: "notification:event",
+      expectedSemanticComplete: true,
+      forbiddenBindingPath: "/event",
+    },
+    {
+      caseId: "condition-excluded",
+      kind: "condition",
+      text: "Status is Yes routes to Finance",
+      leaves: [
+        { role: "field", quote: "Status" },
+        { role: "operator", quote: "is", hint: "=" },
+        { role: "value", quote: "Yes" },
+        {
+          role: "matching_route",
+          quote: "Finance",
+          hint: "stage_reference",
+        },
+      ],
+      expectedDetail: "condition:operator",
+    },
+  ];
+
+  for (const [itemIndex, entry] of cases.entries()) {
+    const messageId = `direct-review-only-adversary:${entry.caseId}`;
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: { [messageId]: entry.text },
+      items: [located({
+        itemIndex,
+        kind: entry.kind,
+        messageId,
+        text: entry.text,
+        leaves: entry.leaves,
+      })],
+    });
+    assert.ok(
+      result.review.rejections.some(
+        (rejection) =>
+          rejection.code === "unverifiable_leaf" &&
+          rejection.detail === entry.expectedDetail,
+      ),
+      `${entry.caseId}:${JSON.stringify(result.review.rejections)}`,
+    );
+    assert.equal(
+      result.review.items[0]?.semanticComplete ?? false,
+      entry.expectedSemanticComplete ?? false,
+      entry.caseId,
+    );
+    if (entry.forbiddenBindingPath) {
+      assert.equal(
+        result.review.items[0]?.bindings.some(
+          (binding) => binding.path === entry.forbiddenBindingPath,
+        ) ?? false,
+        false,
+        `${entry.caseId}:${entry.forbiddenBindingPath}`,
+      );
+    }
+  }
+
+  const duplicateId = "direct-review-only-adversary:duplicate";
+  const duplicateText = "Purpose must and optional";
+  const duplicate = assembleTemplateCopilotV3Review({
+    sourceMessages: { [duplicateId]: duplicateText },
+    items: [located({
+      itemIndex: 100,
+      kind: "request_field",
+      messageId: duplicateId,
+      text: duplicateText,
+      leaves: [
+        { role: "label", quote: "Purpose" },
+        { role: "required", quote: "must", hint: "true" },
+        { role: "required", quote: "optional", hint: "false" },
+      ],
+    })],
+  });
+  assert.ok(duplicate.review.rejections.length > 0);
+  assert.equal(duplicate.review.items[0]?.semanticComplete, false);
+  assert.equal(duplicate.review.items[0]?.fragmentId, null);
+  assert.equal(duplicate.review.items[0]?.value.required, false);
+
+  const ambiguousId = "direct-review-only-adversary:ambiguity";
+  const ambiguousText = "Purpose must";
+  const ambiguous = assembleTemplateCopilotV3Review({
+    sourceMessages: { [ambiguousId]: ambiguousText },
+    items: [located({
+      itemIndex: 101,
+      kind: "request_field",
+      messageId: ambiguousId,
+      text: ambiguousText,
+      ambiguity: "possible",
+      leaves: [
+        { role: "label", quote: "Purpose" },
+        { role: "required", quote: "must", hint: "true" },
+      ],
+    })],
+  });
+  assert.equal(ambiguous.review.items[0]?.semanticComplete, false);
+  assert.ok(
+    ambiguous.review.rejections.some(
+      (rejection) => rejection.detail === "request_field:required",
+    ),
+  );
+
+  const mixedId = "direct-review-only-adversary:mixed-recovery";
+  const mixedText = "财务核对申请人";
+  const mixed = assembleTemplateCopilotV3Review({
+    sourceMessages: { [mixedId]: mixedText },
+    items: [located({
+      itemIndex: 102,
+      kind: "stage",
+      messageId: mixedId,
+      text: mixedText,
+      anchorExpanded: true,
+      sameLocalClauseRecoveredLeafCount: 1,
+      leaves: [
+        { role: "label", quote: "财务" },
+        { role: "kind", quote: "核对", hint: "review" },
+        {
+          role: "participant_mode",
+          quote: "申请人",
+          hint: "requester",
+          sameLocalClauseRecovered: true,
+        },
+      ],
+    })],
+  });
+  assert.equal(mixed.review.items[0]?.semanticComplete, true);
+  assert.equal(
+    mixed.review.items[0]?.bindings.some((binding) => binding.path === "/kind"),
+    false,
+  );
+  assert.ok(
+    mixed.review.rejections.some(
+      (rejection) => rejection.detail === "stage:kind",
+    ),
+  );
+
+  const malformedId = "direct-review-only-adversary:malformed-sibling";
+  const malformedText = "Purpose must";
+  const malformedBase = located({
+    itemIndex: 103,
+    kind: "request_field",
+    messageId: malformedId,
+    text: malformedText,
+    leaves: [
+      { role: "label", quote: "Purpose" },
+      { role: "required", quote: "must", hint: "true" },
+    ],
+  });
+  const malformed = assembleTemplateCopilotV3Review({
+    sourceMessages: { [malformedId]: malformedText },
+    items: [Object.freeze({
+      ...malformedBase,
+      leaves: Object.freeze([
+        Object.freeze({
+          ...malformedBase.leaves[0],
+          sourceSpan: Object.freeze({
+            ...malformedBase.leaves[0].sourceSpan,
+            exactText: "Purposx",
+          }),
+        }),
+        malformedBase.leaves[1],
+      ]),
+    })],
+  });
+  assert.ok(
+    malformed.review.rejections.some(
+      (rejection) =>
+        rejection.code === "untraceable_span" &&
+        rejection.detail === "request_field:label",
+    ),
+  );
+  assert.ok(
+    malformed.review.rejections.some(
+      (rejection) =>
+        rejection.code === "unverifiable_leaf" &&
+        rejection.detail === "request_field:required",
+    ),
+  );
+  assert.ok(
+    !(malformed.review.items[0]?.bindings ?? []).some(
+      (binding) => binding.path === "/required",
+    ),
+  );
+});
+
+test("direct review-only fallback preserves unsupported semantic holds", () => {
+  const messageId = "direct-review-only:unsupported-attachment";
+  const text = "If urgent, upload proof";
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages: { [messageId]: text },
+    items: [located({
+      itemIndex: 0,
+      kind: "attachment",
+      messageId,
+      text,
+      leaves: [
+        { role: "label", quote: "proof" },
+        { role: "kind", quote: "upload", hint: "attachment" },
+        { role: "required", quote: "upload", hint: "conditional" },
+      ],
+    })],
+  });
+  const item = result.review.items[0];
+  assert.ok(item);
+  assert.equal(item.semanticComplete, false);
+  assert.equal(item.blockingReason, "unsupported_semantics_not_executable");
+  assert.equal(item.persisted, false);
+  assert.equal(item.executable, false);
+  assert.equal(item.bindings.some((binding) => binding.path === "/kind"), false);
+  assert.ok(
+    result.review.rejections.some(
+      (rejection) => rejection.detail === "attachment:kind",
+    ),
+  );
 });
