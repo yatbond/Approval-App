@@ -33,6 +33,7 @@ if (!embeddedIdentity.ok) {
 }
 
 const nextConfig: NextConfig = {
+  outputFileTracingRoot: process.cwd(),
   ...(embeddedIdentity.value.artifact.origin === "prebuilt" &&
   embeddedIdentity.value.artifact.id
     ? { deploymentId: embeddedIdentity.value.artifact.id }

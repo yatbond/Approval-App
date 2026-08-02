@@ -1,7 +1,87 @@
-import { templateCopilotV3NormalizeLexicalText } from "./template-copilot-v3-evidence.ts";
+import {
+  templateCopilotV3NormalizeLexicalText,
+  templateCopilotV3NormalizeTrimCollapseText,
+} from "./template-copilot-v3-evidence.ts";
 
 const maximumLocalRequirementAuthorityCodeUnits = 1_000;
 
+const templateCopilotV3CjkDeicticSource =
+  "(?:該|该|此|本|這|这|那)(?:個|个|項|项|份)?|" +
+  "上述|前述|所述|同一|相同|目標|目标|原本|原來|原来|目前|當前|当前|相關|相关";
+const templateCopilotV3CjkRequestGenericNounSource =
+  "要求|欄位|栏位|欄|栏|字段|輸入|输入|問題|问题|值|項目|项目|項|项";
+const templateCopilotV3CjkAttachmentGenericNounSource =
+  "要求|附件|檔案|档案|檔|档|文件|表格|表单|上載項目|上传项目|項目|项目|項|项";
+const templateCopilotV3CjkRequestSubjectNounSource =
+  "欄位|栏位|欄|栏|字段|輸入|输入|問題|问题|值|項目|项目|項|项";
+const templateCopilotV3CjkAttachmentSubjectNounSource =
+  "附件|檔案|档案|檔|档|文件|表格|表单|上載項目|上传项目|項目|项目|項|项";
+const templateCopilotV3CjkStrippedAttachmentSubjectNounSource =
+  "附件|上載項目|上传项目|項目|项目|項|项";
+const templateCopilotV3CjkAllGenericNounSource =
+  `${templateCopilotV3CjkRequestGenericNounSource}|` +
+  `${templateCopilotV3CjkAttachmentSubjectNounSource}`;
+const templateCopilotV3EnglishHistoricalMarkerSource =
+  "initially|originally|previously|formerly";
+const templateCopilotV3EnglishHistoricalStatusSource =
+  "required|mandatory|compulsory|obligatory|uploaded|provided|submitted";
+const templateCopilotV3EnglishHistoricalRequirementDescriptorSource =
+  "(?:" + templateCopilotV3EnglishHistoricalMarkerSource + ")\\s+" +
+  "(?:(?:marked|listed|classified|designated|identified)(?:\\s+as)?\\s+)?" +
+  "(?:" + templateCopilotV3EnglishHistoricalStatusSource + ")";
+const templateCopilotV3EnglishHistoricalCopulaSource =
+  "(?:had\\s+(?:(?:" + templateCopilotV3EnglishHistoricalMarkerSource +
+  ")\\s+)?been(?:\\s+(?:" +
+  templateCopilotV3EnglishHistoricalMarkerSource + "))?|" +
+  "was(?:\\s+(?:" + templateCopilotV3EnglishHistoricalMarkerSource + "))?|" +
+  "were(?:\\s+(?:" + templateCopilotV3EnglishHistoricalMarkerSource + "))?|" +
+  "used\\s+to\\s+be)";
+const templateCopilotV3EnglishHistoricalRelativeRequirementSource =
+  "(?:(?:(?:(?:that|which)\\s+)?" +
+  templateCopilotV3EnglishHistoricalCopulaSource + "\\s+" +
+  "(?:(?:marked|listed|classified|designated|identified)(?:\\s+as)?\\s+)?" +
+  "(?:" + templateCopilotV3EnglishHistoricalStatusSource + "))|" +
+  "(?:" + templateCopilotV3EnglishHistoricalRequirementDescriptorSource +
+  "))";
+const templateCopilotV3EnglishPostnominalHistoricalRequirementSource =
+  "(?:\\s+(?:" +
+  templateCopilotV3EnglishHistoricalRelativeRequirementSource + ")|" +
+  "\\s*[,，]\\s*(?:" +
+  templateCopilotV3EnglishHistoricalRelativeRequirementSource +
+  ")\\s*[,，]|\\s*[（(]\\s*(?:" +
+  templateCopilotV3EnglishHistoricalRelativeRequirementSource +
+  ")\\s*[）)])";
+const templateCopilotV3EnglishDistinctClassifierSource =
+  "(?:another|different|separate|unrelated|a\\s+(?:different|separate)|an\\s+unrelated|(?:the\\s+)?other)";
+const templateCopilotV3CjkDistinctClassifierSource =
+  "(?:另一(?:個|个|份|項|项)?|另外(?:一)?(?:個|个|份|項|项)?|其他|不同|別的|别的)";
+const templateCopilotV3EnglishSubjectConnectorSource =
+  "(?:(?:even\\s+)?though|although|because|despite|unless|when|whenever|where|if|once|" +
+  "provided(?:\\s+that)?|assuming|given(?:\\s+that)?|supposing|as|since|but|and|" +
+  "while|whereas|however|yet)";
+const templateCopilotV3EnglishSubordinateSubjectConnectorSource =
+  "(?:(?:even\\s+)?though|although|because|despite|unless|when|whenever|where|if|once|" +
+  "provided(?:\\s+that)?|assuming|given(?:\\s+that)?|supposing|as|since)";
+const templateCopilotV3CjkSubordinateSubjectConnectorSource =
+  "(?:雖然|虽然|即使|即便|儘管|尽管|除非|如果|若|當|当|每當|每当|一旦|只要|" +
+  "因為|因为|由於|由于)";
+const templateCopilotV3LexicalCompoundHyphenSource =
+  "[-\\u2010\\u2011]";
+const templateCopilotV3EnglishLexicalContinuationSource =
+  "[\\p{L}\\p{N}\\p{M}_'’ʼ\\p{Pd}/]";
+const templateCopilotV3EnglishUnknownSubjectPredicateBridgeSource =
+  "(?:\\s*[（(][^()（）\\r\\n.!?。！？;；]{1,160}[）)]\\s*|" +
+  "\\s*[,，][^,，\\r\\n.!?。！？;；]{1,160}[,，]\\s*|" +
+  "\\s*[,，:：\\u2010-\\u2015\\u2212]\\s*|\\s+-\\s+|\\s+)";
+const templateCopilotV3CjkUnknownSubjectPredicateBridgeSource =
+  "(?:\\s*[（(][^()（）\\r\\n.!?。！？;；]{1,160}[）)]\\s*|" +
+  "\\s*[,，][^,，\\r\\n.!?。！？;；]{1,160}[,，]\\s*|" +
+  "\\s*[,，:：\\u2010-\\u2015\\u2212]\\s*|\\s*)";
+
+const templateCopilotV3EnglishUnknownSubjectPredicateStartSource =
+  "(?:is|are|was|were|becomes?|remains?|exists?|existed|may|might|can|could|" +
+  "should|will|would|shall|must|has|have|had|does|do|needs?|need|cannot|" +
+  "optional|exempt|waived|not)";
 export function templateCopilotV3HardClauseSeparator(character: string) {
   return /[\r\n.!?;。！？；…]/u.test(character);
 }
@@ -336,7 +416,7 @@ export function templateCopilotV3RequirementTextContainsSameSubjectContradiction
     `(?:^|[,，:：]\\s*)(?:(?:do|does|did)\\s+not\\s+require|never\\s+require|without\\s+requiring)\\s+${englishSubject}$|(?:^|[,，:：]\\s*)no\\s+${englishSubject}\\s+(?:is\\s+)?required$`,
     "u",
   );
-  const cjkSubject = `(?:該|该|此)?${escaped}(?:(?:要求|欄位|栏位|字段|輸入|输入|問題|问题|值|項目|项目|附件|檔案|档案|文件|表格|表单))?`;
+  const cjkSubject = `(?:${templateCopilotV3CjkDeicticSource})?${escaped}(?:(?:${templateCopilotV3CjkAllGenericNounSource}))?`;
   const cjkContradiction = new RegExp(
     `(?:^|[,，:：]\\s*)${cjkSubject}(?:為|为|是)?(?:選填|选填|可選|可选|非必須|非必须|不需要(?:填寫|填写|上載|上传|提交|提供)?|(?:毋須|毋须|無須|无须|毋需|無需|无需)(?:填寫|填写|上載|上传|提交|提供)?|可豁免|可免除|可省略|可以不填|可留空|可以留空)$`,
     "u",
@@ -389,7 +469,7 @@ export function templateCopilotV3RequirementTextContainsUnresolvedSameSubjectAss
     `^${englishSubject}\\s+(.+)$`,
     "u",
   );
-  const cjkSubject = `(?:該|该|此)?${escaped}(?:(?:要求|欄位|栏位|字段|輸入|输入|問題|问题|值|項目|项目|附件|檔案|档案|文件|表格|表单))?`;
+  const cjkSubject = `(?:${templateCopilotV3CjkDeicticSource})?${escaped}(?:(?:${templateCopilotV3CjkAllGenericNounSource}))?`;
   const cjkAssertion = new RegExp(`^${cjkSubject}(.+)$`, "u");
   return templateCopilotV3WithoutPairedQuotedText(value)
     .split(/[\r\n.!?;。！？；…]+/u)
@@ -567,6 +647,187 @@ function templateCopilotV3RequirementTailContainsOnlyBenignSameSubjectFacts(
   }));
 }
 
+function templateCopilotV3RequirementMarkerBeforeSubjectIsQualified(
+  value: string,
+  subjectText: string,
+  subjectKind: "request_field" | "attachment",
+) {
+  const normalized = templateCopilotV3NormalizeAuthorityContinuation(value);
+  if (!normalized) return false;
+  const genericNouns = subjectKind === "attachment"
+    ? "requirement|attachment|document|file|form|upload|item"
+    : "requirement|field|input|question|value|item";
+  const cjkGenericNouns = subjectKind === "attachment"
+    ? templateCopilotV3CjkAttachmentGenericNounSource
+    : templateCopilotV3CjkRequestGenericNounSource;
+  const englishQualification =
+    "optional|elective|exempt|waived|unnecessary|discretionary|voluntary|" +
+    "not\\s+(?:required|needed|mandatory|compulsory)";
+  const cjkQualification =
+    "選填|选填|可選|可选|非必須|非必须|不需要|免填|可豁免|可免除";
+
+  for (
+    const { text: alias } of
+      templateCopilotV3RequirementSubjectAliases(subjectText, subjectKind)
+  ) {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const englishSubject =
+      `(?:(?:the|this|that)\\s+)?${escaped}` +
+      `(?:\\s+(?:${genericNouns}))?`;
+    const leadingEnglish = new RegExp(
+      `(?:^|(?:[,，、]\\s*|\\b(?:and|or)\\b\\s+))` +
+        `(?:(?:a|an|one|some|the)\\s+)?` +
+        `(?:${englishQualification})\\s+${englishSubject}` +
+        `(?=$|[,，、]|\\s+\\b(?:and|or)\\b)`,
+      "u",
+    );
+    const trailingEnglish = new RegExp(
+      `(?:^|(?:[,，、]\\s*|\\b(?:and|or)\\b\\s+))${englishSubject}` +
+        `(?:\\s+as\\s+(?:(?:a|an|the)\\s+)?|` +
+          `[,，:：]\\s*(?:(?:a|an|one|some|the)\\s+)?)` +
+        `(?:${englishQualification})` +
+        `(?:\\s+(?:${genericNouns}))?(?=$|[,，、]|\\s+\\b(?:and|or)\\b)`,
+      "u",
+    );
+    const relativeEnglish = new RegExp(
+      `(?:^|(?:[,，、]\\s*|\\b(?:and|or)\\b\\s+))${englishSubject}` +
+        `\\s*[,，]\\s*(?:which|that)\\s+` +
+        `(?:is|are|was|were|becomes?|remains?)\\s+` +
+        `(?:(?:a|an|the)\\s+)?(?:${englishQualification})` +
+        `(?:\\s+(?:${genericNouns}))?(?=$|[,，、]|\\s+\\b(?:and|or)\\b)`,
+      "u",
+    );
+    const relativePredicateEnglish = new RegExp(
+      `(?:^|(?:[,，、]\\s*|\\b(?:and|or)\\b\\s+))${englishSubject}` +
+        `\\s*[,，]\\s*(?:which|that)\\s+([\\s\\S]+)$`,
+      "u",
+    ).exec(normalized)?.[1];
+    const cjkSubject =
+      `(?:${templateCopilotV3CjkDeicticSource})?${escaped}` +
+      `(?:(?:${cjkGenericNouns}))?`;
+    const leadingCjk = new RegExp(
+      `(?:^|[,，、]|(?:及|和|與|与|並|并))` +
+        `(?:一(?:份|個|个|項|项))?` +
+        `(?:${cjkQualification})(?:的)?${cjkSubject}`,
+      "u",
+    );
+    const trailingCjk = new RegExp(
+      `(?:^|[,，、]|(?:及|和|與|与|並|并))${cjkSubject}` +
+        `(?:為|为|是)?(?:${cjkQualification})`,
+      "u",
+    );
+    if (
+      leadingEnglish.test(normalized) ||
+      trailingEnglish.test(normalized) ||
+      relativeEnglish.test(normalized) ||
+      (
+        relativePredicateEnglish !== undefined &&
+        templateCopilotV3SubjectBoundPredicateIsQualified(
+          relativePredicateEnglish,
+          subjectText,
+          subjectKind,
+        )
+      ) ||
+      leadingCjk.test(normalized) ||
+      trailingCjk.test(normalized)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function templateCopilotV3NormalizeLeadingOptionalSibling(value: string) {
+  return templateCopilotV3NormalizeAuthorityContinuation(value).replace(
+    /^(?:and|or)\s+(?=(?:(?:a|an|one|some|the)\s+)?(?:optional|elective|exempt|waived|unnecessary|discretionary|voluntary)\b)/u,
+    "",
+  );
+}
+
+function templateCopilotV3LeadingOptionalObjectDisposition(
+  value: string,
+  subjectText: string,
+  subjectKind: "request_field" | "attachment",
+): TemplateCopilotV3ClauseSubjectDisposition | null {
+  const normalized = templateCopilotV3NormalizeLeadingOptionalSibling(value);
+  const optionalObject =
+    /^(?:(?:a|an|one|some|the)\s+)?(?:optional|elective|exempt|waived|unnecessary|discretionary|voluntary)\s+([\s\S]+)$/u
+      .exec(normalized);
+  return optionalObject === null
+    ? null
+    : templateCopilotV3OptionalObjectDisposition(
+      optionalObject[1],
+      subjectText,
+      subjectKind,
+    );
+}
+
+function templateCopilotV3LeadingOptionalSpecificSiblingIsDistinct(
+  value: string,
+  subjectText: string,
+  subjectKind: "request_field" | "attachment",
+) {
+  if (
+    templateCopilotV3LeadingOptionalObjectDisposition(
+      value,
+      subjectText,
+      subjectKind,
+    ) !== "distinct"
+  ) {
+    return false;
+  }
+  const normalized = templateCopilotV3NormalizeLeadingOptionalSibling(value);
+  const matched =
+    /^(?:(?:a|an|one|some|the)\s+)?(?:optional|elective|exempt|waived|unnecessary|discretionary|voluntary)\s+([\p{L}\p{N}_'’ʼ\p{Pd}]+(?:\s+[\p{L}\p{N}_'’ʼ\p{Pd}]+){0,11})$/u
+      .exec(normalized);
+  const candidate = templateCopilotV3NormalizeAuthorityContinuation(
+    matched?.[1] ?? "",
+  );
+  if (!candidate) return false;
+  const word = "[\\p{L}\\p{N}_'’ʼ\\p{Pd}]+";
+  const terminalNoun = subjectKind === "attachment"
+    ? "pdf|document|file|form|attachment|upload|image|photo|excel|csv|" +
+      "spreadsheet|certificate|declaration|schedule"
+    : "field|input|question|value|item";
+  return new RegExp(
+    `^(?:${word}\\s+){1,11}(?:${terminalNoun})$`,
+    "u",
+  ).test(candidate);
+}
+
+function templateCopilotV3MarkerRelativeTailContainsDistinctOptionalSibling(
+  value: string,
+  subjectText: string,
+  subjectKind: "request_field" | "attachment",
+) {
+  const normalized = templateCopilotV3NormalizeAuthorityContinuation(value);
+  const aliases = templateCopilotV3RequirementSubjectAliases(
+    subjectText,
+    subjectKind,
+  ).map(({ text }) => text).sort(
+    (left, right) => right.length - left.length,
+  );
+  for (const alias of aliases) {
+    for (const prefix of [alias, `the ${alias}`, `this ${alias}`, `that ${alias}`]) {
+      if (!normalized.startsWith(prefix)) continue;
+      const remainder = normalized.slice(prefix.length);
+      const sibling = /^(?:\s*[,，]\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)([\s\S]+)$/u
+        .exec(remainder)?.[1];
+      if (
+        sibling !== undefined &&
+        templateCopilotV3LeadingOptionalSpecificSiblingIsDistinct(
+          sibling,
+          subjectText,
+          subjectKind,
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function templateCopilotV3RequirementSameHardTailIsQualified(
   value: string,
   subjectText = "",
@@ -576,6 +837,24 @@ export function templateCopilotV3RequirementSameHardTailIsQualified(
 ): boolean {
   const continuation = templateCopilotV3NormalizeAuthorityContinuation(value);
   if (!continuation) return false;
+  if (
+    orientation === "marker_before_subject" &&
+    templateCopilotV3MarkerRelativeTailContainsDistinctOptionalSibling(
+      continuation,
+      subjectText,
+      subjectKind,
+    )
+  ) {
+    return false;
+  }
+  if (
+    orientation === "marker_before_subject" &&
+    templateCopilotV3RequirementMarkerBeforeSubjectIsQualified(
+      continuation,
+      subjectText,
+      subjectKind,
+    )
+  ) return true;
   if (
     orientation === "marker_before_subject" &&
     /^(?:\s*[,，、]|\s+\b(?:and|or)\b|\s*(?:及|和|與|与|並|并))/u.test(value)
@@ -601,6 +880,27 @@ export function templateCopilotV3RequirementSameHardTailIsQualified(
         "",
       ),
     );
+    const optionalSiblingDisposition =
+      templateCopilotV3LeadingOptionalObjectDisposition(
+        firstSibling,
+        subjectText,
+        subjectKind,
+      );
+    if (
+      templateCopilotV3LeadingOptionalSpecificSiblingIsDistinct(
+        firstSibling,
+        subjectText,
+        subjectKind,
+      )
+    ) {
+      return false;
+    }
+    if (
+      optionalSiblingDisposition !== null &&
+      optionalSiblingDisposition !== "distinct"
+    ) {
+      return true;
+    }
     if (strongCjkListDelimiter) {
       const firstListItem = firstSibling.split(/[、,，]/u, 1)[0] ?? "";
       return /(?:選填|选填|可選|可选|(?:可豁免|豁免|免除)(?:填寫|填写|上載|上传|提交|提供)?|不需要(?:填寫|填写|上載|上传|提交|提供)?|毋須|毋须|無須|无须|無需|无需|必填|必須|必须|需要(?:填寫|填写|上載|上传|提交|提供)?)\s*$/u
@@ -761,15 +1061,15 @@ export function templateCopilotV3RequirementSameHardTailIsQualified(
 }
 
 function templateCopilotV3RequirementPredicateIsQualified(value: string) {
-  return /^(?:(?:maybe|perhaps|possibly|potentially|conditionally|unlikely|explicitly|reportedly|allegedly|sometimes|usually|generally|ordinarily|typically)\s+)?(?:(?:is|are|was|were|becomes?|remains?)\s+)?(?:waived|optional|exempt|unnecessary|discretionary|voluntary|not\s+(?:(?:always|necessarily)\s+)?(?:required|needed|mandatory|compulsory)|no\s+longer\s+(?:required|needed))\b/u
+  return /^(?:(?:maybe|perhaps|possibly|potentially|conditionally|unlikely|explicitly|reportedly|allegedly|sometimes|usually|generally|ordinarily|typically)\s+)?(?:(?:is|are|was|were|becomes?|remains?)\s+)?(?:waived|optional|elective|exempt|unnecessary|discretionary|voluntary|not\s+(?:(?:always|necessarily)\s+)?(?:required|needed|mandatory|compulsory)|no\s+longer\s+(?:required|needed))\b/u
     .test(value) ||
-    /^(?:may|might|can|could|should|would|will)\s+be\s+(?:waived|omitted|skipped|optional|exempt|unnecessary|discretionary|voluntary|not\s+(?:required|needed))\b/u
+    /^(?:may|might|can|could|should|would|will)\s+(?:(?:now|currently|henceforth)\s+)?be\s+(?:absent|omitted|waived|skipped|optional|elective|exempt|unnecessary|discretionary|voluntary|left\s+(?:blank|empty|unfilled|out)|not\s+(?:required|needed))\b/u
       .test(value) ||
     /^(?:doesn|isn|aren|wasn|weren|needn)(?:['’ʼ]|\s*)t\s+(?:need\s+to\s+be\s+)?(?:required|provided|included|entered|uploaded)?\b/u
       .test(value) ||
     /^(?:optional|exempt|not\s+(?:required|needed))\s+(?:for|when|if|among|except)\b/u
       .test(value) ||
-    /^(?:(?:可能|也許|也许|或許|或许)\s*)?(?:(?:為|为|是)\s*)?(?:選填|选填|可選|可选|非必須|非必须|不需要(?:填寫|填写|上載|上传|提交|提供)?|不再需要|毋須|毋须|無須|无须|毋需|無需|无需|可豁免|可以豁免|可能豁免|豁免|免除)(?:$|[\s,，])/u
+    /^(?:(?:可能|也許|也许|或許|或许)\s*)?(?:(?:為|为|是)\s*)?(?:選填|选填|可選|可选|非必須|非必须|不需要(?:填寫|填写|上載|上传|提交|提供)?|不再需要|毋須|毋须|無須|无须|毋需|無需|无需|免填|自願填寫|自愿填写|可豁免|可以豁免|可能豁免|豁免|免除|可免除|可以免除|可省略|可以省略|可不填|可以不填|可留空|可以留空)(?:$|[\s,，])/u
       .test(value);
 }
 
@@ -814,15 +1114,63 @@ export function templateCopilotV3RequirementAuthorityContinuationIsQualified(
     codePoints.slice(segmentStart, segmentEnd).join(""),
   );
   if (!continuation) return false;
+  const optionalSibling = continuation.replace(
+    /^(?:and|or)\s+/u,
+    "",
+  );
+  const optionalSiblingDisposition =
+    templateCopilotV3LeadingOptionalObjectDisposition(
+      optionalSibling,
+      subjectText,
+      subjectKind,
+    );
+  if (
+    templateCopilotV3LeadingOptionalSpecificSiblingIsDistinct(
+      optionalSibling,
+      subjectText,
+      subjectKind,
+    )
+  ) {
+    return false;
+  }
+  if (
+    optionalSiblingDisposition !== null &&
+    optionalSiblingDisposition !== "distinct"
+  ) {
+    return true;
+  }
   if (adjacentHardClause) {
     let adjacentStart = segmentStart;
     let adjacentEnd = segmentEnd;
     let adjacentIndex = 0;
-    let previousClauseResolvedToSubject = false;
+    let previousClauseSubjectDisposition: TemplateCopilotV3ClauseSubjectDisposition = "unknown";
     while (adjacentStart < codePoints.length) {
       const adjacent = templateCopilotV3NormalizeAuthorityContinuation(
         codePoints.slice(adjacentStart, adjacentEnd).join(""),
       );
+      const rawAdjacent =
+        templateCopilotV3NormalizeCasePreservingAuthorityContinuation(
+          codePoints.slice(adjacentStart, adjacentEnd).join(""),
+        );
+      const inheritedSubjectDisposition:
+        TemplateCopilotV3ClauseSubjectDisposition = adjacentIndex === 0
+          ? "target"
+          : previousClauseSubjectDisposition;
+      const normalizedAdjacent =
+        templateCopilotV3NormalizeAuthorityContinuation(adjacent);
+      const adjacentStartsCorrection =
+        templateCopilotV3StripCorrectionAuthorityPrefix(normalizedAdjacent) !==
+          normalizedAdjacent;
+      const adjacentSubjectDisposition:
+        TemplateCopilotV3ClauseSubjectDisposition =
+        templateCopilotV3ClauseIsStandaloneCorrectionMarker(adjacent)
+          ? inheritedSubjectDisposition
+          : templateCopilotV3ClauseRequirementSubjectDisposition(
+            adjacent,
+            subjectText,
+            subjectKind,
+            inheritedSubjectDisposition,
+          );
       if (
         adjacent !== "" &&
         (
@@ -832,20 +1180,33 @@ export function templateCopilotV3RequirementAuthorityContinuationIsQualified(
             subjectKind,
           ) ||
           (
-            adjacentIndex > 0 &&
-            previousClauseResolvedToSubject &&
-            templateCopilotV3RequirementAnaphorIsQualified(
-              adjacent,
-              subjectText,
-              subjectKind,
+            (adjacentIndex > 0 || adjacentStartsCorrection) &&
+            (
+              templateCopilotV3ProvenSubjectGenericIsQualified(
+                adjacent,
+                subjectText,
+                subjectKind,
+                inheritedSubjectDisposition,
+              ) ||
+              (
+                adjacentSubjectDisposition !== "distinct" &&
+                templateCopilotV3RequirementAnaphorIsQualified(
+                  adjacent,
+                  subjectText,
+                  subjectKind,
+                  rawAdjacent,
+                )
+              )
             )
           ) ||
           (
             adjacentIndex === 0 &&
+            adjacentSubjectDisposition !== "distinct" &&
             templateCopilotV3AdjacentRequirementQualificationIsClosed(
               adjacent,
               subjectText,
               subjectKind,
+              rawAdjacent,
             )
           ) ||
           (
@@ -860,12 +1221,7 @@ export function templateCopilotV3RequirementAuthorityContinuationIsQualified(
       ) {
         return true;
       }
-      previousClauseResolvedToSubject =
-        templateCopilotV3ClauseResolvesToRequirementSubject(
-          adjacent,
-          subjectText,
-          subjectKind,
-        );
+      previousClauseSubjectDisposition = adjacentSubjectDisposition;
       adjacentStart = adjacentEnd;
       while (
         adjacentStart < codePoints.length &&
@@ -905,7 +1261,18 @@ function templateCopilotV3AdjacentRequirementQualificationIsClosed(
   continuation: string,
   subjectText: string,
   subjectKind: "request_field" | "attachment",
+  rawContinuation = continuation,
 ) {
+  const imperativeDisposition =
+    templateCopilotV3ImperativeOptionalObjectDisposition(
+      "",
+      continuation,
+      subjectText,
+      subjectKind,
+    );
+  if (imperativeDisposition !== null) {
+    return imperativeDisposition !== "distinct";
+  }
   if (
     /^(?:maybe|perhaps|possibly|potentially|conditionally|unlikely|no|never|not\s+really|unclear|if\s+applicable|when\s+requested|unless\s+exempt)$/u
       .test(continuation) ||
@@ -925,10 +1292,15 @@ function templateCopilotV3AdjacentRequirementQualificationIsClosed(
     /^(?:(?:however|but|although)\b[,\s]*|(?:但係|但是|但|可是|然而|不過|不过|雖然|虽然|而)\s*)/u,
     "",
   );
+  const rawWithoutConnector = templateCopilotV3CasePreservingEquivalentSuffix(
+    rawContinuation,
+    withoutConnector,
+  );
   return templateCopilotV3RequirementAnaphorIsQualified(
     withoutConnector,
     subjectText,
     subjectKind,
+    rawWithoutConnector,
   ) ||
     /^(?:a\s+)?waiver\b[\s\S]{0,80000}\b(?:may|might|could|applies?|apply)\b/u
       .test(withoutConnector);
@@ -962,16 +1334,38 @@ function templateCopilotV3LocalRequirementBoundaryIsQualified(
     );
 }
 
+function templateCopilotV3StripCorrectionAuthorityPrefix(value: string) {
+  return value.replace(
+    /^(?:(?:correction|corrected|update|updated|revision|revised)\s*[:：\p{Pd}\u2212]\s*|(?:now\s+changed?|change(?:d)?)\s+to\s+|(?:更正|修正)\s*(?:[:：\p{Pd}\u2212]|為|为)\s*|(?:現改為|现改为|改為|改为)\s*)/u,
+    "",
+  );
+}
+
 function templateCopilotV3StripIntroductoryAuthorityPrefix(value: string) {
-  const anaphor = /(?:^|[,，:：]\s*)(?=(?:(?:it|this|that)\b|(?:the|this|that)\s+(?:requirement|field|input|question|value|item|attachment|document|file|form|upload)\b|(?:該|该|此)(?:要求|欄位|栏位|字段|輸入|输入|問題|问题|值|項目|项目|附件|檔案|档案|文件|上載項目|上传项目)))/u
-    .exec(value);
+  const corrected = templateCopilotV3StripCorrectionAuthorityPrefix(value);
+  const anaphor = new RegExp(
+    `(?:^|[,，:：]\\s*)(?=` +
+      `(?:(?:it|this|that)\\b|` +
+      `(?:the|this|that)\\s+(?:requirement|field|input|question|value|item|attachment|document|file|form|upload)\\b|` +
+      `(?:${templateCopilotV3CjkDeicticSource})(?:${templateCopilotV3CjkAllGenericNounSource})))`,
+    "u",
+  ).exec(corrected);
   const scoped = anaphor?.index === undefined
-    ? value
-    : value.slice(anaphor.index + anaphor[0].length);
+    ? corrected
+    : corrected.slice(anaphor.index + anaphor[0].length);
   return scoped.replace(
     /^(?:(?:however|nevertheless|nonetheless|still|after\s+(?:review|assessment|consideration)|following\s+(?:review|assessment|consideration)|in\s+practice)\b[,\s]*|(?:然而|不過|不过|但|經審查後|经审查后|實際上|实际上)[,，\s]*)/u,
     "",
   );
+}
+
+function templateCopilotV3StripReferenceDiscourseBridge(value: string) {
+  return templateCopilotV3NormalizeAuthorityContinuation(value)
+    .replace(/^[,，\p{Pd}\u2212]\s*/u, "")
+    .replace(
+      /^(?:(?:however|nevertheless|nonetheless|still|instead|rather|now|currently|henceforth)\b|(?:現在|现在|如今|此後|此后|現|现|則|则|然而|不過|不过|可是|但|卻|却|反而))\s*[,，\p{Pd}\u2212]?\s*/u,
+      "",
+    );
 }
 
 function templateCopilotV3AnaphorPredicateHasClosedStart(value: string) {
@@ -979,14 +1373,251 @@ function templateCopilotV3AnaphorPredicateHasClosedStart(value: string) {
       .test(value) ||
     /^(?:(?:possibly|potentially|reportedly|allegedly|conditionally|normally|generally|ordinarily|typically|usually|sometimes)\s+)?(?:optional|exempt|waived|unnecessary|discretionary|voluntary)(?:$|\s+(?:for|when|if|among|except)\b)/u
       .test(value) ||
-    /^(?:為|为|是|可|可能|通常|一般|不|未|無|无|毋|非|選填|选填|豁免|免除)/u
+    /^(?:仍|仍然|依然|為|为|是|可|可能|通常|一般|不|未|無|无|毋|非|選填|选填|免填|自願填寫|自愿填写|豁免|免除)/u
       .test(value);
 }
 
+function templateCopilotV3EnglishQuantifiedAnaphorSource(
+  subjectKind: "request_field" | "attachment",
+) {
+  const genericPlural = subjectKind === "attachment"
+    ? "requirements?|attachments?|documents?|files?|forms?|uploads?|items?"
+    : "requirements?|fields?|inputs?|questions?|values?|items?";
+  const cardinal =
+    `(?:one|two|three|four|five|six|seven|eight|nine|ten|[0-9]+)` +
+    `(?!${templateCopilotV3EnglishLexicalContinuationSource})`;
+  const boundedOne =
+    `one(?!${templateCopilotV3EnglishLexicalContinuationSource})`;
+  const nominalSet =
+    `(?:(?:the|these|those)\\s+)?(?:${genericPlural})`;
+  const bareSet =
+    `them|these(?!\\s+(?:${genericPlural})\\b)|` +
+    `those(?!\\s+(?:${genericPlural})\\b)`;
+  const setReference = `(?:${nominalSet}|${bareSet})`;
+  const ofSet = `of\\s+(?:${setReference})`;
+  const established =
+    `(?:each|both|all)(?:\\s+(?:` +
+      `(?:${cardinal})(?:\\s+${ofSet})?|` +
+      `(?:${genericPlural})|${ofSet}))?`;
+  const everySet = `every\\s+${boundedOne}(?:\\s+${ofSet})?`;
+  const anySet =
+    `any(?:\\s+${boundedOne}(?:\\s+${ofSet})?|\\s+${ofSet})`;
+  const distributive =
+    `(?:(?:either(?:\\s+one)?|one\\s+or\\s+more)` +
+      `(?:\\s+${ofSet})?|${everySet}|${anySet})`;
+  return `(?:${established}|${distributive})`;
+}
+
+function templateCopilotV3EnglishQuantifiedAnaphorPrefix(
+  value: string,
+  subjectKind: "request_field" | "attachment",
+) {
+  return new RegExp(
+    `^${templateCopilotV3EnglishQuantifiedAnaphorSource(subjectKind)}` +
+      `(?!${templateCopilotV3EnglishLexicalContinuationSource})`,
+    "u",
+  ).exec(value);
+}
+
+function templateCopilotV3CjkQuantifiedAnaphorPrefix(
+  value: string,
+  subjectKind: "request_field" | "attachment",
+) {
+  const genericNouns = subjectKind === "attachment"
+    ? templateCopilotV3CjkAttachmentGenericNounSource
+    : templateCopilotV3CjkRequestGenericNounSource;
+  return new RegExp(
+    `^(?:(?:(?:所有|全部|各)(?:${genericNouns}))|` +
+      `(?:兩者|两者|二者|全部|全都|每(?:份|個|个|項|项)))` +
+      "(?:均|皆|都)?",
+    "u",
+  ).exec(value);
+}
+
+function templateCopilotV3QuantifiedAnaphorPredicateCanBind(value: string) {
+  return templateCopilotV3AnaphorPredicateHasClosedStart(value) ||
+    templateCopilotV3NormalizedTextBeginsPostRequirementQualification(value) ||
+    /^(?:up\s+to|at\s+most|no\s+more\s+than|maximum(?:\s+of)?|上限|最多|不超過|不超过)(?:$|[\s\d])/u
+      .test(value);
+}
+
+function templateCopilotV3QuantifiedAnaphorTailIsQualified(
+  tail: TemplateCopilotV3SubjectReferenceTail,
+  subjectText: string,
+  subjectKind: "request_field" | "attachment",
+) {
+  return tail.bridgeRequiresHold ||
+    (
+      templateCopilotV3QuantifiedAnaphorPredicateCanBind(tail.predicate) &&
+      templateCopilotV3SubjectBoundPredicateIsQualified(
+        tail.predicate,
+        subjectText,
+        subjectKind,
+      )
+    );
+}
+
+type TemplateCopilotV3EnglishNominalReference =
+  TemplateCopilotV3SubjectReferenceTail & {
+    disposition: TemplateCopilotV3ClauseSubjectDisposition;
+    end: number;
+  };
+
+function templateCopilotV3EnglishQuantifiedNominalReference(
+  value: string,
+  subjectText: string,
+  subjectKind: "request_field" | "attachment",
+  rawValue = value,
+): TemplateCopilotV3EnglishNominalReference | null {
+  if (!/^(?:each|every|any)\b/u.test(value)) return null;
+  const word = "[\\p{L}\\p{N}\\p{M}_'’ʼ\\p{Pd}]+";
+  const optionality =
+    "optional|elective|exempt|waived|unnecessary|discretionary|voluntary";
+  const quantifiedAnaphor = templateCopilotV3EnglishQuantifiedAnaphorPrefix(
+    value,
+    subjectKind,
+  );
+  const quantifiedAnaphorTail = quantifiedAnaphor === null
+    ? null
+    : templateCopilotV3ParseSubjectReferenceTail(
+      value.slice(quantifiedAnaphor[0].length),
+      true,
+    );
+  if (
+    quantifiedAnaphorTail !== null &&
+    templateCopilotV3QuantifiedAnaphorTailIsQualified(
+      quantifiedAnaphorTail,
+      subjectText,
+      subjectKind,
+    )
+  ) {
+    return null;
+  }
+  const quantifiedNominalSource =
+    `^(?:each|every|any(?!\\s+one` +
+      `(?!${templateCopilotV3EnglishLexicalContinuationSource})))\\s+` +
+      `((?:(?:${optionality})\\s+)?${word}(?:\\s+${word}){0,11}?)` +
+      `(?=${templateCopilotV3EnglishUnknownSubjectPredicateBridgeSource}` +
+        `${templateCopilotV3EnglishUnknownSubjectPredicateStartSource}\\b)`;
+  const match = new RegExp(quantifiedNominalSource, "u").exec(value);
+  if (match === null) return null;
+  const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+    value.slice(match[0].length),
+  );
+  if (parsedTail === null) return null;
+  const candidate = templateCopilotV3NormalizeAuthorityContinuation(
+    match[1],
+  ).replace(new RegExp(`^(?:${optionality})\\s+`, "u"), "");
+  if (!candidate) return null;
+  const rawReference = templateCopilotV3CasePreservingEquivalentSuffix(
+    rawValue,
+    value,
+  );
+  const rawMatch = new RegExp(quantifiedNominalSource, "iu").exec(rawReference);
+  const rawCandidate = templateCopilotV3NormalizeCasePreservingAuthorityContinuation(
+    rawMatch?.[1] ?? candidate,
+  ).replace(new RegExp(`^(?:${optionality})\\s+`, "iu"), "");
+  const predicateExpressesSubstitution =
+    templateCopilotV3OptionalObjectExpressesSubstitution(parsedTail.predicate);
+  return {
+    ...parsedTail,
+    bridgeRequiresHold: parsedTail.bridgeRequiresHold ||
+      predicateExpressesSubstitution,
+    disposition: predicateExpressesSubstitution
+      ? "unknown"
+      : templateCopilotV3OptionalObjectDisposition(
+        candidate,
+        subjectText,
+        subjectKind,
+        rawCandidate,
+      ),
+    end: match[0].length,
+  };
+}
+
+function templateCopilotV3EnglishUnquantifiedNominalReference(
+  value: string,
+  subjectText: string,
+  subjectKind: "request_field" | "attachment",
+  rawValue = value,
+): TemplateCopilotV3EnglishNominalReference | null {
+  if (/^(?:each|every|any)\b/u.test(value)) return null;
+  const word = "[\\p{L}\\p{N}\\p{M}_'’ʼ\\p{Pd}]+";
+  const nominalSource =
+    `^(${word}(?:\\s+${word}){0,11}?)` +
+    `(?=${templateCopilotV3EnglishUnknownSubjectPredicateBridgeSource}` +
+      `${templateCopilotV3EnglishUnknownSubjectPredicateStartSource}\\b)`;
+  const match = new RegExp(nominalSource, "u").exec(value);
+  if (match === null) return null;
+  const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+    value.slice(match[0].length),
+  );
+  if (parsedTail === null) return null;
+  const candidate = templateCopilotV3NormalizeAuthorityContinuation(match[1]);
+  if (!candidate) return null;
+  const rawReference = templateCopilotV3CasePreservingEquivalentSuffix(
+    rawValue,
+    value,
+  );
+  const rawMatch = new RegExp(nominalSource, "iu").exec(rawReference);
+  const rawCandidate =
+    templateCopilotV3NormalizeCasePreservingAuthorityContinuation(
+      rawMatch?.[1] ?? candidate,
+    );
+  const genericNouns = subjectKind === "attachment"
+    ? "requirement|attachment|document|file|form|upload|item"
+    : "requirement|field|input|question|value|item";
+  const classifiableCandidate = candidate.replace(
+    /^(?:a|an|the|some|one)\s+/u,
+    "",
+  );
+  const classifiableRawCandidate = rawCandidate.replace(
+    /^(?:a|an|the|some|one)\s+/iu,
+    "",
+  );
+  const genericShape = templateCopilotV3GenericSiblingShape(
+    classifiableCandidate,
+    classifiableRawCandidate,
+    genericNouns,
+  );
+  const governedTerminalTypeReference =
+    templateCopilotV3GovernedTerminalTypeReference(
+      classifiableCandidate,
+      classifiableRawCandidate,
+      subjectText,
+      subjectKind,
+    );
+  if (
+    (genericShape === null && !governedTerminalTypeReference) ||
+    (genericShape?.stemTokens.some((token) =>
+      /^(?:under|within|inside|outside|in|on|for|of|about|regarding|from|by|among|across|during|after|before|following|per|with|without|that|which|whose|where|when)$/u
+        .test(token)
+    ) ?? false)
+  ) {
+    return null;
+  }
+  const predicateExpressesSubstitution =
+    templateCopilotV3OptionalObjectExpressesSubstitution(parsedTail.predicate);
+  return {
+    ...parsedTail,
+    bridgeRequiresHold: parsedTail.bridgeRequiresHold ||
+      predicateExpressesSubstitution,
+    disposition: predicateExpressesSubstitution
+      ? "unknown"
+      : templateCopilotV3OptionalObjectDisposition(
+        candidate,
+        subjectText,
+        subjectKind,
+        rawCandidate,
+      ),
+    end: match[0].length,
+  };
+}
 function templateCopilotV3RequirementAnaphorIsQualified(
   value: string,
   subjectText: string,
   subjectKind: "request_field" | "attachment",
+  rawValue = value,
 ) {
   const withoutModifier = templateCopilotV3StripIntroductoryAuthorityPrefix(
     value.replace(
@@ -994,59 +1625,202 @@ function templateCopilotV3RequirementAnaphorIsQualified(
       "",
     ),
   );
-  const pronounMatch = withoutModifier.match(
-    /^(it|this|that)\s+([\s\S]{1,80000})$/u,
+  const rawWithoutModifier = templateCopilotV3CasePreservingEquivalentSuffix(
+    rawValue,
+    withoutModifier,
   );
+  const pronounMatch = /^(it|this|that)\b/u.exec(withoutModifier);
   const pronoun = pronounMatch?.[1];
-  const pronounPredicate = pronounMatch?.[2];
+  const pronounTail = pronounMatch === null
+    ? undefined
+    : templateCopilotV3ParseSubjectReferenceTail(
+      withoutModifier.slice(pronounMatch[0].length),
+      true,
+    );
   if (
-    pronounPredicate !== undefined &&
+    pronounTail !== undefined &&
+    pronounTail !== null &&
     (
-      pronoun === "it" ||
-      templateCopilotV3AnaphorPredicateHasClosedStart(pronounPredicate)
-    ) &&
-    templateCopilotV3SubjectBoundPredicateIsQualified(
-      pronounPredicate,
+      pronounTail.bridgeRequiresHold ||
+      (
+        (
+          pronoun === "it" ||
+          templateCopilotV3AnaphorPredicateHasClosedStart(pronounTail.predicate)
+        ) &&
+        templateCopilotV3SubjectBoundPredicateIsQualified(
+          pronounTail.predicate,
+          subjectText,
+          subjectKind,
+        )
+      )
+    )
+  ) {
+    return true;
+  }
+  const quantifiedNominal =
+    templateCopilotV3EnglishQuantifiedNominalReference(
+      withoutModifier,
+      subjectText,
+      subjectKind,
+      rawWithoutModifier,
+    );
+  if (quantifiedNominal !== null) {
+    return quantifiedNominal.disposition !== "distinct" &&
+      (
+        quantifiedNominal.bridgeRequiresHold ||
+        templateCopilotV3SubjectBoundPredicateIsQualified(
+          quantifiedNominal.predicate,
+          subjectText,
+          subjectKind,
+        )
+      );
+  }
+  const unquantifiedNominal =
+    templateCopilotV3EnglishUnquantifiedNominalReference(
+      withoutModifier,
+      subjectText,
+      subjectKind,
+      rawWithoutModifier,
+    );
+  if (unquantifiedNominal !== null) {
+    return unquantifiedNominal.disposition !== "distinct" &&
+      (
+        unquantifiedNominal.bridgeRequiresHold ||
+        templateCopilotV3SubjectBoundPredicateIsQualified(
+          unquantifiedNominal.predicate,
+          subjectText,
+          subjectKind,
+        )
+      );
+  }
+  const quantifiedMatch = templateCopilotV3EnglishQuantifiedAnaphorPrefix(
+    withoutModifier,
+    subjectKind,
+  );
+  const quantifiedTail = quantifiedMatch === null
+    ? undefined
+    : templateCopilotV3ParseSubjectReferenceTail(
+      withoutModifier.slice(quantifiedMatch[0].length),
+      true,
+    );
+  if (
+    quantifiedTail !== undefined &&
+    quantifiedTail !== null &&
+    templateCopilotV3QuantifiedAnaphorTailIsQualified(
+      quantifiedTail,
       subjectText,
       subjectKind,
     )
   ) {
     return true;
   }
+  const cjkPronounMatch =
+    /^(?:它|其|此|該項|该项)(?:本身)?/u.exec(withoutModifier);
+  const cjkPronounTail = cjkPronounMatch === null
+    ? undefined
+    : templateCopilotV3ParseSubjectReferenceTail(
+      withoutModifier.slice(cjkPronounMatch[0].length),
+      true,
+    );
+  if (
+    cjkPronounTail !== undefined &&
+    cjkPronounTail !== null &&
+    (
+      cjkPronounTail.bridgeRequiresHold ||
+      (
+        templateCopilotV3AnaphorPredicateHasClosedStart(
+          cjkPronounTail.predicate,
+        ) &&
+        templateCopilotV3SubjectBoundPredicateIsQualified(
+          cjkPronounTail.predicate,
+          subjectText,
+          subjectKind,
+        )
+      )
+    )
+  ) {
+    return true;
+  }
+  const cjkQuantifiedMatch = templateCopilotV3CjkQuantifiedAnaphorPrefix(
+    withoutModifier,
+    subjectKind,
+  );
+  const cjkQuantifiedTail = cjkQuantifiedMatch === null
+    ? undefined
+    : templateCopilotV3ParseSubjectReferenceTail(
+      withoutModifier.slice(cjkQuantifiedMatch[0].length),
+      true,
+    );
+  if (
+    cjkQuantifiedTail !== undefined &&
+    cjkQuantifiedTail !== null &&
+    (
+      cjkQuantifiedTail.bridgeRequiresHold ||
+      (
+        templateCopilotV3QuantifiedAnaphorPredicateCanBind(
+          cjkQuantifiedTail.predicate,
+        ) &&
+        templateCopilotV3SubjectBoundPredicateIsQualified(
+          cjkQuantifiedTail.predicate,
+          subjectText,
+          subjectKind,
+        )
+      )
+    )
+  ) {
+    return true;
+  }
+
   const genericNouns = subjectKind === "attachment"
     ? "requirement|attachment|document|file|form|upload|item"
     : "requirement|field|input|question|value|item";
-  const genericPredicate = withoutModifier.match(
-    new RegExp(
-      `^(?:the|this|that)\\s+(?:${genericNouns})(?!\\s+for\\b)\\s+([\\s\\S]{1,80000})$`,
-      "u",
-    ),
-  )?.[1];
+  const genericMatch = new RegExp(
+    `^(?:the|this|that)\\s+(?:${genericNouns})\\b`,
+    "u",
+  ).exec(withoutModifier);
+  const genericRemainder = genericMatch === null
+    ? undefined
+    : withoutModifier.slice(genericMatch[0].length);
+  const genericTail = genericRemainder === undefined ||
+      /^\s+for\b/u.test(genericRemainder)
+    ? undefined
+    : templateCopilotV3ParseSubjectReferenceTail(genericRemainder);
   if (
-    genericPredicate !== undefined &&
-    templateCopilotV3SubjectBoundPredicateIsQualified(
-      genericPredicate,
-      subjectText,
-      subjectKind,
+    genericTail !== undefined &&
+    genericTail !== null &&
+    (
+      genericTail.bridgeRequiresHold ||
+      templateCopilotV3SubjectBoundPredicateIsQualified(
+        genericTail.predicate,
+        subjectText,
+        subjectKind,
+      )
     )
   ) {
     return true;
   }
   const cjkGenericNouns = subjectKind === "attachment"
-    ? "要求|附件|檔案|档案|文件|上載項目|上传项目|項目|项目"
-    : "要求|欄位|栏位|字段|輸入|输入|問題|问题|值|項目|项目";
-  const cjkGenericPredicate = withoutModifier.match(
-    new RegExp(
-      `^(?:該|该|此)(?:${cjkGenericNouns})([\\s\\S]{1,80000})$`,
-      "u",
-    ),
-  )?.[1];
+    ? templateCopilotV3CjkAttachmentGenericNounSource
+    : templateCopilotV3CjkRequestGenericNounSource;
+  const cjkGenericMatch = new RegExp(
+    `^(?:${templateCopilotV3CjkDeicticSource})(?:${cjkGenericNouns})`,
+    "u",
+  ).exec(withoutModifier);
+  const cjkGenericTail = cjkGenericMatch === null
+    ? undefined
+    : templateCopilotV3ParseSubjectReferenceTail(
+      withoutModifier.slice(cjkGenericMatch[0].length),
+    );
   if (
-    cjkGenericPredicate !== undefined &&
-    templateCopilotV3SubjectBoundPredicateIsQualified(
-      cjkGenericPredicate,
-      subjectText,
-      subjectKind,
+    cjkGenericTail !== undefined &&
+    cjkGenericTail !== null &&
+    (
+      cjkGenericTail.bridgeRequiresHold ||
+      templateCopilotV3SubjectBoundPredicateIsQualified(
+        cjkGenericTail.predicate,
+        subjectText,
+        subjectKind,
+      )
     )
   ) {
     return true;
@@ -1056,6 +1830,1152 @@ function templateCopilotV3RequirementAnaphorIsQualified(
     subjectText,
     subjectKind,
   );
+}
+
+type TemplateCopilotV3ClauseSubjectDisposition =
+  | "target"
+  | "distinct"
+  | "unknown";
+
+type TemplateCopilotV3ClauseSubjectReference = {
+  offset: number;
+  bridgeRequiresHold?: boolean;
+  end: number;
+  disposition: TemplateCopilotV3ClauseSubjectDisposition | "inherited";
+  predicate: string;
+};
+
+function templateCopilotV3ClauseSubjectPositionIsAssertive(
+  value: string,
+  offset: number,
+) {
+  const prefix = value.slice(0, offset);
+  return prefix === "" ||
+    new RegExp(
+      "(?:[,，:：;；]\\s*|\\b(?:" +
+        templateCopilotV3EnglishSubjectConnectorSource +
+        ")\\b[\\s,]*|(?:雖然|虽然|即使|即便|儘管|尽管|除非|如果|若|當|当|每當|每当|一旦|只要|因為|因为|由於|由于|否則|否则|但係|但是|但|而|然而|不過|不过|且|並且|并且)\\s*)$",
+      "u",
+    )
+      .test(prefix);
+}
+
+function templateCopilotV3TargetAliasHasLeftBoundary(
+  value: string,
+  offset: number,
+) {
+  if (offset === 0) return true;
+  const before =
+    Array.from(value.slice(Math.max(0, offset - 2), offset)).at(-1) ?? "";
+  if (!/[\p{L}\p{N}_]/u.test(before)) return true;
+  return /(?:否則|否则|但係|但是|然而|不過|不过|可是|則|则|但|反而)\s*$/u
+    .test(value.slice(Math.max(0, offset - 16), offset));
+}
+
+function templateCopilotV3TargetAliasHasExplicitDistinctLeftContext(
+  value: string,
+  offset: number,
+) {
+  const prefix = value.slice(Math.max(0, offset - 256), offset);
+  return new RegExp(
+    `(?:${templateCopilotV3EnglishDistinctClassifierSource})\\s+` +
+      `(?:(?:${templateCopilotV3EnglishHistoricalRequirementDescriptorSource})\\s+)?$`,
+    "u",
+  ).test(prefix) ||
+    new RegExp(
+      `(?:${templateCopilotV3CjkDistinctClassifierSource})` +
+        "(?:[^,，:：;；.!?。！？\\r\\n]{0,40}?的)?$",
+      "u",
+    ).test(prefix);
+}
+
+function templateCopilotV3SubjectReferenceBridgeRequiresHold(value: string) {
+  const body = templateCopilotV3NormalizeAuthorityContinuation(value)
+    .replace(/^(?:which|that)\s+/u, "");
+  if (!body) return false;
+  if (
+    /^(?:however|nevertheless|nonetheless|still|instead|rather|now|currently|henceforth|然而|不過|不过|可是|但|卻|却|反而)$/u
+      .test(body)
+  ) {
+    return false;
+  }
+  const affirmativeNegation =
+    templateCopilotV3AffirmativeNegationDisposition(body);
+  if (affirmativeNegation === "closed_affirmative") return false;
+  if (affirmativeNegation === "qualified_or_unknown") return true;
+  return !(
+    /^(?:(?:is|are|was|were|becomes?|remains?)\s+)?(?:(?:always|still|categorically|invariably)\s+)?(?:required|mandatory|compulsory|obligatory)$/u
+      .test(body) ||
+    /^(?:仍|仍然|依然|一律|一概|始終|始终)?(?:為|为|是)?(?:必填|必須(?:填寫|填写|提供|上載|上传|提交)?|必须(?:填写|提供|上传|提交)?|須(?:填寫|填写|提供|上載|上传|提交)?|须(?:填写|提供|上传|提交)?|需要(?:填寫|填写|提供|上載|上传|提交)?)$/u
+      .test(body)
+  );
+}
+
+type TemplateCopilotV3SubjectReferenceTail = {
+  bridgeRequiresHold: boolean;
+  predicate: string;
+};
+
+function templateCopilotV3ParseSubjectReferenceTail(
+  value: string,
+  allowOpenPredicate = false,
+): TemplateCopilotV3SubjectReferenceTail | null {
+  let remainder = value;
+  let bridgeRequiresHold = false;
+  let hasSubjectBoundary = false;
+  const leadingWhitespace = /^\s+/u.exec(remainder);
+  if (leadingWhitespace) {
+    hasSubjectBoundary = true;
+    remainder = remainder.slice(leadingWhitespace[0].length);
+  }
+
+  for (let bridgeCount = 0; bridgeCount < 4; bridgeCount += 1) {
+    const parenthetical =
+      /^[（(]\s*([^()（）\r\n.!?。！？;；]{1,80000}?)\s*[）)]\s*/u
+        .exec(remainder);
+    if (parenthetical) {
+      hasSubjectBoundary = true;
+      bridgeRequiresHold ||=
+        templateCopilotV3SubjectReferenceBridgeRequiresHold(parenthetical[1]);
+      remainder = remainder.slice(parenthetical[0].length);
+      continue;
+    }
+
+    const commaBridge =
+      /^[,，]\s*([^,，\r\n.!?。！？;；]{1,80000}?)\s*[,，]\s*/u
+        .exec(remainder);
+    if (commaBridge) {
+      const bridgeTail = remainder.slice(commaBridge[0].length);
+      if (templateCopilotV3ClauseReferencePredicate(bridgeTail) === null) {
+        break;
+      }
+      hasSubjectBoundary = true;
+      bridgeRequiresHold ||=
+        templateCopilotV3SubjectReferenceBridgeRequiresHold(commaBridge[1]);
+      remainder = remainder.slice(commaBridge[0].length);
+      continue;
+    }
+    break;
+  }
+
+  const directUnicodeDelimiter = /^[：:\u2010-\u2015\u2212]\s*/u.exec(
+    remainder,
+  );
+  if (directUnicodeDelimiter) {
+    hasSubjectBoundary = true;
+    remainder = remainder.slice(directUnicodeDelimiter[0].length);
+  } else if (/^,|^，/u.test(remainder)) {
+    hasSubjectBoundary = true;
+    remainder = remainder.slice(1).replace(/^\s+/u, "");
+  } else if (hasSubjectBoundary) {
+    const asciiDash = /^-\s+/u.exec(remainder);
+    if (asciiDash) {
+      remainder = remainder.slice(asciiDash[0].length);
+    }
+  }
+
+  if (/^[（(]/u.test(remainder)) {
+    return { bridgeRequiresHold: true, predicate: "" };
+  }
+  if (!hasSubjectBoundary && !/^\p{Script=Han}/u.test(remainder)) {
+    return null;
+  }
+
+  const predicate = templateCopilotV3ClauseReferencePredicate(remainder);
+  if (predicate === null) {
+    if (allowOpenPredicate) {
+      const openPredicate =
+        templateCopilotV3NormalizeAuthorityContinuation(remainder);
+      if (openPredicate) {
+        return {
+          bridgeRequiresHold,
+          predicate: openPredicate,
+        };
+      }
+    }
+    return bridgeRequiresHold ? { bridgeRequiresHold, predicate: "" } : null;
+  }
+  return { bridgeRequiresHold, predicate };
+}
+
+function templateCopilotV3OptionalObjectExpressesSubstitution(value: string) {
+  const candidate = templateCopilotV3NormalizeAuthorityContinuation(value);
+  return /\b(?:replace|replaces|replacing|replacement|substitute|substitutes|substituting|substitution|alternative|copy|instead|obviate|obviates|obviating|obviated|remove|removes|removing|removed|supersede|supersedes|superseding|superseded|supplant|supplants|supplanting|supplanted|displace|displaces|displacing|displaced|satisfy|satisfies|satisfying|satisfied)\b|in\s+(?:lieu|place)\s+of|stand(?:s|ing|stood)?\s+(?:in\s+for|as\s+(?:a\s+)?proxy\s+for)|(?:act|acts|acting|acted|serve|serves|serving|served)\s+as\s+(?:(?:a|the)\s+)?(?:proxy|substitute|replacement|alternative|equivalent)\s+(?:for|of)|(?:proxy\s+for|equivalent\s+of)|(?:take|takes|taking|took|taken)\s+(?:(?:its|their|the|that|this)\s+)?place|make(?:s|ing)?[\s\S]{0,80}\bunnecessary\b|allow(?:s|ing)?[\s\S]{0,80}\bomission\b/u
+    .test(candidate);
+}
+type TemplateCopilotV3GenericSiblingShape = {
+  stemTokens: readonly string[];
+  rawStemTokens: readonly string[];
+};
+
+function templateCopilotV3GenericSiblingShape(
+  candidate: string,
+  rawCandidate: string,
+  genericNouns: string,
+): TemplateCopilotV3GenericSiblingShape | null {
+  const word = "[\\p{L}\\p{N}\\p{M}_\\p{Pd}\\u0027\\u2019\\u02BC]+";
+  const genericBase =
+    `(?:(?:${word})\\s+){0,11}(?:${genericNouns})s?`;
+  const scopeLeader =
+    "(?:under|within|inside|outside|in|on|for|from|by|among|across|during|" +
+    "after|before|following|per|according\\s+to|subject\\s+to|with|without|" +
+    "that|which|whose|where|when)";
+  const scopedSource =
+    `^(${genericBase})\\s+${scopeLeader}\\b[\\s\\S]{1,240}$`;
+  const scoped = new RegExp(scopedSource, "u").exec(candidate);
+  const rawScoped = new RegExp(scopedSource, "iu").exec(rawCandidate);
+  const base = scoped?.[1] ?? candidate;
+  const rawBase = rawScoped?.[1] ?? (scoped === null ? rawCandidate : base);
+  const baseSource =
+    `^(?:(${word}(?:\\s+${word}){0,10})\\s+)?(?:${genericNouns})s?$`;
+  const baseMatch = new RegExp(baseSource, "u").exec(base);
+  if (baseMatch === null) return null;
+  const rawBaseMatch = new RegExp(baseSource, "iu").exec(rawBase);
+  const stem = baseMatch[1] ?? "";
+  const rawStem = rawBaseMatch?.[1] ?? stem;
+  return {
+    stemTokens: stem ? stem.split(/\s+/u) : [],
+    rawStemTokens: rawStem ? rawStem.split(/\s+/u) : [],
+  };
+}
+
+function templateCopilotV3GenericSiblingStatusToken(value: string) {
+  const finalSegment = value.split(/\p{Pd}/u).at(-1) ?? value;
+  return /(?:ed|en)$/u.test(finalSegment) ||
+    /^(?:active|inactive|valid|invalid|available|unavailable|current|existing|pending|required|optional|mandatory|compulsory|obligatory|governed|authorized|verified|selected|configured|validated|screened|reviewed|certified|flagged|waived|exempt|elective|unnecessary|discretionary|voluntary|legacy|primary|secondary|opaque|unidentified|average|standard|unknown|high|low|medium|critical|elevated|reduced|quality|status|priority|risk|impact|urgency|severity|confidence|availability)$/u
+      .test(finalSegment);
+}
+
+function templateCopilotV3GenericSiblingStemIsStatusLike(
+  tokens: readonly string[],
+) {
+  if (tokens.length === 0) return true;
+  const phrase = tokens.join(" ");
+  if (
+    /^(?:high|low|medium|critical|elevated|reduced)\s+(?:priority|risk|impact|urgency|severity)$/u
+      .test(phrase) ||
+    tokens.some((token) =>
+      /^(?:high|low|medium|standard|average|critical|elevated|reduced)-(?:quality|risk|priority|impact|urgency|severity|confidence|availability)$/u
+        .test(token)
+    )
+  ) {
+    return true;
+  }
+  return templateCopilotV3GenericSiblingStatusToken(
+    tokens[tokens.length - 1],
+  );
+}
+
+function templateCopilotV3GenericSiblingTokenHasRecognizedIdentity(
+  value: string,
+) {
+  return /^(?:excel|spreadsheet|schedule|redline|reference|certificate|declaration|image|photo|csv|pdf|order|receipt|notes?|comments?|remarks?|description|explanation|justification|reason|memo|message|title|name|email|phone|address|date|amount|currency|code|number|identifier|policy|narrative|evidence|report|minutes|summary|delivery|password|center|unit|jurisdiction|entity|category|owner|confirmation|assessment|onboarding|intake|diligence|registration)$/u
+    .test(value);
+}
+
+function templateCopilotV3RawTokenHasStrongIdentifierShape(value: string) {
+  const uppercaseCount = Array.from(value).filter((character) =>
+    /\p{Lu}/u.test(character)
+  ).length;
+  if (uppercaseCount >= 2) return true;
+  if (/\p{Lu}/u.test(value) && /\p{N}/u.test(value)) return true;
+  return /\p{Ll}\p{Lu}|\p{Lu}[^\p{L}\p{N}]*\p{Lu}/u.test(value);
+}
+
+function templateCopilotV3GenericSiblingStemIsPositivelyNamed(
+  tokens: readonly string[],
+  rawTokens: readonly string[],
+) {
+  if (tokens.length === 0) return false;
+  const finalToken = tokens[tokens.length - 1];
+  if (tokens.length === 1) {
+    const rawToken = rawTokens[0] ?? finalToken;
+    const strongIdentifier =
+      templateCopilotV3RawTokenHasStrongIdentifierShape(rawToken);
+    if (/\p{Pd}/u.test(finalToken) && !strongIdentifier) return false;
+    return templateCopilotV3GenericSiblingTokenHasRecognizedIdentity(
+        finalToken,
+      ) || strongIdentifier;
+  }
+  const rawNamedToken = rawTokens.some((rawToken, index) =>
+    !templateCopilotV3GenericSiblingStatusToken(tokens[index] ?? "") &&
+    (
+      templateCopilotV3RawTokenHasStrongIdentifierShape(rawToken) ||
+      (index > 0 && /\p{Lu}/u.test(rawToken))
+    )
+  );
+  const boundedHyphenIdentity = tokens.some((token) =>
+    /^(?:one-(?:way|page|time)|all-purpose)$/u.test(token)
+  ) &&
+    (
+      templateCopilotV3GenericSiblingTokenHasRecognizedIdentity(finalToken) ||
+      (tokens.includes("all-purpose") && finalToken === "supporting")
+    );
+  return rawNamedToken || boundedHyphenIdentity ||
+    templateCopilotV3GenericSiblingTokenHasRecognizedIdentity(finalToken);
+}
+
+function templateCopilotV3GovernedTerminalTypeReference(
+  candidate: string,
+  rawCandidate: string,
+  subjectText: string,
+  subjectKind: "request_field" | "attachment",
+) {
+  const subjectAliases = templateCopilotV3RequirementSubjectAliases(
+    subjectText,
+    subjectKind,
+  );
+  if (!subjectAliases.some(({ stripped }) => stripped)) return false;
+  const fullAlias = subjectAliases.find(({ stripped }) => !stripped)?.text;
+  const terminalType = fullAlias?.split(/\s+/u).at(-1);
+  if (!terminalType) return false;
+  const escapedTerminal = terminalType.replace(
+    /[.*+?^${}()|[\]\\]/gu,
+    "\\$&",
+  );
+  const word = "[\\p{L}\\p{N}\\p{M}_'’ʼ\\p{Pd}]+";
+  const terminalReferenceSource =
+    `^(?:(${word}(?:\\s+${word}){0,5})\\s+)?${escapedTerminal}s?` +
+    `(?:\\s+(?:under|within|inside|outside|in|on|for|of|about|regarding|from|by|among|across|during|after|before|following|per|according\\s+to|subject\\s+to|with|without|that|which|whose|where|when)\\b[\\s\\S]{1,240})?$`;
+  const match = new RegExp(terminalReferenceSource, "u").exec(candidate);
+  if (match === null) return false;
+  const rawMatch = new RegExp(terminalReferenceSource, "iu").exec(
+    rawCandidate,
+  );
+  const prefixTokens = match[1]?.split(/\s+/u) ?? [];
+  const rawPrefixTokens = rawMatch?.[1]?.split(/\s+/u) ?? prefixTokens;
+  return !templateCopilotV3GenericSiblingStemIsPositivelyNamed(
+    prefixTokens,
+    rawPrefixTokens,
+  );
+}
+
+function templateCopilotV3OptionalObjectDisposition(
+  value: string,
+  subjectText: string,
+  subjectKind: "request_field" | "attachment",
+  rawValue = value,
+): TemplateCopilotV3ClauseSubjectDisposition {
+  const candidate = templateCopilotV3NormalizeAuthorityContinuation(value)
+    .replace(
+      /^(?:a|an|the|some|one)\s+/u,
+      "",
+    );
+  const rawCandidate =
+    templateCopilotV3NormalizeCasePreservingAuthorityContinuation(rawValue)
+      .replace(
+        /^(?:a|an|the|some|one)\s+/iu,
+        "",
+      );
+  if (!candidate) return "unknown";
+  if (templateCopilotV3OptionalObjectExpressesSubstitution(candidate)) {
+    return "unknown";
+  }
+  if (
+    new RegExp(
+      `^(?:${templateCopilotV3EnglishDistinctClassifierSource})\\s+`,
+      "u",
+    ).test(candidate)
+  ) {
+    return "distinct";
+  }
+
+  const genericNouns = subjectKind === "attachment"
+    ? "requirement|attachment|document|file|form|upload|item"
+    : "requirement|field|input|question|value|item";
+  const subjectAliases = templateCopilotV3RequirementSubjectAliases(
+    subjectText,
+    subjectKind,
+  );
+  const aliases = subjectAliases.map(({ text }) => text);
+  const lexicalBoundary = "[^\\p{L}\\p{N}\\p{M}_'’ʼ\\p{Pd}/]";
+  const fullAlias = subjectAliases.find(({ stripped }) => !stripped)?.text;
+  const candidateNamesFullAlias = fullAlias !== undefined &&
+    !/[\p{Script=Han}]/u.test(fullAlias) &&
+    new RegExp(
+      `(?:^|${lexicalBoundary})` +
+        `${fullAlias.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}` +
+        `(?:$|${lexicalBoundary})`,
+      "u",
+    ).test(candidate);
+  const fullAliasTerminal = fullAlias?.split(/\s+/u).at(-1);
+  if (
+    templateCopilotV3GovernedTerminalTypeReference(
+      candidate,
+      rawCandidate,
+      subjectText,
+      subjectKind,
+    )
+  ) {
+    return "unknown";
+  }
+  const compoundWord = "[\\p{L}\\p{N}\\p{M}_]+";
+  const compoundBoundary =
+    `(?:${templateCopilotV3LexicalCompoundHyphenSource}|\\s+)`;
+  const namesSiblingCompound = subjectAliases.some(({ text: alias, stripped }) => {
+    if (stripped && candidateNamesFullAlias) return false;
+    if (/[\p{Script=Han}]/u.test(alias)) return false;
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    return new RegExp(
+      `(?:^|${lexicalBoundary})(?:(?:${compoundWord})\\s+){0,8}` +
+        `${escaped}${templateCopilotV3LexicalCompoundHyphenSource}` +
+        `${compoundWord}(?:${compoundBoundary}${compoundWord}){0,4}?` +
+        `${compoundBoundary}(?:${genericNouns})s?` +
+        `(?:$|${lexicalBoundary})`,
+      "u",
+    ).test(candidate);
+  });
+  if (namesSiblingCompound) return "distinct";
+
+  const namesSpacedSiblingCompound = subjectAliases.some(({ text: alias, stripped }) => {
+    if (stripped && candidateNamesFullAlias) return false;
+    if (/[\p{Script=Han}]/u.test(alias)) return false;
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    return new RegExp(
+      `(?:^|${lexicalBoundary})(?:(?:${compoundWord})\\s+){0,8}` +
+        `${escaped}\\s+${compoundWord}` +
+        `(?:\\s+${compoundWord}){0,3}\\s+(?:${genericNouns})s?` +
+        `(?:$|${lexicalBoundary})`,
+      "u",
+    ).test(candidate);
+  });
+  if (namesSpacedSiblingCompound) return "distinct";
+
+  const competingDomainNouns = subjectKind === "attachment"
+    ? "field|input|question|value"
+    : "attachment|document|file|form|upload";
+  if (
+    new RegExp(
+      `^requirements?\\s+(?:for|of)\\s+` +
+        `(?:(?:the|any|all)\\s+)?(?:${competingDomainNouns})s?` +
+        `(?:$|${lexicalBoundary})`,
+      "u",
+    ).test(candidate)
+  ) {
+    return "distinct";
+  }
+
+  const namesScopedSibling = subjectAliases.some(({ text: alias, stripped }) => {
+    if (stripped && candidateNamesFullAlias) return false;
+    if (/[\p{Script=Han}]/u.test(alias)) return false;
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const match = new RegExp(
+      `^requirements?\\s+(?:for|of)\\s+(?:the\\s+)?${escaped}` +
+        `(?=$|${lexicalBoundary})([\\s\\S]*)$`,
+      "u",
+    ).exec(candidate);
+    if (match === null) return false;
+    return !new RegExp(
+      `^(?:\\s+(?:${genericNouns})s?)?` +
+        `(?:\\s+(?:under|within|inside|outside|in|on|for|from|by|among|across|during|after|before|following|per|according\\s+to|subject\\s+to|with|without|that|which|whose|where|when)\\b[\\s\\S]*)?$`,
+      "u",
+    ).test(match[1]);
+  });
+  if (namesScopedSibling) return "distinct";
+
+  const namesPrefixedStrippedSibling = !candidateNamesFullAlias &&
+    subjectAliases.some(({ text: alias, stripped }) => {
+      if (!stripped || /[\p{Script=Han}]/u.test(alias)) return false;
+      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+      const match = new RegExp(
+        `^(?:requirements?\\s+(?:for|of)\\s+(?:the\\s+)?)?` +
+          `(${compoundWord}(?:\\s+${compoundWord}){0,3})\\s+` +
+          `${escaped}\\s+(?:${genericNouns})s?` +
+          `(?:$|\\s+(?:under|within|inside|outside|in|on|for|from|by|among|across|during|after|before|following|per|according\\s+to|subject\\s+to|with|without|that|which|whose|where|when)\\b)`,
+        "u",
+      ).exec(candidate);
+      if (match === null) return false;
+      return match[1].split(/\s+/u).some((token) =>
+        token !== fullAliasTerminal &&
+        templateCopilotV3GenericSiblingTokenHasRecognizedIdentity(
+          token,
+        )
+      );
+    });
+  if (namesPrefixedStrippedSibling) return "distinct";
+
+  const namesTarget = aliases.some((alias) => {
+    if (/[\p{Script=Han}]/u.test(alias)) return candidate.includes(alias);
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    return new RegExp(
+      `(?:^|${lexicalBoundary})${escaped}(?:$|${lexicalBoundary})`,
+      "u",
+    ).test(candidate);
+  });
+  if (namesTarget) return "target";
+  const genericShape = templateCopilotV3GenericSiblingShape(
+    candidate,
+    rawCandidate,
+    genericNouns,
+  );
+  if (genericShape !== null) {
+    const governedTerminalTypeIsOnlyIdentity =
+      subjectAliases.some(({ stripped }) => stripped) &&
+      fullAliasTerminal !== undefined &&
+      genericShape.stemTokens.at(-1) === fullAliasTerminal &&
+      !templateCopilotV3GenericSiblingStemIsPositivelyNamed(
+        genericShape.stemTokens.slice(0, -1),
+        genericShape.rawStemTokens.slice(0, -1),
+      );
+    if (governedTerminalTypeIsOnlyIdentity) {
+      return "unknown";
+    }
+    if (
+      templateCopilotV3GenericSiblingStemIsStatusLike(
+        genericShape.stemTokens,
+      )
+    ) {
+      return "unknown";
+    }
+    return templateCopilotV3GenericSiblingStemIsPositivelyNamed(
+        genericShape.stemTokens,
+        genericShape.rawStemTokens,
+      )
+      ? "distinct"
+      : "unknown";
+  }
+
+  const containsGenericNoun = new RegExp(
+    `(?:^|[^\\p{L}\\p{N}\\p{M}_'’ʼ\\p{Pd}/])` +
+      `(?:${genericNouns})s?` +
+      `(?=$|[^\\p{L}\\p{N}\\p{M}_'’ʼ\\p{Pd}/])`,
+    "u",
+  ).test(candidate);
+  const genericTarget = containsGenericNoun ||
+    /^(?:it|this|that|these|those|one|same|current|target|relevant)$/u
+      .test(candidate);
+  return genericTarget ? "unknown" : "distinct";
+}
+function templateCopilotV3ImperativeOptionalObjectDisposition(
+  subject: string,
+  predicate: string,
+  subjectText: string,
+  subjectKind: "request_field" | "attachment",
+): TemplateCopilotV3ClauseSubjectDisposition | null {
+  const fullReference = templateCopilotV3NormalizeAuthorityContinuation(
+    `${subject} ${predicate}`,
+  );
+  const optionalObject =
+    /^(?:(?:please|kindly|also|then|and|or|still|indeed)\s+){0,4}(?:(?:(?:we|you|users?|requesters?|applicants?|submitters?|staff|employees?)|(?:the\s+)?(?:user|requester|applicant|submitter|employee))\s+(?:(?:may|can|could|should|will)\s+)?)?(?:allow|permit|include|add|accept|offer)\s+(?:(?:a|an|the|some|one)\s+)?(?:optional|elective|voluntary|discretionary)\s+([\s\S]+)$/u
+      .exec(
+        fullReference,
+      );
+  if (optionalObject === null) {
+    return null;
+  }
+  return templateCopilotV3OptionalObjectDisposition(
+    optionalObject[1],
+    subjectText,
+    subjectKind,
+  );
+}
+
+function templateCopilotV3ClauseSubjectReferences(
+  value: string,
+  subjectText: string,
+  subjectKind: "request_field" | "attachment",
+) {
+  const normalized = templateCopilotV3StripCorrectionAuthorityPrefix(
+    templateCopilotV3NormalizeAuthorityContinuation(value),
+  );
+  const rawNormalized = templateCopilotV3CasePreservingEquivalentSuffix(
+    value,
+    normalized,
+  );
+  const references: TemplateCopilotV3ClauseSubjectReference[] = [];
+  const englishSubjectBoundary =
+    `(^|(?:[,，:：;；]\\s*|\\b(?:${templateCopilotV3EnglishSubjectConnectorSource})\\b[\\s,]*))`;
+  const genericNouns = subjectKind === "attachment"
+    ? "requirement|attachment|document|file|form|upload|item"
+    : "requirement|field|input|question|value|item";
+  const cjkGenericNouns = subjectKind === "attachment"
+    ? templateCopilotV3CjkAttachmentGenericNounSource
+    : templateCopilotV3CjkRequestGenericNounSource;
+  const englishDistinctSource =
+    `(?:${templateCopilotV3EnglishDistinctClassifierSource})\\s+` +
+    `(?:(?:${templateCopilotV3EnglishHistoricalRequirementDescriptorSource})\\s+)?` +
+    `(?:${genericNouns})\\b` +
+    `(?:(?:${templateCopilotV3EnglishPostnominalHistoricalRequirementSource}))?`;
+  const cjkDistinctSource =
+    `(?:${templateCopilotV3CjkDistinctClassifierSource})(?:[^,，:：;；.!?。！？\\r\\n]{0,40}?的)?(?:${cjkGenericNouns})`;
+  const distinctRanges: Array<{ start: number; end: number }> = [];
+  const targetRanges: Array<{ start: number; end: number }> = [];
+  const quantifiedNominalRanges: Array<{ start: number; end: number }> = [];
+
+  for (const match of normalized.matchAll(
+    new RegExp(englishDistinctSource, "gu"),
+  )) {
+    if (match.index === undefined) continue;
+    const end = match.index + match[0].length;
+    distinctRanges.push({ start: match.index, end });
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      normalized.slice(end),
+    );
+    if (
+      templateCopilotV3ClauseSubjectPositionIsAssertive(
+        normalized,
+        match.index,
+      )
+    ) {
+      references.push({
+        offset: match.index,
+        end,
+        disposition: "distinct",
+        predicate: parsedTail?.predicate ?? "",
+        bridgeRequiresHold: parsedTail?.bridgeRequiresHold,
+      });
+    }
+  }
+  for (const match of normalized.matchAll(
+    new RegExp(cjkDistinctSource, "gu"),
+  )) {
+    if (match.index === undefined) continue;
+    const end = match.index + match[0].length;
+    distinctRanges.push({ start: match.index, end });
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      normalized.slice(end),
+    );
+    if (
+      templateCopilotV3ClauseSubjectPositionIsAssertive(
+        normalized,
+        match.index,
+      )
+    ) {
+      references.push({
+        offset: match.index,
+        end,
+        disposition: "distinct",
+        predicate: parsedTail?.predicate ?? "",
+        bridgeRequiresHold: parsedTail?.bridgeRequiresHold,
+      });
+    }
+  }
+
+  for (const boundary of normalized.matchAll(
+    new RegExp(englishSubjectBoundary, "gu"),
+  )) {
+    if (boundary.index === undefined) continue;
+    const offset = boundary.index + boundary[0].length;
+    const quantifiedNominal =
+      templateCopilotV3EnglishQuantifiedNominalReference(
+        normalized.slice(offset),
+        subjectText,
+        subjectKind,
+        templateCopilotV3CasePreservingEquivalentSuffix(
+          rawNormalized,
+          normalized.slice(offset),
+        ),
+      );
+    if (quantifiedNominal === null) continue;
+    const end = offset + quantifiedNominal.end;
+    if (
+      references.some((reference) =>
+        reference.offset < end && reference.end > offset
+      )
+    ) {
+      continue;
+    }
+    quantifiedNominalRanges.push({ start: offset, end });
+    if (quantifiedNominal.disposition === "distinct") {
+      distinctRanges.push({ start: offset, end });
+    } else if (quantifiedNominal.disposition === "target") {
+      targetRanges.push({ start: offset, end });
+    }
+    references.push({
+      offset,
+      end,
+      disposition: quantifiedNominal.disposition,
+      predicate: quantifiedNominal.predicate,
+      bridgeRequiresHold: quantifiedNominal.bridgeRequiresHold,
+    });
+  }
+  for (
+    const { text: alias } of
+      templateCopilotV3RequirementSubjectAliases(subjectText, subjectKind)
+  ) {
+    const escapedAlias = alias.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const compoundBoundary =
+      `(?:${templateCopilotV3LexicalCompoundHyphenSource}|\\s+)`;
+    const compoundSource =
+      `${escapedAlias}${templateCopilotV3LexicalCompoundHyphenSource}` +
+      "[\\p{L}\\p{N}\\p{M}_]+" +
+      `(?:${compoundBoundary}[\\p{L}\\p{N}\\p{M}_]+){0,4}?` +
+      `${compoundBoundary}(?:${genericNouns})\\b`;
+    for (const match of normalized.matchAll(
+      new RegExp(compoundSource, "gu"),
+    )) {
+      if (match.index === undefined) continue;
+      if (
+        !templateCopilotV3TargetAliasHasLeftBoundary(
+          normalized,
+          match.index,
+        )
+      ) {
+        continue;
+      }
+      const end = match.index + match[0].length;
+      if (
+        distinctRanges.some((range) =>
+          match.index >= range.start && end <= range.end
+        )
+      ) {
+        continue;
+      }
+      distinctRanges.push({ start: match.index, end });
+      if (
+        templateCopilotV3ClauseSubjectPositionIsAssertive(
+          normalized,
+          match.index,
+        )
+      ) {
+        const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+          normalized.slice(end),
+        );
+        references.push({
+          offset: match.index,
+          end,
+          disposition: "distinct",
+          predicate: parsedTail?.predicate ?? "",
+          bridgeRequiresHold: parsedTail?.bridgeRequiresHold,
+        });
+      }
+    }
+  }
+
+  for (
+    const { text: alias, stripped } of
+      templateCopilotV3RequirementSubjectAliases(subjectText, subjectKind)
+  ) {
+    let cursor = 0;
+    while (cursor <= normalized.length - alias.length) {
+      const offset = normalized.indexOf(alias, cursor);
+      if (offset < 0) break;
+      if (
+        templateCopilotV3TargetAliasHasExplicitDistinctLeftContext(
+          normalized,
+          offset,
+        ) || distinctRanges.some((range) =>
+          offset >= range.start && offset < range.end
+        )
+      ) {
+        cursor = offset + Math.max(alias.length, 1);
+        continue;
+      }
+      const qualification =
+        templateCopilotV3AliasQualificationDetails(
+          normalized,
+          offset,
+          alias,
+          subjectKind,
+          stripped,
+        );
+      if (
+        templateCopilotV3TargetAliasHasLeftBoundary(normalized, offset) &&
+        qualification !== null
+      ) {
+        const end = qualification.subjectEnd;
+        targetRanges.push({ start: offset, end });
+        references.push({
+          offset,
+          end,
+          disposition: "target",
+          predicate: qualification.predicate,
+          bridgeRequiresHold: qualification.bridgeRequiresHold,
+        });
+      }
+      cursor = offset + Math.max(alias.length, 1);
+    }
+  }
+
+  const occupiedBy = (
+    ranges: Array<{ start: number; end: number }>,
+    offset: number,
+  ) => ranges.some((range) => offset >= range.start && offset < range.end);
+
+  for (const match of normalized.matchAll(
+    new RegExp(`\\b(?:${genericNouns})\\b`, "gu"),
+  )) {
+    if (match.index === undefined) continue;
+    if (
+      occupiedBy(distinctRanges, match.index) ||
+      occupiedBy(targetRanges, match.index) ||
+      occupiedBy(quantifiedNominalRanges, match.index)
+    ) {
+      continue;
+    }
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      normalized.slice(match.index + match[0].length),
+    );
+    if (parsedTail === null) continue;
+    references.push({
+      offset: match.index,
+      end: match.index + match[0].length,
+      disposition: "unknown",
+      predicate: parsedTail.predicate,
+      bridgeRequiresHold: parsedTail.bridgeRequiresHold,
+    });
+  }
+  for (const match of normalized.matchAll(
+    new RegExp(`(?:${cjkGenericNouns})`, "gu"),
+  )) {
+    if (match.index === undefined) continue;
+    if (
+      occupiedBy(distinctRanges, match.index) ||
+      occupiedBy(targetRanges, match.index)
+    ) {
+      continue;
+    }
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      normalized.slice(match.index + match[0].length),
+    );
+    if (parsedTail === null) continue;
+    references.push({
+      offset: match.index,
+      end: match.index + match[0].length,
+      disposition: "unknown",
+      predicate: parsedTail.predicate,
+      bridgeRequiresHold: parsedTail.bridgeRequiresHold,
+    });
+  }
+
+  for (const match of normalized.matchAll(
+    new RegExp(
+      `(?:(?:the|this|that)\\s+)?(?:${genericNouns})` +
+        `(?:${templateCopilotV3EnglishPostnominalHistoricalRequirementSource})`,
+      "gu",
+    ),
+  )) {
+    if (match.index === undefined) continue;
+    if (
+      !templateCopilotV3ClauseSubjectPositionIsAssertive(
+        normalized,
+        match.index,
+      )
+    ) {
+      continue;
+    }
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      normalized.slice(match.index + match[0].length),
+    );
+    if (parsedTail === null) continue;
+    references.push({
+      offset: match.index,
+      end: match.index + match[0].length,
+      disposition: "unknown",
+      predicate: parsedTail.predicate,
+      bridgeRequiresHold: parsedTail.bridgeRequiresHold,
+    });
+  }
+
+  for (const match of normalized.matchAll(
+
+    new RegExp(
+      `${englishSubjectBoundary}` +
+        `((?:(?:the|this|that)\\s+)?comments?)\\s+`,
+      "gu",
+    ),
+  )) {
+    if (match.index === undefined) continue;
+    const offset = match.index + match[1].length;
+    const end = offset + match[2].length;
+    if (
+      targetRanges.some((range) =>
+        offset >= range.start && offset < range.end
+      )
+    ) {
+      continue;
+    }
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      normalized.slice(end),
+    );
+    if (parsedTail === null) continue;
+    references.push({
+      offset,
+      end,
+      disposition: "distinct",
+      predicate: parsedTail.predicate,
+      bridgeRequiresHold: parsedTail.bridgeRequiresHold,
+    });
+  }
+  for (const match of normalized.matchAll(
+    new RegExp(
+      `${englishSubjectBoundary}` +
+        `((?:(?:the|this|that)\\s+)?(?:original|target|current|relevant)\\s+(?:one|item))\\s+`,
+      "gu",
+    ),
+  )) {
+    if (match.index === undefined) continue;
+    const offset = match.index + match[1].length;
+    const end = offset + match[2].length;
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      normalized.slice(end),
+    );
+    if (parsedTail === null) continue;
+    references.push({
+      offset,
+      end,
+      disposition: "unknown",
+      predicate: parsedTail.predicate,
+      bridgeRequiresHold: parsedTail.bridgeRequiresHold,
+    });
+  }
+  for (const boundary of normalized.matchAll(
+    new RegExp(englishSubjectBoundary, "gu"),
+  )) {
+    if (boundary.index === undefined) continue;
+    const offset = boundary.index + boundary[0].length;
+    const quantified = templateCopilotV3EnglishQuantifiedAnaphorPrefix(
+      normalized.slice(offset),
+      subjectKind,
+    );
+    if (quantified === null) continue;
+    const end = offset + quantified[0].length;
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      normalized.slice(end),
+      true,
+    );
+    if (
+      parsedTail === null ||
+      !templateCopilotV3QuantifiedAnaphorPredicateCanBind(
+        parsedTail.predicate,
+      )
+    ) {
+      continue;
+    }
+    if (
+      references.some((reference) =>
+        reference.offset < end && reference.end > offset
+      )
+    ) {
+      continue;
+    }
+    references.push({
+      offset,
+      end,
+      disposition: "inherited",
+      predicate: parsedTail.predicate,
+      bridgeRequiresHold: parsedTail.bridgeRequiresHold,
+    });
+  }
+  const englishUnknownSubjectPredicateBridge =
+    templateCopilotV3EnglishUnknownSubjectPredicateBridgeSource;
+  const unknownSubjectWord = `[\\p{L}\\p{N}_'’ʼ\\p{Pd}]+`;
+  for (const match of normalized.matchAll(
+    new RegExp(
+      `${englishSubjectBoundary}` +
+        `((?:(?:the|this|that|an?|some)\\s+)?${unknownSubjectWord}` +
+        `(?:\\s+${unknownSubjectWord}){0,5}?)${englishUnknownSubjectPredicateBridge}` +
+        `(${templateCopilotV3EnglishUnknownSubjectPredicateStartSource}\\b[\\s\\S]*)$`,
+      "gu",
+    ),
+  )) {
+    if (match.index === undefined) continue;
+    const offset = match.index + match[1].length;
+    const subject = templateCopilotV3NormalizeAuthorityContinuation(match[2]);
+    if (/^(?:it|this|that)$/u.test(subject)) continue;
+    const end = offset + match[2].length;
+    if (
+      references.some((reference) =>
+        reference.offset < end && reference.end > offset
+      )
+    ) {
+      continue;
+    }
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      normalized.slice(end),
+    );
+    if (parsedTail === null) continue;
+    if (
+      /^(?:each|both|all)$/u.test(subject) &&
+      !templateCopilotV3QuantifiedAnaphorPredicateCanBind(parsedTail.predicate)
+    ) {
+      continue;
+    }
+    const imperativeDisposition =
+      templateCopilotV3ImperativeOptionalObjectDisposition(
+        subject,
+        parsedTail.predicate,
+        subjectText,
+        subjectKind,
+      );
+    references.push({
+      offset,
+      end,
+      disposition: imperativeDisposition ?? "unknown",
+      predicate: parsedTail.predicate,
+      bridgeRequiresHold: parsedTail.bridgeRequiresHold,
+    });
+  }
+  for (const match of normalized.matchAll(
+    new RegExp(
+      `${englishSubjectBoundary}(it|this|that)\\b`,
+      "gu",
+    ),
+  )) {
+    if (match.index === undefined) continue;
+    const offset = match.index + match[1].length;
+    const end = offset + match[2].length;
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      normalized.slice(end),
+      true,
+    );
+    if (parsedTail === null) continue;
+    references.push({
+      offset,
+      end,
+      disposition: "inherited",
+      predicate: parsedTail.predicate,
+      bridgeRequiresHold: parsedTail.bridgeRequiresHold,
+    });
+  }
+  const cjkUnknownSubjectPredicateBridge =
+    templateCopilotV3CjkUnknownSubjectPredicateBridgeSource;
+  const cjkSubjectBoundary =
+    `(^|(?:[,，:：;；]\\s*|(?:雖然|虽然|即使|即便|儘管|尽管|除非|如果|若|當|当|每當|每当|一旦|只要|因為|因为|由於|由于|否則|否则|但係|但是|但|而|然而|不過|不过|且|並且|并且)\\s*))`;
+  for (const boundary of normalized.matchAll(
+    new RegExp(cjkSubjectBoundary, "gu"),
+  )) {
+    if (boundary.index === undefined) continue;
+    const offset = boundary.index + boundary[0].length;
+    const quantified = templateCopilotV3CjkQuantifiedAnaphorPrefix(
+      normalized.slice(offset),
+      subjectKind,
+    );
+    if (quantified === null) continue;
+    const end = offset + quantified[0].length;
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      normalized.slice(end),
+      true,
+    );
+    if (
+      parsedTail === null ||
+      !templateCopilotV3QuantifiedAnaphorPredicateCanBind(
+        parsedTail.predicate,
+      )
+    ) {
+      continue;
+    }
+    if (
+      references.some((reference) =>
+        reference.offset < end && reference.end > offset
+      )
+    ) {
+      continue;
+    }
+    references.push({
+      offset,
+      end,
+      disposition: "inherited",
+      predicate: parsedTail.predicate,
+      bridgeRequiresHold: parsedTail.bridgeRequiresHold,
+    });
+  }
+  const cjkUnknownPredicateStart =
+    `(?:仍然|依然|仍|已|曾|為|为|是|可以|可能|可|通常|一般|不|未|無|无|毋|非|選填|选填|免填|自願填寫|自愿填写|豁免|免除)`;
+  for (const match of normalized.matchAll(
+    new RegExp(
+      `${cjkSubjectBoundary}` +
+        `((?:${templateCopilotV3CjkDeicticSource})[\\p{L}\\p{N}\\p{M}_'’ʼ\\p{Pd}\\s]{1,40}?)` +
+        `${cjkUnknownSubjectPredicateBridge}` +
+        `(${cjkUnknownPredicateStart}[\\s\\S]*)$`,
+      "gu",
+    ),
+  )) {
+    if (match.index === undefined) continue;
+    const offset = match.index + match[1].length;
+    const end = offset + match[2].length;
+    if (
+      references.some((reference) =>
+        reference.offset < end && reference.end > offset
+      )
+    ) {
+      continue;
+    }
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      normalized.slice(end),
+    );
+    if (parsedTail === null) continue;
+    references.push({
+      offset,
+      end,
+      disposition: "unknown",
+      predicate: parsedTail.predicate,
+      bridgeRequiresHold: parsedTail.bridgeRequiresHold,
+    });
+  }
+  for (const match of normalized.matchAll(
+    new RegExp(`${cjkSubjectBoundary}((?:它|其|此|該項|该项)(?:本身)?)`, "gu"),
+  )) {
+    if (match.index === undefined) continue;
+    const offset = match.index + match[1].length;
+    const end = offset + match[2].length;
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      normalized.slice(end),
+      true,
+    );
+    if (parsedTail === null) continue;
+    references.push({
+      offset,
+      end,
+      disposition: "inherited",
+      predicate: parsedTail.predicate,
+      bridgeRequiresHold: parsedTail.bridgeRequiresHold,
+    });
+  }
+
+  const dispositionOrder: Record<
+    TemplateCopilotV3ClauseSubjectReference["disposition"],
+    number
+  > = {
+    distinct: 0,
+    unknown: 1,
+    inherited: 2,
+    target: 3,
+  };
+  references.sort((left, right) =>
+    left.offset - right.offset ||
+    dispositionOrder[left.disposition] - dispositionOrder[right.disposition]
+  );
+  return references;
+}
+
+function templateCopilotV3ProvenSubjectGenericIsQualified(
+  value: string,
+  subjectText: string,
+  subjectKind: "request_field" | "attachment",
+  inheritedDisposition: TemplateCopilotV3ClauseSubjectDisposition,
+) {
+  let disposition = inheritedDisposition;
+  for (const reference of templateCopilotV3ClauseSubjectReferences(
+    value,
+    subjectText,
+    subjectKind,
+  )) {
+    if (reference.disposition === "target") {
+      disposition = "target";
+    }
+    if (reference.disposition === "distinct") {
+      disposition = "distinct";
+      continue;
+    }
+    if (reference.disposition === "unknown") {
+      disposition = "unknown";
+    }
+    if (
+      disposition !== "distinct" &&
+      (
+        reference.bridgeRequiresHold ||
+        templateCopilotV3SubjectBoundPredicateIsQualified(
+          reference.predicate,
+          subjectText,
+          subjectKind,
+        )
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function templateCopilotV3RequirementExplicitSubjectIsQualified(
@@ -1072,73 +2992,55 @@ function templateCopilotV3RequirementExplicitSubjectIsQualified(
   const fullGenericNouns = subjectKind === "attachment"
     ? "requirement|attachment|document|file|form|upload|item"
     : "requirement|field|input|question|value|item";
-  const strippedGenericNouns = subjectKind === "attachment"
-    ? "requirement|attachment|upload|item"
-    : fullGenericNouns;
-  const fullCjkGenericNouns = subjectKind === "attachment"
-    ? "附件|檔案|档案|文件|表格|表单|上載項目|上传项目|項目|项目"
-    : "欄位|栏位|字段|輸入|输入|問題|问题|值|項目|项目";
-  const strippedCjkGenericNouns = subjectKind === "attachment"
-    ? "附件|上載項目|上传项目|項目|项目"
-    : fullCjkGenericNouns;
   for (const { text: subjectAlias, stripped } of subjectAliases) {
-    const genericNouns = stripped ? strippedGenericNouns : fullGenericNouns;
-    const cjkGenericNouns = stripped
-      ? strippedCjkGenericNouns
-      : fullCjkGenericNouns;
     const escapedSubject = subjectAlias.replace(
       /[.*+?^${}()|[\]\\]/gu,
       "\\$&",
     );
-    const directMatch = scopedValue.match(
-      new RegExp(
-        `^(?:(?:the|this|that)\\s+)?${escapedSubject}(?:\\s+(${genericNouns}))?(?:\\s*[,，]\\s*(?:(?:according\\s+to|per|under|after|before|following|upon|during|subject\\s+to|depending\\s+on|for|in|on)\\b[^,，]{0,80000}|(?:根據|根据|按|依|在|經|经)[^,，]{0,80000})[,，]\\s*|\\s*[（(]\\s*(?:(?:according\\s+to|per|under|after|before|following|upon|during|subject\\s+to|depending\\s+on|for|in|on)\\b[^）)]{0,80000}|(?:根據|根据|按|依|在|經|经)[^）)]{0,80000})[）)]\\s*|\\s+)([\\s\\S]{1,80000})$`,
-        "u",
-      ),
-    );
-    const directPredicate = directMatch?.[2];
-    if (
-      directPredicate !== undefined &&
-      templateCopilotV3PredicateHasClosedStart(directPredicate) &&
-      templateCopilotV3SubjectBoundPredicateIsQualified(
-        directPredicate,
-        subjectText,
+    const directMatch = new RegExp(
+      `^(?:(?:(?:the|this|that)\\s+)|(?:${templateCopilotV3CjkDeicticSource}))?${escapedSubject}`,
+      "u",
+    ).exec(scopedValue);
+    const directDetails = directMatch === null
+      ? null
+      : templateCopilotV3AliasQualificationDetails(
+        scopedValue,
+        directMatch[0].length - subjectAlias.length,
+        subjectAlias,
         subjectKind,
+        stripped,
+      );
+    if (
+      directDetails !== null &&
+      (
+        directDetails.bridgeRequiresHold ||
+        templateCopilotV3SubjectBoundPredicateIsQualified(
+          directDetails.predicate,
+          subjectText,
+          subjectKind,
+        )
       )
     ) {
       return true;
     }
-    const reversePredicate = scopedValue.match(
-      new RegExp(
-        `^(?:(?:the|this|that)\\s+)?(?:${genericNouns})\\s+for\\s+(?:(?:the|this|that)\\s+)?${escapedSubject}\\s+([\\s\\S]{1,80000})$`,
-        "u",
-      ),
-    )?.[1];
+    const reverseMatch = new RegExp(
+      `^(?:(?:the|this|that)\\s+)?(?:${fullGenericNouns})\\s+for\\s+(?:(?:the|this|that)\\s+)?${escapedSubject}`,
+      "u",
+    ).exec(scopedValue);
+    const reverseDetails = reverseMatch === null
+      ? null
+      : templateCopilotV3ParseSubjectReferenceTail(
+        scopedValue.slice(reverseMatch[0].length),
+      );
     if (
-      reversePredicate !== undefined &&
-      templateCopilotV3PredicateHasClosedStart(reversePredicate) &&
-      templateCopilotV3SubjectBoundPredicateIsQualified(
-        reversePredicate,
-        subjectText,
-        subjectKind,
-      )
-    ) {
-      return true;
-    }
-    const cjkMatch = scopedValue.match(
-      new RegExp(
-        `^(?:該|该|此)?${escapedSubject}(?:(${cjkGenericNouns}))?(?:(?:\\s*[,，]\\s*(?:(?:根據|根据|按|依|在|經|经)[^,，]{0,80000})[,，]\\s*)|(?:\\s*[（(]\\s*(?:(?:根據|根据|按|依|在|經|经)[^）)]{0,80000})[）)]\\s*))?([\\s\\S]{1,80000})$`,
-        "u",
-      ),
-    );
-    const cjkPredicate = cjkMatch?.[2];
-    if (
-      cjkPredicate !== undefined &&
-      templateCopilotV3PredicateHasClosedStart(cjkPredicate) &&
-      templateCopilotV3SubjectBoundPredicateIsQualified(
-        cjkPredicate,
-        subjectText,
-        subjectKind,
+      reverseDetails !== null &&
+      (
+        reverseDetails.bridgeRequiresHold ||
+        templateCopilotV3SubjectBoundPredicateIsQualified(
+          reverseDetails.predicate,
+          subjectText,
+          subjectKind,
+        )
       )
     ) {
       return true;
@@ -1154,13 +3056,22 @@ function templateCopilotV3RequirementSubjectAliases(
   const normalizedSubject = templateCopilotV3NormalizeLexicalText(subjectText)
     .replace(/^(?:the|this|that)\s+/u, "");
   if (!normalizedSubject) return [];
+  const cjkSubjectNouns = subjectKind === "attachment"
+    ? templateCopilotV3CjkAttachmentSubjectNounSource
+    : templateCopilotV3CjkRequestSubjectNounSource;
   const strippedSubject = subjectKind === "attachment"
     ? normalizedSubject.replace(
-      /(?:\s+(?:pdf|document|file|form|attachment|upload|image|photo|excel|csv|spreadsheet)|附件|檔案|档案|文件|表格|表单)$/u,
+      new RegExp(
+        `(?:\\s+(?:pdf|document|file|form|attachment|upload|image|photo|excel|csv|spreadsheet)|${cjkSubjectNouns})$`,
+        "u",
+      ),
       "",
     )
     : normalizedSubject.replace(
-      /(?:\s+(?:field|input|question|value|item)|欄位|栏位|字段|輸入|输入|問題|问题|值|項目|项目)$/u,
+      new RegExp(
+        `(?:\\s+(?:field|input|question|value|item)|${cjkSubjectNouns})$`,
+        "u",
+      ),
       "",
     );
   return [
@@ -1171,43 +3082,173 @@ function templateCopilotV3RequirementSubjectAliases(
   ] as const;
 }
 
-function templateCopilotV3ClauseResolvesToRequirementSubject(
+function templateCopilotV3ClauseIsStandaloneCorrectionMarker(value: string) {
+  return /^(?:correction|corrected|update|updated|revision|revised|更正|修正)$/u
+    .test(templateCopilotV3NormalizeAuthorityContinuation(value));
+}
+
+function templateCopilotV3ReferenceUpdatesClauseDisposition(
+  value: string,
+  reference: TemplateCopilotV3ClauseSubjectReference,
+  references: readonly TemplateCopilotV3ClauseSubjectReference[],
+) {
+  let trailingConnectorOffset = -1;
+  const connectorPattern = new RegExp(
+    `\\b(?:${templateCopilotV3EnglishSubordinateSubjectConnectorSource})\\b|(?:${templateCopilotV3CjkSubordinateSubjectConnectorSource})`,
+    "gu",
+  );
+  for (const match of value.slice(0, reference.offset).matchAll(
+    connectorPattern,
+  )) {
+    if (match.index !== undefined) {
+      trailingConnectorOffset = match.index;
+    }
+  }
+  if (trailingConnectorOffset < 0) return true;
+
+  const afterConnector = value.slice(
+    trailingConnectorOffset,
+    reference.offset,
+  );
+  if (
+    /[,，;；]\s*(?:(?:but|and|however|yet)\b|(?:但係|但是|但|而|然而|不過|不过|可是|且|並且|并且|否則|否则))/u
+      .test(afterConnector)
+  ) {
+    return true;
+  }
+
+  return !references.some((candidate) =>
+    candidate.disposition !== "inherited" &&
+    candidate.offset < trailingConnectorOffset
+  );
+}
+
+function templateCopilotV3ClauseRequirementSubjectDisposition(
   value: string,
   subjectText: string,
   subjectKind: "request_field" | "attachment",
-) {
-  const normalized = templateCopilotV3NormalizeAuthorityContinuation(value);
-  if (!normalized) return false;
-  const genericAnaphor = subjectKind === "attachment"
-    ? /^(?:(?:the|this|that)\s+)?(?:attachment|upload|item)\b|^(?:該|该|此)(?:附件|上載項目|上传项目|項目|项目)/u
-    : /^(?:(?:the|this|that)\s+)?(?:field|input|question|value|item)\b|^(?:該|该|此)(?:欄位|栏位|字段|輸入|输入|問題|问题|值|項目|项目)/u;
-  if (genericAnaphor.test(normalized)) return true;
-  for (const { text: alias, stripped } of
-    templateCopilotV3RequirementSubjectAliases(subjectText, subjectKind)) {
-    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-    const generic = subjectKind === "attachment"
-      ? stripped
-        ? "requirement|attachment|upload|item"
-        : "requirement|attachment|document|file|form|upload|item"
-      : "requirement|field|input|question|value|item";
+  inheritedDisposition: TemplateCopilotV3ClauseSubjectDisposition,
+): TemplateCopilotV3ClauseSubjectDisposition {
+  const normalized = templateCopilotV3StripCorrectionAuthorityPrefix(
+    templateCopilotV3NormalizeAuthorityContinuation(value),
+  );
+  const references = templateCopilotV3ClauseSubjectReferences(
+    value,
+    subjectText,
+    subjectKind,
+  );
+  if (references.length === 0) return "unknown";
+
+  let disposition = inheritedDisposition;
+  for (const reference of references) {
     if (
-      new RegExp(
-        `^(?:(?:the|this|that)\\s+)?${escaped}(?:\\s+(?:${generic}))?(?:$|[^\\p{L}\\p{N}_])`,
-        "u",
-      ).test(normalized) ||
-      new RegExp(`^(?:該|该|此)?${escaped}`, "u").test(normalized)
+      reference.disposition !== "inherited" &&
+      templateCopilotV3ReferenceUpdatesClauseDisposition(
+        normalized,
+        reference,
+        references,
+      )
     ) {
-      return true;
+      disposition = reference.disposition;
     }
   }
-  return false;
+  return disposition;
 }
 
 function templateCopilotV3PredicateHasClosedStart(value: string) {
-  return /^(?:is|are|was|were|becomes?|remains?|may|might|can|could|should|will|would|shall|must|has|have|had|does|do|needs?|need|cannot|optional|exempt|waived|not|possibly|potentially|reportedly|allegedly|conditionally|normally|generally|ordinarily|typically|usually|sometimes|for|under|after|before|following|upon|during|according\s+to|per|subject\s+to|depending\s+on|only|solely|exclusively|just)\b/u
+  return /^(?:is|are|was|were|being|becomes?|remains?|remaining|continues?|continuing|exists?|existed|may|might|can|could|should|will|would|shall|must|has|have|had|does|do|needs?|need|cannot|optional|exempt|waived|not|possibly|potentially|reportedly|allegedly|conditionally|normally|generally|ordinarily|typically|usually|sometimes|for|under|after|before|following|upon|during|according\s+to|per|subject\s+to|depending\s+on|only|solely|exclusively|just)\b/u
     .test(value) ||
-    /^(?:為|为|是|可|可能|通常|一般|不|未|無|无|毋|非|選填|选填|豁免|免除|對|对|按|依|經|经|在|於|于)/u
+    /^(?:仍|仍然|依然|已|曾|為|为|是|可|可能|通常|一般|不|未|無|无|毋|非|選填|选填|免填|自願填寫|自愿填写|豁免|免除|對|对|按|依|經|经|在|於|于)/u
       .test(value);
+}
+
+function templateCopilotV3QualifiedPredicateHasBoundedDiscoursePrefix(
+  value: string,
+) {
+  return /^(?:(?:clearly|definitely|explicitly|conceivably|demonstrably|plainly|evidently|expressly|obviously)\s+|in\s+fact\s+)(?:(?:(?:is|are|was|were|becomes?|remains?)\s+)?(?:optional|elective|exempt|waived|unnecessary|discretionary|voluntary|not\s+(?:required|needed|mandatory|compulsory))|(?:may|might|can|could|should|would)\s+(?:now\s+)?be\s+(?:absent|omitted|waived|skipped|optional|elective|exempt|unnecessary|left\s+(?:blank|empty|unfilled|out))|(?:need\s+not|does?\s+not\s+(?:need|have)\s+to)\s+be\s+(?:provided|required|included|entered|uploaded|filled(?:\s+in)?))\b/u
+    .test(value);
+}
+
+function templateCopilotV3ClauseReferencePredicate(value: string) {
+  const normalized = templateCopilotV3StripReferenceDiscourseBridge(value);
+  if (!normalized) return null;
+  if (
+    templateCopilotV3PredicateHasClosedStart(normalized) ||
+    templateCopilotV3QualifiedPredicateHasBoundedDiscoursePrefix(normalized) ||
+    templateCopilotV3NormalizedTextBeginsPostRequirementQualification(
+      normalized,
+    )
+  ) {
+    return normalized;
+  }
+
+  const englishBridgeRaw =
+    /^(?:it|this|that)(?:\s+(?:itself|alone))?\s+([\s\S]{1,80000})$/u
+      .exec(normalized)?.[1];
+  const englishBridge = englishBridgeRaw === undefined
+    ? undefined
+    : templateCopilotV3StripReferenceDiscourseBridge(englishBridgeRaw);
+  if (
+    englishBridge !== undefined &&
+    templateCopilotV3AnaphorPredicateHasClosedStart(englishBridge)
+  ) {
+    return englishBridge;
+  }
+  const cjkBridgeRaw =
+    /^(?:它|其|此|該項|该项)(?:本身)?([\s\S]{1,80000})$/u
+      .exec(normalized)?.[1];
+  const cjkBridge = cjkBridgeRaw === undefined
+    ? undefined
+    : templateCopilotV3StripReferenceDiscourseBridge(cjkBridgeRaw);
+  if (
+    cjkBridge !== undefined &&
+    templateCopilotV3AnaphorPredicateHasClosedStart(cjkBridge)
+  ) {
+    return cjkBridge;
+  }
+  return null;
+}
+
+type TemplateCopilotV3AliasQualificationDetails =
+  TemplateCopilotV3SubjectReferenceTail & {
+    subjectEnd: number;
+  };
+
+function templateCopilotV3AliasQualificationDetails(
+  value: string,
+  offset: number,
+  subjectAlias: string,
+  subjectKind: "request_field" | "attachment",
+  stripped = false,
+): TemplateCopilotV3AliasQualificationDetails | null {
+  const aliasEnd = offset + subjectAlias.length;
+  const englishGenericNouns = subjectKind === "attachment"
+    ? stripped
+      ? "requirement|attachment|upload|item"
+      : "requirement|attachment|document|file|form|upload|item"
+    : "requirement|field|input|question|value|item";
+  const cjkGenericNouns = subjectKind === "attachment"
+    ? stripped
+      ? templateCopilotV3CjkStrippedAttachmentSubjectNounSource
+      : templateCopilotV3CjkAttachmentSubjectNounSource
+    : templateCopilotV3CjkRequestSubjectNounSource;
+  const remainder = value.slice(aliasEnd);
+  const generic =
+    new RegExp(`^\\s+(?:${englishGenericNouns})\\b`, "u").exec(remainder) ??
+    new RegExp(`^\\s*(?:${cjkGenericNouns})`, "u").exec(remainder);
+  const candidateEnds = [
+    ...(generic ? [aliasEnd + generic[0].length] : []),
+    aliasEnd,
+  ];
+  for (const subjectEnd of candidateEnds) {
+    const parsedTail = templateCopilotV3ParseSubjectReferenceTail(
+      value.slice(subjectEnd),
+    );
+    if (parsedTail !== null) {
+      return { subjectEnd, ...parsedTail };
+    }
+  }
+  return null;
 }
 
 function templateCopilotV3AliasMayBeginQualification(
@@ -1215,35 +3256,52 @@ function templateCopilotV3AliasMayBeginQualification(
   offset: number,
   subjectAlias: string,
   subjectKind: "request_field" | "attachment",
+  stripped = false,
 ) {
-  let cursor = offset + subjectAlias.length;
-  while (cursor < value.length && /\s/u.test(value[cursor])) cursor += 1;
-  if (value[cursor] === "," || value[cursor] === "，") {
-    const delimiter = value[cursor];
-    const closing = value.indexOf(delimiter, cursor + 1);
-    if (closing < 0) return false;
-    cursor = closing + 1;
-  } else if (/[（(]/u.test(value[cursor] ?? "")) {
-    const relativeClosing = value.slice(cursor + 1).search(/[）)]/u);
-    const closing = relativeClosing < 0
-      ? -1
-      : cursor + 1 + relativeClosing;
-    if (closing < 0) return false;
-    cursor = closing + 1;
-  }
-  while (cursor < value.length && /\s/u.test(value[cursor])) cursor += 1;
-  const genericNouns = subjectKind === "attachment"
-    ? /^(?:requirement|attachment|document|file|form|upload|item)\b\s*/u
-    : /^(?:requirement|field|input|question|value|item)\b\s*/u;
-  const cjkGenericNouns = subjectKind === "attachment"
-    ? /^(?:附件|檔案|档案|文件|表格|表单|上載項目|上传项目|項目|项目)/u
-    : /^(?:欄位|栏位|字段|輸入|输入|問題|问题|值|項目|项目)/u;
-  const preview = value.slice(cursor, Math.min(value.length, cursor + 256));
-  const generic = genericNouns.exec(preview) ?? cjkGenericNouns.exec(preview);
-  if (generic) cursor += generic[0].length;
-  return templateCopilotV3PredicateHasClosedStart(
-    value.slice(cursor, Math.min(value.length, cursor + 256)),
+  return templateCopilotV3AliasQualificationDetails(
+    value,
+    offset,
+    subjectAlias,
+    subjectKind,
+    stripped,
+  ) !== null;
+}
+
+type TemplateCopilotV3AffirmativeNegationDisposition =
+  | "none"
+  | "closed_affirmative"
+  | "qualified_or_unknown";
+
+function templateCopilotV3AffirmativeNegationDisposition(
+  value: string,
+): TemplateCopilotV3AffirmativeNegationDisposition {
+  const full = templateCopilotV3NormalizeAuthorityContinuation(value);
+  const optionality = /^(?:(?:(?:is|are|was|were|becomes?|remains?)\s+)?(?:not|never)\s+(?:optional|exempt|waived|unnecessary|discretionary|voluntary)\b|(?:cannot|can\s+not|may\s+not|must\s+not)\s+be\s+(?:waived|omitted|skipped)\b|(?:(?:為|为|是)\s*)?(?:(?:並非|并非|不是|非)(?:選填|选填|可選|可选|免填|自願填寫|自愿填写|豁免|免除)|(?:不可|不得)(?:免填|豁免|免除)))([\s\S]*)$/u
+    .exec(full);
+  const additive = /^(?:(?:(?:is|are|was|were)\s+)?not\s+(?:only|merely|simply)\s+required\b|(?:不但|不僅|不仅|不只)(?:為|为|是)?(?:必填|必須|必须|須|须|需要))([\s\S]*)$/u
+    .exec(full);
+  const matched = optionality ?? additive;
+  if (!matched) return "none";
+
+  const tail = templateCopilotV3NormalizeAuthorityContinuation(
+    matched[1] ?? "",
   );
+  if (!tail) return "closed_affirmative";
+
+  const mandatoryTail = /^(?:but|and|yet|rather)\b[,\s]*(?:(?:(?:is|are|was|were|becomes?|remains?|continues?\s+to\s+be|will\s+remain)\s+)?(?:(?:always|still|indeed|categorically|invariably)\s+)?(?:required|mandatory|compulsory|obligatory)|(?:must|shall|will|needs?|need)\s+(?:(?:always|still)\s+)?(?:be\s+)?(?:provided|required|included|entered|uploaded|filled(?:\s+in)?))$|^(?:而是|但|且|並且|并且|而且)\s*(?:仍|一律|一概|始終|始终)?(?:為|为|是)?(?:必填|必須(?:填寫|填写|提供|上載|上传|提交)?|必须(?:填写|提供|上传|提交)?|須(?:填寫|填写|提供|上載|上传|提交)?|须(?:填写|提供|上传|提交)?|需要(?:填寫|填写|提供|上載|上传|提交)?)$/u;
+  if (mandatoryTail.test(tail)) return "closed_affirmative";
+
+  const benignScopeTail = /^(?:under\s+any\s+circumstances|for\s+(?:any|all|every)\s+requests?|by\s+(?:finance|legal|compliance)(?:\s+(?:team|department))?)$/u;
+  if (optionality && benignScopeTail.test(tail)) {
+    return "closed_affirmative";
+  }
+
+  if (additive) {
+    const benignAuditTail = /^(?:but|and)\b[,\s]*(?:also\s+)?(?:(?:is|are|was|were)\s+)?(?:audited|reviewed|recorded|logged|tracked|verified|validated)$|^(?:而且|且|並且|并且)\s*(?:須|须|需要)?(?:核對|核对|審核|审核|審查|审查|記錄|记录|追蹤|追踪|驗證|验证)$/u;
+    if (benignAuditTail.test(tail)) return "closed_affirmative";
+  }
+
+  return "qualified_or_unknown";
 }
 
 function templateCopilotV3SubjectBoundPredicateIsQualified(
@@ -1251,8 +3309,30 @@ function templateCopilotV3SubjectBoundPredicateIsQualified(
   subjectText = "",
   subjectKind: "request_field" | "attachment" = "request_field",
 ) {
+  const englishAuxiliarySource =
+    "(?:is|are|was|were|becomes?|remains?|may|might|can|could|should|" +
+    "will|would|shall|must|has|have|had|does|do|needs?|need|cannot)";
+  const englishBenignIntrapredicateSource =
+    "(?:however|nevertheless|nonetheless|still|instead|rather|now|" +
+    "currently|henceforth|clearly|definitely|explicitly|conceivably|" +
+    "demonstrably|plainly|evidently|expressly|obviously|" +
+    "in\\s+(?:practice|fact))";
   const deparenthesized = templateCopilotV3NormalizeAuthorityContinuation(value)
     .replace(
+      new RegExp(
+        `^(${englishAuxiliarySource})\\s*[,，]\\s*` +
+          `${englishBenignIntrapredicateSource}\\s*[,，]\\s*`,
+        "u",
+      ),
+      "$1 ",
+    ).replace(
+      new RegExp(
+        `^(${englishAuxiliarySource})\\s*[（(]\\s*` +
+          `${englishBenignIntrapredicateSource}\\s*[）)]\\s*`,
+        "u",
+      ),
+      "$1 ",
+    ).replace(
       /^((?:is|are|was|were|becomes?|remains?|為|为|是))\s*[,，]\s*(?:(?:according\s+to|per|under|after|before|following|upon|during|subject\s+to|depending\s+on|for|in|on)\b[^,，]{0,80000}|(?:根據|根据|按|依|在|經|经)[^,，]{0,80000})[,，]\s*/u,
       "$1 ",
     ).replace(
@@ -1264,36 +3344,125 @@ function templateCopilotV3SubjectBoundPredicateIsQualified(
     subjectText,
     subjectKind,
   );
-  const phrase = templateCopilotV3NormalizeAuthorityContinuation(
-    subjectScoped.split(/[,，:：;；]/u, 1)[0] ?? "",
+  const fullPredicate = templateCopilotV3NormalizeAuthorityContinuation(
+    subjectScoped,
   );
-  if (!phrase) return false;
+  const preposedScopePredicate = new RegExp(
+    "^(?:for|under|within|inside|outside|in|on|among|across|during|after|" +
+      "before|following|per|according\\s+to|subject\\s+to|with|without|" +
+      "when|where)\\b" +
+      "[^,，:：;；.!?。！？\\r\\n]{1,240}\\s+" +
+      `(${englishAuxiliarySource}\\b[\\s\\S]*)$`,
+    "u",
+  ).exec(fullPredicate)?.[1];
   if (
-    /^(?:(?:is|are|was|were|becomes?|remains?)\s+)?(?:not|never)\s+(?:optional|exempt|waived|unnecessary|discretionary|voluntary)\b/u
-      .test(phrase) ||
-    /\bnot\s+(?:only|merely|simply)\s+required\b/u.test(phrase) ||
-    /^(?:(?:cannot|can\s+not|may\s+not|must\s+not)\s+be\s+)(?:waived|omitted|skipped)\b/u
-      .test(phrase) ||
-    /^(?:並非|并非|不是|非)(?:選填|选填|可選|可选|豁免|免除)/u
-      .test(phrase)
+    preposedScopePredicate !== undefined &&
+    templateCopilotV3SubjectBoundPredicateIsQualified(
+      preposedScopePredicate,
+      subjectText,
+      subjectKind,
+    )
   ) {
-    return false;
+    return true;
   }
+  if (
+    templateCopilotV3QualifiedPredicateHasBoundedDiscoursePrefix(fullPredicate)
+  ) return true;
+  if (
+    templateCopilotV3NormalizedTextBeginsPostRequirementQualification(
+      fullPredicate,
+    )
+  ) return true;
+  const affirmativeNegation =
+    templateCopilotV3AffirmativeNegationDisposition(fullPredicate);
+  if (affirmativeNegation !== "none") {
+    return affirmativeNegation === "qualified_or_unknown";
+  }
+  const phrase = templateCopilotV3NormalizeAuthorityContinuation(
+    fullPredicate.split(/[,，:：;；]/u, 1)[0] ?? "",
+  );
   return templateCopilotV3RequirementPredicateIsQualified(phrase) ||
     /\b(?:optional|exempt|waived|waiver|unnecessary|discretionary|voluntary|conditional|conditionally|contingent|contingently)\b/u
       .test(phrase) ||
     /\bnot\s+(?:(?:always|necessarily)\s+)?(?:required|needed|mandatory|compulsory)\b|\bno\s+longer\s+(?:required|needed)\b/u
       .test(phrase) ||
-    /\b(?:need\s+not\s+be|does?\s+not\s+need\s+to\s+be)\s+(?:provided|required|included|entered|uploaded)\b/u
+    /\b(?:need\s+not|does?\s+not\s+(?:need|have)\s+to)\s+be\s+(?:provided|required|included|entered|uploaded|filled(?:\s+in)?)\b/u
       .test(phrase) ||
     /\b(?:(?:is|are|was|were|be|been|being)\s+)?(?:normally|generally|ordinarily|typically|usually|sometimes|possibly|potentially|reportedly|allegedly)\s+(?:(?:is|are|was|were|be|been|being)\s+)?(?:required|optional)\b/u
       .test(phrase) ||
     /\b(?:(?:only|solely|exclusively|just)\s+required|required\s+(?:only|solely|exclusively|just))\b/u
       .test(phrase) ||
-    /(?:選填|选填|可選|可选|豁免|免除|不需要|非必須|非必须|未必|可能|通常|一般|有時|有时)/u
+    /(?:選填|选填|可選|可选|免填|自願填寫|自愿填写|豁免|免除|可免除|可以免除|可省略|可以省略|可不填|可以不填|可留空|可以留空|不需要|非必須|非必须|未必|可能|通常|一般|有時|有时)/u
       .test(phrase) ||
     /(?:僅|仅|只)(?:在|於|于)?[\s\S]*(?:必填|必須|必须|需要)/u
       .test(phrase);
+}
+
+function templateCopilotV3CompetingCandidateIsSameTarget(
+  candidate: string,
+  aliases: readonly string[],
+  subjectKind: "request_field" | "attachment",
+) {
+  if (!candidate) return true;
+  const genericNouns = subjectKind === "attachment"
+    ? "requirement|attachment|document|file|form|upload|item"
+    : "requirement|field|input|question|value|item";
+  if (
+    new RegExp(
+      `^(?:` +
+        `it(?:\\s+(?:itself|alone))?` +
+        `|(?:this|that)(?:\\s+(?:itself|alone))?` +
+        `|its\\s+(?:(?:own|respective)\\s+)?(?:${genericNouns})` +
+        `|(?:(?:the|this|that)\\s+)?` +
+          `(?:(?:same|very|aforementioned|above-mentioned|respective)\\s+)?` +
+          `(?:${genericNouns})(?:\\s+(?:itself|alone))?` +
+      `)$`,
+      "u",
+    ).test(candidate)
+  ) {
+    return true;
+  }
+  return aliases.some((alias) => {
+    const escapedAlias = alias.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    return new RegExp(
+      `^(?:(?:the|this|that)\\s+)?` +
+        `(?:(?:same|very|aforementioned|above-mentioned|respective)\\s+)?` +
+        `${escapedAlias}(?:\\s+(?:${genericNouns}))?` +
+        `(?:\\s+(?:itself|alone))?$`,
+      "u",
+    ).test(candidate);
+  });
+}
+
+function templateCopilotV3CompetingCandidateIsPositivelyDistinct(
+  candidate: string,
+  aliases: readonly string[],
+  subjectKind: "request_field" | "attachment",
+) {
+  if (
+    templateCopilotV3CompetingCandidateIsSameTarget(
+      candidate,
+      aliases,
+      subjectKind,
+    )
+  ) {
+    return false;
+  }
+  const genericNouns = subjectKind === "attachment"
+    ? "requirement|attachment|document|file|form|upload|item"
+    : "requirement|field|input|question|value|item";
+  if (
+    new RegExp(
+      `^(?:${templateCopilotV3EnglishDistinctClassifierSource})\\s+` +
+        `(?:(?:${templateCopilotV3EnglishHistoricalRequirementDescriptorSource})\\s+)?` +
+        `(?:${genericNouns})` +
+        `(?:(?:${templateCopilotV3EnglishPostnominalHistoricalRequirementSource}))?(?:\\s+(?:itself|alone))?$`,
+      "u",
+    ).test(candidate)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function templateCopilotV3TruncateBeforeCompetingCoordination(
@@ -1316,15 +3485,13 @@ function templateCopilotV3TruncateBeforeCompetingCoordination(
     const candidate = templateCopilotV3NormalizeAuthorityContinuation(
       competing[1],
     );
-    const sameAnaphor = /^(?:it|this|that|(?:the|this|that)\s+(?:requirement|field|input|question|value|item|attachment|document|file|form|upload))$/u
-      .test(candidate);
-    const sameExactSubject = aliases.some((alias) =>
-      candidate === alias ||
-      candidate === `the ${alias}` ||
-      candidate === `this ${alias}` ||
-      candidate === `that ${alias}`
-    );
-    if (!sameAnaphor && !sameExactSubject) {
+    if (
+      templateCopilotV3CompetingCandidateIsPositivelyDistinct(
+        candidate,
+        aliases,
+        subjectKind,
+      )
+    ) {
       return value.slice(0, connector.index);
     }
   }
@@ -1347,7 +3514,7 @@ function templateCopilotV3RequirementTailContainsExplicitSubjectQualification(
   ) {
     return true;
   }
-  for (const { text: subjectAlias } of templateCopilotV3RequirementSubjectAliases(
+  for (const { text: subjectAlias, stripped } of templateCopilotV3RequirementSubjectAliases(
     subjectText,
     subjectKind,
   )) {
@@ -1365,24 +3532,27 @@ function templateCopilotV3RequirementTailContainsExplicitSubjectQualification(
           ? normalized.length
           : offset + hardBoundaryOffset,
       );
-      const before = offset === 0
-        ? ""
-        : Array.from(normalized.slice(Math.max(0, offset - 2), offset)).at(-1) ??
-          "";
       const prefix = normalized.slice(Math.max(0, offset - 80), offset);
       const precededByObjectPreposition =
         /\b(?:for|of|about|regarding)\s+(?:(?:the|this|that)\s+)?$/u
           .test(prefix);
       const canBeginSubject = !precededByObjectPreposition;
+      const hasExplicitDistinctContext =
+        templateCopilotV3TargetAliasHasExplicitDistinctLeftContext(
+          normalized,
+          offset,
+        );
       const mayBeginQualification = canBeginSubject &&
+        !hasExplicitDistinctContext &&
         templateCopilotV3AliasMayBeginQualification(
           normalized,
           offset,
           subjectAlias,
           subjectKind,
+          stripped,
         );
       if (
-        (before === "" || !/[\p{L}\p{N}_]/u.test(before)) &&
+        templateCopilotV3TargetAliasHasLeftBoundary(normalized, offset) &&
         mayBeginQualification &&
         templateCopilotV3RequirementExplicitSubjectIsQualified(
           normalized.slice(offset, candidateEnd),
@@ -1473,9 +3643,40 @@ function templateCopilotV3ConditionalTailNamesCompetingEntity(
   return true;
 }
 
+function templateCopilotV3NormalizeCasePreservingAuthorityContinuation(
+  value: string,
+) {
+  return templateCopilotV3NormalizeTrimCollapseText(value)
+    .replace(/^[^\p{L}\p{N}_]+/u, "")
+    .replace(/[^\p{L}\p{N}_]+$/u, "")
+    .trim();
+}
+
 function templateCopilotV3NormalizeAuthorityContinuation(value: string) {
   return templateCopilotV3NormalizeLexicalText(value)
     .replace(/^[^\p{L}\p{N}_]+/u, "")
     .replace(/[^\p{L}\p{N}_]+$/u, "")
     .trim();
+}
+
+function templateCopilotV3CasePreservingEquivalentSuffix(
+  rawValue: string,
+  normalizedSuffix: string,
+) {
+  if (!normalizedSuffix) return "";
+  const raw = templateCopilotV3NormalizeCasePreservingAuthorityContinuation(
+    rawValue,
+  );
+  const normalizedRaw = templateCopilotV3NormalizeAuthorityContinuation(raw);
+  if (normalizedRaw === normalizedSuffix) return raw;
+  if (normalizedRaw.endsWith(normalizedSuffix)) {
+    const rawSuffix = raw.slice(raw.length - normalizedSuffix.length);
+    if (
+      templateCopilotV3NormalizeAuthorityContinuation(rawSuffix) ===
+        normalizedSuffix
+    ) {
+      return rawSuffix;
+    }
+  }
+  return normalizedSuffix;
 }

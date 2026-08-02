@@ -5646,6 +5646,13 @@ function semanticRequiredTrueObservationIsAffirmed(
   const authorityTailForQualification = wrappedPunctuationGap
     ? authorityTail.replace(/^\s*[)\]}）】]/u, "")
     : authorityTail;
+  const markerRelativeTailForQualification =
+    requirementOrientation === "marker_before_subject"
+      ? hardSlice(
+        observation.sourceSpan.endCodePoint,
+        authorityClause.hardSourceEndCodePoint,
+      )
+      : "";
   if (
     markerIsBareCjkNativeFormFill &&
     !(
@@ -5707,6 +5714,15 @@ function semanticRequiredTrueObservationIsAffirmed(
       subjectObservation?.quote ?? "",
       subjectKind,
       requirementOrientation,
+    ) ||
+    (
+      requirementOrientation === "marker_before_subject" &&
+      templateCopilotV3RequirementSameHardTailIsQualified(
+        markerRelativeTailForQualification,
+        subjectObservation?.quote ?? "",
+        subjectKind,
+        requirementOrientation,
+      )
     )
   ) {
     return false;

@@ -10,6 +10,10 @@ import {
 import {
   templateCopilotV3DirectEvidenceDerivesLeaf,
 } from "./template-copilot-v3-evidence.ts";
+import {
+  templateCopilotV3RequirementAuthorityContinuationIsQualified,
+  templateCopilotV3RequirementSameHardTailIsQualified,
+} from "./template-copilot-v3-clause-boundaries.ts";
 
 function structureSources({ initiatorsFields, attachments }) {
   return templateCopilotV3ProviderQuoteBatches.structure.slots.map((slot) => ({
@@ -977,6 +981,30 @@ test("multilingual same-entity corrections block required fields and attachments
       requiredQuote: "必填",
     },
     {
+      source: "必填项目、图纸编号和紧急选项。更正：该字段免填。",
+      quote: "必填项目、图纸编号和紧急选项",
+      label: "图纸编号",
+      requiredQuote: "必填",
+    },
+    {
+      source: "必填項目、圖紙編號和緊急選項。修正：該欄位自願填寫。",
+      quote: "必填項目、圖紙編號和緊急選項",
+      label: "圖紙編號",
+      requiredQuote: "必填",
+    },
+    {
+      source: "必填项目、图纸编号和紧急选项。现改为图纸编号豁免。",
+      quote: "必填项目、图纸编号和紧急选项",
+      label: "图纸编号",
+      requiredQuote: "必填",
+    },
+    {
+      source: "必填項目、圖紙編號和緊急選項。改為圖紙編號免除。",
+      quote: "必填項目、圖紙編號和緊急選項",
+      label: "圖紙編號",
+      requiredQuote: "必填",
+    },
+    {
       source: "Amount field is required, but the amount input is optional.",
       quote: "Amount field is required",
       label: "Amount field",
@@ -1088,6 +1116,1372 @@ test("multilingual same-entity corrections block required fields and attachments
     code: "leaf_not_found",
     detail: "request_field:required",
   }]);
+});
+
+test("an adjacent correction for a different CJK field does not revoke the target", () => {
+  assertSemanticPass(
+    requestFieldSemanticResult({
+      source: "必填项目、图纸编号和紧急选项。更正：成本影响免填。",
+      anchorQuote: "必填项目、图纸编号和紧急选项",
+      label: "图纸编号",
+      requiredQuote: "必填",
+    }),
+    "different corrected field",
+  );
+});
+
+test("affirmative-negated CJK corrections preserve required fields", () => {
+  for (const { source, anchorQuote, label } of [
+    {
+      source: "图纸编号必填。更正：该字段并非免填。",
+      anchorQuote: "图纸编号必填",
+      label: "图纸编号",
+    },
+    {
+      source: "圖紙編號必填。修正：該欄位並非自願填寫。",
+      anchorQuote: "圖紙編號必填",
+      label: "圖紙編號",
+    },
+    {
+      source: "图纸编号必填。现改为该字段不可豁免。",
+      anchorQuote: "图纸编号必填",
+      label: "图纸编号",
+    },
+    {
+      source: "圖紙編號必填。改為該欄位不得免填。",
+      anchorQuote: "圖紙編號必填",
+      label: "圖紙編號",
+    },
+  ]) {
+    assertSemanticPass(
+      requestFieldSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        requiredQuote: "必填",
+      }),
+      source,
+    );
+  }
+});
+
+test("compound CJK corrections cannot hide a later optional or exempt predicate", () => {
+  for (const source of [
+    "必填項目、圖紙編號和緊急選項。更正：該欄位並非免填但可豁免。",
+    "必填項目、圖紙編號和緊急選項。更正：該欄位不是自願填寫而是選填。",
+    "必填項目、圖紙編號和緊急選項。更正：該欄位不可豁免但可以免填。",
+  ]) {
+    assertGovernedHold(
+      requestFieldSemanticResult({
+        source,
+        anchorQuote: "必填項目、圖紙編號和緊急選項",
+        label: "圖紙編號",
+        requiredQuote: "必填",
+      }),
+      source,
+    );
+  }
+});
+
+test("full correction tails cannot hide later optional or waiver authority", () => {
+  for (const { source, anchorQuote, label, requiredQuote } of [
+    {
+      source: "Amount is required. Correction: the field is not optional, but may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "圖紙編號必填。更正：該欄位並非選填，但可豁免。",
+      anchorQuote: "圖紙編號必填",
+      label: "圖紙編號",
+      requiredQuote: "必填",
+    },
+    {
+      source: "Amount is required. Correction: the field cannot be waived, but may be omitted.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not only required, but also optional.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "圖紙編號必填。更正：該欄位不得免填，但可以選填。",
+      anchorQuote: "圖紙編號必填",
+      label: "圖紙編號",
+      requiredQuote: "必填",
+    },
+  ]) {
+    assertGovernedHold(
+      requestFieldSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        requiredQuote,
+      }),
+      source,
+    );
+  }
+});
+
+test("closed benign and mandatory correction tails preserve required authority", () => {
+  for (const { source, anchorQuote, label, requiredQuote } of [
+    {
+      source: "Amount is required. Correction: the field is not optional but required.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field cannot be waived and is required.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is never optional and always required.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional under any circumstances.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field cannot be waived by Finance.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is never optional for any request.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "圖紙編號必填。更正：該欄位並非選填而是必填。",
+      anchorQuote: "圖紙編號必填",
+      label: "圖紙編號",
+      requiredQuote: "必填",
+    },
+  ]) {
+    assertSemanticPass(
+      requestFieldSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        requiredQuote,
+      }),
+      source,
+    );
+  }
+});
+
+test("deceptive and unknown correction tails remain governed holds", () => {
+  for (const { source, anchorQuote, label, requiredQuote } of [
+    {
+      source: "Amount is required. Correction: the field cannot be waived and is required, but optional for interns.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional, but may be waived, and is required.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional, pending policy review.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "圖紙編號必填。更正：該欄位並非免填，另按政策處理。",
+      anchorQuote: "圖紙編號必填",
+      label: "圖紙編號",
+      requiredQuote: "必填",
+    },
+  ]) {
+    assertGovernedHold(
+      requestFieldSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        requiredQuote,
+      }),
+      source,
+    );
+  }
+});
+
+test("competing siblings and additive audit facts do not revoke the target", () => {
+  for (const { source, anchorQuote, label, requiredQuote } of [
+    {
+      source: "Amount is required. Correction: Amount is not optional, but a different field is optional.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: Amount is not optional, but the other field is optional.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "圖紙編號不但必填，而且須核對。",
+      anchorQuote: "圖紙編號不但必填",
+      label: "圖紙編號",
+      requiredQuote: "必填",
+    },
+  ]) {
+    assertSemanticPass(
+      requestFieldSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        requiredQuote,
+      }),
+      source,
+    );
+  }
+
+  assertSemanticPass(
+    attachmentSemanticResult({
+      source: "Identity PDF is required. Correction: Identity PDF is not optional, but a different document is optional.",
+      anchorQuote: "Identity PDF is required",
+      label: "Identity PDF",
+      kindQuote: "PDF",
+      kindHint: "attachment",
+      requiredQuote: "required",
+    }),
+    "explicitly different attachment",
+  );
+});
+
+test("same-target anaphoric waiver tails survive competing-entity truncation", () => {
+  for (const source of [
+    "Amount is required. Correction: the field is not optional but required, although it may be waived.",
+    "Amount is required. Revision: the field is not only required but also audited, yet may be waived.",
+    "Amount is required. Correction: the field is not optional but required, even though it may be waived.",
+    "Amount is required. Revision: the field is not only required but also audited, whereas it may be waived.",
+    "Amount is required. Correction: the field is not optional but required, except that it may be waived.",
+    "Amount is required. Correction: the field is not optional but required, although the field itself may be waived.",
+    "Amount is required. Revision: the field is not only required but audited, although the requirement itself may be waived.",
+    "Amount is required. Correction: the field is not optional but required, although this very field may be waived.",
+    "Amount is required. Correction: the field is not optional but required, although the same field may be waived.",
+    "Amount is required. Correction: the field is not optional but required, although it itself may be waived.",
+    "Amount is required. Correction: the field is not optional but required, although its requirement may be waived.",
+    "Amount is required. Correction: the field is not optional but required, although Amount field may be waived.",
+    `Amount is required. Correction: the field is not optional but required and ${"background ".repeat(20)}the field itself may be waived.`,
+    "Amount is required. Correction: Amount is not optional, but the current field is optional.",
+    "Amount is required. Correction: Amount is not optional, but the target field is optional.",
+    "Amount is required. Correction: Amount is not optional, but the relevant requirement is waived.",
+    "Amount is required. Correction: Amount is not optional, but the field's requirement is waived.",
+    "Amount is required. Correction: Amount is not optional, but Amount's requirement is waived.",
+    "Amount is required. Correction: the field is not optional but required, although the field under the current policy review in the finance committee meeting may be waived.",
+    "Amount is required. Correction: Amount is not optional, but Notes are optional.",
+    "Amount is required. Correction: Amount is not optional, but Cost field is optional.",
+    "Amount is required. Correction: Amount is not optional, but this exact field is optional.",
+    "Amount is required. Correction: Amount is not optional, but the above field is optional.",
+    "Amount is required. Correction: Amount is not optional, but the selfsame field is optional.",
+    "Amount is required. Correction: Amount is not optional, but the foregoing requirement is waived.",
+    "Amount is required. Correction: Amount is not optional, but the referenced field is optional.",
+    "Amount is required. Correction: Amount is not optional, but Amount's own requirement is waived.",
+    "Amount is required. Correction: Amount is not optional, but Total Value field is optional.",
+  ]) {
+    assertGovernedHold(
+      requestFieldSemanticResult({
+        source,
+        anchorQuote: "Amount is required",
+        label: "Amount",
+        requiredQuote: "required",
+      }),
+      source,
+    );
+  }
+
+  assertGovernedHold(
+    requestFieldSemanticResult({
+      source: "Cost is required. Correction: the field is not optional but required, although Cost field may be waived.",
+      anchorQuote: "Cost is required",
+      label: "Cost",
+      requiredQuote: "required",
+    }),
+    "same-target named field waiver tail",
+  );
+
+  for (const { source, anchorQuote, label } of [
+    {
+      source: "Cost Impact field is required. Correction: Cost Impact field is not optional, but Cost field is optional.",
+      anchorQuote: "Cost Impact field is required",
+      label: "Cost Impact field",
+    },
+    {
+      source: "Still Amount is required. Correction: Still Amount is not optional, but Still Amount is optional.",
+      anchorQuote: "Still Amount is required",
+      label: "Still Amount",
+    },
+    {
+      source: `Total Amount is required. Correction: Total Amount is not optional, but ${"background ".repeat(20)}Total Amount may be waived.`,
+      anchorQuote: "Total Amount is required",
+      label: "Total Amount",
+    },
+    {
+      source: "Purchase Order Number is required. Correction: Purchase Order Number is not optional, but PO Number field is optional.",
+      anchorQuote: "Purchase Order Number is required",
+      label: "Purchase Order Number",
+    },
+  ]) {
+    assertGovernedHold(
+      requestFieldSemanticResult({ source, anchorQuote, label }),
+      source,
+    );
+  }
+
+  assertGovernedHold(
+    attachmentSemanticResult({
+      source: "Identity PDF is required. Correction: the attachment is not optional but required, although it may be waived.",
+      anchorQuote: "Identity PDF is required",
+      label: "Identity PDF",
+      kindQuote: "PDF",
+      kindHint: "attachment",
+      requiredQuote: "required",
+    }),
+    "same-target attachment waiver tail",
+  );
+
+  assertGovernedHold(
+    attachmentSemanticResult({
+      source: "Identity PDF is required. Correction: the attachment is not optional but required, while it may be waived.",
+      anchorQuote: "Identity PDF is required",
+      label: "Identity PDF",
+      kindQuote: "PDF",
+      kindHint: "attachment",
+      requiredQuote: "required",
+    }),
+    "same-target attachment while waiver tail",
+  );
+
+  assertGovernedHold(
+    attachmentSemanticResult({
+      source: "Identity PDF is required. Correction: the attachment is not optional but required, although the attachment itself may be waived.",
+      anchorQuote: "Identity PDF is required",
+      label: "Identity PDF",
+      kindQuote: "PDF",
+      kindHint: "attachment",
+      requiredQuote: "required",
+    }),
+    "modified same-target attachment waiver tail",
+  );
+
+
+  assertGovernedHold(
+    attachmentSemanticResult({
+      source: "Redline PDF is required. Correction: the attachment is not optional but required, although Redline PDF document may be waived.",
+      anchorQuote: "Redline PDF is required",
+      label: "Redline PDF",
+      kindQuote: "PDF",
+      kindHint: "attachment",
+      requiredQuote: "required",
+    }),
+    "same-target named attachment waiver tail",
+  );
+
+  for (const source of [
+    "Identity PDF is required. Correction: Identity PDF is not optional, but the current document is optional.",
+    "Identity PDF is required. Correction: Identity PDF is not optional, but the original Identity PDF document is optional.",
+    "Identity PDF is required. Correction: Identity PDF is not optional, but Identity PDF's requirement is waived.",
+    "Identity PDF is required. Correction: the attachment is not optional but required, although the attachment under the current policy review in the finance committee meeting may be waived.",
+    `Identity PDF is required. Correction: Identity PDF is not optional, but ${"background ".repeat(20)}Identity PDF may be waived.`,
+    "Identity PDF is required. Correction: Identity PDF is not optional, but this exact document is optional.",
+    "Identity PDF is required. Correction: Identity PDF is not optional, but Identity PDF's own requirement is waived.",
+    "Identity PDF is required. Correction: Identity PDF is not optional, but ID PDF document is optional.",
+  ]) {
+    assertGovernedHold(
+      attachmentSemanticResult({
+        source,
+        anchorQuote: "Identity PDF is required",
+        label: "Identity PDF",
+        kindQuote: "PDF",
+        kindHint: "attachment",
+        requiredQuote: "required",
+      }),
+      source,
+    );
+  }
+});
+
+test("adjacent correction chains retain same-target authority", () => {
+  for (const { source, anchorQuote, label, requiredQuote } of [
+    {
+      source: "Amount is required. Correction: the field is not optional but required. However it may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. It remains required. However it may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. This remains mandatory. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. It is audited. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. The same field remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. This requirement remains mandatory. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. The aforementioned field remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. Even so, it remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. The same field may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "金額必填。更正：該欄位並非免填而是必填。然而該欄位可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "金額必填。更正：該欄位並非免填而是必填。它仍為必填。它可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "金額必填。更正：該欄位並非免填而是必填。相同欄位仍然必填。它可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "金額必填。更正：該欄位並非免填而是必填。相同欄位可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "Amount is required. Correction — the field is optional.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction. The field is optional.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. A different field was reviewed, but Amount remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "金額必填。更正—該欄位免填。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "金額必填。更正。該欄位免填。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "金額必填。更正：該欄位並非免填而是必填。另一欄位已審核，但金額仍然必填。它可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "Amount is required. Correction. Another field is optional, but the target field may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. No other field is involved. It remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. We discussed another field. It remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. The phrase ‘other field’ was quoted. It remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. A different field was reviewed. The original one remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "金額必填。更正。另一欄位是選填，但目標欄位可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "金額必填。更正：該欄位並非免填而是必填。沒有其他欄位。它仍然必填。它可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    ...["其", "此", "該項"].map((pronoun) => ({
+      source: `金額必填。更正：該欄位並非免填而是必填。${pronoun}可豁免。`,
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    })),
+    ...[
+      "Amount is required. Correction: Amount remains required although another field may replace it. It may be waived.",
+      "Amount is required. Correction: Amount remains required because another field exists. It may be waived.",
+      "Amount is required. A different field remains required because policy changed, but Amount remains required. It may be waived.",
+      "Amount is required. Correction: Another field remains required, whereas Amount remains required. It may be waived.",
+      "Amount is required. Correction: Another field remains required because a third field exists, but Amount remains required. It may be waived.",
+      "Amount is required. Correction. Another field remains required. The original field: optional.",
+      "Amount is required. Correction. Another field remains required. Amount: optional.",
+      "Amount is required. Correction. Another field remains required. Amount - optional.",
+      "Amount is required. Correction. Another field remains required. Amount — optional.",
+      "Amount is required. Correction. Another field remains required. Regarding the original requirement: optional.",
+      "Amount is required. Correction: the field is not optional but required. The field (after review) may be waived.",
+      "Amount is required. Correction: the field is not optional but required. It (after review) may be waived.",
+      "Amount is required. Correction: the field is not optional but required. It (under policy) may be waived.",
+      "Amount is required. Correction: the field is not optional but required. Amount (may be waived) remains required.",
+      "Amount is required. Correction: the field is not optional but required. It (not optional) may be waived.",
+      "Amount is required. We discussed another field that Finance reviewed. It may be waived.",
+      "Amount is required. No other field is involved. It may be waived.",
+      "Amount is required. Another field, which was reviewed, remains required. Amount remains required. It may be waived.",
+      "Amount is required. Correction − the field is optional.",
+      "Amount is required. Correction: the field is not optional but required. The entry may be waived.",
+      "Amount is required. Correction. Another field remains required. As for the target field, it may be waived.",
+      "Amount is required. Correction. Another field remains required. Returning to the original field, it may be optional.",
+      "Amount is required. Correction. Another field remains required. The initially required field may be waived.",
+      "Amount is required. Correction. Another field remains required. The field that was originally required may be waived.",
+      "Amount is required. Correction. Another field remains required. The formerly mandatory field may be waived.",
+      "Amount is required. Correction. Another field remains required. The field previously marked as required may be waived.",
+      "Amount is required. Correction: the field is not optional but required. The entry (after review) may be waived.",
+      "Amount is required. Correction: the field is not optional but required. The entry may be left blank.",
+      "Amount is required. Correction. Another field remains required. The field that had been required may be waived.",
+      "Amount is required. Correction: the field is not optional but required. The entry (after review by Finance) may be waived.",
+      "Amount is required. Correction: the field is not optional but required. The entry is elective.",
+      "Amount is required. Correction: the field is not optional but required. The entry need not be filled in.",
+      "Amount is required. Correction. Another field remains required. Required from the outset, the field may now be optional.",
+      "Amount is required. Correction: the field is not optional but required. The entry (optional) remains required.",
+      "Amount is required. Correction: the field is not optional but required. The entry (which may be waived) remains required.",
+      "Amount is required. Correction. Another field remains required. As for the field, it may be waived.",
+    ].map((source) => ({
+      source,
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    })),
+    ...[
+      "金額必填。更正：該欄位並非免填而是必填。其本身可豁免。",
+      "金額必填。更正：該欄位並非免填而是必填。它本身可豁免。",
+      "金額必填。更正：該欄位並非免填而是必填。此本身可豁免。",
+      "金額必填。更正。另一欄位仍然必填。至於目標欄位，它可豁免。",
+    ].map((source) => ({
+      source,
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    })),
+    {
+      source: "圖紙編號必填。更正：該欄免填。",
+      anchorQuote: "圖紙編號必填",
+      label: "圖紙編號",
+      requiredQuote: "必填",
+    },
+    {
+      source: "图纸编号必填。更正：本字段免填。",
+      anchorQuote: "图纸编号必填",
+      label: "图纸编号",
+      requiredQuote: "必填",
+    },
+    ...[
+      "圖紙編號必填。更正：此欄自願填寫。",
+      "圖紙編號必填。更正：本欄位可豁免。",
+      "图纸编号必填。更正：该栏免填。",
+      "图纸编号必填。更正：本项目可豁免。",
+    ].map((source) => ({
+      source,
+      anchorQuote: source.includes("圖")
+        ? "圖紙編號必填"
+        : "图纸编号必填",
+      label: source.includes("圖") ? "圖紙編號" : "图纸编号",
+      requiredQuote: "必填",
+    })),
+    ...[
+      "Amount is required. Correction: it, however, may be waived.",
+      "Amount is required. Correction — the field, however, may be waived.",
+      "Amount is required. Revision: this, nevertheless, is optional.",
+    ].map((source) => ({
+      source,
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    })),
+    ...[
+      "金額必填。更正：它本身則可豁免。",
+      "金额必填。修正：它本身则可以豁免。",
+      "金額必填。更正：該欄位，然而，可豁免。",
+      "金额必填。修正：本字段，不过，可以豁免。",
+      "金額必填。更正：該欄位並非免填而是必填。該資料可豁免。",
+      "金额必填。更正：该字段并非免填而是必填。该资料可豁免。",
+      "金額必填。更正。另一欄位仍然必填。原先必填的欄位可豁免。",
+      "金额必填。修正。另一字段仍然必填。原先必填的字段可以豁免。",
+      "金額必填。另一欄位仍然必填，因為政策已改，但金額仍然必填。它可豁免。",
+      "金額必填。更正：該欄位並非免填而是必填。該 KYC 資料可豁免。",
+      "金額必填。更正：該欄位並非免填而是必填。該資料可以不填。",
+      "金额必填。修正：该字段并非免填而是必填。该资料可以留空。",
+      "金額必填。更正：它本身卻可豁免。",
+      "金额必填。修正：它本身却可以豁免。",
+      "金額必填。更正：它—然而—可豁免。",
+      "金额必填。修正：它本身反而可以豁免。",
+      "金額必填。更正：除非另一欄位已核准，否則金額可豁免。",
+      "金额必填。修正：除非另一字段已批准，否则金额可以豁免。",
+      "金額必填。更正。另一欄位仍然必填。先前列為必填的欄位可豁免。",
+      "金额必填。修正。另一字段仍然必填。之前列为必填的字段可以豁免。",
+      "金額必填。更正：該欄位並非免填而是必填。該資料（經審查後）可豁免。",
+      "金額必填。更正。另一欄位仍然必填。曾經必填的欄位可豁免。",
+      "金額必填。更正。另一欄位仍然必填。原規定必填的欄位可豁免。",
+      "金額必填。更正：該欄位並非免填而是必填。該資料（經財務審查後）可豁免。",
+      "金額必填。更正。另一欄位仍然必填。起初規定為必填的欄位現可豁免。",
+      "金額必填。更正：該欄位並非免填而是必填。該資料（可豁免）仍然必填。",
+      "金額必填。更正：該欄位並非免填而是必填。其他欄位仍然必填。這個欄位可豁免。",
+    ].map((source) => ({
+      source,
+      anchorQuote: source.includes("金額") ? "金額必填" : "金额必填",
+      label: source.includes("金額") ? "金額" : "金额",
+      requiredQuote: "必填",
+    })),
+    {
+      source: "圖紙編號必填。更正：這個欄位免填。",
+      anchorQuote: "圖紙編號必填",
+      label: "圖紙編號",
+      requiredQuote: "必填",
+    },
+    {
+      source: "图纸编号必填。更正：上述字段免填。",
+      anchorQuote: "图纸编号必填",
+      label: "图纸编号",
+      requiredQuote: "必填",
+    },
+  ]) {
+    assertGovernedHold(
+      requestFieldSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        requiredQuote,
+      }),
+      source,
+    );
+  }
+
+  for (const attachmentSource of [
+    "Identity PDF is required. Correction: Identity PDF remains required although another document may replace it. It may be omitted.",
+    "Identity PDF is required. Correction: Identity PDF remains required because another document exists. It may be omitted.",
+    "Identity PDF is required. A different document remains required because policy changed, but Identity PDF remains required. It may be omitted.",
+    "Identity PDF is required. Correction: Another document remains required, whereas Identity PDF remains required. It may be omitted.",
+    "Identity PDF is required. Correction: Another document remains required because a third document exists, but Identity PDF remains required. It may be omitted.",
+    "Identity PDF is required. Correction. Another document remains required. Identity PDF: waived.",
+    "Identity PDF is required. Correction. Another document remains required. The original document: waived.",
+    "Identity PDF is required. Correction. Another document remains required. Identity PDF - waived.",
+    "Identity PDF is required. Correction. Another document remains required. Identity PDF — waived.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. The attachment (after review) may be omitted.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. The attachment (under policy) may be omitted.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. It (after review) may be omitted.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. Identity PDF (may be omitted) remains required.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. It (not optional) may be omitted.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. It may be waived.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. It remains required. However it may be waived.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. It remains required. It may be omitted.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. It is audited. It may be waived.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. The same document remains required. It may be omitted.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. This document remains required. It may be omitted.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. The requirement remains mandatory. It may be waived.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. Even so, it remains required. It may be waived.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. The same document may be omitted.",
+    "Identity PDF is required. Revision – the attachment may be waived.",
+    "Identity PDF is required. Revision. The attachment may be waived.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. A different document was reviewed, but Identity PDF remains required. It may be omitted.",
+    "Identity PDF is required. Correction. Another document is optional, but the target attachment may be waived.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. The submission may be omitted.",
+    "Identity PDF is required. Correction. Another document remains required. As for the target attachment, it may be waived.",
+    "Identity PDF is required. Revision: the document, however, may be omitted.",
+    "Identity PDF is required. Correction. Another document remains required. The initially required document may be waived.",
+    "Identity PDF is required. Correction. Another document remains required. The document that was originally required may be waived.",
+    "Identity PDF is required. Correction. Another document remains required. The formerly mandatory document may be waived.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. The submission, after review, may be omitted.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. The submission (under policy) may be omitted.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. The submission (may be omitted) remains required.",
+  ]) {
+    assertGovernedHold(
+      attachmentSemanticResult({
+        source: attachmentSource,
+        anchorQuote: "Identity PDF is required",
+        label: "Identity PDF",
+        kindQuote: "PDF",
+        kindHint: "attachment",
+        requiredQuote: "required",
+      }),
+      attachmentSource,
+    );
+  }
+
+  const cjkDeicticAttachment =
+    "身份 PDF 必須上載。修正：本文件可豁免。";
+  assertGovernedHold(
+    attachmentSemanticResult({
+      source: cjkDeicticAttachment,
+      anchorQuote: "身份 PDF 必須上載",
+      label: "身份 PDF",
+      kindQuote: "PDF",
+      kindHint: "attachment",
+      requiredQuote: "必須",
+    }),
+    cjkDeicticAttachment,
+  );
+
+  for (const { source, anchorQuote, label, requiredQuote } of [
+    {
+      source: "身份 PDF 必填。修正：它本身則可豁免。",
+      anchorQuote: "身份 PDF 必填",
+      label: "身份 PDF",
+      requiredQuote: "必填",
+    },
+    {
+      source: "身分 PDF 必填。更正：該附件並非免填而是必填。該提交物可豁免。",
+      anchorQuote: "身分 PDF 必填",
+      label: "身分 PDF",
+      requiredQuote: "必填",
+    },
+    {
+      source: "身份 PDF 必填。更正：该附件并非免填而是必填。该提交物可豁免。",
+      anchorQuote: "身份 PDF 必填",
+      label: "身份 PDF",
+      requiredQuote: "必填",
+    },
+    {
+      source: "身份 PDF 必須上載。修正：這份文件可豁免。",
+      anchorQuote: "身份 PDF 必須上載",
+      label: "身份 PDF",
+      requiredQuote: "必須",
+    },
+    {
+      source: "身份 PDF 必須上載。修正。另一份文件仍然必須上載。原先必須上載的文件可豁免。",
+      anchorQuote: "身份 PDF 必須上載",
+      label: "身份 PDF",
+      requiredQuote: "必須",
+    },
+    {
+      source: "身分 PDF 必填。更正：該附件並非免填而是必填。該 KYC 提交物可省略。",
+      anchorQuote: "身分 PDF 必填",
+      label: "身分 PDF",
+      requiredQuote: "必填",
+    },
+    {
+      source: "身份 PDF 必填。修正：該附件並非免填而是必填。該提交物可以省略。",
+      anchorQuote: "身份 PDF 必填",
+      label: "身份 PDF",
+      requiredQuote: "必填",
+    },
+    {
+      source: "身份 PDF 必填。修正：它本身卻可豁免。",
+      anchorQuote: "身份 PDF 必填",
+      label: "身份 PDF",
+      requiredQuote: "必填",
+    },
+    {
+      source: "身份 PDF 必填。修正：除非另一份文件已核准，否則身份 PDF 可豁免。",
+      anchorQuote: "身份 PDF 必填",
+      label: "身份 PDF",
+      requiredQuote: "必填",
+    },
+    {
+      source: "身份 PDF 必填。修正：除非另一份文件已批准，否则身份 PDF 可以豁免。",
+      anchorQuote: "身份 PDF 必填",
+      label: "身份 PDF",
+      requiredQuote: "必填",
+    },
+    {
+      source: "身份 PDF 必須上載。修正。另一文件仍然必填。之前要求上載的文件可豁免。",
+      anchorQuote: "身份 PDF 必須上載",
+      label: "身份 PDF",
+      requiredQuote: "必須",
+    },
+    {
+      source: "身份 PDF 必須上傳。修正。另一文件仍然必填。之前要求上传的文件可以豁免。",
+      anchorQuote: "身份 PDF 必須上傳",
+      label: "身份 PDF",
+      requiredQuote: "必須",
+    },
+    {
+      source: "身份 PDF 必填。修正：該附件並非免填而是必填。該提交物（經審查後）可省略。",
+      anchorQuote: "身份 PDF 必填",
+      label: "身份 PDF",
+      requiredQuote: "必填",
+    },
+    {
+      source: "身份 PDF 必須上載。修正。另一文件仍然必填。原要求提交的文件可豁免。",
+      anchorQuote: "身份 PDF 必須上載",
+      label: "身份 PDF",
+      requiredQuote: "必須",
+    },
+    {
+      source: "身份 PDF 必填。修正：該附件並非免填而是必填。該提交物（經財務審查後）可省略。",
+      anchorQuote: "身份 PDF 必填",
+      label: "身份 PDF",
+      requiredQuote: "必填",
+    },
+    {
+      source: "身分 PDF 必填。更正：該附件並非免填而是必填。該提交物（可省略）仍然必填。",
+      anchorQuote: "身分 PDF 必填",
+      label: "身分 PDF",
+      requiredQuote: "必填",
+    },
+  ]) {
+    assertGovernedHold(
+      attachmentSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        kindQuote: "PDF",
+        kindHint: "attachment",
+        requiredQuote,
+      }),
+      source,
+    );
+  }
+
+  const explicitlyDifferentField =
+    "Amount is required. Correction: the field is not optional but required. A different field remains required. It may be waived.";
+  assertSemanticPass(
+    requestFieldSemanticResult({
+      source: explicitlyDifferentField,
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    }),
+    explicitlyDifferentField,
+  );
+
+  const explicitlyDifferentAttachment =
+    "Identity PDF is required. Correction: the attachment is not optional but required. The other document remains required. It may be omitted.";
+  assertSemanticPass(
+    attachmentSemanticResult({
+      source: explicitlyDifferentAttachment,
+      anchorQuote: "Identity PDF is required",
+      label: "Identity PDF",
+      kindQuote: "PDF",
+      kindHint: "attachment",
+      requiredQuote: "required",
+    }),
+    explicitlyDifferentAttachment,
+  );
+
+  for (const source of [
+    "Field is required. A different field may be waived.",
+    "Field is required. A different field (may be waived) remains required.",
+    "Field is required. The other field may be waived.",
+  ]) {
+    assertSemanticPass(
+      requestFieldSemanticResult({
+        source,
+        anchorQuote: "Field is required",
+        label: "Field",
+        requiredQuote: "required",
+      }),
+      source,
+    );
+  }
+
+  for (const source of [
+    "Document is required. A different document may be omitted.",
+    "Document is required. A different document (may be omitted) remains required.",
+    "Document is required. The other document may be omitted.",
+  ]) {
+    assertSemanticPass(
+      attachmentSemanticResult({
+        source,
+        anchorQuote: "Document is required",
+        label: "Document",
+        kindQuote: "Document",
+        kindHint: "attachment",
+        requiredQuote: "required",
+      }),
+      source,
+    );
+  }
+
+  const genericTargetField =
+    "Field is required. The field may be waived.";
+  assertGovernedHold(
+    requestFieldSemanticResult({
+      source: genericTargetField,
+      anchorQuote: "Field is required",
+      label: "Field",
+      requiredQuote: "required",
+    }),
+    genericTargetField,
+  );
+
+  const bridgedGenericTargetField =
+    "Field is required. The field (after review) remains required.";
+  assertGovernedHold(
+    requestFieldSemanticResult({
+      source: bridgedGenericTargetField,
+      anchorQuote: "Field is required",
+      label: "Field",
+      requiredQuote: "required",
+    }),
+    bridgedGenericTargetField,
+  );
+
+  const genericTargetDocument =
+    "Document is required. The document may be omitted.";
+  assertGovernedHold(
+    attachmentSemanticResult({
+      source: genericTargetDocument,
+      anchorQuote: "Document is required",
+      label: "Document",
+      kindQuote: "Document",
+      kindHint: "attachment",
+      requiredQuote: "required",
+    }),
+    genericTargetDocument,
+  );
+
+  const genericCarriesDistinctField =
+    "Amount is required. Correction: the field is not optional but required. A different field remains required. The field remains mandatory. It may be waived.";
+  assertGovernedHold(
+    requestFieldSemanticResult({
+      source: genericCarriesDistinctField,
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    }),
+    genericCarriesDistinctField,
+  );
+
+  const genericCarriesDistinctAttachment =
+    "Identity PDF is required. Correction: the attachment is not optional but required. A different document remains required. The document remains mandatory. It may be omitted.";
+  assertGovernedHold(
+    attachmentSemanticResult({
+      source: genericCarriesDistinctAttachment,
+      anchorQuote: "Identity PDF is required",
+      label: "Identity PDF",
+      kindQuote: "PDF",
+      kindHint: "attachment",
+      requiredQuote: "required",
+    }),
+    genericCarriesDistinctAttachment,
+  );
+
+  const explicitlyDifferentCjkField =
+    "金額必填。更正：該欄位並非免填而是必填。另一欄位仍然必填。它可豁免。";
+  assertSemanticPass(
+    requestFieldSemanticResult({
+      source: explicitlyDifferentCjkField,
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    }),
+    explicitlyDifferentCjkField,
+  );
+
+  const genericCarriesDistinctCjkField =
+    "金額必填。更正：該欄位並非免填而是必填。另一欄位仍然必填。該欄位仍是必填。其可豁免。";
+  assertGovernedHold(
+    requestFieldSemanticResult({
+      source: genericCarriesDistinctCjkField,
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    }),
+    genericCarriesDistinctCjkField,
+  );
+
+  const reverseMixedCjkField =
+    "金額必填。更正：該欄位並非免填而是必填。金額仍然必填，但另一欄位已審核。它可豁免。";
+  assertSemanticPass(
+    requestFieldSemanticResult({
+      source: reverseMixedCjkField,
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    }),
+    reverseMixedCjkField,
+  );
+
+  const reverseMixedField =
+    "Amount is required. Correction: the field is not optional but required. Amount remains required, but a different field was reviewed. It may be waived.";
+  assertSemanticPass(
+    requestFieldSemanticResult({
+      source: reverseMixedField,
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    }),
+    reverseMixedField,
+  );
+
+  const reverseMixedAttachment =
+    "Identity PDF is required. Correction: the attachment is not optional but required. Identity PDF remains required, but the other document was reviewed. It may be omitted.";
+  assertSemanticPass(
+    attachmentSemanticResult({
+      source: reverseMixedAttachment,
+      anchorQuote: "Identity PDF is required",
+      label: "Identity PDF",
+      kindQuote: "PDF",
+      kindHint: "attachment",
+      requiredQuote: "required",
+    }),
+    reverseMixedAttachment,
+  );
+
+  for (const { source, anchorQuote, label, requiredQuote } of [
+    ...[
+      "Amount is required. Correction: Another field remains required although Amount may replace it. It may be waived.",
+      "Amount is required. Correction: Another field remains required because Amount exists. It may be waived.",
+      "Amount is required. Amount remains required because policy changed, but a different field remains required. It may be waived.",
+      "Amount is required. Correction: Amount remains required, whereas another field remains required. It may be waived.",
+      "Amount is required. Correction: Amount remains required because a third field exists, but another field remains required. It may be waived.",
+      "Amount is required. Correction. Another field remains required. Amount-based field is optional.",
+      "Amount is required. Correction. Another field remains required. Amount-based field is optional. It may be waived.",
+      "Amount is required. Correction. Another field remains required. Amount-based-field is optional.",
+      "Amount is required. Correction. Another field remains required. Amount‐based field is optional.",
+      "Amount is required. Correction. Another field remains required. Amount‑based field is optional.",
+      "Amount is required. Correction. Another field remains required. Amount‐based‐field is optional.",
+      "Amount is required. Correction. Another field remains required. Amount‑based‑field remains required. It may be waived.",
+      "Amount is required. Correction: the field is not optional but required. The field (not optional) remains required.",
+      "Amount is required. Correction: the field is not optional but required. It (not optional) remains required.",
+      "Amount is required. Correction: the field is not optional but required. Amount (not optional) remains required.",
+      "Amount is required. Amount: required.",
+      "Amount is required. A different field, which was reviewed, may be waived.",
+      "Amount is required. Another field (which is optional) remains required. It may be waived.",
+      "Amount is required. A separate field that Finance reviewed may be waived.",
+      "Amount is required. The other field, which exists, may be waived.",
+      "Amount is required. Another field: required. It may be waived.",
+      "Amount is required. A different field: optional.",
+    ].map((source) => ({
+      source,
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    })),
+    {
+      source: "Amount is required. Correction: the field is not optional but required. Although a different field remains required, it may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. A different field exists. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. A different field remains required. Correction. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "金額必填。更正：該欄位並非免填而是必填。雖然另一欄位仍然必填，但它可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "金額必填。不同欄位仍然必填。它可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "金额必填。另外一个字段仍然必填。它可豁免。",
+      anchorQuote: "金额必填",
+      label: "金额",
+      requiredQuote: "必填",
+    },
+    {
+      source: "金額必填。另一欄位仍然必填。更正。它可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "金額必填。金額仍然必填，因為政策已改，但另一欄位仍然必填。它可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "Amount is required. If a different field remains required, it may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Despite a different field remaining required, it may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Provided that a different field remains required, it may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Once a different field is reviewed, it may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "金額必填。一旦另一欄位已審核，它可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "Amount is required. Where a different field remains required, it may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. A separate field remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. A separate formerly mandatory field may be waived. It remains required.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "金額必填。如果另一欄位仍然必填，它可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "Amount is required. Given that a different field remains required, it may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. An unrelated field remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Another field which was initially mandatory remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. A separate field previously required remains mandatory. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "金額必填。另一個曾經必填的欄位仍然必填。它可豁免。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "Amount is required. Correction: the field is not optional but required. The entry (not optional) remains required.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "金額必填。更正：該欄位並非免填而是必填。該資料（並非免填）仍然必填。",
+      anchorQuote: "金額必填",
+      label: "金額",
+      requiredQuote: "必填",
+    },
+    {
+      source: "Amount is required. Another field, which was initially mandatory, remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Another field (which was initially mandatory) remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Another field which had previously been mandatory remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+    {
+      source: "Amount is required. Another field which had been previously mandatory remains required. It may be waived.",
+      anchorQuote: "Amount is required",
+      label: "Amount",
+      requiredQuote: "required",
+    },
+  ]) {
+    assertSemanticPass(
+      requestFieldSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        requiredQuote,
+      }),
+      source,
+    );
+  }
+
+  for (const source of [
+    "Identity PDF is required. Correction: Another document remains required although Identity PDF may replace it. It may be omitted.",
+    "Identity PDF is required. Correction: Another document remains required because Identity PDF exists. It may be omitted.",
+    "Identity PDF is required. Identity PDF remains required because policy changed, but a different document remains required. It may be omitted.",
+    "Identity PDF is required. Correction: Identity PDF remains required, whereas another document remains required. It may be omitted.",
+    "Identity PDF is required. Correction: Identity PDF remains required because a third document exists, but another document remains required. It may be omitted.",
+    "Identity PDF is required. Correction. Another document remains required. Identity-PDF document is optional.",
+    "Identity PDF is required. Correction. Another document remains required. Identity-PDF document is optional. It may be omitted.",
+    "Identity PDF is required. Correction. Another document remains required. Identity-PDF-document is optional.",
+    "Identity PDF is required. Correction. Another document remains required. Identity‐PDF document is optional.",
+    "Identity PDF is required. Correction. Another document remains required. Identity‑PDF document is optional.",
+    "Identity PDF is required. Correction. Another document remains required. Identity‐PDF‐document is optional.",
+    "Identity PDF is required. Correction. Another document remains required. Identity‑PDF‑document remains required. It may be omitted.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. The attachment (not optional) remains required.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. It (not optional) remains required.",
+    "Identity PDF is required. Correction: the attachment is not optional but required. Identity PDF (not optional) remains required.",
+    "Identity PDF is required. Identity PDF — remains required.",
+    "Identity PDF is required. A different document, which was reviewed, may be omitted.",
+    "Identity PDF is required. Another document (which is optional) remains required. It may be omitted.",
+    "Identity PDF is required. A separate document that Finance reviewed may be omitted.",
+    "Identity PDF is required. The other document, which exists, may be omitted.",
+    "Identity PDF is required. Another document: required. It may be omitted.",
+    "Identity PDF is required. A different document exists. It may be omitted.",
+    "Identity PDF is required. A different document remains required. Revision. It may be omitted.",
+    "身份 PDF 必填。另一份文件仍然必填。它可豁免。",
+    "Identity PDF is required. If a different document remains required, it may be omitted.",
+    "Identity PDF is required. Despite a different document remaining required, it may be omitted.",
+    "Identity PDF is required. Whenever a different document remains required, it may be omitted.",
+    "Identity PDF is required. Assuming a different document remains required, it may be omitted.",
+    "Identity PDF is required. A separate formerly mandatory document may be omitted.",
+    "Identity PDF is required. Supposing a different document remains required, it may be omitted.",
+    "Identity PDF is required. Another document which was initially mandatory remains required. It may be omitted.",
+    "Identity PDF is required. A separate document previously uploaded remains mandatory. It may be omitted.",
+    "身份 PDF 必填。另一份曾經必填的文件仍然必填。它可豁免。",
+    "Identity PDF is required. Correction: the attachment is not optional but required. The submission (not optional) remains required.",
+    "身份 PDF 必填。更正：該附件並非免填而是必填。該提交物（並非免填）仍然必填。",
+    "Identity PDF is required. Another document, which was initially mandatory, remains required. It may be omitted.",
+    "Identity PDF is required. Another document (which was initially mandatory) remains required. It may be omitted.",
+    "Identity PDF is required. Another document which had previously been mandatory remains required. It may be omitted.",
+    "Identity PDF is required. Another document which had been previously mandatory remains required. It may be omitted.",
+  ]) {
+    assertSemanticPass(
+      attachmentSemanticResult({
+        source,
+        anchorQuote: source.startsWith("Identity")
+          ? "Identity PDF is required"
+          : "身份 PDF 必填",
+        label: source.startsWith("Identity") ? "Identity PDF" : "身份 PDF",
+        kindQuote: "PDF",
+        kindHint: "attachment",
+        requiredQuote: source.startsWith("Identity") ? "required" : "必填",
+      }),
+      source,
+    );
+  }
+});
+
+test("attachment correction tails distinguish mandatory and omission authority", () => {
+  const mandatory = attachmentSemanticResult({
+    source: "Identity PDF is required. Correction: the attachment cannot be waived and remains required.",
+    anchorQuote: "Identity PDF is required",
+    label: "Identity PDF",
+    kindQuote: "PDF",
+    kindHint: "attachment",
+    requiredQuote: "required",
+  });
+  assertSemanticPass(mandatory, "mandatory attachment correction");
+
+  const omitted = attachmentSemanticResult({
+    source: "Identity PDF is required. Correction: the attachment cannot be waived, but may be omitted.",
+    anchorQuote: "Identity PDF is required",
+    label: "Identity PDF",
+    kindQuote: "PDF",
+    kindHint: "attachment",
+    requiredQuote: "required",
+  });
+  assertGovernedHold(omitted, "omitted attachment correction");
 });
 
 test("closed affirmative recovery is invariant to narrow provider quote breadth", () => {
@@ -1270,24 +2664,6 @@ test("a prohibited attachment sibling cannot poison the required target", () => 
       label: "Identity PDF",
       requiredQuote: "required",
     },
-    {
-      source: "Identity PDF is required. identity document is optional.",
-      quote: "Identity PDF is required",
-      label: "Identity PDF",
-      requiredQuote: "required",
-    },
-    {
-      source: "Identity PDF is required. identity file is optional.",
-      quote: "Identity PDF is required",
-      label: "Identity PDF",
-      requiredQuote: "required",
-    },
-    {
-      source: "Identity PDF is required. identity form is optional.",
-      quote: "Identity PDF is required",
-      label: "Identity PDF",
-      requiredQuote: "required",
-    },
   ]) {
     const sourceSlots = structureSources({
       initiatorsFields: "Require purpose.",
@@ -1316,6 +2692,223 @@ test("a prohibited attachment sibling cannot poison the required target", () => 
     assert.ok(attachment, source);
     assert.equal(attachment.semanticComplete, true, source);
   }
+});
+
+test("a stripped attachment alias cannot prove a distinct optional sibling", () => {
+  for (const { source, label } of [
+    {
+      source: "Require Identity PDF; Identity document may be omitted.",
+      label: "Identity PDF",
+    },
+    {
+      source: "Require Identity PDF; Identity file may be omitted.",
+      label: "Identity PDF",
+    },
+    {
+      source: "Require Identity PDF; Identity form may be omitted.",
+      label: "Identity PDF",
+    },
+    {
+      source: "Require purchase order PDF; Purchase order document may be omitted.",
+      label: "purchase order PDF",
+    },
+    {
+      source: "Require invoice PDF; Requirements for invoice document may be omitted.",
+      label: "invoice PDF",
+    },
+  ]) {
+    const continuation = source.slice(source.indexOf(";"));
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        continuation,
+        label,
+        "attachment",
+      ),
+      true,
+      source,
+    );
+    assertGovernedHold(
+      attachmentSemanticResult({
+        source,
+        anchorQuote: label,
+        label,
+        requiredQuote: "Require",
+      }),
+      source,
+    );
+  }
+});
+
+test("an independently named prefix keeps a stripped attachment alias sibling-local", () => {
+  for (const source of [
+    "Require Identity PDF; onboarding identity document may be omitted.",
+    "Require Identity PDF; Vendor onboarding identity document may be omitted.",
+    "Require Identity PDF; Due diligence identity document may be omitted.",
+    "Require Identity PDF; requirement for vendor registration identity document may be waived.",
+    "Require Identity PDF; requirement for onboarding identity document may be waived.",
+  ]) {
+    const continuation = source.slice(source.indexOf(";"));
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        continuation,
+        "Identity PDF",
+        "attachment",
+      ),
+      false,
+      source,
+    );
+    assertSemanticPass(
+      attachmentSemanticResult({
+        source,
+        anchorQuote: "Identity PDF",
+        label: "Identity PDF",
+        requiredQuote: "Require",
+      }),
+      source,
+    );
+  }
+  for (const source of [
+    "Require Identity PDF; governed identity document may be omitted.",
+    "Require Identity PDF; requirement for governed identity document may be waived.",
+  ]) {
+    const continuation = source.slice(source.indexOf(";"));
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        continuation,
+        "Identity PDF",
+        "attachment",
+      ),
+      true,
+      source,
+    );
+    assertGovernedHold(
+      attachmentSemanticResult({
+        source,
+        anchorQuote: "Identity PDF",
+        label: "Identity PDF",
+        requiredQuote: "Require",
+      }),
+      source,
+    );
+  }
+});
+
+test("a full attachment alias outranks shorter stripped-alias sibling heuristics", () => {
+  for (const continuation of [
+    "; optional Identity PDF document",
+    "; optional governed Identity PDF document",
+    "; optional Vendor onboarding Identity PDF document",
+    "; optional requirement for Identity PDF",
+    "; optional requirements for Identity PDF under policy",
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        continuation,
+        "Identity PDF",
+        "attachment",
+      ),
+      true,
+      continuation,
+    );
+  }
+  for (const { continuation, label } of [
+    {
+      continuation: "; optional PDF identity document",
+      label: "Identity PDF",
+    },
+    {
+      continuation: "; optional PDF invoice document",
+      label: "invoice PDF",
+    },
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        continuation,
+        label,
+        "attachment",
+      ),
+      true,
+      continuation,
+    );
+  }
+  for (const { source, anchorQuote, label = "Identity PDF" } of [
+    {
+      source: "Require optional Identity PDF document.",
+      anchorQuote: "Identity PDF",
+    },
+    {
+      source: "Require an optional requirement for Identity PDF.",
+      anchorQuote: "Identity PDF",
+    },
+    {
+      source: "Require Identity PDF. Optional PDF identity document.",
+      anchorQuote: "Identity PDF",
+    },
+    {
+      source: "Require invoice PDF. Optional PDF invoice document.",
+      anchorQuote: "invoice PDF",
+      label: "invoice PDF",
+    },
+  ]) {
+    assertGovernedHold(
+      attachmentSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        requiredQuote: "Require",
+      }),
+      source,
+    );
+  }
+});
+
+test("a governed terminal type alone cannot prove an independent sibling", () => {
+  for (const tail of [
+    "PDF may be omitted",
+    "Any PDF may be omitted",
+    "All PDFs may be omitted",
+    "governed PDF may be omitted",
+    "Both PDFs may be omitted",
+    "Some PDF may be omitted",
+    "PDF about policy may be omitted",
+    "PDFs regarding policy may be omitted",
+    "Some PDF of record may be omitted",
+    "PDF document may be omitted",
+    "Any PDF document may be omitted",
+    "All PDF documents may be omitted",
+    "Every governed PDF document may be omitted",
+  ]) {
+    const source = `Require invoice PDF; ${tail}.`;
+    const continuation = source.slice(source.indexOf(";"));
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        continuation,
+        "invoice PDF",
+        "attachment",
+      ),
+      true,
+      source,
+    );
+    assertGovernedHold(
+      attachmentSemanticResult({
+        source,
+        anchorQuote: "invoice PDF",
+        label: "invoice PDF",
+        requiredQuote: "Require",
+      }),
+      source,
+    );
+  }
+  const namedControl = "Require invoice PDF; Any optional Excel file may be omitted.";
+  assertSemanticPass(
+    attachmentSemanticResult({
+      source: namedControl,
+      anchorQuote: "invoice PDF",
+      label: "invoice PDF",
+      requiredQuote: "Require",
+    }),
+    namedControl,
+  );
 });
 
 test("open governing prefixes and scoped suffixes never become unconditional fields", () => {
@@ -1683,6 +3276,9 @@ test("subject identity excludes sibling compounds and broken anaphor chains", ()
   for (const source of [
     "Amount is required. The notes for Amount are optional.",
     "Amount is required. The notes for the Amount field are optional.",
+    "Amount is required. The notes about the Amount field are optional.",
+    "Amount is required. The notes regarding the Amount field are optional.",
+    "Amount is required. The notes of the Amount field are optional.",
     "Amount is required. Amount field notes are optional.",
     "Amount is required. Amount input notes are optional.",
     "Amount is required. This optional comment field is available.",
@@ -1690,7 +3286,6 @@ test("subject identity excludes sibling compounds and broken anaphor chains", ()
     "Amount is required. This potentially optional comment field is available.",
     "Amount is required. The comment was discussed. It is optional.",
     "Amount is required. Comment is optional. It can be omitted.",
-    `Amount is required. It remains audited and ${"background ".repeat(450)}comments are optional.`,
   ]) {
     assertSemanticPass(
       requestFieldSemanticResult({
@@ -1701,6 +3296,16 @@ test("subject identity excludes sibling compounds and broken anaphor chains", ()
     );
   }
 });
+
+  const unboundedSiblingIdentity =
+    `Amount is required. It remains audited and ${"background ".repeat(450)}comments are optional.`;
+  assertGovernedHold(
+    requestFieldSemanticResult({
+      source: unboundedSiblingIdentity,
+      anchorQuote: "Amount is required",
+    }),
+    unboundedSiblingIdentity,
+  );
 
 test("intrinsic label words do not become authority while widened scoped labels still hold", () => {
   for (const label of [
@@ -1806,6 +3411,1486 @@ test("intrinsic label words do not become authority while widened scoped labels 
     }),
     "external scope around an intrinsic label",
   );
+});
+
+test("shared comma lists remain affirmative while actual bridges stay fail-closed", () => {
+  const fieldList =
+    " supplier, invoice number, invoice date, PO number, currency, invoice total, PO total, goods-received total, and tax amount";
+  for (const label of [
+    "supplier",
+    "invoice number",
+    "invoice date",
+    "PO number",
+    "currency",
+    "invoice total",
+    "PO total",
+    "goods-received total",
+    "tax amount",
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        fieldList,
+        label,
+        "request_field",
+      ),
+      false,
+      label,
+    );
+  }
+
+  const attachmentList =
+    " one invoice PDF, one purchase order PDF, and one goods receipt PDF";
+  for (const label of [
+    "invoice PDF",
+    "purchase order PDF",
+    "goods receipt PDF",
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        attachmentList,
+        label,
+        "attachment",
+      ),
+      false,
+      label,
+    );
+  }
+
+  for (const [value, label, kind, expected] of [
+    [" invoice number, after review, may be waived", "invoice number", "request_field", true],
+    [" invoice number, not optional, remains required", "invoice number", "request_field", false],
+    [" invoice PDF, optional, remains required", "invoice PDF", "attachment", true],
+    [" invoice PDF, not optional, remains required", "invoice PDF", "attachment", false],
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        value,
+        label,
+        kind,
+      ),
+      expected,
+      value,
+    );
+  }
+  for (const value of [
+    " invoice PDF, after review, perhaps may be omitted",
+    " invoice PDF, not optional, perhaps may be omitted",
+    " invoice PDF, after review, maybe optional",
+    " invoice PDF, which Finance reviewed, perhaps optional",
+    " invoice PDF, after review, unlikely to be required",
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        value,
+        "invoice PDF",
+        "attachment",
+      ),
+      true,
+      value,
+    );
+  }
+
+  for (const label of [
+    "invoice PDF",
+    "purchase order PDF",
+    "goods receipt PDF",
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        "; each up to 25 MB. Allow an optional Excel line-item schedule.",
+        label,
+        "attachment",
+      ),
+      false,
+      "unrelated optional sibling after shared size for " + label,
+    );
+  }
+
+  for (const [value, label, kind] of [
+    [
+      "; audited. Allow an optional Excel line-item schedule.",
+      "invoice PDF",
+      "attachment",
+    ],
+    [
+      "; audited. Include an optional redline PDF.",
+      "invoice PDF",
+      "attachment",
+    ],
+    [
+      "; audited. Add an optional notes field.",
+      "Amount",
+      "request_field",
+    ],
+    [
+      "; audited. Accept an optional comments field.",
+      "Amount",
+      "request_field",
+    ],
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        value,
+        label,
+        kind,
+      ),
+      false,
+      value,
+    );
+  }
+
+  for (const [value, label, kind] of [
+    ["; each may be omitted.", "invoice PDF", "attachment"],
+    ["; each is optional.", "invoice PDF", "attachment"],
+    ["; each remains optional.", "invoice PDF", "attachment"],
+    ["; each becomes optional.", "invoice PDF", "attachment"],
+    ["; each is exempt.", "invoice PDF", "attachment"],
+    ["; each was waived.", "invoice PDF", "attachment"],
+    ["; each need not be provided.", "invoice PDF", "attachment"],
+    ["; each does not need to be entered.", "Amount", "request_field"],
+    ["; each is not required.", "Amount", "request_field"],
+    ["; each, however, is optional.", "Amount", "request_field"],
+    ["; each up to 25 MB. It may be omitted.", "invoice PDF", "attachment"],
+    ["; audited. Allow an optional invoice PDF.", "invoice PDF", "attachment"],
+    ["; audited. Allow an optional attachment.", "invoice PDF", "attachment"],
+    [
+      "; audited. Allow an optional copy of the invoice PDF.",
+      "invoice PDF",
+      "attachment",
+    ],
+    ["; audited. Add an optional Amount field.", "Amount", "request_field"],
+    ["; audited. Add an optional field.", "Amount", "request_field"],
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        value,
+        label,
+        kind,
+      ),
+      true,
+      value,
+    );
+  }
+});
+
+test("extended quantified anaphors bind the governed target without capturing distinct noun phrases", () => {
+  for (const [value, label, kind] of [
+    ["; each one may be omitted.", "invoice PDF", "attachment"],
+    ["; all three may be omitted.", "invoice PDF", "attachment"],
+    ["; each of them may be omitted.", "invoice PDF", "attachment"],
+    ["; both of the attachments may be absent.", "invoice PDF", "attachment"],
+    ["; all attachments may be omitted.", "invoice PDF", "attachment"],
+    ["; both items may be left blank.", "Amount", "request_field"],
+    ["。兩者均可豁免。", "身份 PDF", "attachment"],
+    ["。两者均可豁免。", "身份 PDF", "attachment"],
+    ["。全部均可豁免。", "身份 PDF", "attachment"],
+    ["。所有附件均可豁免。", "身份 PDF", "attachment"],
+    ["。各附件均可豁免。", "身份 PDF", "attachment"],
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        value,
+        label,
+        kind,
+      ),
+      true,
+      value,
+    );
+  }
+
+  for (const [value, label, kind] of [
+    ["; each is audited.", "invoice PDF", "attachment"],
+    ["; each remains required.", "invoice PDF", "attachment"],
+    ["; each is not optional.", "Amount", "request_field"],
+    ["; each optional Excel schedule may be omitted.", "invoice PDF", "attachment"],
+    ["; each waived redline PDF is audited.", "invoice PDF", "attachment"],
+    ["; each optional Notes field may be left blank.", "Amount", "request_field"],
+    ["; audited. Each optional Excel schedule is audited.", "invoice PDF", "attachment"],
+    ["; audited. Each optional Notes field is audited.", "Amount", "request_field"],
+    ["。兩者均仍為必須上載。", "身份 PDF", "attachment"],
+    ["。两者仍须上传。", "身份 PDF", "attachment"],
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        value,
+        label,
+        kind,
+      ),
+      false,
+      value,
+    );
+  }
+
+  for (const label of ["invoice PDF", "purchase order PDF"]) {
+    assertGovernedHold(
+      attachmentSemanticResult({
+        source:
+          "Require invoice PDF and purchase order PDF; each of them may be omitted.",
+        anchorQuote: label,
+        label,
+        requiredQuote: "Require",
+      }),
+      "extended quantified attachment " + label,
+    );
+  }
+  assertGovernedHold(
+    attachmentSemanticResult({
+      source: "Require invoice PDF, purchase order PDF, and goods receipt PDF; all three may be omitted.",
+      anchorQuote: "invoice PDF",
+      label: "invoice PDF",
+      requiredQuote: "Require",
+    }),
+    "all-three attachment anaphor",
+  );
+  for (const { source, anchorQuote, label, requiredQuote } of [
+    {
+      source: "必須上載身份 PDF 和紅線文件。兩者均可豁免。",
+      anchorQuote: "必須上載身份 PDF 和紅線文件",
+      label: "身份 PDF",
+      requiredQuote: "必須",
+    },
+    {
+      source: "必须上传身份 PDF 和红线文件。两者均可豁免。",
+      anchorQuote: "必须上传身份 PDF 和红线文件",
+      label: "身份 PDF",
+      requiredQuote: "必须",
+    },
+  ]) {
+    const result = attachmentSemanticResult({
+      source,
+      anchorQuote,
+      label,
+      requiredQuote,
+    });
+    assert.deepEqual(result.located.rejected, [], source);
+    assertGovernedHold(
+      result,
+      source,
+    );
+  }
+  for (const { source, anchorQuote, label, requiredQuote } of [
+    {
+      source: "必須上載身份 PDF 和紅線文件。兩者均仍為必須上載。",
+      anchorQuote: "必須上載身份 PDF 和紅線文件",
+      label: "身份 PDF",
+      requiredQuote: "必須",
+    },
+    {
+      source: "必须上传身份 PDF 和红线文件。两者仍须上传。",
+      anchorQuote: "必须上传身份 PDF 和红线文件",
+      label: "身份 PDF",
+      requiredQuote: "必须",
+    },
+  ]) {
+    assertSemanticPass(
+      attachmentSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        requiredQuote,
+      }),
+      source,
+    );
+  }
+  assertSemanticPass(
+    attachmentSemanticResult({
+      source: "Require invoice PDF; audited. Each optional Excel schedule is audited.",
+      anchorQuote: "invoice PDF",
+      label: "invoice PDF",
+      requiredQuote: "Require",
+    }),
+    "quantified distinct optional attachment",
+  );
+});
+
+test("comma-and optional generic siblings stay fail-closed while named siblings remain local", () => {
+  for (const [value, label, kind, expected] of [
+    [", and optional attachment", "invoice PDF", "attachment", true],
+    [", and optional field", "Amount", "request_field", true],
+    [", and optional redline PDF", "invoice PDF", "attachment", false],
+    [", and optional Notes field", "Amount", "request_field", false],
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementSameHardTailIsQualified(
+        value,
+        label,
+        kind,
+        "marker_before_subject",
+      ),
+      expected,
+      value,
+    );
+  }
+
+  for (const source of [
+    "Require invoice PDF, and optional attachment.",
+    "Require invoice PDF, and optional redline PDF in place of the required attachment.",
+  ]) {
+    const result = attachmentSemanticResult({
+      source,
+      anchorQuote: "invoice PDF",
+      label: "invoice PDF",
+      requiredQuote: "Require",
+    });
+    assertGovernedHold(result, source);
+  }
+  for (const source of [
+    "Require Amount, and optional field.",
+    "Require Amount, and optional Notes field as a replacement for the required field.",
+  ]) {
+    const result = requestFieldSemanticResult({
+      source,
+      anchorQuote: "Amount",
+      label: "Amount",
+      requiredQuote: "Require",
+    });
+    assertGovernedHold(result, source);
+  }
+
+  assertSemanticPass(
+    attachmentSemanticResult({
+      source: "Require invoice PDF, and optional redline PDF.",
+      anchorQuote: "invoice PDF",
+      label: "invoice PDF",
+      requiredQuote: "Require",
+    }),
+    "comma-and named optional attachment",
+  );
+  assertSemanticPass(
+    requestFieldSemanticResult({
+      source: "Require Amount, and optional Notes field.",
+      anchorQuote: "Amount",
+      label: "Amount",
+      requiredQuote: "Require",
+    }),
+    "comma-and named optional field",
+  );
+});
+
+test("distributed English quantifiers distinguish anaphors from complete nominal subjects", () => {
+  for (const [value, label, kind] of [
+    ["; either may be omitted.", "invoice PDF", "attachment"],
+    ["; either one may be omitted.", "invoice PDF", "attachment"],
+    ["; either of them may be omitted.", "invoice PDF", "attachment"],
+    ["; any one may be omitted.", "invoice PDF", "attachment"],
+    ["; any one of them may be omitted.", "invoice PDF", "attachment"],
+    ["; one or more may be omitted.", "invoice PDF", "attachment"],
+    ["; one or more of them may be omitted.", "invoice PDF", "attachment"],
+    ["; Each of these attachments may be omitted.", "invoice PDF", "attachment"],
+    ["; Each one of these attachments may be omitted.", "invoice PDF", "attachment"],
+    ["; All of those documents may be omitted.", "invoice PDF", "attachment"],
+    ["; All three of these attachments may be omitted.", "invoice PDF", "attachment"],
+    ["; Any one of these attachments may be omitted.", "invoice PDF", "attachment"],
+    ["; Any of the attachments may be omitted.", "invoice PDF", "attachment"],
+    ["; Every one of these attachments may be omitted.", "invoice PDF", "attachment"],
+    ["; Every one of the attachments may be omitted.", "invoice PDF", "attachment"],
+    ["; Any required attachment may be omitted.", "invoice PDF", "attachment"],
+    ["; Every mandatory document may be omitted.", "invoice PDF", "attachment"],
+    ["; Every governed attachment may be omitted.", "invoice PDF", "attachment"],
+    ["; Any unidentified document may be omitted.", "invoice PDF", "attachment"],
+    ["; each may, however, be omitted.", "invoice PDF", "attachment"],
+    ["; each may (however) be omitted.", "invoice PDF", "attachment"],
+    ["; each may, in fact, be omitted.", "invoice PDF", "attachment"],
+    ["; each is, clearly, optional.", "invoice PDF", "attachment"],
+    ["; each is (explicitly) optional.", "invoice PDF", "attachment"],
+    ["; either may be left blank.", "Amount", "request_field"],
+    ["; any one may be left blank.", "Amount", "request_field"],
+    ["; one or more may be left blank.", "Amount", "request_field"],
+    ["; Each of these fields may be left blank.", "Amount", "request_field"],
+    ["; Any one of those fields may be left blank.", "Amount", "request_field"],
+    ["; Any of the fields may be left blank.", "Amount", "request_field"],
+    ["; Every one of these fields may be left blank.", "Amount", "request_field"],
+    ["; Any required field may be left blank.", "Amount", "request_field"],
+    ["; Every governed field may be left blank.", "Amount", "request_field"],
+    ["; Any unidentified input may be left blank.", "Amount", "request_field"],
+    ["; each may, however, be left blank.", "Amount", "request_field"],
+    ["; each may, in fact, be left blank.", "Amount", "request_field"],
+    ["; each is, clearly, optional.", "Amount", "request_field"],
+    ["; each is (explicitly) optional.", "Amount", "request_field"],
+    ["; Each invoice PDF may be omitted.", "invoice PDF", "attachment"],
+    ["; Every invoice PDF may be omitted.", "invoice PDF", "attachment"],
+    ["; Each attachment may be omitted.", "invoice PDF", "attachment"],
+    ["; Any attachment may be omitted.", "invoice PDF", "attachment"],
+    ["; Each Amount may be left blank.", "Amount", "request_field"],
+    ["; Every Amount may be left blank.", "Amount", "request_field"],
+    ["; Each field may be left blank.", "Amount", "request_field"],
+    ["; Any field may be left blank.", "Amount", "request_field"],
+    [
+      "; Every unrelated invoice PDF in place of the required attachment may be omitted.",
+      "invoice PDF",
+      "attachment",
+    ],
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        value,
+        label,
+        kind,
+      ),
+      true,
+      value,
+    );
+  }
+
+  for (const modifier of [
+    "authorized",
+    "verified",
+    "selected",
+    "configured",
+    "validated",
+    "screened",
+    "reviewed",
+    "certified",
+    "flagged",
+    "primary",
+    "secondary",
+    "opaque",
+    "newly approved",
+    "currently required",
+    "provisionally selected",
+    "externally validated",
+    "system-generated",
+    "policy governed",
+  ]) {
+    const attachmentTail = `; Every ${modifier} attachment may be omitted.`;
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        attachmentTail,
+        "invoice PDF",
+        "attachment",
+      ),
+      true,
+      attachmentTail,
+    );
+    const attachmentSource =
+      `Require invoice PDF; Every ${modifier} attachment may be omitted.`;
+    for (const anchorQuote of ["invoice PDF", "Require invoice PDF"]) {
+      assertGovernedHold(
+        attachmentSemanticResult({
+          source: attachmentSource,
+          anchorQuote,
+          label: "invoice PDF",
+          requiredQuote: "Require",
+        }),
+        `${attachmentSource} @ ${anchorQuote}`,
+      );
+    }
+
+    const fieldTail = `; Every ${modifier} field may be left blank.`;
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        fieldTail,
+        "Amount",
+        "request_field",
+      ),
+      true,
+      fieldTail,
+    );
+    const fieldSource =
+      `Require Amount; Every ${modifier} field may be left blank.`;
+    for (const anchorQuote of ["Amount", "Require Amount"]) {
+      assertGovernedHold(
+        requestFieldSemanticResult({
+          source: fieldSource,
+          anchorQuote,
+          label: "Amount",
+          requiredQuote: "Require",
+        }),
+        `${fieldSource} @ ${anchorQuote}`,
+      );
+    }
+  }
+
+  for (const [value, label, kind] of [
+    ["; either remains required.", "invoice PDF", "attachment"],
+    ["; any one remains required.", "invoice PDF", "attachment"],
+    ["; one or more remain required.", "invoice PDF", "attachment"],
+    ["; Each unrelated attachment may be omitted.", "invoice PDF", "attachment"],
+    ["; Any optional Excel file may be omitted.", "invoice PDF", "attachment"],
+    ["; Every authorized reference document may be omitted.", "invoice PDF", "attachment"],
+    ["; Any newly approved purchase order document may be omitted.", "invoice PDF", "attachment"],
+    ["; Any optional Reference field may be left blank.", "Amount", "request_field"],
+    ["; Every configured Comments field may be left blank.", "Amount", "request_field"],
+    ["; each is, clearly, required.", "invoice PDF", "attachment"],
+    ["; each is (explicitly) audited.", "invoice PDF", "attachment"],
+    ["; each may, in fact, remain required.", "Amount", "request_field"],
+    ["; Any optional purchase order spreadsheet may be omitted.", "invoice PDF", "attachment"],
+    ["; Any required purchase order spreadsheet may be omitted.", "invoice PDF", "attachment"],
+    ["; Each unrelated required attachment may be omitted.", "invoice PDF", "attachment"],
+    ["; Every governed Excel schedule may be omitted.", "invoice PDF", "attachment"],
+    ["; Every attachment remains required.", "invoice PDF", "attachment"],
+    ["; Any day may elapse.", "invoice PDF", "attachment"],
+    ["; Every day may elapse.", "invoice PDF", "attachment"],
+    ["; each may, however, remain required.", "invoice PDF", "attachment"],
+    ["; each may (however) be audited.", "invoice PDF", "attachment"],
+    ["; Every optional Excel schedule is audited.", "invoice PDF", "attachment"],
+    ["; Any optional Excel schedule may be omitted.", "invoice PDF", "attachment"],
+    ["; Every optional Notes field is audited.", "Amount", "request_field"],
+    ["; Any optional Notes field may be left blank.", "Amount", "request_field"],
+    ["; Each unrelated invoice PDF may be omitted.", "invoice PDF", "attachment"],
+    ["; Every unrelated invoice PDF may be omitted.", "invoice PDF", "attachment"],
+    ["; either Finance or Legal may approve.", "invoice PDF", "attachment"],
+    ["; one or more days may elapse.", "invoice PDF", "attachment"],
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        value,
+        label,
+        kind,
+      ),
+      false,
+      value,
+    );
+  }
+
+  for (const tail of [
+    "either may be omitted",
+    "either one may be omitted",
+    "either of them may be omitted",
+    "any one may be omitted",
+    "any one of them may be omitted",
+    "one or more may be omitted",
+    "one or more of them may be omitted",
+  ]) {
+    const source = `Require invoice PDF; ${tail}.`;
+    const result = attachmentSemanticResult({
+      source,
+      anchorQuote: "invoice PDF",
+      label: "invoice PDF",
+      requiredQuote: "Require",
+    });
+    assertGovernedHold(result, source);
+  }
+  for (const tail of [
+    "either may be left blank",
+    "any one may be left blank",
+    "one or more may be left blank",
+  ]) {
+    const source = `Require Amount; ${tail}.`;
+    const result = requestFieldSemanticResult({
+      source,
+      anchorQuote: "Amount",
+      label: "Amount",
+      requiredQuote: "Require",
+    });
+    assertGovernedHold(result, source);
+  }
+
+  for (const quantifier of ["Each", "Every", "Any"]) {
+    for (const predicate of ["is audited", "may be omitted"]) {
+      const source =
+        `Require invoice PDF; audited. ${quantifier} optional Excel schedule ${predicate}.`;
+      assertSemanticPass(
+        attachmentSemanticResult({
+          source,
+          anchorQuote: "invoice PDF",
+          label: "invoice PDF",
+          requiredQuote: "Require",
+        }),
+        source,
+      );
+    }
+    for (const predicate of ["is audited", "may be left blank"]) {
+      const source =
+        `Require Amount; audited. ${quantifier} optional Notes field ${predicate}.`;
+      assertSemanticPass(
+        requestFieldSemanticResult({
+          source,
+          anchorQuote: "Amount",
+          label: "Amount",
+          requiredQuote: "Require",
+        }),
+        source,
+      );
+    }
+  }
+
+  for (const source of [
+    "Require invoice PDF; Each of these attachments may be omitted.",
+    "Require invoice PDF; Each one of these attachments may be omitted.",
+    "Require invoice PDF; All of those documents may be omitted.",
+    "Require invoice PDF; All three of these attachments may be omitted.",
+    "Require invoice PDF; Any one of these attachments may be omitted.",
+    "Require invoice PDF; Any of the attachments may be omitted.",
+    "Require invoice PDF; Every one of these attachments may be omitted.",
+    "Require invoice PDF; Every one of the attachments may be omitted.",
+    "Require invoice PDF; Any required attachment may be omitted.",
+    "Require invoice PDF; Every mandatory document may be omitted.",
+    "Require invoice PDF; Every governed attachment may be omitted.",
+    "Require invoice PDF; Any unidentified document may be omitted.",
+    "Require invoice PDF; each may, however, be omitted.",
+    "Require invoice PDF; each may (however) be omitted.",
+    "Require invoice PDF; each may, in fact, be omitted.",
+    "Require invoice PDF; each is, clearly, optional.",
+    "Require invoice PDF; each is (explicitly) optional.",
+    "Require invoice PDF; Each invoice PDF may be omitted.",
+    "Require invoice PDF; Every invoice PDF may be omitted.",
+    "Require invoice PDF; Any invoice PDF may be omitted.",
+    "Require invoice PDF; Each attachment may be omitted.",
+    "Require invoice PDF; Every attachment may be omitted.",
+    "Require invoice PDF; Any attachment may be omitted.",
+    "Require invoice PDF; Every unrelated invoice PDF in place of the required attachment may be omitted.",
+  ]) {
+    const result = attachmentSemanticResult({
+      source,
+      anchorQuote: source.includes("unrelated invoice PDF")
+        ? "Require invoice PDF"
+        : "invoice PDF",
+      label: "invoice PDF",
+      requiredQuote: "Require",
+    });
+    assertGovernedHold(result, source);
+  }
+  for (const source of [
+    "Require Amount; Each of these fields may be left blank.",
+    "Require Amount; Any one of those fields may be left blank.",
+    "Require Amount; Any of the fields may be left blank.",
+    "Require Amount; Every one of these fields may be left blank.",
+    "Require Amount; Any required field may be left blank.",
+    "Require Amount; Every governed field may be left blank.",
+    "Require Amount; Any unidentified input may be left blank.",
+    "Require Amount; each may, however, be left blank.",
+    "Require Amount; each may, in fact, be left blank.",
+    "Require Amount; each is, clearly, optional.",
+    "Require Amount; each is (explicitly) optional.",
+    "Require Amount; Each Amount may be left blank.",
+    "Require Amount; Every Amount may be left blank.",
+    "Require Amount; Any Amount may be left blank.",
+    "Require Amount; Each field may be left blank.",
+    "Require Amount; Every field may be left blank.",
+    "Require Amount; Any field may be left blank.",
+  ]) {
+    const result = requestFieldSemanticResult({
+      source,
+      anchorQuote: "Amount",
+      label: "Amount",
+      requiredQuote: "Require",
+    });
+    assertGovernedHold(result, source);
+  }
+
+  for (const source of [
+    "Require invoice PDF; Each unrelated attachment may be omitted.",
+    "Require invoice PDF; Any optional Excel file may be omitted.",
+    "Require invoice PDF; Every authorized reference document may be omitted.",
+    "Require invoice PDF; Any newly approved purchase order document may be omitted.",
+    "Require invoice PDF; each is, clearly, required.",
+    "Require invoice PDF; each is (explicitly) audited.",
+    "Require invoice PDF; Any optional purchase order spreadsheet may be omitted.",
+    "Require invoice PDF; Any required purchase order spreadsheet may be omitted.",
+    "Require invoice PDF; Each unrelated required attachment may be omitted.",
+    "Require invoice PDF; Every governed Excel schedule may be omitted.",
+    "Require invoice PDF; Any day may elapse.",
+    "Require invoice PDF; Every day may elapse.",
+    "Require invoice PDF; each may, however, remain required.",
+    "Require invoice PDF; each may (however) be audited.",
+    "Require invoice PDF; Each unrelated invoice PDF may be omitted.",
+    "Require invoice PDF; Every unrelated invoice PDF may be omitted.",
+    "Require invoice PDF; Any optional Excel schedule may be omitted.",
+    "Require invoice PDF; either Finance or Legal may approve.",
+    "Require invoice PDF; one or more days may elapse.",
+    "Require invoice PDF; Every attachment remains required.",
+  ]) {
+    assertSemanticPass(
+      attachmentSemanticResult({
+        source,
+        anchorQuote: source.includes("unrelated invoice PDF")
+          ? "Require invoice PDF"
+          : "invoice PDF",
+        label: "invoice PDF",
+        requiredQuote: "Require",
+      }),
+      source,
+    );
+  }
+  for (const source of [
+    "Require Amount; Any unidentified Notes field may be left blank.",
+    "Require Amount; Every governed Comments field may be left blank.",
+    "Require Amount; Any optional Reference field may be left blank.",
+    "Require Amount; Every configured Comments field may be left blank.",
+    "Require Amount; each may, however, remain required.",
+    "Require Amount; each may, in fact, remain required.",
+    "Require Amount; Every optional Notes field may be left blank.",
+    "Require Amount; Any optional Notes field is audited.",
+    "Require Amount; Any field remains required.",
+  ]) {
+    assertSemanticPass(
+      requestFieldSemanticResult({
+        source,
+        anchorQuote: "Amount",
+        label: "Amount",
+        requiredQuote: "Require",
+      }),
+      source,
+    );
+  }
+
+  const structurallyAmbiguousHolds = [
+    {
+      source:
+        "Require invoice PDF; Every required attachment under policy may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require invoice PDF; Every currently required attachment in this workflow may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require invoice PDF; Every required attachment that Finance reviews may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require Amount; Any configured field for Finance may be left blank.",
+      label: "Amount",
+      kind: "request_field",
+      anchorQuote: "Amount",
+    },
+    {
+      source:
+        "Require invoice PDF; Every high priority attachment may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source: "Require Amount; Any low risk field may be left blank.",
+      label: "Amount",
+      kind: "request_field",
+      anchorQuote: "Amount",
+    },
+    {
+      source:
+        "Require invoice PDF; Every one-page attachment may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require invoice PDF; Every Chartreuse attachment may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require invoice PDF; Every average attachment may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require invoice PDF; Every high quality attachment may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require invoice PDF; Every unknown status document may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require Amount; Any standard priority field may be left blank.",
+      label: "Amount",
+      kind: "request_field",
+      anchorQuote: "Amount",
+    },
+    {
+      source:
+        "Require Amount; Any low quality field may be left blank.",
+      label: "Amount",
+      kind: "request_field",
+      anchorQuote: "Amount",
+    },
+    {
+      source:
+        "Require invoice PDF; Every high-quality supporting attachment may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require Amount; Any low-quality supplemental field may be left blank.",
+      label: "Amount",
+      kind: "request_field",
+      anchorQuote: "Amount",
+    },
+    {
+      source:
+        "Require invoice PDF; Every 2-page attachment under policy may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require invoice PDF; Every 2 attachments under policy may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require invoice PDF; Any 2 attachments in this workflow may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require Amount; Any 2 fields for Finance may be left blank.",
+      label: "Amount",
+      kind: "request_field",
+      anchorQuote: "Amount",
+    },
+    {
+      source:
+        "Require invoice PDF; Every 2-page attachment in place of the required attachment may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require invoice PDF; Every 2-page invoice PDF attachment may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "Require invoice PDF",
+    },
+    {
+      source:
+        "Require invoice PDF; Invoice PDF for interns may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "Require invoice PDF",
+    },
+    {
+      source:
+        "Require Amount; Amount for contractors may be left blank.",
+      label: "Amount",
+      kind: "request_field",
+      anchorQuote: "Require Amount",
+    },
+    {
+      source:
+        "Require invoice PDF; Every Reference document in place of the required attachment may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+      anchorQuote: "invoice PDF",
+    },
+    {
+      source:
+        "Require Amount; Any Cost center field to replace Amount may be left blank.",
+      label: "Amount",
+      kind: "request_field",
+      anchorQuote: "Require Amount",
+    },
+    {
+      source:
+        "Require purchase order PDF; Every governed purchase order PDF document may be omitted.",
+      label: "purchase order PDF",
+      kind: "attachment",
+      anchorQuote: "Require purchase order PDF",
+    },
+    {
+      source:
+        "Require Comments; Every governed Comments field may be left blank.",
+      label: "Comments",
+      kind: "request_field",
+      anchorQuote: "Require Comments",
+    },
+  ];
+  for (
+    const { source, label, kind, anchorQuote } of structurallyAmbiguousHolds
+  ) {
+    const continuation = source.slice(source.indexOf(";"));
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        continuation,
+        label,
+        kind,
+      ),
+      true,
+      continuation,
+    );
+    const result = kind === "attachment"
+      ? attachmentSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        requiredQuote: "Require",
+      })
+      : requestFieldSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        requiredQuote: "Require",
+      });
+    assertGovernedHold(result, source);
+  }
+
+  for (const [tail, label, kind] of [
+    ["Average attachment may be omitted", "invoice PDF", "attachment"],
+    ["High quality attachment may be omitted", "invoice PDF", "attachment"],
+    ["Unknown status document may be omitted", "invoice PDF", "attachment"],
+    ["Standard priority attachment may be omitted", "invoice PDF", "attachment"],
+    ["Low quality file may be omitted", "invoice PDF", "attachment"],
+    ["AVERAGE ATTACHMENT may be omitted", "invoice PDF", "attachment"],
+    ["Average field may be left blank", "Amount", "request_field"],
+    ["High quality input may be left blank", "Amount", "request_field"],
+    ["Unknown status field may be left blank", "Amount", "request_field"],
+    ["Standard priority field may be waived", "Amount", "request_field"],
+    ["Low quality field may be left blank", "Amount", "request_field"],
+    ["2-page attachment under policy may be omitted", "invoice PDF", "attachment"],
+    ["2 fields for Finance may be left blank", "Amount", "request_field"],
+    ["High-quality supporting attachment may be omitted", "invoice PDF", "attachment"],
+    ["Low-quality supplemental field may be left blank", "Amount", "request_field"],
+    ["Every VAT-2 document may replace the required attachment and be omitted", "invoice PDF", "attachment"],
+    ["Every VAT-2 document may replace it and be omitted", "invoice PDF", "attachment"],
+    ["Every VAT-2 document may substitute for the required attachment and be omitted", "invoice PDF", "attachment"],
+    ["Every VAT-2 document may supersede the required attachment and be omitted", "invoice PDF", "attachment"],
+    ["Every VAT-2 document can serve as a replacement for the required attachment and may be omitted", "invoice PDF", "attachment"],
+    ["VAT-2 document may replace the required attachment and be omitted", "invoice PDF", "attachment"],
+  ]) {
+    const source = `Require ${label}; ${tail}.`;
+    const continuation = source.slice(source.indexOf(";"));
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        continuation,
+        label,
+        kind,
+      ),
+      true,
+      continuation,
+    );
+    const result = kind === "attachment"
+      ? attachmentSemanticResult({
+        source,
+        anchorQuote: label,
+        label,
+        requiredQuote: "Require",
+      })
+      : requestFieldSemanticResult({
+        source,
+        anchorQuote: label,
+        label,
+        requiredQuote: "Require",
+      });
+    assertGovernedHold(result, source);
+  }
+
+  for (const { source, label, kind } of [
+    {
+      source:
+        "Require invoice PDF. Invoice PDF for interns may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+    },
+    {
+      source:
+        "Require Amount. Amount for contractors may be left blank.",
+      label: "Amount",
+      kind: "request_field",
+    },
+    {
+      source:
+        "Require invoice PDF. Average attachment may be omitted!",
+      label: "invoice PDF",
+      kind: "attachment",
+    },
+    {
+      source:
+        "Require invoice PDF. AVERAGE ATTACHMENT may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+    },
+    {
+      source:
+        "Require Amount. Standard Priority Field may be waived.",
+      label: "Amount",
+      kind: "request_field",
+    },
+    {
+      source:
+        "Require invoice PDF. 2-page attachment under policy may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+    },
+    {
+      source:
+        "Require Amount. Low-quality supplemental field may be left blank.",
+      label: "Amount",
+      kind: "request_field",
+    },
+  ]) {
+    const continuation = source.slice(source.indexOf("."));
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        continuation,
+        label,
+        kind,
+      ),
+      true,
+      continuation,
+    );
+    const anchorQuote = `Require ${label}`;
+    const result = kind === "attachment"
+      ? attachmentSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        requiredQuote: "Require",
+      })
+      : requestFieldSemanticResult({
+        source,
+        anchorQuote,
+        label,
+        requiredQuote: "Require",
+      });
+    assertGovernedHold(result, source);
+  }
+
+  for (const { source, continuation, label, kind } of [
+    {
+      source:
+        "Require invoice PDF — High-priority attachment may be omitted.",
+      continuation: " — High-priority attachment may be omitted.",
+      label: "invoice PDF",
+      kind: "attachment",
+    },
+    {
+      source:
+        "Require Amount — Standard-priority field may be left blank.",
+      continuation: " — Standard-priority field may be left blank.",
+      label: "Amount",
+      kind: "request_field",
+    },
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        continuation,
+        label,
+        kind,
+      ),
+      true,
+      continuation,
+    );
+    const result = kind === "attachment"
+      ? attachmentSemanticResult({
+        source,
+        anchorQuote: label,
+        label,
+        requiredQuote: "Require",
+      })
+      : requestFieldSemanticResult({
+        source,
+        anchorQuote: label,
+        label,
+        requiredQuote: "Require",
+      });
+    assertGovernedHold(result, source);
+  }
+
+  const structurallyNamedSiblingPasses = [
+    "Every Bank confirmation document may be omitted.",
+    "Each Insurance policy document may be omitted.",
+    "Any Budget narrative document may be omitted.",
+    "Every Supporting evidence file may be omitted.",
+    "Each Risk assessment form may be omitted.",
+    "Every Board minutes document may be omitted.",
+    "Any Annual report document may be omitted.",
+    "Every one-way delivery document may be omitted.",
+    "Every one-page summary document may be omitted.",
+    "Any all-purpose supporting document may be omitted.",
+    "Every authorized Reference document under policy may be omitted.",
+    "Any newly approved Purchase order document in this workflow may be omitted.",
+    "Every one-page Excel schedule may be omitted.",
+    "Every invoice-redline document may be omitted.",
+    "Every VAT-2 document may be omitted.",
+    "Every unrelated 2-page attachment may be omitted.",
+    "Bank confirmation document may be omitted.",
+    "Invoice-redline document may be omitted.",
+    "VAT-2 document may be omitted.",
+    "Vendor onboarding document may be omitted.",
+    "Contract intake document may be omitted.",
+    "Due diligence document may be omitted.",
+    "Vendor registration document may be omitted.",
+    "Any authorized attachment is audited.",
+  ];
+  for (const tail of structurallyNamedSiblingPasses) {
+    const source = `Require invoice PDF; ${tail}`;
+    const continuation = source.slice(source.indexOf(";"));
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        continuation,
+        "invoice PDF",
+        "attachment",
+      ),
+      false,
+      continuation,
+    );
+    assertSemanticPass(
+      attachmentSemanticResult({
+        source,
+        anchorQuote: "invoice PDF",
+        label: "invoice PDF",
+        requiredQuote: "Require",
+      }),
+      source,
+    );
+  }
+
+  for (const tail of [
+    "Every governed Cost center field may be left blank.",
+    "Each Business unit field may be left blank.",
+    "Any Employee ID field may be left blank.",
+    "Every Tax jurisdiction field may be left blank.",
+    "Each Legal entity field may be left blank.",
+    "Any Vendor category field may be left blank.",
+    "Every Budget owner field may be left blank.",
+    "Any one-time password field may be left blank.",
+    "Every configured Comments field for Finance may be left blank.",
+    "Each one-way Notes field may be left blank.",
+    "Any VAT-2 field may be left blank.",
+    "VAT-2 field may be left blank.",
+    "Cost center field may be left blank.",
+    "Every configured field remains required.",
+  ]) {
+    const source = `Require Amount; ${tail}`;
+    const continuation = source.slice(source.indexOf(";"));
+    assert.equal(
+      templateCopilotV3RequirementAuthorityContinuationIsQualified(
+        continuation,
+        "Amount",
+        "request_field",
+      ),
+      false,
+      continuation,
+    );
+    assertSemanticPass(
+      requestFieldSemanticResult({
+        source,
+        anchorQuote: "Amount",
+        label: "Amount",
+        requiredQuote: "Require",
+      }),
+      source,
+    );
+  }});
+test("marker-before optional targets cannot inherit a required marker", () => {
+  for (const [value, label, kind] of [
+    [" an optional invoice PDF", "invoice PDF", "attachment"],
+    [" optional invoice PDF", "invoice PDF", "attachment"],
+    [" invoice PDF as an optional attachment", "invoice PDF", "attachment"],
+    [" invoice PDF, optional", "invoice PDF", "attachment"],
+    [" an optional Amount field", "Amount", "request_field"],
+    [" Amount as an optional field", "Amount", "request_field"],
+    ["一份選填的身份 PDF", "身份 PDF", "attachment"],
+    ["選填身份 PDF", "身份 PDF", "attachment"],
+    ["選填金額", "金額", "request_field"],
+    ["一個選填金額欄位", "金額", "request_field"],
+  ]) {
+    assert.equal(
+      templateCopilotV3RequirementSameHardTailIsQualified(
+        value,
+        label,
+        kind,
+        "marker_before_subject",
+      ),
+      true,
+      value,
+    );
+  }
+  assert.equal(
+    templateCopilotV3RequirementSameHardTailIsQualified(
+      " one invoice PDF, one purchase order PDF",
+      "invoice PDF",
+      "attachment",
+      "marker_before_subject",
+    ),
+    false,
+  );
+  assertSemanticPass(
+    attachmentSemanticResult({
+      source: "Require one invoice PDF, one purchase order PDF.",
+      anchorQuote: "invoice PDF",
+      label: "invoice PDF",
+      requiredQuote: "Require",
+    }),
+    "affirmative marker-before attachment list",
+  );
+
+
+  for (const source of [
+    "Require an optional invoice PDF.",
+    "Require optional invoice PDF.",
+    "Require invoice PDF as an optional attachment.",
+    "Require invoice PDF, optional.",
+  ]) {
+    assertGovernedHold(
+      attachmentSemanticResult({
+        source,
+        anchorQuote: "invoice PDF",
+        label: "invoice PDF",
+        requiredQuote: "Require",
+      }),
+      source,
+    );
+  }
+  for (const source of [
+    "Require an optional Amount field.",
+    "Require optional Amount.",
+    "Require Amount as an optional field.",
+    "Require Amount, optional.",
+  ]) {
+    assertGovernedHold(
+      requestFieldSemanticResult({
+        source,
+        anchorQuote: "Amount",
+        label: "Amount",
+        requiredQuote: "Require",
+      }),
+      source,
+    );
+  }
+  for (const { source, label, requiredQuote, kind } of [
+    {
+      source: "必須上載一份選填的身份 PDF。",
+      label: "身份 PDF",
+      requiredQuote: "必須",
+      kind: "attachment",
+    },
+    {
+      source: "必须上传选填身份 PDF。",
+      label: "身份 PDF",
+      requiredQuote: "必须",
+      kind: "attachment",
+    },
+    {
+      source: "必填選填金額。",
+      label: "金額",
+      requiredQuote: "必填",
+      kind: "request_field",
+    },
+    {
+      source: "必填一个选填金额字段。",
+      label: "金额",
+      requiredQuote: "必填",
+      kind: "request_field",
+    },
+  ]) {
+    const result = kind === "attachment"
+      ? attachmentSemanticResult({
+        source,
+        anchorQuote: label,
+        label,
+        requiredQuote,
+      })
+      : requestFieldSemanticResult({
+        source,
+        anchorQuote: label,
+        label,
+        requiredQuote,
+      });
+    assertGovernedHold(result, source);
+  }
+});
+
+test("postnominal target qualifiers and named optional siblings remain entity-local", () => {
+  for (const source of [
+    "Require invoice PDF, which is optional.",
+    "Require invoice PDF, which is not required.",
+    "Require invoice PDF, which may be left out.",
+    "Require invoice PDF, an optional attachment.",
+  ]) {
+    const result = attachmentSemanticResult({
+      source,
+      anchorQuote: "invoice PDF",
+      label: "invoice PDF",
+      requiredQuote: "Require",
+    });
+    assert.deepEqual(result.located.rejected, [], source);
+    assertGovernedHold(result, source);
+  }
+  for (const source of [
+    "Require Amount, which is optional.",
+    "Require Amount, which is not required.",
+    "Require Amount, which need not be provided.",
+    "Require Amount, an optional field.",
+  ]) {
+    const result = requestFieldSemanticResult({
+      source,
+      anchorQuote: "Amount",
+      label: "Amount",
+      requiredQuote: "Require",
+    });
+    assert.deepEqual(result.located.rejected, [], source);
+    assertGovernedHold(result, source);
+  }
+  for (const { source, anchorQuote } of [
+    {
+      source: "Require invoice PDF, optional purchase order spreadsheet.",
+      anchorQuote: "Require invoice PDF, optional purchase order spreadsheet",
+    },
+    {
+      source: "Require invoice PDF and optional purchase order spreadsheet.",
+      anchorQuote: "Require invoice PDF and optional purchase order spreadsheet",
+    },
+  ]) {
+    for (const providerAnchor of ["invoice PDF", anchorQuote]) {
+      assertSemanticPass(
+        attachmentSemanticResult({
+          source,
+          anchorQuote: providerAnchor,
+          label: "invoice PDF",
+          requiredQuote: "Require",
+        }),
+        `${source} :: ${providerAnchor}`,
+      );
+    }
+  }
+  for (const { source, anchorQuote } of [
+    {
+      source: "Require Amount, optional Notes field.",
+      anchorQuote: "Require Amount, optional Notes field",
+    },
+    {
+      source: "Require Amount and optional Notes field.",
+      anchorQuote: "Require Amount and optional Notes field",
+    },
+  ]) {
+    for (const providerAnchor of ["Amount", anchorQuote]) {
+      assertSemanticPass(
+        requestFieldSemanticResult({
+          source,
+          anchorQuote: providerAnchor,
+          label: "Amount",
+          requiredQuote: "Require",
+        }),
+        `${source} :: ${providerAnchor}`,
+      );
+    }
+  }
+});
+
+test("immediate optional imperatives preserve target identity", () => {
+  for (const source of [
+    "Require invoice PDF; Allow an optional invoice PDF.",
+    "Require invoice PDF; Allow an optional copy of the invoice PDF.",
+    "Require invoice PDF; Allow an optional attachment.",
+  ]) {
+    const result = attachmentSemanticResult({
+      source,
+      anchorQuote: "Require invoice PDF",
+      label: "invoice PDF",
+      requiredQuote: "Require",
+    });
+    assert.deepEqual(result.located.rejected, [], source);
+    assertGovernedHold(result, source);
+  }
+  for (const source of [
+    "Require Amount; Add an optional Amount field.",
+    "Require Amount; Add an optional copy of the Amount field.",
+    "Require Amount; Add an optional field.",
+  ]) {
+    const result = requestFieldSemanticResult({
+      source,
+      anchorQuote: "Require Amount",
+      label: "Amount",
+      requiredQuote: "Require",
+    });
+    assert.deepEqual(result.located.rejected, [], source);
+    assertGovernedHold(result, source);
+  }
+  assertSemanticPass(
+    attachmentSemanticResult({
+      source: "Require invoice PDF; Allow an optional redline PDF.",
+      anchorQuote: "Require invoice PDF",
+      label: "invoice PDF",
+      requiredQuote: "Require",
+    }),
+    "immediate distinct optional attachment",
+  );
+  assertSemanticPass(
+    requestFieldSemanticResult({
+      source: "Require Amount; Add an optional Notes field.",
+      anchorQuote: "Require Amount",
+      label: "Amount",
+      requiredQuote: "Require",
+    }),
+    "immediate distinct optional field",
+  );
+  assertSemanticPass(
+    attachmentSemanticResult({
+      source: "Require invoice PDF, which is audited.",
+      anchorQuote: "invoice PDF",
+      label: "invoice PDF",
+      requiredQuote: "Require",
+    }),
+    "benign relative attachment fact",
+  );
+  assertSemanticPass(
+    requestFieldSemanticResult({
+      source: "Require Amount, which is audited.",
+      anchorQuote: "Amount",
+      label: "Amount",
+      requiredQuote: "Require",
+    }),
+    "benign relative field fact",
+  );
+});
+
+test("optional imperative siblings stay entity-local while substitutions and explicit target qualifiers hold", () => {
+  for (const source of [
+    "Require invoice PDF; audited. Also allow an optional Excel schedule.",
+    "Require invoice PDF; audited. Then include an optional redline PDF.",
+    "Require invoice PDF; audited. Please also allow an optional Excel schedule.",
+    "Require invoice PDF; audited. We allow an optional Excel schedule.",
+    "Require invoice PDF; audited. Users may add an optional Excel schedule.",
+  ]) {
+    assertSemanticPass(
+      attachmentSemanticResult({
+        source,
+        anchorQuote: "invoice PDF",
+        label: "invoice PDF",
+        requiredQuote: "Require",
+      }),
+      source,
+    );
+  }
+  for (const source of [
+    "Require invoice PDF; audited. Allow an optional redline PDF to replace it.",
+    "Require invoice PDF; audited. Allow an optional redline PDF in lieu of the required attachment.",
+    "Require invoice PDF; audited. Allow an optional redline PDF in place of the required attachment.",
+    "Require invoice PDF. Invoice PDF, clearly optional.",
+    "Require invoice PDF. Invoice PDF, explicitly optional.",
+    "Require invoice PDF. Invoice PDF, demonstrably not required.",
+  ]) {
+    assertGovernedHold(
+      attachmentSemanticResult({
+        source,
+        anchorQuote: "invoice PDF",
+        label: "invoice PDF",
+        requiredQuote: "Require",
+      }),
+      source,
+    );
+  }
 });
 
 test("long comma-delimited authority context completes without changing the target", () => {
