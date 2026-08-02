@@ -10,7 +10,7 @@ import {
 } from "./template-copilot-v3-provider-quotes.ts";
 
 export const templateCopilotV3ProviderPromptVersion =
-  "template-copilot-v3-provider-quotes-27" as const;
+  "template-copilot-v3-provider-quotes-28" as const;
 
 const localeInstruction = Object.freeze({
   en: "Preserve the source language and orthography exactly.",
@@ -35,11 +35,11 @@ const batchInstructions = Object.freeze({
     "In a closed Chinese two-branch or three-branch threshold chain, a later matching-only item may carry the first branch's field but must quote its branch's exact operator and value. A third branch must continue with 再由, 再經, or 再经.",
   ],
   intake_documents: [
-    "Extract only intake and document evidence: initiators, request fields, attachments, and native forms. Preserve every separately named entity and rule.",
+    "Extract only intake/document evidence. Enumerate every named request field, attachment, and form in comma or conjunction lists: one item per entity; never merge, stop early, or use [] while any complete exact core exists.",
     "Set initiator once for all initiators_fields text, not per person, role, or clause; then fill request_field and attachment arrays.",
-    "Complete core per entity (all roles in ONE item): request_field=label+required;attachment=label+kind+required. Omit an entity whose core cannot be quoted exactly; add optional roles only when sourced.",
-    "When one exact shared required marker precedes named fields in the same local clause, emit each field separately and repeat that marker as its required leaf. Never use a marker after the list, merge fields, or cross an optional, conditional, adversative, sentence, or semicolon boundary.",
-    "request_field.required and attachment.required may occur once elsewhere in that local clause. attachment.kind may occur outside item.quote only when its exact marker immediately precedes the entity label with no intervening text. These are the only local-recovery exceptions; every other leaf must remain inside item.quote.",
+    "Exact core/item: request_field=label+required;attachment=label+kind+required (kind=form for forms). Omit only when that entity's exact core is unavailable; optional roles require exact source.",
+    "One exact shared required marker may be repeated for separately named entities only when it governs them in the same authorized local clause. Never use a trailing marker or cross optional, conditional, adversative, sentence, or semicolon boundaries.",
+    "attachment.kind may be outside item.quote only when its exact marker immediately precedes the label with no text; every other leaf remains inside item.quote.",
     "Entity-local format anchors contain attachment label and one local format such as PDF; never format-only or multi-entity.",
     "Required hints are kind-specific: request_field.required uses only true or false; attachment.required may also use its listed conditional modes. Never apply an attachment required hint to a request field.",
     "For a conditional attachment quantity, use conditional_quantity_increment for the exact added quantity. Never encode it as maximum_quantity or infer a total.",
@@ -59,7 +59,7 @@ const batchInstructions = Object.freeze({
     "Form one stage union across both slots. Prefer stages_participants: when the same named participant+kind pair occurs in both slots, emit it once using stages_participants.",
     "From conditions_exceptions, emit a stage only when a clause explicitly adds, inserts, or includes a named approval, review, submission, or record-update stage and that participant+kind pair does not occur in stages_participants.",
     "Emit one visibility intent. If stages_participants has a stage, document, or field visibility rule, q is its shortest unique exact visibility clause; otherwise q is that clause from visibility_notifications. The server uses q only to select one authorized slot and binds its full text plus rule leaf. Emit no leaves, second slot, non-visibility selector, or inference.",
-    "One stage per named participant+kind; require participant. No extra group, shared action, route, condition, or alias. Repeat only for another explicit kind. Then one visibility intent. Use notification=[] unless stages_participants explicitly says notify/通知 and names both event and recipient; view, see, visibility, approval, and assignment facts are not notifications.",
+    "One stage/named participant+kind; require participant. Use participant_mode only with an explicit exact mode lexeme; never infer it from participant/title/role/group/email or missing assignment. No extra group, shared action, route, condition, or alias; repeat only for an explicit kind. Then one visibility intent. notification=[] unless stages_participants explicitly says notify/通知 and names event+recipient; view/visibility/approval/assignment are not notifications.",
     "Never convert an ordinary route target, final or completion reference, rejection actor, or already-declared participant into another stage. Do not create conditions, threshold routes, or rejection routes in this batch.",
   ],
   routing_conditions: [
@@ -81,7 +81,7 @@ const batchInstructions = Object.freeze({
   policy_context: [
     "Extract context: workflow name, purpose, and scope; collaboration, correction, timing, escalation, notifications, governance, and retention. Do not emit visibility in this batch.",
     "Whole-slot facts are singleton intents, not clause lists. Set each applicable non-notification bucket once: workflow_name, workflow_purpose, workflow_scope, collaboration, timing, governance_owner, governance_policy, and retention. The server binds each full authorized slot and pinned leaf. Use null only when the source truly has no such fact; only notification may repeat.",
-    "Complete core per notification (all roles in ONE item): notification=event+recipient. Omit it if either leaf cannot be quoted exactly. Keep notification events and recipient groups separate.",
+    "notification=event+recipient. Lists: one item per explicitly named event. Repeat one exact shared recipient only when it governs that list in the same local clause; item.quote is an exact source span containing both leaves. Never infer or merge events/recipients; omit an event without exact core.",
     "Preserve explicit conditions and exceptions within their policy item. Do not create structure entities such as request fields, attachments, stages, threshold routes, rejection routes, or inferred workflow mechanics.",
   ],
 } satisfies Readonly<
@@ -114,8 +114,8 @@ export function buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
           "Whole-slot: emit shown fields only; q, if shown, is the shortest unique exact clause selecting one slot. No leaves; the server binds the full slot and leaf.",
         ]
       : []),
-    "Return one semantic entity per item; never merge entities. For non-whole items, choose leaves first. leaf.quote is an exact source lexeme. For role=null, leaf.hint must be JSON null; leaf.quote alone carries evidence, including a permitted recovered leaf. For role=[...], leaf.hint is the listed canonical label proved by leaf.quote (for example, below/< and approves/approval). item.quote must be the shortest unique contiguous exact source span enclosing every non-recovered leaf.quote; add adjacent exact source text until unique, or omit. Copy leaf.quote verbatim; same-local-clause recovery is allowed only where the current batch rule below permits it.",
-    "Never translate, paraphrase, summarize, normalize, correct, transliterate, substitute synonyms, or alter punctuation. " +
+    "Return one semantic entity/item; never merge. Choose non-whole leaves first. Copy item q/item.quote and leaf q/leaf.quote character-for-character from one authorized slot; never construct/normalize/paraphrase/translate/splice them. A hinted leaf's exact quote proves its listed label (for example, below/< and approves/approval); null hint means quote-only evidence. item.quote is the shortest unique exact contiguous span covering non-recovered leaves; widen with adjacent exact text until unique. If an exact core leaf/anchor is unavailable, omit the entity; never fabricate/approximate. Recovery is allowed only by the batch rule below.",
+    "Never correct, transliterate, substitute synonyms, or alter punctuation. " +
       localeInstruction[locale],
     ...(usesRequiredKindBuckets
       ? [
@@ -135,7 +135,7 @@ export function buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
       : []),
     ...(batchKinds.includes("notification")
       ? [
-          "When one exact shared recipient governs a list of notification events in one local clause, emit one notification item per event and repeat that exact shared recipient leaf in every item. Never merge events into one item.",
+          "When one exact shared recipient governs explicitly named notification events in one local clause, emit one item/event, repeat that exact recipient, and use an exact item.quote containing both leaves. Never merge or infer events/recipients.",
         ]
       : []),
     ...batchInstructions[batchId],

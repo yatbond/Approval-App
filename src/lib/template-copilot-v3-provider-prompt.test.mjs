@@ -80,6 +80,12 @@ test("the prompt exposes exactly the closed quote batches", () => {
   assert.match(intake, /batch intake_documents/u);
   assert.match(intake, /request_field=label\+required/u);
   assert.match(intake, /attachment=label\+kind\+required/u);
+  assert.match(intake, /Enumerate every named request field, attachment, and form/u);
+  assert.match(intake, /comma or conjunction lists: one item per entity/u);
+  assert.match(intake, /never merge, stop early, or use \[\]/u);
+  assert.match(intake, /shared required marker may be repeated for separately named entities only when it governs them in the same authorized local clause/u);
+  assert.match(intake, /Never use a trailing marker or cross optional, conditional, adversative, sentence, or semicolon boundaries/u);
+  assert.match(intake, /Omit only when that entity's exact core is unavailable/u);
   assert.doesNotMatch(intake, /condition=field\+operator/u);
   assert.match(routing, /batch routing_execution/u);
   assert.match(routing, /stage=label\+kind/u);
@@ -112,21 +118,20 @@ test("the prompt exposes exactly the closed quote batches", () => {
     routingStages,
     /participant\+kind pair does not occur in stages_participants/u,
   );
-  assert.match(
-    routingStages,
-    /One stage per named participant\+kind/u,
-  );
+  assert.match(routingStages, /One stage\/named participant\+kind/u);
   assert.match(
     routingStages,
     /require participant/u,
   );
+  assert.match(routingStages, /Use participant_mode only with an explicit exact mode lexeme/u);
+  assert.match(routingStages, /never infer it from participant\/title\/role\/group\/email or missing assignment/u);
   assert.match(
     routingStages,
     /No extra group, shared action, route, condition, or alias/u,
   );
   assert.match(
     routingStages,
-    /Repeat only for another explicit kind/u,
+    /repeat only for an explicit kind/u,
   );
   assert.match(
     routingStages,
@@ -134,11 +139,11 @@ test("the prompt exposes exactly the closed quote batches", () => {
   );
   assert.match(
     routingStages,
-    /Use notification=\[\] unless stages_participants explicitly says notify\/通知 and names both event and recipient/u,
+    /notification=\[\] unless stages_participants explicitly says notify\/通知 and names event\+recipient/u,
   );
   assert.match(
     routingStages,
-    /view, see, visibility, approval, and assignment facts are not notifications/u,
+    /view\/visibility\/approval\/assignment are not notifications/u,
   );
   assert.match(routingStages, /Never convert an ordinary route target/u);
   assert.match(routingStages, /Do not create conditions/u);
@@ -297,6 +302,11 @@ test("the prompt exposes exactly the closed quote batches", () => {
     /server binds each full authorized slot and pinned leaf/u,
   );
   assert.match(policy, /only notification may repeat/u);
+  assert.match(policy, /one item per explicitly named event/u);
+  assert.match(policy, /Repeat one exact shared recipient only when it governs that list in the same local clause/u);
+  assert.match(policy, /item\.quote is an exact source span containing both leaves/u);
+  assert.match(policy, /Never infer or merge events\/recipients/u);
+  assert.match(policy, /omit an event without exact core/u);
   assert.match(policy, /Do not emit visibility in this batch/u);
   assert.doesNotMatch(
     policy,
@@ -352,11 +362,13 @@ test("the prompt exposes exactly the closed quote batches", () => {
     assert.doesNotMatch(prompt, /Omit stage\.sequence/u);
   }
   for (const prompt of [structure, routing, routingStages, policy]) {
-    assert.match(prompt, /emit one notification item per event and repeat that exact shared recipient leaf in every item/u);
-    assert.match(prompt, /Never merge events into one item/u);
+    assert.match(prompt, /emit one item\/event, repeat that exact recipient/u);
+    assert.match(prompt, /exact item\.quote containing both leaves/u);
+    assert.match(prompt, /Never merge or infer events\/recipients/u);
   }
   for (const prompt of [intake, routingConditions]) {
     assert.doesNotMatch(prompt, /one notification item per event/u);
+    assert.doesNotMatch(prompt, /one item\/event/u);
   }
   assert.match(
     structure,
@@ -403,6 +415,25 @@ test("the prompt exposes exactly the closed quote batches", () => {
     `simplified routing conditions prompt: ${routingConditionsSimplified.length}`,
   );
   assert.ok(policy.length <= 4_900, `policy prompt: ${policy.length}`);
+  const formalPromptCaps = {
+    intake_documents: 4_900,
+    routing_stages_participants: 6_200,
+    routing_conditions: 4_800,
+    routing_rejection: 4_800,
+    policy_context: 4_900,
+  };
+  for (const [batchId, maximumLength] of Object.entries(formalPromptCaps)) {
+    for (const locale of ["en", "zh-Hant", "zh-Hans"]) {
+      const prompt = buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
+        batchId,
+        locale,
+      });
+      assert.ok(
+        prompt.length <= maximumLength,
+        `${batchId} ${locale} prompt: ${prompt.length}`,
+      );
+    }
+  }
 });
 
 test("the prompt treats injection text as data and withholds provider authority", () => {
@@ -463,31 +494,27 @@ test("the prompt demands complete entity coverage and source-language fidelity",
     });
 
   for (const prompt of [traditional, simplified]) {
-    assert.match(prompt, /one semantic entity per item/u);
-    assert.match(prompt, /[Cc]hoose leaves first/u);
-    assert.match(prompt, /leaf\.quote is an exact source lexeme/u);
+    assert.match(prompt, /one semantic entity\/item/u);
+    assert.match(prompt, /Choose non-whole leaves first/u);
+    assert.match(prompt, /Copy item q\/item\.quote and leaf q\/leaf\.quote character-for-character from one authorized slot/u);
+    assert.match(prompt, /never construct\/normalize\/paraphrase\/translate\/splice them/u);
+    assert.match(prompt, /below\/< and approves\/approval/u);
+    assert.match(prompt, /hinted leaf's exact quote proves its listed label .*; null hint means quote-only evidence/u);
     assert.match(
       prompt,
-      /For role=null, leaf\.hint must be JSON null; leaf\.quote alone carries evidence, including a permitted recovered leaf/u,
+      /shortest unique exact contiguous span covering non-recovered leaves/u,
     );
     assert.match(
       prompt,
-      /For role=\[\.\.\.\], leaf\.hint is the listed canonical label proved by leaf\.quote \(for example, below\/< and approves\/approval\)/u,
+      /Recovery is allowed only by the batch rule below/u,
     );
     assert.match(
       prompt,
-      /shortest unique contiguous exact source span enclosing every non-recovered leaf\.quote/u,
+      /widen with adjacent exact text until unique/u,
     );
-    assert.match(
-      prompt,
-      /same-local-clause recovery is allowed only where the current batch rule below permits it/u,
-    );
-    assert.match(
-      prompt,
-      /add adjacent exact source text until unique, or omit/u,
-    );
-    assert.match(prompt, /Copy leaf.quote verbatim/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-27/u);
+    assert.match(prompt, /If an exact core leaf\/anchor is unavailable, omit the entity/u);
+    assert.match(prompt, /never fabricate\/approximate/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-28/u);
     assert.match(prompt, /Caps, not quotas/u);
     assert.match(
       prompt,
@@ -534,7 +561,7 @@ test("the prompt demands complete entity coverage and source-language fidelity",
   assert.match(traditional, /third branch must continue with 再由, 再經, or 再经/u);
   assert.match(
     simplified,
-    /Complete core per notification \(all roles in ONE item\): notification=event\+recipient/u,
+    /notification=event\+recipient\. Lists: one item per explicitly named event/u,
   );
   assert.doesNotMatch(simplified, /request_field=label\+required/u);
   assert.match(simplified, /workflow name, purpose, and scope/u);
