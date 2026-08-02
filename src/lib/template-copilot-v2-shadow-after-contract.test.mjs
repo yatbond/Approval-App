@@ -47,7 +47,7 @@ test("candidate creation atomically enqueues and resumes a durable job without b
 });
 
 test("provider SDK requests are bounded with no retries and configuration is constrained below route duration", () => {
-  assert.equal(templateCopilotProviderTimeoutMs({}), 12_000);
+  assert.equal(templateCopilotProviderTimeoutMs({}), 15_000);
   assert.equal(templateCopilotProviderTimeoutMs({ TEMPLATE_COPILOT_PROVIDER_TIMEOUT_MS: "1500" }), 1500);
   assert.throws(() => templateCopilotProviderTimeoutMs({ TEMPLATE_COPILOT_PROVIDER_TIMEOUT_MS: "999" }), TemplateCopilotProviderTimeoutConfigurationError);
   assert.throws(() => templateCopilotProviderTimeoutMs({ TEMPLATE_COPILOT_PROVIDER_TIMEOUT_MS: "20001" }), TemplateCopilotProviderTimeoutConfigurationError);

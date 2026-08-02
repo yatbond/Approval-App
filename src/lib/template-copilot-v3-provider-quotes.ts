@@ -67,12 +67,12 @@ export const templateCopilotV3ProviderQuoteBatchGenerationLimits =
     routing_stages_participants: Object.freeze({
       maximumItems: 11,
       maximumLeavesPerItem: 8,
-      maximumCompletionTokens: 2_048,
+      maximumCompletionTokens: 2_560,
     }),
     routing_conditions: Object.freeze({
       maximumItems: 4,
       maximumLeavesPerItem: 10,
-      maximumCompletionTokens: 1_280,
+      maximumCompletionTokens: 1_536,
     }),
     routing_rejection: Object.freeze({
       maximumItems: 2,

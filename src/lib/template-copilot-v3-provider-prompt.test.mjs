@@ -587,7 +587,7 @@ test("the wrapper makes one bounded raw request through the shared resolver", as
     new URL("./template-copilot-provider-timeout.ts", import.meta.url),
     "utf8",
   );
-  assert.match(timeout, /defaultProviderTimeoutMs = 12_000/u);
+  assert.match(timeout, /defaultProviderTimeoutMs = 15_000/u);
 
   const request = await readFile(
     new URL("./template-copilot-v3-provider-request.ts", import.meta.url),

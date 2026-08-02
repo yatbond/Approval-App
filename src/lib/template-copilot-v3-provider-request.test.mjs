@@ -1587,7 +1587,7 @@ test("formal v3 bucket and aggregate sentinels stay above schema-producible corp
         .maximumCompletionTokens +
       templateCopilotV3ProviderQuoteBatchGenerationLimits.routing_rejection
         .maximumCompletionTokens,
-    1_536,
+    1_792,
   );
   assert.equal(
     templateCopilotV3ProviderQuoteBatchGenerationLimits.policy_context

@@ -34,7 +34,7 @@ import {
 import { templateCopilotV3LiveSemanticScoringContract } from "./template-copilot-v3-live-semantic-scoring.mjs";
 
 export const templateCopilotV3QualificationRunnerVersion =
-  "template-copilot-v3-live-semantic-qualification.19";
+  "template-copilot-v3-live-semantic-qualification.20";
 export const templateCopilotV3QualificationExpectedScenarioCount = 24;
 export const templateCopilotV3QualificationExpectedGovernedHoldCount = 64;
 export const templateCopilotV3QualificationExpectedLocaleCount = 3;
@@ -918,7 +918,7 @@ export function summarizeQualification(report) {
       templateCopilotV3QualificationBaselineModel &&
     report.metadata.zdrRequired === true &&
     report.metadata.provider === "openrouter" &&
-    report.metadata.providerTimeoutMs === 12_000 &&
+    report.metadata.providerTimeoutMs === 15_000 &&
     report.metadata.reasoningEffort === "none" &&
     report.metadata.providerRoute?.providerCode === "openrouter" &&
     report.metadata.providerRoute?.privacyMode === "zdr" &&
@@ -1803,7 +1803,7 @@ function qualificationProviderTelemetryPass(batch, expectedModel) {
     telemetry.routerAttemptCount === 1 &&
     isNonnegativeInteger(telemetry.providerLatencyMs) &&
     telemetry.providerLatencyMs > 0 &&
-    telemetry.providerLatencyMs < 12_000 &&
+    telemetry.providerLatencyMs < 15_000 &&
     batch.averageProviderRequestLatencyMs === telemetry.providerLatencyMs
   );
 }
