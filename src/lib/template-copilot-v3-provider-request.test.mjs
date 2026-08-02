@@ -1381,7 +1381,7 @@ test("formal v3 buckets flatten deterministically and isolate invalid children",
   }
 });
 
-test("formal v3 buckets fail the whole batch at bucket, aggregate, or leaf capacity", () => {
+test("formal v3 bucket and leaf sentinels fail closed while schema maxima retain aggregate headroom", () => {
   const bucketLimits =
     templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind;
   const saturatedBuckets = [
@@ -1436,12 +1436,12 @@ test("formal v3 buckets fail the whole batch at bucket, aggregate, or leaf capac
   }
 
   for (const [label, batchId, output] of [
-    ["intake aggregate", "intake_documents", formalWire("intake_documents", {
+    ["intake schema maximum", "intake_documents", formalWire("intake_documents", {
       initiator: { a: 0 },
       request_field: Array.from({ length: 14 }, () => ({})),
-      attachment: Array.from({ length: 5 }, () => ({})),
+      attachment: Array.from({ length: 6 }, () => ({})),
     })],
-    ["stage aggregate", "routing_stages_participants", formalWire(
+    ["stage schema maximum", "routing_stages_participants", formalWire(
       "routing_stages_participants",
       {
         stage: Array.from({ length: 8 }, () => ({})),
@@ -1449,7 +1449,14 @@ test("formal v3 buckets fail the whole batch at bucket, aggregate, or leaf capac
         notification: [{}],
       },
     )],
-    ["leaf", "intake_documents", formalWire("intake_documents", {
+  ]) {
+    assert.doesNotThrow(
+      () => expandTemplateCopilotV3ProviderQuoteWire({ batchId, output }),
+      label,
+    );
+  }
+
+  const saturatedLeaf = formalWire("intake_documents", {
       request_field: [{
         q: "Require purpose",
         l: Array.from(
@@ -1462,19 +1469,20 @@ test("formal v3 buckets fail the whole batch at bucket, aggregate, or leaf capac
         ),
         a: 0,
       }],
-    })],
-  ]) {
-    assert.throws(
-      () => expandTemplateCopilotV3ProviderQuoteWire({ batchId, output }),
-      (error) =>
-        error instanceof TemplateCopilotV3ProviderQuoteTransportError &&
-        error.reasonCode === "output_capacity_exhausted",
-      label,
-    );
-  }
+    });
+  assert.throws(
+    () => expandTemplateCopilotV3ProviderQuoteWire({
+      batchId: "intake_documents",
+      output: saturatedLeaf,
+    }),
+    (error) =>
+      error instanceof TemplateCopilotV3ProviderQuoteTransportError &&
+      error.reasonCode === "output_capacity_exhausted",
+    "leaf",
+  );
 });
 
-test("formal v3 bucket ceilings stay one above the reviewed corpus maxima", () => {
+test("formal v3 bucket and aggregate sentinels stay above schema-producible corpus maxima", () => {
   const maxima = {
     request_field: 0,
     attachment: 0,
@@ -1557,12 +1565,12 @@ test("formal v3 bucket ceilings stay one above the reviewed corpus maxima", () =
   assert.equal(
     templateCopilotV3ProviderQuoteBatchGenerationLimits.intake_documents
       .maximumItems,
-    maxima.intake_total + 1,
+    1 + maxima.request_field + maxima.attachment + 1,
   );
   assert.equal(
     templateCopilotV3ProviderQuoteBatchGenerationLimits
       .routing_stages_participants.maximumItems,
-    maxima.stage_total + 1,
+    maxima.stage + 1 + maxima.stage_notification + 1,
   );
   assert.equal(
     templateCopilotV3ProviderQuoteBatchGenerationLimits

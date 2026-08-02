@@ -55,7 +55,7 @@ export const templateCopilotV3ProviderQuoteBatchGenerationLimits =
       maximumCompletionTokens: 6_144,
     }),
     intake_documents: Object.freeze({
-      maximumItems: 20,
+      maximumItems: 22,
       maximumLeavesPerItem: 12,
       maximumCompletionTokens: 3_072,
     }),
@@ -65,7 +65,7 @@ export const templateCopilotV3ProviderQuoteBatchGenerationLimits =
       maximumCompletionTokens: 3_072,
     }),
     routing_stages_participants: Object.freeze({
-      maximumItems: 10,
+      maximumItems: 11,
       maximumLeavesPerItem: 8,
       maximumCompletionTokens: 2_048,
     }),
@@ -1082,10 +1082,10 @@ export const templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind =
   >);
 
 /**
- * Repeatable formal-wire bucket ceilings. Every formal batch also has one
- * nullable property for each whole-slot kind declared above. The batch-level
- * maximum is one above the reviewed corpus maximum, so reaching either a
- * bucket or aggregate ceiling is an incomplete-output signal rather than a
+ * Repeatable formal-wire bucket saturation sentinels. Every formal batch also
+ * has one nullable property for each whole-slot kind declared above. Provider
+ * schemas stop one below every bucket, leaf, and aggregate sentinel, so
+ * reaching a sentinel remains an incomplete-output signal rather than a
  * semantic result.
  */
 export const templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind =
@@ -1201,6 +1201,7 @@ export function buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(
   if (isTemplateCopilotV3ProviderQuoteFormalBatchId(batchId)) {
     const bucketMaximumItems =
       templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind[batchId];
+    const schemaMaximumLeavesPerItem = limits.maximumLeavesPerItem - 1;
     const bucketProperties = Object.fromEntries(
       batch.allowedKinds.map((kind) => {
         const itemSchema =
@@ -1208,7 +1209,7 @@ export function buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(
             batchId,
             allowedKinds: [kind],
             kindSchema: null,
-            maximumLeavesPerItem: limits.maximumLeavesPerItem,
+            maximumLeavesPerItem: schemaMaximumLeavesPerItem,
           });
         if (batchLocalWholeSlotIntentPolicy(batchId, kind)) {
           return [kind, { anyOf: [itemSchema, { type: "null" as const }] }];
@@ -1229,7 +1230,7 @@ export function buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(
             type: "array" as const,
             description: `Every source-backed ${kind} entity; use [] only when none is stated.`,
             minItems: 0,
-            maxItems: maximumItems,
+            maxItems: maximumItems - 1,
             items: itemSchema,
           },
         ];

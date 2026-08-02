@@ -483,7 +483,8 @@ test("the prompt demands complete entity coverage and source-language fidelity",
       /add adjacent exact source text until unique, or omit/u,
     );
     assert.match(prompt, /Copy leaf.quote verbatim/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-25/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-26/u);
+    assert.match(prompt, /Caps, not quotas/u);
     assert.match(
       prompt,
       /quotations, quoted text, or proof that an employee or vendor followed named instructions/u,

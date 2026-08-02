@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -40,28 +41,28 @@ test("v3 qualification fingerprints the exact compact provider contract", () => 
     responsesCompletionTokenParameter: "max_output_tokens",
     batches: {
       intake_documents: {
-        maximumItems: 20,
+        maximumItems: 22,
         maximumLeavesPerItem: 12,
         maximumCompletionTokens: 3_072,
         schemaUtf8Bytes: 6_362,
         schemaFingerprint:
-          "sha256:9a0558ab618e828f5d0d572dc1e5ebe95e6e956ae35fae5be284ab86a9a65a9f",
+          "sha256:086059828245771b91722043e32866f1329d0af6a3a27ca1a10d14ed6321b1d9",
       },
       routing_stages_participants: {
-        maximumItems: 10,
+        maximumItems: 11,
         maximumLeavesPerItem: 8,
         maximumCompletionTokens: 2_048,
         schemaUtf8Bytes: 6_151,
         schemaFingerprint:
-          "sha256:7024d74220e4a5a8f37175cf4ec06a8bf1a81c6dd2d015182b87b04b6143b429",
+          "sha256:6278888b87472d9fcc1b756332a50de232d8ad1ef241c34b604e7e8e9f084764",
       },
       routing_conditions: {
         maximumItems: 4,
         maximumLeavesPerItem: 10,
         maximumCompletionTokens: 1_280,
-        schemaUtf8Bytes: 3_585,
+        schemaUtf8Bytes: 3_584,
         schemaFingerprint:
-          "sha256:15eadfccc1dd1392e3f3b82dd02133a347e070ca6133df672151602ebd220e87",
+          "sha256:5956ac2058d1d9aef783a822a2da66de5bf850c43b0e77284d4a3eb98669337d",
       },
       routing_rejection: {
         maximumItems: 2,
@@ -77,7 +78,7 @@ test("v3 qualification fingerprints the exact compact provider contract", () => 
         maximumCompletionTokens: 4_096,
         schemaUtf8Bytes: 5_626,
         schemaFingerprint:
-          "sha256:bab319877ab56d27cf15b68663696b9def4c85a9ee5d74f4e7f102cc149eb3e6",
+          "sha256:3cc9fbd3e29e995f6cc5eee895e4933bc167637d90f256b8411a4e9c7d95c24a",
       },
     },
   });
@@ -146,7 +147,7 @@ test("v3 qualification executes exactly five sequential batches for all 24 multi
   assert.equal(report.summary.providerRequestCount, 120);
   assert.equal(
     report.metadata.runnerVersion,
-    "template-copilot-v3-live-semantic-qualification.18",
+    "template-copilot-v3-live-semantic-qualification.19",
   );
   assert.equal(report.summary.expandedAnchorItemCount, 0);
   assert.equal(report.summary.sameLocalClauseRecoveredLeafCount, 0);
@@ -1375,6 +1376,73 @@ test("v3 qualification rejects a silent negative semantic result", async () => {
   assert.equal(report.summary.selectedGatePassed, false);
 });
 
+test("v3 qualification reports scorer capture failures without recounting scenario failures", async () => {
+  const rootFailure = "root capture failure";
+  const scenarioFailure = "scenario capture failure already included at root";
+  const score = passingScore();
+  score.passed = false;
+  score.failures = [rootFailure, scenarioFailure];
+  score.sourceCapturePassed = false;
+  score.captureFailures = [rootFailure, scenarioFailure];
+  score.scenarioSemantics.passed = false;
+  score.scenarioSemantics.failures = [scenarioFailure];
+  score.scenarioSemantics.sourceCapturePassed = false;
+  score.scenarioSemantics.captureFailures = [scenarioFailure];
+
+  const report = await runTemplateCopilotV3LiveSemanticQualification({
+    corpus: templateCopilotQualificationScenarios,
+    scenarios: [templateCopilotQualificationScenarios[0]],
+    extractBatch: successfulExtractor,
+    assembleReview: passingAssembly,
+    scoreProjection: () => score,
+    metadata: qualificationMetadata(),
+    now: monotonicClock(),
+  });
+
+  const semantic = report.scenarios[0].semanticCapture;
+  assert.equal(semantic.resultValid, true);
+  assert.equal(semantic.passed, false);
+  assert.equal(semantic.failureCount, 2);
+  assert.deepEqual(
+    semantic.failureFingerprints,
+    [rootFailure, scenarioFailure]
+      .map(qualificationFailureFingerprint)
+      .sort(),
+  );
+});
+
+test("v3 qualification fails closed when scenario failures are absent from scorer failures", async () => {
+  const rootFailure = "root-only capture failure";
+  const scenarioFailure = "uncontained scenario capture failure";
+  const score = passingScore();
+  score.passed = false;
+  score.failures = [rootFailure];
+  score.sourceCapturePassed = false;
+  score.captureFailures = [rootFailure];
+  score.scenarioSemantics.passed = false;
+  score.scenarioSemantics.failures = [scenarioFailure];
+  score.scenarioSemantics.sourceCapturePassed = false;
+  score.scenarioSemantics.captureFailures = [scenarioFailure];
+
+  const report = await runTemplateCopilotV3LiveSemanticQualification({
+    corpus: templateCopilotQualificationScenarios,
+    scenarios: [templateCopilotQualificationScenarios[0]],
+    extractBatch: successfulExtractor,
+    assembleReview: passingAssembly,
+    scoreProjection: () => score,
+    metadata: qualificationMetadata(),
+    now: monotonicClock(),
+  });
+
+  const semantic = report.scenarios[0].semanticCapture;
+  assert.equal(semantic.resultValid, false);
+  assert.equal(semantic.passed, false);
+  assert.equal(semantic.failureCount, 2);
+  assert.deepEqual(semantic.failureFingerprints, [
+    qualificationFailureFingerprint(rootFailure),
+  ]);
+});
+
 test("v3 qualification accepts only the synchronized observed-metric allowlist", async () => {
   assert.deepEqual(templateCopilotV3QualificationObservedMetricKeys, [
     "documents",
@@ -2168,6 +2236,10 @@ function qualificationProviderTelemetry(overrides = {}) {
     providerLatencyMs: 1,
     ...overrides,
   };
+}
+
+function qualificationFailureFingerprint(value) {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
 function monotonicClock() {

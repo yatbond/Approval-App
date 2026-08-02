@@ -34,7 +34,7 @@ import {
 import { templateCopilotV3LiveSemanticScoringContract } from "./template-copilot-v3-live-semantic-scoring.mjs";
 
 export const templateCopilotV3QualificationRunnerVersion =
-  "template-copilot-v3-live-semantic-qualification.18";
+  "template-copilot-v3-live-semantic-qualification.19";
 export const templateCopilotV3QualificationExpectedScenarioCount = 24;
 export const templateCopilotV3QualificationExpectedGovernedHoldCount = 64;
 export const templateCopilotV3QualificationExpectedLocaleCount = 3;
@@ -1256,6 +1256,10 @@ function sanitizeSemanticResult(semantic, projectionIntegrity) {
     scenarioFailuresValid &&
     scenarioCaptureFailuresValid &&
     sameStringArray(scenarioFailures, scenarioCaptureFailures);
+  const scenarioFailuresIncludedInCaptureFailures =
+    captureFailuresValid &&
+    scenarioCaptureFailuresValid &&
+    stringArrayContainsAll(captureFailures, scenarioCaptureFailures);
   const governedHoldInventoryConsistent =
     sameGovernedHoldInventory(
       governedHoldsResult.value,
@@ -1278,6 +1282,7 @@ function sanitizeSemanticResult(semantic, projectionIntegrity) {
     batchGateShapeValid &&
     scenarioShapeValid &&
     scenarioCompatibilityConsistent &&
+    scenarioFailuresIncludedInCaptureFailures &&
     scenarioSourceCapturePassedValid &&
     scenarioCaptureFailuresValid &&
     scenarioGovernedHoldsResult.valid &&
@@ -1303,13 +1308,8 @@ function sanitizeSemanticResult(semantic, projectionIntegrity) {
     resultValid,
     passed:
       resultValid && sourceCapturePassed && sourceCaptureSignalsClear,
-    failureCount:
-      captureFailures.length +
-      scenarioCaptureFailures.length +
-      (resultValid ? 0 : 1),
-    failureFingerprints: [...captureFailures, ...scenarioCaptureFailures]
-      .map(fingerprint)
-      .sort(),
+    failureCount: captureFailures.length + (resultValid ? 0 : 1),
+    failureFingerprints: captureFailures.map(fingerprint).sort(),
     candidateCount: counts.candidateCount,
     governedHoldCount: governedHoldsResult.value.length,
     governedHolds: governedHoldsResult.value,
@@ -1689,6 +1689,33 @@ function sameStringArray(value, expected) {
       (entry, index) => typeof entry === "string" && entry === expected[index],
     )
   );
+}
+
+function stringArrayContainsAll(value, expected) {
+  if (!Array.isArray(value) || !Array.isArray(expected)) {
+    return false;
+  }
+
+  const remaining = new Map();
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      return false;
+    }
+    remaining.set(entry, (remaining.get(entry) || 0) + 1);
+  }
+
+  for (const entry of expected) {
+    if (typeof entry !== "string") {
+      return false;
+    }
+    const count = remaining.get(entry) || 0;
+    if (count === 0) {
+      return false;
+    }
+    remaining.set(entry, count - 1);
+  }
+
+  return true;
 }
 
 function sameKeySet(value, expected) {

@@ -3,9 +3,11 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import {
   buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema,
+  expandTemplateCopilotV3ProviderQuoteWire,
   formatTemplateCopilotV3ProviderQuoteBatch,
   locateTemplateCopilotV3ProviderQuotes,
   templateCopilotV3ProviderQuoteAllowedSlotsByBatchAndKind,
+  TemplateCopilotV3ProviderQuoteTransportError,
   templateCopilotV3ProviderQuoteAllowedSlotsByKind,
   templateCopilotV3ProviderQuoteBatchLocalRejectionDetails,
   templateCopilotV3ProviderQuoteBatchIds,
@@ -809,15 +811,15 @@ test("provider guidance uses required kind buckets for every formal schema", () 
   const expectedSchemaEvidence = {
     intake_documents: {
       bytes: 6_362,
-      sha256: "9a0558ab618e828f5d0d572dc1e5ebe95e6e956ae35fae5be284ab86a9a65a9f",
+      sha256: "086059828245771b91722043e32866f1329d0af6a3a27ca1a10d14ed6321b1d9",
     },
     routing_stages_participants: {
       bytes: 6_151,
-      sha256: "7024d74220e4a5a8f37175cf4ec06a8bf1a81c6dd2d015182b87b04b6143b429",
+      sha256: "6278888b87472d9fcc1b756332a50de232d8ad1ef241c34b604e7e8e9f084764",
     },
     routing_conditions: {
-      bytes: 3_585,
-      sha256: "15eadfccc1dd1392e3f3b82dd02133a347e070ca6133df672151602ebd220e87",
+      bytes: 3_584,
+      sha256: "5956ac2058d1d9aef783a822a2da66de5bf850c43b0e77284d4a3eb98669337d",
     },
     routing_rejection: {
       bytes: 539,
@@ -825,7 +827,7 @@ test("provider guidance uses required kind buckets for every formal schema", () 
     },
     policy_context: {
       bytes: 5_626,
-      sha256: "bab319877ab56d27cf15b68663696b9def4c85a9ee5d74f4e7f102cc149eb3e6",
+      sha256: "3cc9fbd3e29e995f6cc5eee895e4933bc167637d90f256b8411a4e9c7d95c24a",
     },
   };
   for (const batchId of templateCopilotV3ProviderQuoteBatchIds) {
@@ -843,8 +845,7 @@ test("provider guidance uses required kind buckets for every formal schema", () 
     assert.deepEqual(buckets.required, [...batch.allowedKinds]);
     assert.deepEqual(Object.keys(buckets.properties), [...batch.allowedKinds]);
 
-    let singletonCount = 0;
-    let repeatableCeilingTotal = 0;
+    let schemaProducibleFlattenedMaximum = 0;
     for (const kind of batch.allowedKinds) {
       const wholeSlotPolicy =
         templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind[
@@ -861,7 +862,7 @@ test("provider guidance uses required kind buckets for every formal schema", () 
         : bucketSchema.items;
       assert.equal(itemSchema.properties.k, undefined, `${batchId}:${kind}:no-k`);
       if (wholeSlotPolicy) {
-        singletonCount += 1;
+        schemaProducibleFlattenedMaximum += 1;
         const multiSlot = wholeSlotAllowedSlots.length > 1;
         assert.deepEqual(bucketSchema.anyOf[1], { type: "null" });
         assert.deepEqual(
@@ -894,10 +895,10 @@ test("provider guidance uses required kind buckets for every formal schema", () 
         templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind[
           batchId
         ][kind];
-      repeatableCeilingTotal += maximumItems;
+      schemaProducibleFlattenedMaximum += maximumItems - 1;
       assert.equal(bucketSchema.type, "array");
       assert.equal(bucketSchema.minItems, 0);
-      assert.equal(bucketSchema.maxItems, maximumItems);
+      assert.equal(bucketSchema.maxItems, maximumItems - 1);
       assert.equal(
         bucketSchema.description,
         `Every source-backed ${kind} entity; use [] only when none is stated.`,
@@ -977,7 +978,10 @@ test("provider guidance uses required kind buckets for every formal schema", () 
           : undefined,
         `${batchId}:${kind}:semantic-core-description`,
       );
-      assert.equal(itemSchema.properties.l.maxItems, limits.maximumLeavesPerItem);
+      assert.equal(
+        itemSchema.properties.l.maxItems,
+        limits.maximumLeavesPerItem - 1,
+      );
       assert.deepEqual(itemSchema.properties.a.enum, [0, 1, 2]);
       assert.equal(
         itemSchema.properties.q.description,
@@ -990,10 +994,8 @@ test("provider guidance uses required kind buckets for every formal schema", () 
       );
     }
     assert.ok(
-      singletonCount + repeatableCeilingTotal >= limits.maximumItems ||
-        (repeatableCeilingTotal === 0 &&
-          singletonCount + 1 === limits.maximumItems),
-      `${batchId}:bucket-ceilings-cover-aggregate`,
+      limits.maximumItems > schemaProducibleFlattenedMaximum,
+      `${batchId}:aggregate-sentinel-above-schema-maximum`,
     );
     assert.doesNotMatch(serialized, /"k":/u);
     assert.doesNotMatch(serialized, /contractVersion|confidence|ambiguity/u);
@@ -1021,6 +1023,146 @@ test("provider guidance uses required kind buckets for every formal schema", () 
   }
 });
 
+
+test("formal schemas cannot produce decoder bucket, leaf, or aggregate sentinels", () => {
+  for (const batchId of templateCopilotV3ProviderQuoteBatchIds) {
+    const schema = buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(batchId);
+    const batch = templateCopilotV3ProviderQuoteBatches[batchId];
+    const limits = templateCopilotV3ProviderQuoteBatchGenerationLimits[batchId];
+    const buckets = schema.properties.b.properties;
+    const outputBuckets = {};
+    let flattenedMaximum = 0;
+
+    for (const kind of batch.allowedKinds) {
+      const bucketSchema = buckets[kind];
+      if (bucketSchema.anyOf) {
+        outputBuckets[kind] = {};
+        flattenedMaximum += 1;
+        continue;
+      }
+      const leafMaximum = bucketSchema.items.properties.l.maxItems;
+      outputBuckets[kind] = Array.from(
+        { length: bucketSchema.maxItems },
+        () => ({
+          q: "source",
+          l: Array.from({ length: leafMaximum }, () => ({})),
+          a: 0,
+        }),
+      );
+      flattenedMaximum += bucketSchema.maxItems;
+      assert.equal(
+        bucketSchema.maxItems + 1,
+        templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind[
+          batchId
+        ][kind],
+        `${batchId}:${kind}:bucket-sentinel-headroom`,
+      );
+      assert.equal(
+        leafMaximum + 1,
+        limits.maximumLeavesPerItem,
+        `${batchId}:${kind}:leaf-sentinel-headroom`,
+      );
+    }
+
+    assert.ok(
+      flattenedMaximum < limits.maximumItems,
+      `${batchId}:aggregate-sentinel-headroom`,
+    );
+    assert.equal(
+      expandTemplateCopilotV3ProviderQuoteWire({
+        batchId,
+        output: { v: templateCopilotV3ProviderQuoteWireVersion, b: outputBuckets },
+      }).items.length,
+      flattenedMaximum,
+      `${batchId}:schema-maximum-does-not-saturate-decoder`,
+    );
+  }
+});
+
+test("decoder equality sentinels remain fail closed beyond formal schema limits", () => {
+  const batchId = "intake_documents";
+  const batch = templateCopilotV3ProviderQuoteBatches[batchId];
+  const emptyBuckets = Object.fromEntries(
+    batch.allowedKinds.map((kind) => [
+      kind,
+      templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind[batchId][kind]
+        ? null
+        : [],
+    ]),
+  );
+  const capacityError = (error) =>
+    error instanceof TemplateCopilotV3ProviderQuoteTransportError &&
+    error.reasonCode === "output_capacity_exhausted";
+
+  assert.throws(
+    () =>
+      expandTemplateCopilotV3ProviderQuoteWire({
+        batchId,
+        output: {
+          v: templateCopilotV3ProviderQuoteWireVersion,
+          b: {
+            ...emptyBuckets,
+            request_field: Array.from(
+              {
+                length:
+                  templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind[
+                    batchId
+                  ].request_field,
+              },
+              () => ({}),
+            ),
+          },
+        },
+      }),
+    capacityError,
+  );
+
+  assert.throws(
+    () =>
+      expandTemplateCopilotV3ProviderQuoteWire({
+        batchId,
+        output: {
+          v: templateCopilotV3ProviderQuoteWireVersion,
+          b: {
+            ...emptyBuckets,
+            request_field: [{
+              l: Array.from(
+                {
+                  length:
+                    templateCopilotV3ProviderQuoteBatchGenerationLimits[batchId]
+                      .maximumLeavesPerItem,
+                },
+                () => ({}),
+              ),
+            }],
+          },
+        },
+      }),
+    capacityError,
+  );
+
+  const legacyBatchId = "structure";
+  const legacySchema =
+    buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(legacyBatchId);
+  assert.throws(
+    () =>
+      expandTemplateCopilotV3ProviderQuoteWire({
+        batchId: legacyBatchId,
+        output: {
+          v: legacySchema.properties.v.const,
+          i: Array.from(
+            {
+              length:
+                templateCopilotV3ProviderQuoteBatchGenerationLimits[legacyBatchId]
+                  .maximumItems,
+            },
+            () => ({}),
+          ),
+        },
+      }),
+    capacityError,
+  );
+});
 test("condition leaf diagnostics stay private while distinguishing exact location failures", () => {
   const conditions =
     "安全影响为是时安全评审必须阻塞流程。成本增加超过港币一百万元走额外审批。";
