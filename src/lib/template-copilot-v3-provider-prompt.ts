@@ -10,7 +10,7 @@ import {
 } from "./template-copilot-v3-provider-quotes.ts";
 
 export const templateCopilotV3ProviderPromptVersion =
-  "template-copilot-v3-provider-quotes-26" as const;
+  "template-copilot-v3-provider-quotes-27" as const;
 
 const localeInstruction = Object.freeze({
   en: "Preserve the source language and orthography exactly.",
@@ -66,7 +66,7 @@ const batchInstructions = Object.freeze({
     "Extract explicit contingent condition branches only. Rejection, failure-return, and return-for-modification clauses are not conditions; omit them. Condition leaves never cross a hard clause or sentence.",
     "Condition core: exact field+operator+value+matching_route in one hard clause. No-bypass is non-executable. Emit it only when a separately stated state/value qualifies a field (for example, Retrospective + status): matching_route=no-bypass text/unsupported_outcome, no otherwise_route. A Boolean option/access label without yes/true/selected (for example, 紧急选项不能跳过审批) is policy only; omit it. Never use complete/return_for_correction for no-bypass.",
     "CJK yes: operator q=為是/为是 and value q=是 (overlap); never operator q=為/为/是.",
-    "Condition anchor closure: item.quote spans the earliest through latest condition leaf and literally contains every condition leaf.quote in source order, including matching_route and otherwise_route. Source order may be route-first. Predicate-only or route-only item.quote is invalid; widen within the same hard clause or omit.",
+    "Condition recovery is fail-closed: q has field, value, other leaves. Only operator/matching_route may be outside q: each exact+unique once in same local clause; ≤2; one/core role; no duplicates; a=0. Server expands the clause. Else q has all leaves. No hard-clause crossing; route-first allowed; predicate/route-only invalid.",
     "matching_route is this clause's contingent target, never blocking text or separate rejection. Named stage/participant=>stage_reference; generic extra approval/額外審批/额外审批=>unsupported_outcome; return_for_correction only when this branch routes correction.",
     "Thresholds: one condition per explicit branch; otherwise_route only for an explicit terminal default. Never infer or widen qualified branches.",
     "Repeat operator/value only in adjacent threshold branches; a numeric value directly follows its unique operator (optional whitespace/HKD). Reuse a target only for an explicit terminal default. No offsets.",

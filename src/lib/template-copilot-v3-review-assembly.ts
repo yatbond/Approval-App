@@ -704,12 +704,17 @@ function contextualRecoveredCoreEvidenceCanRemainReviewOnly(
   semanticContexts: readonly TemplateCopilotV3SourceSpan[],
   semanticAuthorityBlocked: boolean,
 ) {
-  const scopedRole =
+  const existingScopedRole =
     (factId === "request.fields" && observation.role === "required") ||
     (
       factId === "attachments.requirements" &&
       (observation.role === "kind" || observation.role === "required")
     );
+  const conditionScopedRole =
+    factId === "workflow.conditions" &&
+    (observation.role === "operator" ||
+      observation.role === "matching_route");
+  const scopedRole = existingScopedRole || conditionScopedRole;
   const label = item.leaves.find((leaf) => leaf.role === "label");
   const subjectObservation = label
     ? Object.freeze({
@@ -727,11 +732,113 @@ function contextualRecoveredCoreEvidenceCanRemainReviewOnly(
     observation.sourceSpan.messageId === item.anchor.messageId &&
     observation.sourceSpan.startCodePoint >= item.anchor.startCodePoint &&
     observation.sourceSpan.endCodePoint <= item.anchor.endCodePoint &&
+    (
+      !conditionScopedRole ||
+      recoveredConditionCoreEvidenceIsClosed({
+        item,
+        observation,
+        semanticContexts,
+      })
+    ) &&
     semanticHintIsVerified(
       factId,
       observation,
       semanticContexts,
       subjectObservation,
+    )
+  );
+}
+
+function recoveredConditionCoreEvidenceIsClosed({
+  item,
+  observation,
+  semanticContexts,
+}: Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem;
+  observation: TemplateCopilotV3ReviewObservation;
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[];
+}>) {
+  if (
+    item.kind !== "condition" ||
+    item.slot !== "conditions_exceptions" ||
+    item.ambiguity !== "none" ||
+    item.sameLocalClauseRecoveredLeafCount < 1 ||
+    item.sameLocalClauseRecoveredLeafCount > 2
+  ) {
+    return false;
+  }
+  const observations = item.leaves.map((leaf) =>
+    Object.freeze({
+      role: leaf.role,
+      quote: leaf.sourceSpan.exactText,
+      advisoryHint: leaf.hint,
+      sourceSpan: leaf.sourceSpan,
+    })
+  );
+  const role = (name: TemplateCopilotV3ProviderQuoteRole) =>
+    observations.filter((entry) => entry.role === name);
+  const fields = role("field");
+  const operators = role("operator");
+  const values = role("value");
+  const matchingRoutes = role("matching_route");
+  const otherwiseRoutes = role("otherwise_route");
+  const recoveredLeaves = item.leaves.filter(
+    (leaf) => leaf.sameLocalClauseRecovered === true,
+  );
+  const currentLeafWasRecovered = recoveredLeaves.some(
+    (leaf) =>
+      leaf.role === observation.role &&
+      leaf.sourceSpan.spanId === observation.sourceSpan.spanId,
+  );
+  const verifiedOperator = (entry: TemplateCopilotV3ReviewObservation) =>
+    entry.advisoryHint === "unsupported_predicate" ||
+    semanticHintIsVerified(
+      "workflow.conditions",
+      entry,
+      semanticContexts,
+    );
+  const verifiedRoute = (entry: TemplateCopilotV3ReviewObservation) =>
+    entry.advisoryHint === "unsupported_outcome" ||
+    semanticHintIsVerified(
+      "workflow.conditions",
+      entry,
+      semanticContexts,
+    );
+  return (
+    fields.length === 1 &&
+    operators.length === 1 &&
+    values.length === 1 &&
+    matchingRoutes.length === 1 &&
+    otherwiseRoutes.length <= 1 &&
+    recoveredLeaves.length === item.sameLocalClauseRecoveredLeafCount &&
+    recoveredLeaves.every(
+      (leaf) =>
+        leaf.role === "operator" || leaf.role === "matching_route",
+    ) &&
+    currentLeafWasRecovered &&
+    operators.every(verifiedOperator) &&
+    matchingRoutes.every(verifiedRoute) &&
+    otherwiseRoutes.every(verifiedRoute) &&
+    semanticContexts.every(
+      (context) => !conditionAuthorityTextIsIllustrativeMeta(context.exactText),
+    ) &&
+    semanticConditionPredicateGroupsHaveAffinity(
+      fields,
+      operators,
+      values,
+      semanticContexts,
+    ) &&
+    semanticConditionRoutesHaveAffinity(
+      fields,
+      operators,
+      values,
+      matchingRoutes,
+      otherwiseRoutes,
+      semanticContexts,
+    ) &&
+    !semanticConditionHasCompoundPredicateContext(
+      observations,
+      semanticContexts,
     )
   );
 }

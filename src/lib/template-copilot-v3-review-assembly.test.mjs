@@ -1676,6 +1676,244 @@ test("closes only a structurally authoritative exact simplified CJK yes compound
   }
 });
 
+test("same-local recovered condition evidence stays semantic review-only and fail closed", () => {
+  const accepted = [
+    {
+      caseId: "en-operator",
+      text: "If risk equals high, route to Safety Review",
+      field: "risk",
+      operator: "equals",
+      operatorHint: "=",
+      value: "high",
+      route: "Safety Review",
+      recoveredRoles: ["operator"],
+    },
+    {
+      caseId: "tc-both",
+      text: "若安全影響為是，則交由安全評審",
+      field: "安全影響",
+      operator: "為是",
+      operatorHint: "=",
+      value: "是",
+      route: "安全評審",
+      recoveredRoles: ["operator", "matching_route"],
+    },
+    {
+      caseId: "sc-route",
+      text: "如果成本增加超过一百万元则走财务总监",
+      field: "成本增加",
+      operator: "超过",
+      operatorHint: ">",
+      value: "一百万元",
+      route: "财务总监",
+      recoveredRoles: ["matching_route"],
+    },
+  ];
+  for (const [itemIndex, entry] of accepted.entries()) {
+    const messageId = `condition-local-recovery:${entry.caseId}`;
+    const symbols = conditionAuthoritySymbols({
+      caseId: entry.caseId,
+      field: entry.field,
+      route: entry.route,
+      itemIndexBase: 910_000 + itemIndex * 10,
+    });
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: {
+        [messageId]: entry.text,
+        ...symbols.sourceMessages,
+      },
+      items: [
+        ...symbols.items,
+        located({
+          itemIndex,
+          kind: "condition",
+          messageId,
+          text: entry.text,
+          anchorExpanded: true,
+          sameLocalClauseRecoveredLeafCount: entry.recoveredRoles.length,
+          leaves: [
+            { role: "field", quote: entry.field },
+            {
+              role: "operator",
+              quote: entry.operator,
+              hint: entry.operatorHint,
+              sameLocalClauseRecovered:
+                entry.recoveredRoles.includes("operator"),
+            },
+            { role: "value", quote: entry.value },
+            {
+              role: "matching_route",
+              quote: entry.route,
+              hint: "stage_reference",
+              sameLocalClauseRecovered:
+                entry.recoveredRoles.includes("matching_route"),
+            },
+          ],
+        }),
+      ],
+    });
+    const item = result.review.items.find((candidate) =>
+      candidate.providerItemIndexes.includes(itemIndex)
+    );
+    assert.ok(item, entry.caseId);
+    const diagnostics = `${entry.caseId}:${JSON.stringify({
+      item,
+      rejections: result.review.rejections,
+    })}`;
+    assert.equal(item.semanticComplete, true, diagnostics);
+    assert.equal(item.complete, false, entry.caseId);
+    assert.equal(item.executable, false, entry.caseId);
+    if (entry.recoveredRoles.includes("operator")) {
+      assert.equal(item.value.operator, undefined, entry.caseId);
+    }
+    if (entry.recoveredRoles.includes("matching_route")) {
+      assert.equal(item.value.matchingRoute, undefined, entry.caseId);
+    }
+    assert.equal(
+      result.review.rejections.some(
+        (rejection) =>
+          rejection.itemIndex === itemIndex &&
+          rejection.code === "unverifiable_leaf",
+      ),
+      false,
+      `${entry.caseId}:${JSON.stringify(result.review.rejections)}`,
+    );
+  }
+
+  for (const [itemIndex, entry] of [
+    {
+      caseId: "ambiguous",
+      text: "If risk equals high, route to Safety Review",
+      field: "risk",
+      operator: "equals",
+      value: "high",
+      route: "Safety Review",
+      ambiguity: "possible",
+    },
+    {
+      caseId: "compound",
+      text:
+        "If risk equals high and cost exceeds 100, route to Safety Review",
+      field: "risk",
+      operator: "equals",
+      value: "high",
+      route: "Safety Review",
+      ambiguity: "none",
+    },
+  ].entries()) {
+    const messageId = `condition-local-recovery-reject:${entry.caseId}`;
+    const symbols = conditionAuthoritySymbols({
+      caseId: `reject-${entry.caseId}`,
+      field: entry.field,
+      route: entry.route,
+      itemIndexBase: 920_000 + itemIndex * 10,
+    });
+    const conditionIndex = 100 + itemIndex;
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: {
+        [messageId]: entry.text,
+        ...symbols.sourceMessages,
+      },
+      items: [
+        ...symbols.items,
+        located({
+          itemIndex: conditionIndex,
+          kind: "condition",
+          messageId,
+          text: entry.text,
+          ambiguity: entry.ambiguity,
+          anchorExpanded: true,
+          sameLocalClauseRecoveredLeafCount: 1,
+          leaves: [
+            { role: "field", quote: entry.field },
+            {
+              role: "operator",
+              quote: entry.operator,
+              hint: "=",
+              sameLocalClauseRecovered: true,
+            },
+            { role: "value", quote: entry.value },
+            {
+              role: "matching_route",
+              quote: entry.route,
+              hint: "stage_reference",
+            },
+          ],
+        }),
+      ],
+    });
+    const item = result.review.items.find((candidate) =>
+      candidate.providerItemIndexes.includes(conditionIndex)
+    );
+    assert.ok(item, entry.caseId);
+    assert.equal(item.semanticComplete, false, entry.caseId);
+    assert.equal(item.value.operator, undefined, entry.caseId);
+    assert.ok(
+      result.review.rejections.some(
+        (rejection) =>
+          rejection.itemIndex === conditionIndex &&
+          rejection.code === "unverifiable_leaf" &&
+          rejection.detail === "condition:operator",
+      ),
+      `${entry.caseId}:${JSON.stringify(result.review.rejections)}`,
+    );
+  }
+});
+
+test("recovered condition evidence preserves unsupported semantic holds", () => {
+  const messageId = "condition-local-recovery:unsupported";
+  const text =
+    "If retrospective status equals yes, no approval may be bypassed";
+  const field = "retrospective status";
+  const route = "no approval may be bypassed";
+  const symbols = conditionAuthoritySymbols({
+    caseId: "unsupported-recovery",
+    field,
+    route,
+    itemIndexBase: 930_000,
+  });
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages: {
+      [messageId]: text,
+      ...symbols.sourceMessages,
+    },
+    items: [
+      ...symbols.items,
+      located({
+        itemIndex: 930_002,
+        kind: "condition",
+        messageId,
+        text,
+        anchorExpanded: true,
+        sameLocalClauseRecoveredLeafCount: 1,
+        leaves: [
+          { role: "field", quote: field },
+          {
+            role: "operator",
+            quote: "equals",
+            hint: "=",
+            sameLocalClauseRecovered: true,
+          },
+          { role: "value", quote: "yes" },
+          {
+            role: "matching_route",
+            quote: route,
+            hint: "unsupported_outcome",
+          },
+        ],
+      }),
+    ],
+  });
+  const item = result.review.items.find((candidate) =>
+    candidate.providerItemIndexes.includes(930_002)
+  );
+  assert.ok(item);
+  assert.equal(item.value.operator, undefined);
+  assert.equal(item.complete, false);
+  assert.equal(item.executable, false);
+  assert.equal(item.blockingReason, "unsupported_semantics_not_executable");
+});
+
 test("requires clean unique first-pass field and stage symbols for split operator recovery", () => {
   const messageId = "condition-symbol-gate:condition";
   const text = "安全影响为是时走安全评审";

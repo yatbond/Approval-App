@@ -1161,12 +1161,15 @@ export function templateCopilotV3ProviderQuoteMinimumSemanticCore(
 const sameLocalClauseRecoveryRoles = Object.freeze({
   request_field: Object.freeze(["required"] as const),
   attachment: Object.freeze(["kind", "required"] as const),
+  condition: Object.freeze(["operator", "matching_route"] as const),
 });
 
 function templateCopilotV3ProviderQuoteAllowsSameLocalClauseRecovery(
+  batchId: TemplateCopilotV3ProviderQuoteBatchId,
   kind: TemplateCopilotV3ProviderQuoteKind,
   role: TemplateCopilotV3ProviderQuoteRole,
 ) {
+  if (kind === "condition" && batchId !== "routing_conditions") return false;
   if (!Object.hasOwn(sameLocalClauseRecoveryRoles, kind)) return false;
   return (
     sameLocalClauseRecoveryRoles[
@@ -1805,6 +1808,14 @@ export function locateTemplateCopilotV3ProviderQuotes({
       anchorMatch.startCodeUnit,
       anchorMatch.startCodeUnit + item.quote.length,
     );
+    const conditionRecoveryEligible =
+      templateCopilotV3ConditionSameLocalClauseRecoveryIsEligible({
+        batchId,
+        item,
+        staged: stagedLeafMatches,
+        clauseTerminator:
+          anchorMatch.source.text[localClause.endCodeUnit] ?? "",
+      });
     const numericConditionValue = item.kind === "condition" &&
         item.leaves.some((leaf) =>
           leaf.role === "operator" &&
@@ -1852,9 +1863,11 @@ export function locateTemplateCopilotV3ProviderQuotes({
       if (staged.match.status === "none") {
         if (
           !templateCopilotV3ProviderQuoteAllowsSameLocalClauseRecovery(
+            batchId,
             item.kind,
             staged.leaf.role,
-          )
+          ) ||
+          (item.kind === "condition" && !conditionRecoveryEligible)
         ) {
           rejected.push(
             rejection(
@@ -1876,7 +1889,12 @@ export function locateTemplateCopilotV3ProviderQuotes({
             rejection(
               itemIndex,
               "leaf_not_found",
-              `${item.kind}:${staged.leaf.role}`,
+              conditionMissingLeafDiagnosticDetail({
+                item,
+                leaf: staged.leaf,
+                sourceText: anchorMatch.source.text,
+                localClauseText: localClause.text,
+              }),
             ),
           );
           return;
@@ -1989,6 +2007,19 @@ export function locateTemplateCopilotV3ProviderQuotes({
     const sameLocalClauseRecoveredLeafCount = leafMatches.filter(
       (entry) => entry.recovered,
     ).length;
+    if (
+      item.kind === "condition" &&
+      sameLocalClauseRecoveredLeafCount > 0 &&
+      !templateCopilotV3RecoveredConditionSemanticsAreClosed({
+        localClause,
+        leafMatches,
+      })
+    ) {
+      rejected.push(
+        rejection(itemIndex, "leaf_not_found", "condition:operator"),
+      );
+      return;
+    }
     const expandedStartCodeUnit = sameLocalClauseRecoveredLeafCount > 0
       ? localClause.startCodeUnit
       : Math.min(
@@ -2611,6 +2642,114 @@ type StagedProviderLeafMatch = Readonly<{
     | Readonly<{ status: "unique"; startCodeUnit: number }>
     | Readonly<{ status: "ambiguous" }>;
 }>;
+
+const conditionRecoveryCoreRoles = Object.freeze([
+  "field",
+  "operator",
+  "value",
+  "matching_route",
+] as const);
+
+function templateCopilotV3ConditionSameLocalClauseRecoveryIsEligible({
+  batchId,
+  item,
+  staged,
+  clauseTerminator,
+}: Readonly<{
+  batchId: TemplateCopilotV3ProviderQuoteBatchId;
+  item: TemplateCopilotV3ProviderQuoteItem;
+  staged: readonly StagedProviderLeafMatch[];
+  clauseTerminator: string;
+}>) {
+  if (
+    batchId !== "routing_conditions" ||
+    item.kind !== "condition" ||
+    item.ambiguity !== "none" ||
+    /[?？]/u.test(clauseTerminator)
+  ) {
+    return false;
+  }
+  if (
+    conditionRecoveryCoreRoles.some(
+      (role) => item.leaves.filter((leaf) => leaf.role === role).length !== 1,
+    )
+  ) {
+    return false;
+  }
+  const missing = staged.filter((entry) => entry.match.status === "none");
+  return missing.length > 0 &&
+    missing.length <= 2 &&
+    missing.every((entry) =>
+      entry.leaf.role === "operator" ||
+      entry.leaf.role === "matching_route"
+    ) &&
+    staged.every((entry) =>
+      entry.match.status === "none" || entry.match.status === "unique"
+    );
+}
+
+function templateCopilotV3RecoveredConditionSemanticsAreClosed({
+  localClause,
+  leafMatches,
+}: Readonly<{
+  localClause: Readonly<{
+    startCodeUnit: number;
+    endCodeUnit: number;
+    text: string;
+  }>;
+  leafMatches: readonly Readonly<{
+    leaf: TemplateCopilotV3ProviderQuoteItem["leaves"][number];
+    startCodeUnit: number;
+    recovered: boolean;
+  }>[];
+}>) {
+  if (leafMatches.filter((entry) => entry.recovered).length > 2) return false;
+  const operator = leafMatches.find((entry) => entry.leaf.role === "operator");
+  const matchingRoute = leafMatches.find(
+    (entry) => entry.leaf.role === "matching_route",
+  );
+  if (!operator || !matchingRoute) return false;
+  if (
+    operator.recovered &&
+    !templateCopilotV3RecoveredConditionOperatorProvesHint(
+      operator.leaf.quote,
+      operator.leaf.hint,
+    )
+  ) {
+    return false;
+  }
+  const routeHint = conditionRouteHint(matchingRoute.leaf.hint);
+  if (routeHint === null) return false;
+  if (
+    templateCopilotV3NoBypassRouteLanguage(matchingRoute.leaf.quote) !== null
+  ) {
+    return true;
+  }
+  const routeStart = matchingRoute.startCodeUnit - localClause.startCodeUnit;
+  const routeEnd = routeStart + matchingRoute.leaf.quote.length;
+  if (routeStart < 0 || routeEnd > localClause.text.length) return false;
+  return conditionRouteInHardClauseIsAffirmative(
+    localClause.text,
+    { startCodeUnit: 0, endCodeUnit: localClause.text.length },
+    routeStart,
+    routeEnd,
+    routeHint,
+  );
+}
+
+function templateCopilotV3RecoveredConditionOperatorProvesHint(
+  quote: string,
+  hint: string | null,
+) {
+  const normalized = templateCopilotV3NormalizeLexicalText(quote);
+  if (hint === "=" && (quote === "為是" || quote === "为是")) return true;
+  if (quote === "為" || quote === "为" || quote === "是") return false;
+  if (hint === "contains") {
+    return ["contains", "includes", "包含", "含有"].includes(normalized);
+  }
+  const aliases = conditionNumericOperatorAliasSet(hint);
+  return aliases !== null && aliases.includes(normalized);
+}
 
 const conditionNumericOperatorAliases = Object.freeze({
   "=": Object.freeze(["=", "equals", "equal", "is", "等於", "等于"]),
@@ -3784,6 +3923,9 @@ function sameLocalClauseRecoveredLeafHasEntityAffinity({
     ? clauseText.slice(leafEndCodeUnit, anchorStartCodeUnit)
     : clauseText.slice(anchorEndCodeUnit, leafStartCodeUnit);
   const gap = templateCopilotV3NormalizeLexicalText(rawGap);
+  if (kind === "condition") {
+    return role === "operator" || role === "matching_route";
+  }
   if (kind === "attachment" && role === "kind") {
     return gap === "";
   }
