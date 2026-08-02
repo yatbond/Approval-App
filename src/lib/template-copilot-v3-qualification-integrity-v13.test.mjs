@@ -128,7 +128,7 @@ function qualificationMetadata() {
       model: templateCopilotV3QualificationBaselineModel,
       privacyMode: "zdr",
     },
-    providerTimeoutMs: 15_000,
+    providerTimeoutMs: 18_000,
     baselineModel: templateCopilotV3QualificationBaselineModel,
     modelMatchesBaseline: true,
     selectionMode: "full",

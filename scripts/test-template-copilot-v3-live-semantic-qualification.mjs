@@ -106,9 +106,9 @@ if (configuredReasoningEffort !== "none") {
   );
 }
 const providerTimeoutMs = templateCopilotProviderTimeoutMs();
-if (providerTimeoutMs !== 15_000) {
+if (providerTimeoutMs !== 18_000) {
   throw new Error(
-    "V3 live semantic qualification requires the governed 15-second provider timeout.",
+    "V3 live semantic qualification requires the governed 18-second provider timeout.",
   );
 }
 const providerRoute = getTemplateCopilotAiRoutingMetadata();

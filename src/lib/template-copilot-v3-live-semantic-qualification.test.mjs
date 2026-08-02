@@ -51,7 +51,7 @@ test("v3 qualification fingerprints the exact compact provider contract", () => 
       routing_stages_participants: {
         maximumItems: 11,
         maximumLeavesPerItem: 8,
-        maximumCompletionTokens: 2_560,
+        maximumCompletionTokens: 3_072,
         schemaUtf8Bytes: 6_151,
         schemaFingerprint:
           "sha256:6278888b87472d9fcc1b756332a50de232d8ad1ef241c34b604e7e8e9f084764",
@@ -147,7 +147,7 @@ test("v3 qualification executes exactly five sequential batches for all 24 multi
   assert.equal(report.summary.providerRequestCount, 120);
   assert.equal(
     report.metadata.runnerVersion,
-    "template-copilot-v3-live-semantic-qualification.20",
+    "template-copilot-v3-live-semantic-qualification.21",
   );
   assert.equal(report.summary.expandedAnchorItemCount, 0);
   assert.equal(report.summary.sameLocalClauseRecoveredLeafCount, 0);
@@ -275,7 +275,7 @@ test("v3 qualification reports 24/24 source capture and 64 holds without claimin
     ["missing output usage", (batch) => { batch.providerResponseTelemetry.outputTokens = null; }],
     ["inconsistent total", (batch) => { batch.providerResponseTelemetry.totalTokens += 1; }],
     ["router fallback", (batch) => { batch.providerResponseTelemetry.routerAttemptCount = 2; }],
-    ["timeout boundary", (batch) => { batch.providerResponseTelemetry.providerLatencyMs = 15_000; batch.averageProviderRequestLatencyMs = 15_000; }],
+    ["timeout boundary", (batch) => { batch.providerResponseTelemetry.providerLatencyMs = 18_000; batch.averageProviderRequestLatencyMs = 18_000; }],
     ["latency mismatch", (batch) => { batch.averageProviderRequestLatencyMs += 1; }],
   ]) {
     const invalidTelemetry = structuredClone(report);
@@ -444,7 +444,7 @@ test("v3 qualification isolates a failed batch, continues later batches, and sto
       if (input.batchId === formalBatchIds[0]) {
         input.observeProviderRequest({
           outcome: "timeout",
-          latencyMs: 15_000,
+          latencyMs: 18_000,
         });
         throw new Error(
           "TOP SECRET provider error containing raw output and user text",
@@ -713,7 +713,7 @@ test("v3 formal full gate requires clean comparable source, baseline route, time
   assert.equal(report.summary.semanticCaptureGate.fullCorpusPassed, false);
   assert.equal(report.summary.fullGatePassed, false);
 
-  report.metadata.providerTimeoutMs = 15_000;
+  report.metadata.providerTimeoutMs = 18_000;
   report.metadata.comparableCleanSource = false;
   report.metadata.sourceWorktreeClean = false;
   report.metadata.qualificationMode = "exploratory";
@@ -732,7 +732,7 @@ test("v3 formal full gate requires clean comparable source, baseline route, time
     ),
     "utf8",
   );
-  assert.match(cliSource, /providerTimeoutMs !== 15_000/u);
+  assert.match(cliSource, /providerTimeoutMs !== 18_000/u);
   assert.match(cliSource, /configuredReasoningEffort !== "none"/u);
 });
 
@@ -1801,7 +1801,7 @@ test("qualification CLI model policy fails closed before making a provider reque
         TEMPLATE_COPILOT_OPENROUTER_REASONING_EFFORT: "none",
         TEMPLATE_COPILOT_OPENROUTER_ROUTING_PROFILE:
           templateCopilotOpenRouterQualificationRoutingProfile,
-        TEMPLATE_COPILOT_PROVIDER_TIMEOUT_MS: "15000",
+        TEMPLATE_COPILOT_PROVIDER_TIMEOUT_MS: "18000",
       },
     },
   );
@@ -1837,7 +1837,7 @@ test("qualification CLI model policy fails closed before making a provider reque
         TEMPLATE_COPILOT_OPENROUTER_REASONING_EFFORT: "none",
         TEMPLATE_COPILOT_OPENROUTER_ROUTING_PROFILE:
           templateCopilotOpenRouterQualificationRoutingProfile,
-        TEMPLATE_COPILOT_PROVIDER_TIMEOUT_MS: "15000",
+        TEMPLATE_COPILOT_PROVIDER_TIMEOUT_MS: "18000",
       },
     },
   );
@@ -2205,7 +2205,7 @@ function qualificationMetadata() {
       privacyMode: "zdr",
       routingProfile: templateCopilotOpenRouterQualificationRoutingProfile,
     },
-    providerTimeoutMs: 15_000,
+    providerTimeoutMs: 18_000,
     providerQuoteContractVersion:
       templateCopilotV3ProviderQuoteContractVersion,
     providerContract: templateCopilotV3QualificationProviderContractMetadata,

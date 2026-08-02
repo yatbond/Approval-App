@@ -1,4 +1,4 @@
-const defaultProviderTimeoutMs = 15_000;
+const defaultProviderTimeoutMs = 18_000;
 const minimumProviderTimeoutMs = 1_000;
 // Keep this below the answer Route Handler's 30-second `after()` duration.
 const maximumProviderTimeoutMs = 20_000;
