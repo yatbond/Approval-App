@@ -574,6 +574,38 @@ function compileArrayItem(
           semanticSubjectObservation,
         ),
     );
+  const recoveredNotificationReviewOnly =
+    item.kind === "notification" &&
+      item.sameLocalClauseRecoveredLeafCount > 0
+      ? recoveredNotificationReviewEvidenceIsClosed({
+          item,
+          semanticContexts,
+          semanticAuthorityBlocked: draft.semanticAuthorityBlocked,
+        })
+      : null;
+  if (recoveredNotificationReviewOnly === false) {
+    draft.semanticAuthorityBlocked = true;
+  }
+  const directNotificationNeedsReviewOnly =
+    item.kind === "notification" &&
+    item.sameLocalClauseRecoveredLeafCount === 0 &&
+    item.leaves.some((leaf) => {
+      const mapping = mappingFor(item.kind, leaf.role, leaf.hint);
+      if (mapping === null || mapping.kind === "semantic_only") return true;
+      if (mapping.kind === "relationship") return false;
+      return deriveLeaf(factId, mapping, leaf.hint, leaf.sourceSpan) === null;
+    });
+  const directNotificationReviewOnly = directNotificationNeedsReviewOnly
+    ? directNotificationReviewEvidenceIsClosed({
+        item,
+        messages,
+        semanticContexts,
+        semanticAuthorityBlocked: draft.semanticAuthorityBlocked,
+      })
+    : null;
+  if (directNotificationReviewOnly === false) {
+    draft.semanticAuthorityBlocked = true;
+  }
   const conflictedPaths = new Set<string>();
   for (const supplied of item.leaves) {
     if (!validSpan(supplied.sourceSpan, messages)) {
@@ -610,6 +642,26 @@ function compileArrayItem(
       continue;
     }
     draft.semanticObservations.push(semanticObservation);
+    if (recoveredNotificationReviewOnly !== null) {
+      if (!recoveredNotificationReviewOnly) {
+        rejections.push(
+          rejection(item, "unverifiable_leaf", `${item.kind}:${supplied.role}`),
+        );
+      }
+      // Recovered notification-list evidence is review-only as one closed item.
+      // No leaf in the item may reach a durable value or binding writer.
+      continue;
+    }
+    if (directNotificationReviewOnly !== null) {
+      if (!directNotificationReviewOnly) {
+        rejections.push(
+          rejection(item, "unverifiable_leaf", `${item.kind}:${supplied.role}`),
+        );
+      }
+      // Direct notification fallback is atomic and review-only. A closed item
+      // contributes observations only; an open item contributes no durable leaf.
+      continue;
+    }
     if (mapping.kind === "semantic_only") continue;
     if (mapping.kind === "relationship") {
       const relationship = deriveRelationship(supplied.hint, supplied.sourceSpan.exactText);
@@ -777,6 +829,1828 @@ function contextualRecoveredCoreEvidenceCanRemainReviewOnly(
       subjectObservation,
     )
   );
+}
+
+function directNotificationReviewEvidenceIsClosed({
+  item,
+  messages,
+  semanticContexts,
+  semanticAuthorityBlocked,
+}: Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem;
+  messages: Readonly<Record<string, string>>;
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[];
+  semanticAuthorityBlocked: boolean;
+}>) {
+  if (
+    item.kind !== "notification" ||
+    item.slot !== "visibility_notifications" ||
+    item.ambiguity !== "none" ||
+    item.anchorExpanded === true ||
+    item.sameLocalClauseRecoveredLeafCount !== 0 ||
+    item.leaves.some((leaf) => leaf.sameLocalClauseRecovered === true) ||
+    semanticAuthorityBlocked
+  ) {
+    return false;
+  }
+  const observations = item.leaves.map((leaf) =>
+    Object.freeze({
+      role: leaf.role,
+      quote: leaf.sourceSpan.exactText,
+      advisoryHint: leaf.hint,
+      sourceSpan: leaf.sourceSpan,
+    })
+  );
+  const role = (name: TemplateCopilotV3ProviderQuoteRole) =>
+    observations.filter((entry) => entry.role === name);
+  const events = role("event");
+  const recipients = role("recipient");
+  const visibility = role("visibility");
+  if (
+    events.length !== 1 ||
+    recipients.length !== 1 ||
+    visibility.length > 1 ||
+    observations.length !== 2 + visibility.length ||
+    observations.some(
+      (entry) =>
+        !validSpan(entry.sourceSpan, messages) ||
+        entry.sourceSpan.messageId !== item.anchor.messageId ||
+        entry.sourceSpan.startCodePoint < item.anchor.startCodePoint ||
+        entry.sourceSpan.endCodePoint > item.anchor.endCodePoint,
+    )
+  ) {
+    return false;
+  }
+  return (
+    events.every((entry) =>
+      semanticHintIsVerified("notifications.rules", entry, semanticContexts)
+    ) &&
+    recipients.every((entry) =>
+      semanticHintIsVerified("notifications.rules", entry, semanticContexts)
+    ) &&
+    visibility.every((entry) =>
+      semanticHintIsVerified("notifications.rules", entry, semanticContexts)
+    ) &&
+    semanticDirectNotificationPolicyClauseIsClosed(
+      events[0],
+      recipients[0],
+      visibility,
+      semanticContexts,
+    ) &&
+    semanticallyComplete(
+      "notifications.rules",
+      observations,
+      semanticContexts,
+      item.ambiguity,
+      false,
+      false,
+    )
+  );
+}
+
+function recoveredNotificationReviewEvidenceIsClosed({
+  item,
+  semanticContexts,
+  semanticAuthorityBlocked,
+}: Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem;
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[];
+  semanticAuthorityBlocked: boolean;
+}>) {
+  if (
+    item.kind !== "notification" ||
+    item.slot !== "visibility_notifications" ||
+    item.ambiguity !== "none" ||
+    item.anchorExpanded !== true ||
+    item.sameLocalClauseRecoveredLeafCount < 1 ||
+    item.sameLocalClauseRecoveredLeafCount > 2 ||
+    semanticAuthorityBlocked
+  ) {
+    return false;
+  }
+  const observations = item.leaves.map((leaf) =>
+    Object.freeze({
+      role: leaf.role,
+      quote: leaf.sourceSpan.exactText,
+      advisoryHint: leaf.hint,
+      sourceSpan: leaf.sourceSpan,
+    })
+  );
+  const role = (name: TemplateCopilotV3ProviderQuoteRole) =>
+    observations.filter((entry) => entry.role === name);
+  const events = role("event");
+  const recipients = role("recipient");
+  const visibility = role("visibility");
+  const recoveredLeaves = item.leaves.filter(
+    (leaf) => leaf.sameLocalClauseRecovered === true,
+  );
+  if (
+    events.length !== 1 ||
+    recipients.length !== 1 ||
+    visibility.length > 1 ||
+    observations.length !== 2 + visibility.length ||
+    recoveredLeaves.length !== item.sameLocalClauseRecoveredLeafCount ||
+    recoveredLeaves.some(
+      (leaf) => leaf.role !== "recipient" && leaf.role !== "visibility",
+    ) ||
+    item.leaves.some(
+      (leaf) =>
+        leaf.role === "event" && leaf.sameLocalClauseRecovered === true,
+    ) ||
+    observations.some(
+      (entry) =>
+        entry.sourceSpan.messageId !== item.anchor.messageId ||
+        entry.sourceSpan.startCodePoint < item.anchor.startCodePoint ||
+        entry.sourceSpan.endCodePoint > item.anchor.endCodePoint,
+    )
+  ) {
+    return false;
+  }
+  return (
+    events.every((entry) =>
+      semanticHintIsVerified("notifications.rules", entry, semanticContexts)
+    ) &&
+    recipients.every((entry) =>
+      semanticHintIsVerified("notifications.rules", entry, semanticContexts)
+    ) &&
+    visibility.every((entry) =>
+      semanticHintIsVerified("notifications.rules", entry, semanticContexts)
+    ) &&
+    semanticRecoveredNotificationPolicyClauseIsClosed(
+      events[0],
+      recipients[0],
+      visibility,
+      semanticContexts,
+    ) &&
+    semanticallyComplete(
+      "notifications.rules",
+      observations,
+      semanticContexts,
+      item.ambiguity,
+      false,
+      false,
+    )
+  );
+}
+
+function semanticRecoveredNotificationPolicyClauseIsClosed(
+  event: TemplateCopilotV3ReviewObservation,
+  recipient: TemplateCopilotV3ReviewObservation,
+  visibility: readonly TemplateCopilotV3ReviewObservation[],
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const details = semanticObservationClauseDetails(event, semanticContexts);
+  if (!details) return false;
+  const normalized = templateCopilotV3NormalizeLexicalText(details.hardText);
+  if (
+    /[?？]/u.test(details.hardText) ||
+    conditionAuthorityTextIsIllustrativeMeta(details.hardText) ||
+    semanticNotificationActionIsProhibited(normalized) ||
+    /(?:^|\b)(?:if|when|unless|although|however|otherwise|but)(?:\b|,)|(?:若|如果|如|當|当|除非|但|然而|否則|否则)/u.test(
+      normalized,
+    ) ||
+    /\bnot\s+only\b/u.test(normalized) ||
+    /(?:不只|不僅|不仅|非僅|非仅)/u.test(normalized) ||
+    event.sourceSpan.messageId !== recipient.sourceSpan.messageId ||
+    recipient.sourceSpan.endCodePoint > event.sourceSpan.startCodePoint ||
+    event.sourceSpan.startCodePoint < details.hardSourceStartCodePoint ||
+    event.sourceSpan.endCodePoint > details.hardSourceEndCodePoint ||
+    recipient.sourceSpan.startCodePoint < details.hardSourceStartCodePoint ||
+    recipient.sourceSpan.endCodePoint > details.hardSourceEndCodePoint ||
+    exactSemanticOccurrenceCount(details.hardText, event.quote) !== 1 ||
+    exactSemanticOccurrenceCount(details.hardText, recipient.quote) !== 1 ||
+    !semanticNotificationClauseHasClosedVocabulary({
+      clauseText: details.hardText,
+      eventQuote: event.quote,
+      recipientQuote: recipient.quote,
+      visibilityQuote: visibility[0]?.quote ?? null,
+    })
+  ) {
+    return false;
+  }
+  const notificationActions = [
+    ...details.hardText.matchAll(
+      /\b(?:notify|notifies|notified|notification|notifications|alert|alerts|email|emails|inform|informs)\b|(?:通知|知會|知会|電郵|电邮|提醒)/giu,
+    ),
+  ];
+  if (notificationActions.length !== 1) return false;
+  const hardActionStartCodePoint = Array.from(
+    details.hardText.slice(0, notificationActions[0].index),
+  ).length;
+  const actionEndCodePoint =
+    details.hardSourceStartCodePoint + hardActionStartCodePoint +
+    Array.from(notificationActions[0][0]).length;
+  if (
+    actionEndCodePoint > recipient.sourceSpan.startCodePoint ||
+    semanticNotificationClauseHasCompetingRecipient(
+      details.hardText,
+      recipient.quote,
+    )
+  ) {
+    return false;
+  }
+  return visibility.every(
+    (entry) =>
+      entry.sourceSpan.messageId === event.sourceSpan.messageId &&
+      entry.sourceSpan.endCodePoint <= event.sourceSpan.startCodePoint &&
+      exactSemanticOccurrenceCount(details.hardText, entry.quote) === 1 &&
+      semanticNotificationVisibilityIsAffirmative(entry, semanticContexts) &&
+      semanticNotificationVisibilityHasRecipientAffinity(
+        entry,
+        recipient,
+        details,
+      ),
+  );
+}
+
+function semanticDirectNotificationPolicyClauseIsClosed(
+  event: TemplateCopilotV3ReviewObservation,
+  recipient: TemplateCopilotV3ReviewObservation,
+  visibility: readonly TemplateCopilotV3ReviewObservation[],
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const details = semanticObservationClauseDetails(event, semanticContexts);
+  if (!details) return false;
+  const normalized = templateCopilotV3NormalizeLexicalText(details.hardText);
+  const observations = [event, recipient, ...visibility];
+  if (
+    /[?？]/u.test(details.hardText) ||
+    conditionAuthorityTextIsIllustrativeMeta(details.hardText) ||
+    semanticNotificationActionIsProhibited(normalized) ||
+    /(?:^|\b)(?:if|when|unless|although|however|otherwise|but)(?:\b|,)|(?:若|如果|如|當|当|除非|但|然而|否則|否则)/u.test(
+      normalized,
+    ) ||
+    /\bnot\s+only\b/u.test(normalized) ||
+    /(?:不只|不僅|不仅|非僅|非仅)/u.test(normalized) ||
+    observations.some(
+      (entry) =>
+        entry.sourceSpan.messageId !== event.sourceSpan.messageId ||
+        entry.sourceSpan.startCodePoint < details.hardSourceStartCodePoint ||
+        entry.sourceSpan.endCodePoint > details.hardSourceEndCodePoint ||
+        exactSemanticOccurrenceCount(details.hardText, entry.quote) !== 1,
+    ) ||
+    semanticNotificationClauseHasCompetingRecipient(
+      details.hardText,
+      recipient.quote,
+    ) ||
+    !semanticNotificationClauseHasClosedVocabulary({
+      clauseText: details.hardText,
+      eventQuote: event.quote,
+      recipientQuote: recipient.quote,
+      visibilityQuote: visibility[0]?.quote ?? null,
+    })
+  ) {
+    return false;
+  }
+  const notificationActions = [
+    ...details.hardText.matchAll(
+      /\b(?:notify|notifies|notified|notification|notifications|alert|alerts|email|emails|inform|informs)\b|(?:通知|知會|知会|電郵|电邮|提醒)/giu,
+    ),
+  ];
+  if (notificationActions.length > 1) return false;
+  const orderIsClosed = notificationActions.length === 0
+    ? recipient.sourceSpan.endCodePoint <= event.sourceSpan.startCodePoint
+    : (() => {
+        const actionStartCodePoint = details.hardSourceStartCodePoint +
+          Array.from(
+            details.hardText.slice(0, notificationActions[0].index),
+          ).length;
+        const actionEndCodePoint = actionStartCodePoint +
+          Array.from(notificationActions[0][0]).length;
+        return (
+          (
+            event.sourceSpan.endCodePoint <= actionStartCodePoint &&
+            actionEndCodePoint <= recipient.sourceSpan.startCodePoint
+          ) ||
+          (
+            actionEndCodePoint <= recipient.sourceSpan.startCodePoint &&
+            recipient.sourceSpan.endCodePoint <= event.sourceSpan.startCodePoint
+          )
+        );
+      })();
+  return orderIsClosed && visibility.every((entry) =>
+    semanticNotificationVisibilityIsAffirmative(entry, semanticContexts) &&
+    semanticNotificationVisibilityHasRecipientAffinity(
+      entry,
+      recipient,
+      details,
+    )
+  );
+}
+
+function semanticNotificationClauseHasCompetingRecipient(
+  clauseText: string,
+  recipientQuote: string,
+) {
+  const normalized = templateCopilotV3NormalizeLexicalText(clauseText);
+  const selected = templateCopilotV3NormalizeLexicalText(recipientQuote);
+  const residue = semanticNotificationStripClosedPhrase(normalized, selected);
+  const aliases = [
+    "requester",
+    "current stage participants",
+    "current step participants",
+    "previous stage participants",
+    "previous step participants",
+    "all participants",
+    "all workflow participants",
+    "workflow owner",
+    "申請人",
+    "申请人",
+    "發起人",
+    "发起人",
+    "目前步驟處理人",
+    "当前步骤处理人",
+    "上一個步驟處理人",
+    "上一步骤处理人",
+    "所有流程參與者",
+    "所有流程参与者",
+    "流程負責部門",
+    "流程负责部门",
+  ].map((alias) => templateCopilotV3NormalizeLexicalText(alias));
+  return aliases.some((alias) =>
+    semanticNotificationStripClosedPhrase(residue, alias) !== residue
+  );
+}
+
+const semanticNotificationClosedEventAliases = Object.freeze([
+  "request submitted",
+  "submitted",
+  "申請已提交",
+  "申请已提交",
+  "stage assigned",
+  "work assigned",
+  "assignment",
+  "assigned",
+  "獲指派",
+  "获指派",
+  "指派",
+  "分派",
+  "分配",
+  "工作已分派",
+  "工作已分配",
+  "stage completed",
+  "step completed",
+  "步驟已完成",
+  "步骤已完成",
+  "request rejected",
+  "rejection",
+  "rejected",
+  "拒絕",
+  "拒绝",
+  "被拒絕",
+  "被拒绝",
+  "申請被拒絕",
+  "申请被拒绝",
+  "correction requested",
+  "correction",
+  "corrected",
+  "要求更正",
+  "補正",
+  "补正",
+  "修正",
+  "修改",
+  "request completed",
+  "workflow completed",
+  "completion",
+  "complete",
+  "completed",
+  "完成",
+  "已完成",
+  "流程已完成",
+  "due soon",
+  "即將到期",
+  "即将到期",
+  "overdue",
+  "已逾期",
+  "逾期",
+]);
+
+function semanticNotificationClauseHasClosedVocabulary({
+  clauseText,
+  eventQuote,
+  recipientQuote,
+  visibilityQuote,
+}: Readonly<{
+  clauseText: string;
+  eventQuote: string;
+  recipientQuote: string;
+  visibilityQuote: string | null;
+}>) {
+  const selected = [eventQuote, recipientQuote, visibilityQuote]
+    .filter((value): value is string => value !== null)
+    .map((value) => templateCopilotV3NormalizeLexicalText(value));
+  if (
+    selected.some((value) => value.length === 0) ||
+    !semanticNotificationRecipientQuoteIsClosedSingleEntity(recipientQuote)
+  ) {
+    return false;
+  }
+  const notificationActions = [
+    ...selected,
+    "notify",
+    "notifies",
+    "notified",
+    "notification",
+    "notifications",
+    "alert",
+    "alerts",
+    "email",
+    "emails",
+    "inform",
+    "informs",
+    "通知",
+    "知會",
+    "知会",
+    "電郵",
+    "电邮",
+    "提醒",
+  ];
+  const closedGrammar = [
+    "to",
+    "of",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "以及",
+    "及",
+    "和",
+    "與",
+    "与",
+    "並",
+    "并",
+    "或",
+    "於",
+    "于",
+    "在",
+    "時",
+    "时",
+    "後",
+    "后",
+    "發生",
+    "发生",
+  ];
+  let residue = templateCopilotV3NormalizeLexicalText(clauseText);
+  for (const phrase of notificationActions) {
+    residue = semanticNotificationStripClosedPhrase(
+      residue,
+      templateCopilotV3NormalizeLexicalText(phrase),
+    );
+  }
+  const markers = [
+    ...residue.matchAll(
+      /\bevents?\s+(?:include|includes|included|including)\b|\bincluding\b|\b(?:for|on|upon|at|about)\b|事件包括/gu,
+    ),
+  ];
+  if (markers.length > 1) return false;
+  if (markers.length === 0) {
+    return semanticNotificationClosedResidueIsEmpty(
+      residue,
+      closedGrammar,
+    );
+  }
+  const marker = markers[0];
+  const markerStart = marker.index;
+  const markerEnd = markerStart + marker[0].length;
+  return (
+    semanticNotificationClosedResidueIsEmpty(
+      residue.slice(0, markerStart),
+      closedGrammar,
+    ) &&
+    semanticNotificationClosedResidueIsEmpty(
+      residue.slice(markerEnd),
+      [...semanticNotificationClosedEventAliases, ...closedGrammar],
+    )
+  );
+}
+
+const semanticNotificationCanonicalRecipientAliases = new Set([
+  "requester",
+  "current stage participants",
+  "current step participants",
+  "previous stage participants",
+  "previous step participants",
+  "all participants",
+  "all workflow participants",
+  "workflow owner",
+  "directly involved people",
+  "directly related people",
+  "owner group",
+  "requester group",
+  "board of directors",
+  "finance operations team",
+  "senior finance risk review committee",
+  "contract management department",
+  "people operations team",
+  "software engineering team",
+  "executive leadership team",
+  "vendor management office",
+  "risk management team",
+  "research and development team",
+  "research & development team",
+  "people and culture team",
+  "people & culture team",
+  "financial planning and analysis team",
+  "financial planning & analysis team",
+  "risk and compliance team",
+  "risk & compliance team",
+  "mergers and acquisitions team",
+  "mergers & acquisitions team",
+  "strategy and operations team",
+  "strategy & operations team",
+  "environmental health and safety team",
+  "environmental health & safety team",
+  "diversity and inclusion team",
+  "diversity & inclusion team",
+  "global research and development team",
+  "global research & development team",
+  "research and development center",
+  "research & development center",
+  "center of excellence",
+  "centre of excellence",
+  "research and development centre",
+  "research & development centre",
+  "r&d center",
+  "r&d centre",
+  "finance center of excellence",
+  "finance centre of excellence",
+  "corporate people and culture team",
+  "corporate people & culture team",
+  "regional financial planning and analysis team",
+  "regional financial planning & analysis team",
+  "global r&d team",
+  "learning and development team",
+  "learning & development team",
+  "學習與發展團隊",
+  "学习与发展团队",
+  "r&d",
+  "r&d team",
+  "information technology team",
+  "information technology department",
+  "information technology office",
+  "資訊科技部",
+  "信息技术部",
+  "合同管理部",
+  "財務營運團隊",
+  "财务运营团队",
+  "人力資源部",
+  "人力资源部",
+  "軟體工程團隊",
+  "软件工程团队",
+  "品質保證團隊",
+  "质量保证团队",
+  "供應鏈管理部",
+  "供应链管理部",
+  "公共關係部",
+  "公共关系部",
+  "風險管理團隊",
+  "风险管理团队",
+  "申請人",
+  "申请人",
+  "發起人",
+  "发起人",
+  "目前步驟處理人",
+  "当前步骤处理人",
+  "上一個步驟處理人",
+  "上一步骤处理人",
+  "所有流程參與者",
+  "所有流程参与者",
+  "流程負責部門",
+  "流程负责部门",
+  "直接相關人士",
+  "直接相关人士",
+  "直接相關人員",
+  "直接相关人员",
+]);
+
+const semanticNotificationLatinRecipientSeparators = new Set([
+  "after",
+  "also",
+  "alongside",
+  "and",
+  "all",
+  "any",
+  "before",
+  "besides",
+  "both",
+  "cum",
+  "e",
+  "either",
+  "each",
+  "en",
+  "et",
+  "every",
+  "everybody",
+  "everyone",
+  "except",
+  "excepting",
+  "excluding",
+  "followed",
+  "following",
+  "four",
+  "i",
+  "including",
+  "instead",
+  "iyo",
+  "many",
+  "multiple",
+  "next",
+  "nine",
+  "nor",
+  "o",
+  "och",
+  "of",
+  "og",
+  "or",
+  "ou",
+  "plus",
+  "prior",
+  "rather",
+  "several",
+  "seven",
+  "six",
+  "subsequently",
+  "ten",
+  "than",
+  "then",
+  "three",
+  "two",
+  "und",
+  "ve",
+  "versus",
+  "vs",
+  "with",
+  "without",
+  "y",
+  "eight",
+  "five",
+  "a",
+  "an",
+  "the",
+  "no",
+  "not",
+  "only",
+  "another",
+  "other",
+  "additional",
+  "different",
+  "separate",
+  "respective",
+  "remaining",
+  "some",
+  "various",
+  "numerous",
+  "few",
+  "dozen",
+  "dozens",
+  "zero",
+  "one",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+  "sixteen",
+  "seventeen",
+  "eighteen",
+  "nineteen",
+  "twenty",
+  "accompanied",
+  "by",
+  "joined",
+  "jointly",
+  "together",
+  "combined",
+  "coupled",
+  "paired",
+  "succeeded",
+  "compared",
+  "via",
+  "to",
+  "from",
+  "minus",
+]);
+
+const semanticNotificationLatinRecipientHeads = new Set([
+  "administrator",
+  "administrators",
+  "approver",
+  "approvers",
+  "auditor",
+  "auditors",
+  "board",
+  "boards",
+  "chair",
+  "chairs",
+  "center",
+  "centers",
+  "centre",
+  "centres",
+  "committee",
+  "committees",
+  "controller",
+  "controllers",
+  "coordinator",
+  "coordinators",
+  "council",
+  "councils",
+  "counsel",
+  "department",
+  "departments",
+  "director",
+  "directors",
+  "division",
+  "divisions",
+  "executive",
+  "executives",
+  "function",
+  "functions",
+  "group",
+  "groups",
+  "head",
+  "heads",
+  "lead",
+  "leads",
+  "manager",
+  "managers",
+  "member",
+  "members",
+  "office",
+  "offices",
+  "officer",
+  "officers",
+  "owner",
+  "owners",
+  "participant",
+  "participants",
+  "people",
+  "person",
+  "persons",
+  "representative",
+  "representatives",
+  "reviewer",
+  "reviewers",
+  "role",
+  "roles",
+  "secretaries",
+  "secretary",
+  "specialist",
+  "specialists",
+  "staff",
+  "supervisor",
+  "supervisors",
+  "team",
+  "teams",
+  "unit",
+  "units",
+  "users",
+  "workforce",
+]);
+
+const semanticNotificationPluralLatinRecipientHeads = new Set([
+  "administrators",
+  "approvers",
+  "auditors",
+  "boards",
+  "chairs",
+  "centers",
+  "centres",
+  "committees",
+  "controllers",
+  "coordinators",
+  "councils",
+  "departments",
+  "directors",
+  "divisions",
+  "executives",
+  "functions",
+  "groups",
+  "heads",
+  "leads",
+  "managers",
+  "members",
+  "offices",
+  "officers",
+  "owners",
+  "participants",
+  "persons",
+  "representatives",
+  "reviewers",
+  "roles",
+  "secretaries",
+  "specialists",
+  "supervisors",
+  "teams",
+  "units",
+  "users",
+]);
+
+const semanticNotificationLatinRecipientModifiers = new Set([
+  "account",
+  "accounts",
+  "accounting",
+  "administrative",
+  "advisory",
+  "analytics",
+  "application",
+  "applications",
+  "apac",
+  "approval",
+  "approvals",
+  "architecture",
+  "asset",
+  "assets",
+  "audit",
+  "auditing",
+  "billing",
+  "business",
+  "capital",
+  "change",
+  "client",
+  "commercial",
+  "communications",
+  "compliance",
+  "contract",
+  "contracts",
+  "corporate",
+  "credit",
+  "customer",
+  "data",
+  "delivery",
+  "digital",
+  "employee",
+  "engineering",
+  "enterprise",
+  "emea",
+  "ethics",
+  "executive",
+  "facilities",
+  "field",
+  "finance",
+  "financial",
+  "fraud",
+  "global",
+  "governance",
+  "growth",
+  "hr",
+  "human",
+  "information",
+  "infrastructure",
+  "internal",
+  "inventory",
+  "investment",
+  "it",
+  "legal",
+  "leadership",
+  "local",
+  "logistics",
+  "management",
+  "marketing",
+  "operations",
+  "organizational",
+  "payroll",
+  "payable",
+  "people",
+  "planning",
+  "policy",
+  "procurement",
+  "product",
+  "program",
+  "project",
+  "protection",
+  "privacy",
+  "quality",
+  "assurance",
+  "record",
+  "records",
+  "regional",
+  "reporting",
+  "request",
+  "requests",
+  "research",
+  "regulatory",
+  "affairs",
+  "resource",
+  "resources",
+  "review",
+  "risk",
+  "sales",
+  "security",
+  "senior",
+  "service",
+  "services",
+  "software",
+  "success",
+  "shared",
+  "strategy",
+  "support",
+  "supply",
+  "chain",
+  "systems",
+  "tax",
+  "technical",
+  "technology",
+  "transformation",
+  "treasury",
+  "vendor",
+  "culture",
+  "analysis",
+  "development",
+  "experience",
+  "investor",
+  "relations",
+  "design",
+  "cloud",
+  "cyber",
+  "network",
+  "cybersecurity",
+  "revenue",
+  "science",
+  "talent",
+  "acquisition",
+  "learning",
+  "mergers",
+  "acquisitions",
+  "excellence",
+  "workflow",
+  "workplace",
+]);
+
+const semanticNotificationLatinRecipientDomainFamilies = new Map<
+  string,
+  string
+>([
+  ["account", "finance"],
+  ["accounts", "finance"],
+  ["accounting", "finance"],
+  ["billing", "finance"],
+  ["credit", "finance"],
+  ["finance", "finance"],
+  ["financial", "finance"],
+  ["investment", "finance"],
+  ["payroll", "finance"],
+  ["tax", "finance"],
+  ["treasury", "finance"],
+  ["compliance", "compliance"],
+  ["contract", "legal"],
+  ["contracts", "legal"],
+  ["ethics", "compliance"],
+  ["fraud", "compliance"],
+  ["governance", "compliance"],
+  ["legal", "legal"],
+  ["policy", "legal"],
+  ["regulatory", "compliance"],
+  ["employee", "people"],
+  ["hr", "people"],
+  ["human", "people"],
+  ["people", "people"],
+  ["data", "technology"],
+  ["information", "technology"],
+  ["application", "technology"],
+  ["applications", "technology"],
+  ["infrastructure", "technology"],
+  ["it", "technology"],
+  ["software", "technology"],
+  ["privacy", "technology"],
+  ["protection", "technology"],
+  ["development", "technology"],
+  ["systems", "technology"],
+  ["network", "technology"],
+  ["cybersecurity", "technology"],
+  ["science", "technology"],
+  ["technology", "technology"],
+  ["client", "customer"],
+  ["customer", "customer"],
+  ["commercial", "commercial"],
+  ["marketing", "commercial"],
+  ["sales", "commercial"],
+  ["revenue", "commercial"],
+  ["procurement", "procurement"],
+  ["chain", "procurement"],
+  ["vendor", "procurement"],
+  ["audit", "compliance"],
+  ["auditing", "compliance"],
+  ["administrative", "operations"],
+  ["advisory", "advisory"],
+  ["analytics", "technology"],
+  ["approval", "operations"],
+  ["approvals", "operations"],
+  ["architecture", "technology"],
+  ["asset", "finance"],
+  ["assets", "finance"],
+  ["business", "operations"],
+  ["capital", "finance"],
+  ["change", "operations"],
+  ["communications", "commercial"],
+  ["delivery", "operations"],
+  ["digital", "technology"],
+  ["engineering", "technology"],
+  ["facilities", "operations"],
+  ["field", "operations"],
+  ["growth", "commercial"],
+  ["inventory", "procurement"],
+  ["leadership", "corporate"],
+  ["logistics", "procurement"],
+  ["management", "operations"],
+  ["operations", "operations"],
+  ["planning", "operations"],
+  ["product", "operations"],
+  ["program", "operations"],
+  ["project", "operations"],
+  ["quality", "quality"],
+  ["record", "records"],
+  ["records", "records"],
+  ["reporting", "operations"],
+  ["research", "technology"],
+  ["resource", "people"],
+  ["resources", "people"],
+  ["review", "operations"],
+  ["risk", "compliance"],
+  ["security", "technology"],
+  ["service", "customer"],
+  ["services", "customer"],
+  ["strategy", "operations"],
+  ["support", "technology"],
+  ["supply", "procurement"],
+  ["technical", "technology"],
+  ["transformation", "technology"],
+  ["workflow", "operations"],
+  ["workplace", "people"],
+  ["talent", "people"],
+  ["acquisition", "people"],
+  ["learning", "people"],
+]);
+
+const semanticNotificationLatinAllowedCompoundDomainSequences = new Set([
+  "commercial finance",
+  "business development",
+  "business finance",
+  "contract management",
+  "customer data",
+  "customer operations",
+  "data governance",
+  "data operations",
+  "engineering operations",
+  "finance operations",
+  "finance analytics",
+  "finance technology",
+  "finance planning",
+  "finance reporting",
+  "finance review",
+  "financial planning",
+  "financial reporting",
+  "financial operations",
+  "hr operations",
+  "hr technology",
+  "human resources technology",
+  "human resources operations",
+  "information technology operations",
+  "it operations",
+  "legal operations",
+  "legal technology",
+  "marketing operations",
+  "marketing analytics",
+  "marketing technology",
+  "people analytics",
+  "people operations",
+  "people technology",
+  "product security",
+  "product marketing",
+  "product analytics",
+  "product development",
+  "risk management",
+  "compliance operations",
+  "contract operations",
+  "business analytics",
+  "finance systems",
+  "network operations",
+  "sales finance",
+  "sales operations",
+  "revenue operations",
+  "security operations",
+  "supply chain finance",
+  "supply chain management",
+  "vendor management",
+  "vendor risk",
+  "vendor risk management",
+]);
+
+function semanticNotificationLatinDomainProfileFor(
+  tokens: readonly string[],
+) {
+  const domainTokens = tokens.filter((token) =>
+    semanticNotificationLatinRecipientDomainFamilies.has(token)
+  );
+  const firstDomainIndex = tokens.findIndex((token) =>
+    semanticNotificationLatinRecipientDomainFamilies.has(token)
+  );
+  return {
+    families: new Set(domainTokens.map((token) =>
+      semanticNotificationLatinRecipientDomainFamilies.get(token) ?? ""
+    )),
+    domainTokensAreContiguousSuffix: firstDomainIndex >= 0 &&
+      tokens.slice(firstDomainIndex).every((token) =>
+        semanticNotificationLatinRecipientDomainFamilies.has(token)
+      ),
+    tokenSequence: domainTokens.join(" "),
+  };
+}
+
+const semanticNotificationHanRecipientSeparators = new Set([
+  "和",
+  "及",
+  "與",
+  "与",
+  "並",
+  "并",
+  "或",
+  "同",
+  "暨",
+  "跟",
+  "還有",
+  "还有",
+  "以及",
+  "連同",
+  "连同",
+  "加",
+  "加上",
+  "會同",
+  "会同",
+  "同埋",
+  "又",
+  "亦",
+  "也",
+  "且",
+  "而且",
+  "再加",
+  "再",
+  "然後",
+  "然后",
+  "接著",
+  "接着",
+  "接續",
+  "接续",
+  "之後",
+  "之后",
+  "隨後",
+  "随后",
+  "繼而",
+  "继而",
+  "轉而",
+  "转而",
+  "偕同",
+  "夥同",
+  "伙同",
+  "協同",
+  "协同",
+  "外加",
+  "另加",
+  "聯同",
+  "联同",
+  "各",
+  "每",
+  "每個",
+  "每个",
+  "所有",
+  "全部",
+  "多個",
+  "多个",
+  "若干",
+  "數個",
+  "数个",
+  "兩",
+  "两",
+  "三",
+  "分別",
+  "分别",
+  "各自",
+]);
+
+const semanticNotificationHanRecipientHeads = [
+  "部門",
+  "部门",
+  "團隊",
+  "团队",
+  "小組",
+  "小组",
+  "委員會",
+  "委员会",
+  "辦公室",
+  "办公室",
+  "參與者",
+  "参与者",
+  "負責人",
+  "负责人",
+  "處理人",
+  "处理人",
+  "人士",
+  "人員",
+  "人员",
+  "中心",
+  "部",
+  "組",
+  "组",
+  "科",
+  "處",
+  "处",
+] as const;
+
+const semanticNotificationHanRecipientModifiers = new Set([
+  "財務",
+  "财务",
+  "法務",
+  "法务",
+  "合同",
+  "管理",
+  "和諧",
+  "和谐",
+  "服務",
+  "服务",
+  "及時",
+  "及时",
+  "支援",
+  "支持",
+  "國際",
+  "国际",
+  "和平",
+  "合規",
+  "合规",
+  "風險",
+  "风险",
+  "審核",
+  "审核",
+  "審批",
+  "审批",
+  "項目",
+  "项目",
+  "數據",
+  "数据",
+  "保護",
+  "保护",
+  "資訊",
+  "信息",
+  "安全",
+  "採購",
+  "采购",
+  "營運",
+  "运营",
+  "業務",
+  "业务",
+  "行政",
+  "人力",
+  "人力資源",
+  "人力资源",
+  "資源",
+  "资源",
+  "內部",
+  "内部",
+  "品質",
+  "质量",
+  "客戶",
+  "客户",
+  "成功",
+  "軟體",
+  "软件",
+  "保證",
+  "保证",
+  "法規",
+  "法规",
+  "事務",
+  "事务",
+  "供應",
+  "供应",
+  "鏈",
+  "链",
+  "公共",
+  "關係",
+  "关系",
+  "研發",
+  "研发",
+  "技術",
+  "技术",
+  "科技",
+  "策略",
+  "治理",
+  "高級",
+  "高级",
+  "資深",
+  "资深",
+  "工作流程",
+  "流程",
+  "企業",
+  "企业",
+  "商務",
+  "商务",
+  "會計",
+  "会计",
+  "稽核",
+  "审计",
+  "信用",
+  "設施",
+  "设施",
+  "記錄",
+  "记录",
+  "更新",
+  "市場",
+  "市场",
+  "營銷",
+  "营销",
+  "銷售",
+  "销售",
+  "產品",
+  "产品",
+  "研究",
+  "開發",
+  "开发",
+  "工程",
+  "數碼",
+  "数字",
+  "轉型",
+  "转型",
+  "體驗",
+  "体验",
+  "私隱",
+  "隐私",
+  "環境",
+  "环境",
+  "健康",
+  "系統",
+  "系统",
+  "科學",
+  "科学",
+  "網絡",
+  "网络",
+  "人才",
+  "招聘",
+  "學習",
+  "学习",
+  "發展",
+  "发展",
+  "營收",
+  "营收",
+  "亞太",
+  "亚太",
+  "全球",
+  "區域",
+  "区域",
+]);
+
+const semanticNotificationHanRecipientModifierTokens = [
+  ...semanticNotificationHanRecipientModifiers,
+].sort((left, right) =>
+  Array.from(right).length - Array.from(left).length
+);
+
+function semanticNotificationHanRecipientModifierSequenceIsClosed(
+  value: string,
+) {
+  let remainder = value;
+  if (remainder.length === 0) return false;
+  while (remainder.length > 0) {
+    const matched = semanticNotificationHanRecipientModifierTokens.find(
+      (token) => remainder.startsWith(token),
+    );
+    if (!matched) return false;
+    remainder = remainder.slice(matched.length);
+  }
+  return true;
+}
+
+const semanticNotificationHanRecipientDomainFamilies = new Map<
+  string,
+  string
+>([
+  ["財務", "finance"],
+  ["财务", "finance"],
+  ["會計", "finance"],
+  ["会计", "finance"],
+  ["信用", "finance"],
+  ["法務", "legal"],
+  ["法务", "legal"],
+  ["合同", "legal"],
+  ["合規", "compliance"],
+  ["合规", "compliance"],
+  ["治理", "compliance"],
+  ["法規", "compliance"],
+  ["法规", "compliance"],
+  ["人力", "people"],
+  ["人力資源", "people"],
+  ["人力资源", "people"],
+  ["人才", "people"],
+  ["招聘", "people"],
+  ["學習", "people"],
+  ["学习", "people"],
+  ["數據", "technology"],
+  ["数据", "technology"],
+  ["資訊", "technology"],
+  ["信息", "technology"],
+  ["私隱", "technology"],
+  ["隐私", "technology"],
+  ["技術", "technology"],
+  ["技术", "technology"],
+  ["系統", "technology"],
+  ["系统", "technology"],
+  ["科學", "technology"],
+  ["科学", "technology"],
+  ["網絡", "technology"],
+  ["网络", "technology"],
+  ["發展", "technology"],
+  ["发展", "technology"],
+  ["科技", "technology"],
+  ["軟體", "technology"],
+  ["软件", "technology"],
+  ["研發", "technology"],
+  ["研发", "technology"],
+  ["客戶", "customer"],
+  ["客户", "customer"],
+  ["商務", "commercial"],
+  ["商务", "commercial"],
+  ["市場", "commercial"],
+  ["市场", "commercial"],
+  ["營銷", "commercial"],
+  ["营销", "commercial"],
+  ["銷售", "commercial"],
+  ["销售", "commercial"],
+  ["營收", "commercial"],
+  ["营收", "commercial"],
+  ["採購", "procurement"],
+  ["采购", "procurement"],
+  ["稽核", "finance"],
+  ["审计", "finance"],
+  ["風險", "compliance"],
+  ["风险", "compliance"],
+  ["安全", "technology"],
+  ["工程", "technology"],
+  ["營運", "operations"],
+  ["运营", "operations"],
+  ["管理", "operations"],
+  ["服務", "customer"],
+  ["服务", "customer"],
+  ["支援", "technology"],
+  ["支持", "technology"],
+  ["行政", "operations"],
+  ["品質", "quality"],
+  ["质量", "quality"],
+  ["保證", "quality"],
+  ["保证", "quality"],
+  ["供應", "procurement"],
+  ["供应", "procurement"],
+  ["鏈", "procurement"],
+  ["链", "procurement"],
+  ["業務", "commercial"],
+  ["业务", "commercial"],
+  ["產品", "operations"],
+  ["产品", "operations"],
+  ["研究", "technology"],
+  ["開發", "technology"],
+  ["开发", "technology"],
+  ["數碼", "technology"],
+  ["数字", "technology"],
+  ["轉型", "technology"],
+  ["转型", "technology"],
+  ["策略", "operations"],
+  ["資源", "people"],
+  ["资源", "people"],
+  ["審核", "compliance"],
+  ["审核", "compliance"],
+  ["審批", "compliance"],
+  ["审批", "compliance"],
+  ["保護", "technology"],
+  ["保护", "technology"],
+  ["項目", "operations"],
+  ["项目", "operations"],
+  ["工作流程", "operations"],
+  ["流程", "operations"],
+  ["設施", "operations"],
+  ["设施", "operations"],
+  ["記錄", "operations"],
+  ["记录", "operations"],
+  ["更新", "operations"],
+]);
+
+const semanticNotificationHanAllowedCompoundDomainSequences = new Set([
+  "人力營運",
+  "人力运营",
+  "人力資源營運",
+  "人力资源运营",
+  "人力科技",
+  "人力資源科技",
+  "人力资源科技",
+  "供應鏈管理",
+  "供应链管理",
+  "供應鏈財務",
+  "供应链财务",
+  "合同管理",
+  "商務財務",
+  "商务财务",
+  "業務財務",
+  "业务财务",
+  "業務開發",
+  "业务开发",
+  "安全營運",
+  "安全运营",
+  "數據營運",
+  "数据运营",
+  "工程營運",
+  "工程运营",
+  "合同營運",
+  "合同运营",
+  "合規營運",
+  "合规运营",
+  "客戶數據",
+  "客户数据",
+  "客戶營運",
+  "客户运营",
+  "數據治理",
+  "数据治理",
+  "法務營運",
+  "法务运营",
+  "法務科技",
+  "法务科技",
+  "產品安全",
+  "产品安全",
+  "產品開發",
+  "产品开发",
+  "產品營銷",
+  "产品营销",
+  "營銷營運",
+  "营销运营",
+  "財務審核",
+  "财务审核",
+  "財務營運",
+  "财务运营",
+  "財務系統",
+  "财务系统",
+  "財務科技",
+  "财务科技",
+  "銷售營運",
+  "销售运营",
+  "銷售財務",
+  "销售财务",
+  "資訊科技營運",
+  "信息技术运营",
+  "營銷科技",
+  "营销科技",
+  "營收營運",
+  "营收运营",
+  "供應風險",
+  "供应风险",
+  "風險管理",
+  "风险管理",
+]);
+
+const semanticNotificationHanRecipientDomainTokens = [
+  ...semanticNotificationHanRecipientDomainFamilies.keys(),
+].sort((left, right) =>
+  Array.from(right).length - Array.from(left).length
+);
+
+function semanticNotificationHanRecipientDomainFamiliesFor(segment: string) {
+  let remainder = segment;
+  const entries: Array<{ family: string; token: string }> = [];
+  while (remainder.length > 0) {
+    const matched = semanticNotificationHanRecipientDomainTokens.find(
+      (token) => remainder.startsWith(token),
+    );
+    if (matched) {
+      const family = semanticNotificationHanRecipientDomainFamilies.get(
+        matched,
+      );
+      if (family) entries.push({ family, token: matched });
+      remainder = remainder.slice(matched.length);
+      continue;
+    }
+    remainder = Array.from(remainder).slice(1).join("");
+  }
+  return entries;
+}
+
+function semanticNotificationHanDomainProfileFor(
+  value: string,
+) {
+  const entries = semanticNotificationHanRecipientDomainFamiliesFor(value);
+  const tokenSequence = entries.map(({ token }) => token).join("");
+  const firstDomainOffset = entries.length > 0
+    ? value.indexOf(entries[0].token)
+    : -1;
+  return {
+    families: new Set(entries.map(({ family }) => family)),
+    domainTokensAreContiguousSuffix: firstDomainOffset >= 0 &&
+      value.slice(firstDomainOffset) === tokenSequence,
+    tokenSequence,
+  };
+}
+
+const semanticNotificationHanRecipientSegmenter =
+  typeof Intl.Segmenter === "function"
+    ? new Intl.Segmenter("zh-Hant", { granularity: "word" })
+    : null;
+
+function semanticNotificationHanRecipientSegmentIsClosedHead(
+  segment: string,
+) {
+  return (
+    semanticNotificationHanRecipientHeads.includes(
+      segment as typeof semanticNotificationHanRecipientHeads[number],
+    ) ||
+    semanticNotificationHanRecipientHeads.some((head) =>
+      segment.endsWith(head) &&
+      semanticNotificationHanRecipientModifierSequenceIsClosed(
+        segment.slice(0, -head.length),
+      )
+    )
+  );
+}
+
+function semanticNotificationRecipientQuoteIsClosedSingleEntity(
+  recipientQuote: string,
+) {
+  const normalized = templateCopilotV3NormalizeLexicalText(recipientQuote);
+  if (
+    normalized.length === 0 ||
+    /[\p{Cc}\p{Cf}]/u.test(normalized)
+  ) return false;
+  if (semanticNotificationCanonicalRecipientAliases.has(normalized)) {
+    return true;
+  }
+  if (/^[a-z0-9]+(?: [a-z0-9]+)*$/u.test(normalized)) {
+    const tokens = normalized.split(" ");
+    if (
+      tokens.length === 0 ||
+      tokens.length > 12 ||
+      tokens.some((token) => /^\d+$/u.test(token)) ||
+      tokens.some((token) =>
+        semanticNotificationLatinRecipientSeparators.has(token)
+      ) ||
+      /(?:^| )(?:along with|as well as|in addition to|together with|followed by)(?: |$)/u
+        .test(normalized)
+    ) {
+      return false;
+    }
+    if (tokens.length === 1) {
+      return (
+        (!semanticNotificationPluralLatinRecipientHeads.has(tokens[0]) &&
+          semanticNotificationLatinRecipientHeads.has(tokens[0])) ||
+        semanticNotificationLatinRecipientDomainFamilies.has(tokens[0])
+      );
+    }
+    const domainProfile = semanticNotificationLatinDomainProfileFor(
+      tokens.slice(0, -1),
+    );
+    if (
+      domainProfile.families.size > 1 &&
+      (!domainProfile.domainTokensAreContiguousSuffix ||
+        !semanticNotificationLatinAllowedCompoundDomainSequences.has(
+          domainProfile.tokenSequence,
+        ))
+    ) return false;
+    return (
+      semanticNotificationLatinRecipientHeads.has(tokens.at(-1) ?? "") &&
+      !semanticNotificationPluralLatinRecipientHeads.has(
+        tokens.at(-1) ?? "",
+      ) &&
+      tokens.slice(0, -1).every((token) =>
+        semanticNotificationLatinRecipientModifiers.has(token)
+      )
+    );
+  }
+  if (
+    !/^\p{Script=Han}+(?: \p{Script=Han}+)*$/u.test(normalized) ||
+    !semanticNotificationHanRecipientSegmenter
+  ) {
+    return false;
+  }
+  const segments = [
+    ...semanticNotificationHanRecipientSegmenter.segment(normalized),
+  ].filter((segment) => segment.isWordLike)
+    .map((segment) =>
+      templateCopilotV3NormalizeLexicalText(segment.segment)
+    );
+  if (
+    segments.length === 0 ||
+    segments.some((segment) =>
+      semanticNotificationHanRecipientSeparators.has(segment)
+    )
+  ) {
+    return false;
+  }
+  const compactRecipient = segments.join("");
+  const matchedRecipientHead = semanticNotificationHanRecipientHeads.find(
+    (head) => compactRecipient.endsWith(head),
+  );
+  const domainSource = matchedRecipientHead
+    ? compactRecipient.slice(0, -matchedRecipientHead.length)
+    : compactRecipient;
+  const domainProfile =
+    semanticNotificationHanDomainProfileFor(domainSource);
+  if (
+    domainProfile.families.size > 1 &&
+    (!domainProfile.domainTokensAreContiguousSuffix ||
+      !semanticNotificationHanAllowedCompoundDomainSequences.has(
+        domainProfile.tokenSequence,
+      ))
+  ) return false;
+  return (
+    semanticNotificationHanRecipientDomainFamilies.has(compactRecipient) ||
+    semanticNotificationHanRecipientSegmentIsClosedHead(
+      compactRecipient,
+    )
+  );
+}
+
+function semanticNotificationVisibilityHasRecipientAffinity(
+  visibility: TemplateCopilotV3ReviewObservation,
+  recipient: TemplateCopilotV3ReviewObservation,
+  details: Readonly<{
+    hardText: string;
+    hardSourceStartCodePoint: number;
+    hardSourceEndCodePoint: number;
+  }>,
+) {
+  if (
+    visibility.sourceSpan.messageId !== recipient.sourceSpan.messageId ||
+    visibility.sourceSpan.startCodePoint < details.hardSourceStartCodePoint ||
+    visibility.sourceSpan.endCodePoint > details.hardSourceEndCodePoint ||
+    recipient.sourceSpan.startCodePoint < details.hardSourceStartCodePoint ||
+    recipient.sourceSpan.endCodePoint > details.hardSourceEndCodePoint
+  ) {
+    return false;
+  }
+  const hardCodePoints = Array.from(details.hardText);
+  const bridge = (startCodePoint: number, endCodePoint: number) =>
+    hardCodePoints.slice(
+      startCodePoint - details.hardSourceStartCodePoint,
+      endCodePoint - details.hardSourceStartCodePoint,
+    ).join("");
+  if (visibility.sourceSpan.endCodePoint <= recipient.sourceSpan.startCodePoint) {
+    return semanticNotificationClosedResidueIsEmpty(
+      bridge(
+        visibility.sourceSpan.endCodePoint,
+        recipient.sourceSpan.startCodePoint,
+      ),
+      [
+        "notify",
+        "notifies",
+        "notified",
+        "notification",
+        "notifications",
+        "alert",
+        "alerts",
+        "email",
+        "emails",
+        "inform",
+        "informs",
+        "通知",
+        "知會",
+        "知会",
+        "電郵",
+        "电邮",
+        "提醒",
+        "the",
+        "a",
+        "an",
+      ],
+    );
+  }
+  if (recipient.sourceSpan.endCodePoint <= visibility.sourceSpan.startCodePoint) {
+    return semanticNotificationClosedResidueIsEmpty(
+      bridge(
+        recipient.sourceSpan.endCodePoint,
+        visibility.sourceSpan.startCodePoint,
+      ),
+      ["recipient", "recipients"],
+    );
+  }
+  return false;
+}
+
+function semanticNotificationClosedResidueIsEmpty(
+  value: string,
+  phrases: readonly string[],
+) {
+  const removable = phrases
+    .map((phrase) => templateCopilotV3NormalizeLexicalText(phrase))
+    .filter((phrase, index, values) =>
+      phrase.length > 0 && values.indexOf(phrase) === index
+    )
+    .sort((left, right) => right.length - left.length);
+  let residue = value;
+  for (const phrase of removable) {
+    residue = semanticNotificationStripClosedPhrase(residue, phrase);
+  }
+  residue = residue.replace(/[\p{P}\p{S}]/gu, " ");
+  return templateCopilotV3NormalizeLexicalText(residue).length === 0;
+}
+
+function semanticNotificationStripClosedPhrase(value: string, phrase: string) {
+  const escaped = escapeSemanticRegExp(phrase);
+  const asciiWordPhrase = /^[a-z0-9]/u.test(phrase) &&
+    /[a-z0-9]$/u.test(phrase);
+  const pattern = asciiWordPhrase
+    ? `(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`
+    : escaped;
+  return value.replace(new RegExp(pattern, "gu"), " ");
 }
 
 function recoveredConditionCoreEvidenceIsClosed({
@@ -2713,11 +4587,49 @@ function deriveRelationship(hint: string | null, text: string): "sequential" | "
 }
 
 function groupKey(draft: Draft) {
-  const identityPath = draft.factId === "workflow.conditions" ? "/sequence" : draft.factId === "notifications.rules" ? null : "/label";
-  const identity = identityPath ? draft.leaves.get(identityPath)?.value : undefined;
+  const identityPath = draft.factId === "workflow.conditions"
+    ? "/sequence"
+    : draft.factId === "notifications.rules"
+      ? null
+      : "/label";
+  const identity = draft.factId === "notifications.rules"
+    ? verifiedNotificationGroupingIdentity(draft)
+    : identityPath
+      ? draft.leaves.get(identityPath)?.value
+      : undefined;
   const sourceIdentity = `${draft.anchor.messageId}:${draft.anchor.startCodePoint}:${draft.anchor.endCodePoint}:${draft.anchor.spanId}`;
   const local = `source:${sourceIdentity}|${identity === undefined ? "anonymous" : `identity:${stableJson(identity)}`}`;
   return `${draft.factId}|${local}`;
+}
+
+function verifiedNotificationGroupingIdentity(draft: Draft) {
+  const verified = (role: TemplateCopilotV3ProviderQuoteRole) =>
+    draft.semanticObservations.filter(
+      (observation) =>
+        observation.role === role &&
+        semanticHintIsVerified(
+          "notifications.rules",
+          observation,
+          draft.semanticContexts,
+        ),
+    );
+  const events = verified("event");
+  const recipients = verified("recipient");
+  if (events.length !== 1 || recipients.length !== 1) return undefined;
+  return Object.freeze({
+    event: Object.freeze({
+      hint: events[0].advisoryHint,
+      messageId: events[0].sourceSpan.messageId,
+      startCodePoint: events[0].sourceSpan.startCodePoint,
+      endCodePoint: events[0].sourceSpan.endCodePoint,
+    }),
+    recipient: Object.freeze({
+      hint: recipients[0].advisoryHint,
+      messageId: recipients[0].sourceSpan.messageId,
+      startCodePoint: recipients[0].sourceSpan.startCodePoint,
+      endCodePoint: recipients[0].sourceSpan.endCodePoint,
+    }),
+  });
 }
 
 function clusterOf(groupingKey: string, draft: Draft): Cluster {
@@ -5655,7 +7567,14 @@ function semanticObservationIsContradicted(
   }
   if (
     factId === "notifications.rules" &&
-    (observation.role === "event" || observation.role === "recipient")
+    observation.role === "event"
+  ) {
+    return semanticNotificationActionIsProhibited(wording) ||
+      semanticNotificationEventIsNegated(wording, observation.quote);
+  }
+  if (
+    factId === "notifications.rules" &&
+    observation.role === "recipient"
   ) {
     return semanticNotificationActionIsProhibited(wording);
   }
@@ -6120,6 +8039,28 @@ function semanticNotificationActionIsProhibited(wording: string) {
       .test(wording) ||
     /(?:不要|不得|不准|禁止|切勿|不應|不应|毋須|毋须|無須|无须|毋需|無需|无需)\s*(?:向[^，。；;\r\n]{1,24})?\s*(?:通知|知會|知会|電郵|电邮|發送|发送)/u
       .test(wording);
+}
+
+function semanticNotificationEventIsNegated(
+  wording: string,
+  eventQuote: string,
+) {
+  const event = templateCopilotV3NormalizeLexicalText(eventQuote);
+  if (event.length === 0) return true;
+  let offset = wording.indexOf(event);
+  while (offset >= 0) {
+    const prefix = wording.slice(0, offset);
+    if (
+      templateCopilotV3NormalizedPrefixNegatesFollowingPredicate(prefix) ||
+      /(?:不|未|不要|不得|不准|禁止|切勿|毋須|毋须|無須|无须|毋需|無需|无需)(?:被)?\s*$/u.test(
+        prefix,
+      )
+    ) {
+      return true;
+    }
+    offset = wording.indexOf(event, offset + event.length);
+  }
+  return false;
 }
 
 function semanticNotificationVisibilityIsAffirmative(

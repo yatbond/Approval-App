@@ -1735,6 +1735,10 @@ export function locateTemplateCopilotV3ProviderQuotes({
       source: TemplateCopilotV3ProviderQuoteSourceSlot;
       startCodeUnit: number;
     }> | null = null;
+    let locatedAnchorQuote = item.quote;
+    let notificationAnchorRecovered = false;
+    let notificationRecoveryContext:
+      TemplateCopilotV3PolicyNotificationListRecoveryContext | null = null;
     let anchorIsAmbiguous = false;
     for (const source of sources) {
       const match = uniqueOffset(source.text, item.quote);
@@ -1749,8 +1753,24 @@ export function locateTemplateCopilotV3ProviderQuotes({
       };
     }
     if (anchorMatch === null && !anchorIsAmbiguous) {
-      rejected.push(rejection(itemIndex, "anchor_not_found", item.kind));
-      return;
+      const recoveredNotificationAnchor =
+        templateCopilotV3FindPolicyNotificationListEventAnchor({
+          batchId,
+          item,
+          sources,
+        });
+      if (recoveredNotificationAnchor) {
+        anchorMatch = {
+          source: recoveredNotificationAnchor.source,
+          startCodeUnit: recoveredNotificationAnchor.eventStartCodeUnit,
+        };
+        locatedAnchorQuote = recoveredNotificationAnchor.event.quote;
+        notificationAnchorRecovered = true;
+        notificationRecoveryContext = recoveredNotificationAnchor.context;
+      } else {
+        rejected.push(rejection(itemIndex, "anchor_not_found", item.kind));
+        return;
+      }
     }
     if (anchorIsAmbiguous || anchorMatch === null) {
       rejected.push(rejection(itemIndex, "anchor_ambiguous", item.kind));
@@ -1812,13 +1832,35 @@ export function locateTemplateCopilotV3ProviderQuotes({
     }
     const stagedLeafMatches = item.leaves.map((leaf) => ({
       leaf,
-      match: uniqueOffset(item.quote, leaf.quote),
+      match:
+        notificationAnchorRecovered && leaf.role !== "event"
+          ? ({ status: "none" } as const)
+          : uniqueOffset(item.quote, leaf.quote),
     }));
-    const localClause = localClauseAt(
+    const defaultLocalClause = localClauseAt(
       anchorMatch.source.text,
       anchorMatch.startCodeUnit,
-      anchorMatch.startCodeUnit + item.quote.length,
+      anchorMatch.startCodeUnit + locatedAnchorQuote.length,
     );
+    const stagedEvent = stagedLeafMatches.find(
+      (entry) => entry.leaf.role === "event",
+    );
+    if (
+      notificationRecoveryContext === null &&
+      stagedEvent?.match.status === "unique"
+    ) {
+      notificationRecoveryContext =
+        templateCopilotV3PolicyNotificationListRecoveryContext({
+          batchId,
+          item,
+          source: anchorMatch.source,
+          event: stagedEvent.leaf,
+          eventStartCodeUnit:
+            anchorMatch.startCodeUnit + stagedEvent.match.startCodeUnit,
+        });
+    }
+    const localClause =
+      notificationRecoveryContext?.authorityClause ?? defaultLocalClause;
     const conditionRecoveryEligible =
       templateCopilotV3ConditionSameLocalClauseRecoveryIsEligible({
         batchId,
@@ -1873,10 +1915,17 @@ export function locateTemplateCopilotV3ProviderQuotes({
     for (const staged of stagedLeafMatches) {
       if (staged.match.status === "none") {
         if (
-          !templateCopilotV3ProviderQuoteAllowsSameLocalClauseRecovery(
-            batchId,
-            item.kind,
-            staged.leaf.role,
+          !(
+            templateCopilotV3ProviderQuoteAllowsSameLocalClauseRecovery(
+              batchId,
+              item.kind,
+              staged.leaf.role,
+            ) ||
+            (
+              notificationRecoveryContext !== null &&
+              (staged.leaf.role === "recipient" ||
+                staged.leaf.role === "visibility")
+            )
           ) ||
           (item.kind === "condition" && !conditionRecoveryEligible)
         ) {
@@ -1937,6 +1986,7 @@ export function locateTemplateCopilotV3ProviderQuotes({
           return;
         }
         if (
+          notificationRecoveryContext === null &&
           !sameLocalClauseRecoveredLeafHasEntityAffinity({
             kind: item.kind,
             role: staged.leaf.role,
@@ -2010,7 +2060,9 @@ export function locateTemplateCopilotV3ProviderQuotes({
       leafMatches.push({
         leaf: staged.leaf,
         startCodeUnit:
-          anchorMatch.startCodeUnit + relativeStartCodeUnit,
+          notificationAnchorRecovered && staged.leaf.role === "event"
+            ? anchorMatch.startCodeUnit
+            : anchorMatch.startCodeUnit + relativeStartCodeUnit,
         recovered: false,
       });
     }
@@ -2038,9 +2090,10 @@ export function locateTemplateCopilotV3ProviderQuotes({
           ...leafMatches.map((entry) => entry.startCodeUnit),
         );
     const expandedEndCodeUnit = sameLocalClauseRecoveredLeafCount > 0
-      ? localClause.endCodeUnit
+      ? notificationRecoveryContext?.progressiveEndCodeUnit ??
+        localClause.endCodeUnit
       : Math.max(
-          anchorMatch.startCodeUnit + item.quote.length,
+          anchorMatch.startCodeUnit + locatedAnchorQuote.length,
           ...leafMatches.map(
             (entry) => entry.startCodeUnit + entry.leaf.quote.length,
           ),
@@ -2049,7 +2102,7 @@ export function locateTemplateCopilotV3ProviderQuotes({
       expandedStartCodeUnit,
       expandedEndCodeUnit,
     );
-    if (expandedQuote !== item.quote) {
+    if (expandedQuote !== locatedAnchorQuote) {
       for (const entry of leafMatches) {
         if (!entry.recovered) continue;
         const finalMatch = uniqueOffset(expandedQuote, entry.leaf.quote);
@@ -2156,7 +2209,7 @@ export function locateTemplateCopilotV3ProviderQuotes({
       // Confidence is server-derived only after the complete locator policy passes.
       confidence: item.ambiguity === "none" ? "high" : "low",
       ambiguity: item.ambiguity,
-      anchorExpanded: expandedQuote !== item.quote,
+      anchorExpanded: expandedQuote !== locatedAnchorQuote,
       sameLocalClauseRecoveredLeafCount,
     }));
   });
@@ -2653,6 +2706,1868 @@ type StagedProviderLeafMatch = Readonly<{
     | Readonly<{ status: "unique"; startCodeUnit: number }>
     | Readonly<{ status: "ambiguous" }>;
 }>;
+
+type TemplateCopilotV3PolicyNotificationListRecoveryContext = Readonly<{
+  authorityClause: Readonly<{
+    startCodeUnit: number;
+    endCodeUnit: number;
+    text: string;
+  }>;
+  progressiveEndCodeUnit: number;
+}>;
+
+type TemplateCopilotV3PolicyNotificationListRecoveryShape = Readonly<{
+  event: TemplateCopilotV3ProviderQuoteItem["leaves"][number];
+  recipient: TemplateCopilotV3ProviderQuoteItem["leaves"][number];
+  visibility: TemplateCopilotV3ProviderQuoteItem["leaves"][number] | null;
+}>;
+
+function templateCopilotV3PolicyNotificationListRecoveryShape(
+  item: TemplateCopilotV3ProviderQuoteItem,
+): TemplateCopilotV3PolicyNotificationListRecoveryShape | null {
+  if (item.kind !== "notification" || item.ambiguity !== "none") return null;
+  const events = item.leaves.filter((leaf) => leaf.role === "event");
+  const recipients = item.leaves.filter((leaf) => leaf.role === "recipient");
+  const visibility = item.leaves.filter((leaf) => leaf.role === "visibility");
+  if (
+    events.length !== 1 ||
+    recipients.length !== 1 ||
+    visibility.length > 1 ||
+    item.leaves.length !== 2 + visibility.length
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    event: events[0],
+    recipient: recipients[0],
+    visibility: visibility[0] ?? null,
+  });
+}
+
+function templateCopilotV3FindPolicyNotificationListEventAnchor({
+  batchId,
+  item,
+  sources,
+}: Readonly<{
+  batchId: TemplateCopilotV3ProviderQuoteBatchId;
+  item: TemplateCopilotV3ProviderQuoteItem;
+  sources: readonly TemplateCopilotV3ProviderQuoteSourceSlot[];
+}>): Readonly<{
+  source: TemplateCopilotV3ProviderQuoteSourceSlot;
+  event: TemplateCopilotV3ProviderQuoteItem["leaves"][number];
+  eventStartCodeUnit: number;
+  context: TemplateCopilotV3PolicyNotificationListRecoveryContext;
+}> | null {
+  if (batchId !== "policy_context") return null;
+  const shape = templateCopilotV3PolicyNotificationListRecoveryShape(item);
+  if (!shape) return null;
+  const providerEvent = uniqueOffset(item.quote, shape.event.quote);
+  if (
+    providerEvent.status !== "unique" ||
+    !sameLocalClauseRecoveredLeafIsLexicallyBounded(
+      item.quote,
+      providerEvent.startCodeUnit,
+      shape.event.quote,
+    )
+  ) {
+    return null;
+  }
+  const sanitizedProviderQuote = quarantineTemplateCopilotRequirementText(
+    item.quote,
+  );
+  const unsafeReasonCount = Object.values(
+    sanitizedProviderQuote.summary.reasonCounts,
+  ).reduce((total, count) => total + (count ?? 0), 0);
+  if (
+    item.quote.includes("\u0000") ||
+    sanitizedProviderQuote.summary.quarantinedBlockCount > 0 ||
+    unsafeReasonCount > 0
+  ) {
+    return null;
+  }
+  const candidates: Array<{
+    source: TemplateCopilotV3ProviderQuoteSourceSlot;
+    eventStartCodeUnit: number;
+    context: TemplateCopilotV3PolicyNotificationListRecoveryContext;
+  }> = [];
+  for (const source of sources) {
+    if (source.slot !== "visibility_notifications") continue;
+    for (const eventStartCodeUnit of exactOffsets(
+      source.text,
+      shape.event.quote,
+    )) {
+      if (
+        !sameLocalClauseRecoveredLeafIsLexicallyBounded(
+          source.text,
+          eventStartCodeUnit,
+          shape.event.quote,
+        )
+      ) {
+        continue;
+      }
+      const context = templateCopilotV3PolicyNotificationListRecoveryContext({
+        batchId,
+        item,
+        source,
+        event: shape.event,
+        eventStartCodeUnit,
+      });
+      if (context) candidates.push({ source, eventStartCodeUnit, context });
+    }
+  }
+  if (candidates.length !== 1) return null;
+  return Object.freeze({
+    ...candidates[0],
+    event: shape.event,
+  });
+}
+
+function templateCopilotV3PolicyNotificationListRecoveryContext({
+  batchId,
+  item,
+  source,
+  event,
+  eventStartCodeUnit,
+}: Readonly<{
+  batchId: TemplateCopilotV3ProviderQuoteBatchId;
+  item: TemplateCopilotV3ProviderQuoteItem;
+  source: TemplateCopilotV3ProviderQuoteSourceSlot;
+  event: TemplateCopilotV3ProviderQuoteItem["leaves"][number];
+  eventStartCodeUnit: number;
+}>): TemplateCopilotV3PolicyNotificationListRecoveryContext | null {
+  if (
+    batchId !== "policy_context" ||
+    source.slot !== "visibility_notifications"
+  ) {
+    return null;
+  }
+  const shape = templateCopilotV3PolicyNotificationListRecoveryShape(item);
+  if (
+    !shape ||
+    shape.event !== event ||
+    source.text.slice(
+        eventStartCodeUnit,
+        eventStartCodeUnit + event.quote.length,
+      ) !== event.quote
+  ) {
+    return null;
+  }
+  const authorityClause = trimmedLocalClauseRange(
+    source.text,
+    hardClauseAt(
+      source.text,
+      eventStartCodeUnit,
+      eventStartCodeUnit + event.quote.length,
+    ).startCodeUnit,
+    hardClauseAt(
+      source.text,
+      eventStartCodeUnit,
+      eventStartCodeUnit + event.quote.length,
+    ).endCodeUnit,
+  );
+  const relativeEventStart = eventStartCodeUnit - authorityClause.startCodeUnit;
+  const eventMatch = uniqueOffset(authorityClause.text, event.quote);
+  const recipientMatch = uniqueOffset(
+    authorityClause.text,
+    shape.recipient.quote,
+  );
+  const visibilityMatch = shape.visibility
+    ? uniqueOffset(authorityClause.text, shape.visibility.quote)
+    : null;
+  if (
+    eventMatch.status !== "unique" ||
+    eventMatch.startCodeUnit !== relativeEventStart ||
+    recipientMatch.status !== "unique" ||
+    (visibilityMatch !== null && visibilityMatch.status !== "unique") ||
+    !sameLocalClauseRecoveredLeafIsLexicallyBounded(
+      authorityClause.text,
+      eventMatch.startCodeUnit,
+      event.quote,
+    ) ||
+    !sameLocalClauseRecoveredLeafIsLexicallyBounded(
+      authorityClause.text,
+      recipientMatch.startCodeUnit,
+      shape.recipient.quote,
+    ) ||
+    (
+      visibilityMatch?.status === "unique" &&
+      !sameLocalClauseRecoveredLeafIsLexicallyBounded(
+        authorityClause.text,
+        visibilityMatch.startCodeUnit,
+        shape.visibility?.quote ?? "",
+      )
+    )
+  ) {
+    return null;
+  }
+  const recipientEnd = recipientMatch.startCodeUnit + shape.recipient.quote.length;
+  const eventEnd = eventMatch.startCodeUnit + event.quote.length;
+  if (
+    recipientMatch.startCodeUnit >= eventMatch.startCodeUnit ||
+    recipientEnd > eventMatch.startCodeUnit ||
+    (
+      visibilityMatch?.status === "unique" &&
+      visibilityMatch.startCodeUnit + (shape.visibility?.quote.length ?? 0) >
+        eventMatch.startCodeUnit
+    )
+  ) {
+    return null;
+  }
+  const sanitizedClause = quarantineTemplateCopilotRequirementText(
+    authorityClause.text,
+  );
+  const unsafeReasonCount = Object.values(
+    sanitizedClause.summary.reasonCounts,
+  ).reduce((total, count) => total + (count ?? 0), 0);
+  const normalized = templateCopilotV3NormalizeLexicalText(
+    authorityClause.text,
+  );
+  if (
+    authorityClause.text.includes("\u0000") ||
+    sanitizedClause.summary.quarantinedBlockCount > 0 ||
+    unsafeReasonCount > 0 ||
+    /[?？]/u.test(
+      `${authorityClause.text}${source.text[authorityClause.endCodeUnit] ?? ""}`,
+    ) ||
+    /(?:^|\b)(?:examples?|samples?|illustrations?|e\.g\.|for example)(?:\b|:)|(?:例如|示例|範例|范例|例子)/u.test(
+      normalized,
+    ) ||
+    /(?:^|\b)(?:if|when|unless|although|however|otherwise|but)(?:\b|,)|(?:若|如果|如|當|当|除非|但|然而|否則|否则)/u.test(
+      normalized,
+    ) ||
+    /\b(?:(?:do|does|did|must|shall|should|may|can|will|would)\s+not|(?:don|doesn|didn|mustn|shalln|shouldn|mayn|can|won|wouldn)(?:['’ʼ]|\s*)t|never|no\s+need\s+to|need\s+not)\s+(?:to\s+)?(?:email|inform|message|notify|send)\b/u.test(
+      normalized,
+    ) ||
+    /(?:不要|不得|不准|禁止|切勿|不應|不应|毋須|毋须|無須|无须|毋需|無需|无需)\s*(?:向[^，。；;\r\n]{1,24})?\s*(?:通知|知會|知会|電郵|电邮|發送|发送)/u.test(
+      normalized,
+    ) ||
+    /\bnot\s+only\b/u.test(normalized) ||
+    /(?:不只|不僅|不仅|非僅|非仅)/u.test(normalized)
+  ) {
+    return null;
+  }
+  const notificationActions = [
+    ...authorityClause.text.matchAll(
+      /\b(?:notify|notifies|notified|notification|notifications|alert|alerts|email|emails|inform|informs)\b|(?:通知|知會|知会|電郵|电邮|提醒)/giu,
+    ),
+  ];
+  if (notificationActions.length !== 1) return null;
+  const actionStart = notificationActions[0].index;
+  const actionEnd = actionStart + notificationActions[0][0].length;
+  if (
+    actionEnd > recipientMatch.startCodeUnit ||
+    actionStart >= eventMatch.startCodeUnit
+  ) {
+    return null;
+  }
+  if (
+    !templateCopilotV3PolicyNotificationClauseHasClosedVocabulary({
+      clauseText: authorityClause.text,
+      eventQuote: shape.event.quote,
+      recipientQuote: shape.recipient.quote,
+      visibilityQuote: shape.visibility?.quote ?? null,
+    }) ||
+    templateCopilotV3PolicyNotificationClauseHasCompetingRecipient({
+      clauseText: authorityClause.text,
+      recipientQuote: shape.recipient.quote,
+    })
+  ) {
+    return null;
+  }
+  if (
+    shape.visibility &&
+    visibilityMatch?.status === "unique" &&
+    (
+      !templateCopilotV3PolicyNotificationVisibilityIsAffirmative({
+        clauseText: authorityClause.text,
+        quote: shape.visibility.quote,
+        hint: shape.visibility.hint,
+        startCodeUnit: visibilityMatch.startCodeUnit,
+      }) ||
+      !templateCopilotV3PolicyNotificationVisibilityHasRecipientAffinity({
+        clauseText: authorityClause.text,
+        visibilityQuote: shape.visibility.quote,
+        visibilityStartCodeUnit: visibilityMatch.startCodeUnit,
+        recipientQuote: shape.recipient.quote,
+        recipientStartCodeUnit: recipientMatch.startCodeUnit,
+      })
+    )
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    authorityClause,
+    progressiveEndCodeUnit: authorityClause.startCodeUnit + eventEnd,
+  });
+}
+
+function templateCopilotV3PolicyNotificationClauseHasCompetingRecipient({
+  clauseText,
+  recipientQuote,
+}: Readonly<{ clauseText: string; recipientQuote: string }>) {
+  const normalized = templateCopilotV3NormalizeLexicalText(clauseText);
+  const selected = templateCopilotV3NormalizeLexicalText(recipientQuote);
+  const residue = templateCopilotV3PolicyNotificationStripClosedPhrase(
+    normalized,
+    selected,
+  );
+  const aliases = [
+    "requester",
+    "current stage participants",
+    "current step participants",
+    "previous stage participants",
+    "previous step participants",
+    "all participants",
+    "all workflow participants",
+    "workflow owner",
+    "申請人",
+    "申请人",
+    "發起人",
+    "发起人",
+    "目前步驟處理人",
+    "当前步骤处理人",
+    "上一個步驟處理人",
+    "上一步骤处理人",
+    "所有流程參與者",
+    "所有流程参与者",
+    "流程負責部門",
+    "流程负责部门",
+  ].map((alias) => templateCopilotV3NormalizeLexicalText(alias));
+  return aliases.some((alias) =>
+    templateCopilotV3PolicyNotificationStripClosedPhrase(residue, alias) !==
+      residue
+  );
+}
+
+const templateCopilotV3PolicyNotificationClosedEventAliases = Object.freeze([
+  "request submitted",
+  "submitted",
+  "申請已提交",
+  "申请已提交",
+  "stage assigned",
+  "work assigned",
+  "assignment",
+  "assigned",
+  "獲指派",
+  "获指派",
+  "指派",
+  "分派",
+  "分配",
+  "工作已分派",
+  "工作已分配",
+  "stage completed",
+  "step completed",
+  "步驟已完成",
+  "步骤已完成",
+  "request rejected",
+  "rejection",
+  "rejected",
+  "拒絕",
+  "拒绝",
+  "被拒絕",
+  "被拒绝",
+  "申請被拒絕",
+  "申请被拒绝",
+  "correction requested",
+  "correction",
+  "corrected",
+  "要求更正",
+  "補正",
+  "补正",
+  "修正",
+  "修改",
+  "request completed",
+  "workflow completed",
+  "completion",
+  "complete",
+  "completed",
+  "完成",
+  "已完成",
+  "流程已完成",
+  "due soon",
+  "即將到期",
+  "即将到期",
+  "overdue",
+  "已逾期",
+  "逾期",
+]);
+
+function templateCopilotV3PolicyNotificationClauseHasClosedVocabulary({
+  clauseText,
+  eventQuote,
+  recipientQuote,
+  visibilityQuote,
+}: Readonly<{
+  clauseText: string;
+  eventQuote: string;
+  recipientQuote: string;
+  visibilityQuote: string | null;
+}>) {
+  const selected = [eventQuote, recipientQuote, visibilityQuote]
+    .filter((value): value is string => value !== null)
+    .map((value) => templateCopilotV3NormalizeLexicalText(value));
+  if (
+    selected.some((value) => value.length === 0) ||
+    !templateCopilotV3PolicyNotificationRecipientQuoteIsClosedSingleEntity(
+      recipientQuote,
+    )
+  ) {
+    return false;
+  }
+  const notificationActions = [
+    ...selected,
+    "notify",
+    "notifies",
+    "notified",
+    "notification",
+    "notifications",
+    "alert",
+    "alerts",
+    "email",
+    "emails",
+    "inform",
+    "informs",
+    "通知",
+    "知會",
+    "知会",
+    "電郵",
+    "电邮",
+    "提醒",
+  ];
+  const closedGrammar = [
+    "to",
+    "of",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "以及",
+    "及",
+    "和",
+    "與",
+    "与",
+    "並",
+    "并",
+    "或",
+    "於",
+    "于",
+    "在",
+    "時",
+    "时",
+    "後",
+    "后",
+    "發生",
+    "发生",
+  ];
+  let residue = templateCopilotV3NormalizeLexicalText(clauseText);
+  for (const phrase of notificationActions) {
+    residue = templateCopilotV3PolicyNotificationStripClosedPhrase(
+      residue,
+      templateCopilotV3NormalizeLexicalText(phrase),
+    );
+  }
+  const markers = [
+    ...residue.matchAll(
+      /\bevents?\s+(?:include|includes|included|including)\b|\bincluding\b|\b(?:for|on|upon|at|about)\b|事件包括/gu,
+    ),
+  ];
+  if (markers.length > 1) return false;
+  if (markers.length === 0) {
+    return templateCopilotV3PolicyNotificationClosedResidueIsEmpty(
+      residue,
+      closedGrammar,
+    );
+  }
+  const marker = markers[0];
+  const markerStart = marker.index;
+  const markerEnd = markerStart + marker[0].length;
+  return (
+    templateCopilotV3PolicyNotificationClosedResidueIsEmpty(
+      residue.slice(0, markerStart),
+      closedGrammar,
+    ) &&
+    templateCopilotV3PolicyNotificationClosedResidueIsEmpty(
+      residue.slice(markerEnd),
+      [
+        ...templateCopilotV3PolicyNotificationClosedEventAliases,
+        ...closedGrammar,
+      ],
+    )
+  );
+}
+
+const templateCopilotV3PolicyNotificationCanonicalRecipientAliases = new Set([
+  "requester",
+  "current stage participants",
+  "current step participants",
+  "previous stage participants",
+  "previous step participants",
+  "all participants",
+  "all workflow participants",
+  "workflow owner",
+  "directly involved people",
+  "directly related people",
+  "owner group",
+  "requester group",
+  "board of directors",
+  "finance operations team",
+  "senior finance risk review committee",
+  "contract management department",
+  "people operations team",
+  "software engineering team",
+  "executive leadership team",
+  "vendor management office",
+  "risk management team",
+  "research and development team",
+  "research & development team",
+  "people and culture team",
+  "people & culture team",
+  "financial planning and analysis team",
+  "financial planning & analysis team",
+  "risk and compliance team",
+  "risk & compliance team",
+  "mergers and acquisitions team",
+  "mergers & acquisitions team",
+  "strategy and operations team",
+  "strategy & operations team",
+  "environmental health and safety team",
+  "environmental health & safety team",
+  "diversity and inclusion team",
+  "diversity & inclusion team",
+  "global research and development team",
+  "global research & development team",
+  "research and development center",
+  "research & development center",
+  "center of excellence",
+  "centre of excellence",
+  "research and development centre",
+  "research & development centre",
+  "r&d center",
+  "r&d centre",
+  "finance center of excellence",
+  "finance centre of excellence",
+  "corporate people and culture team",
+  "corporate people & culture team",
+  "regional financial planning and analysis team",
+  "regional financial planning & analysis team",
+  "global r&d team",
+  "learning and development team",
+  "learning & development team",
+  "學習與發展團隊",
+  "学习与发展团队",
+  "r&d",
+  "r&d team",
+  "information technology team",
+  "information technology department",
+  "information technology office",
+  "資訊科技部",
+  "信息技术部",
+  "合同管理部",
+  "財務營運團隊",
+  "财务运营团队",
+  "人力資源部",
+  "人力资源部",
+  "軟體工程團隊",
+  "软件工程团队",
+  "品質保證團隊",
+  "质量保证团队",
+  "供應鏈管理部",
+  "供应链管理部",
+  "公共關係部",
+  "公共关系部",
+  "風險管理團隊",
+  "风险管理团队",
+  "申請人",
+  "申请人",
+  "發起人",
+  "发起人",
+  "目前步驟處理人",
+  "当前步骤处理人",
+  "上一個步驟處理人",
+  "上一步骤处理人",
+  "所有流程參與者",
+  "所有流程参与者",
+  "流程負責部門",
+  "流程负责部门",
+  "直接相關人士",
+  "直接相关人士",
+  "直接相關人員",
+  "直接相关人员",
+]);
+
+const templateCopilotV3PolicyNotificationLatinRecipientSeparators = new Set([
+  "after",
+  "also",
+  "alongside",
+  "and",
+  "all",
+  "any",
+  "before",
+  "besides",
+  "both",
+  "cum",
+  "e",
+  "either",
+  "each",
+  "en",
+  "et",
+  "every",
+  "everybody",
+  "everyone",
+  "except",
+  "excepting",
+  "excluding",
+  "followed",
+  "following",
+  "four",
+  "i",
+  "including",
+  "instead",
+  "iyo",
+  "many",
+  "multiple",
+  "next",
+  "nine",
+  "nor",
+  "o",
+  "och",
+  "of",
+  "og",
+  "or",
+  "ou",
+  "plus",
+  "prior",
+  "rather",
+  "several",
+  "seven",
+  "six",
+  "subsequently",
+  "ten",
+  "than",
+  "then",
+  "three",
+  "two",
+  "und",
+  "ve",
+  "versus",
+  "vs",
+  "with",
+  "without",
+  "y",
+  "eight",
+  "five",
+  "a",
+  "an",
+  "the",
+  "no",
+  "not",
+  "only",
+  "another",
+  "other",
+  "additional",
+  "different",
+  "separate",
+  "respective",
+  "remaining",
+  "some",
+  "various",
+  "numerous",
+  "few",
+  "dozen",
+  "dozens",
+  "zero",
+  "one",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+  "sixteen",
+  "seventeen",
+  "eighteen",
+  "nineteen",
+  "twenty",
+  "accompanied",
+  "by",
+  "joined",
+  "jointly",
+  "together",
+  "combined",
+  "coupled",
+  "paired",
+  "succeeded",
+  "compared",
+  "via",
+  "to",
+  "from",
+  "minus",
+]);
+
+const templateCopilotV3PolicyNotificationLatinRecipientHeads = new Set([
+  "administrator",
+  "administrators",
+  "approver",
+  "approvers",
+  "auditor",
+  "auditors",
+  "board",
+  "boards",
+  "chair",
+  "chairs",
+  "center",
+  "centers",
+  "centre",
+  "centres",
+  "committee",
+  "committees",
+  "controller",
+  "controllers",
+  "coordinator",
+  "coordinators",
+  "council",
+  "councils",
+  "counsel",
+  "department",
+  "departments",
+  "director",
+  "directors",
+  "division",
+  "divisions",
+  "executive",
+  "executives",
+  "function",
+  "functions",
+  "group",
+  "groups",
+  "head",
+  "heads",
+  "lead",
+  "leads",
+  "manager",
+  "managers",
+  "member",
+  "members",
+  "office",
+  "offices",
+  "officer",
+  "officers",
+  "owner",
+  "owners",
+  "participant",
+  "participants",
+  "people",
+  "person",
+  "persons",
+  "representative",
+  "representatives",
+  "reviewer",
+  "reviewers",
+  "role",
+  "roles",
+  "secretaries",
+  "secretary",
+  "specialist",
+  "specialists",
+  "staff",
+  "supervisor",
+  "supervisors",
+  "team",
+  "teams",
+  "unit",
+  "units",
+  "users",
+  "workforce",
+]);
+
+const templateCopilotV3PolicyNotificationPluralLatinRecipientHeads = new Set([
+  "administrators",
+  "approvers",
+  "auditors",
+  "boards",
+  "chairs",
+  "centers",
+  "centres",
+  "committees",
+  "controllers",
+  "coordinators",
+  "councils",
+  "departments",
+  "directors",
+  "divisions",
+  "executives",
+  "functions",
+  "groups",
+  "heads",
+  "leads",
+  "managers",
+  "members",
+  "offices",
+  "officers",
+  "owners",
+  "participants",
+  "persons",
+  "representatives",
+  "reviewers",
+  "roles",
+  "secretaries",
+  "specialists",
+  "supervisors",
+  "teams",
+  "units",
+  "users",
+]);
+
+const templateCopilotV3PolicyNotificationLatinRecipientModifiers = new Set([
+  "account",
+  "accounts",
+  "accounting",
+  "administrative",
+  "advisory",
+  "analytics",
+  "application",
+  "applications",
+  "apac",
+  "approval",
+  "approvals",
+  "architecture",
+  "asset",
+  "assets",
+  "audit",
+  "auditing",
+  "billing",
+  "business",
+  "capital",
+  "change",
+  "client",
+  "commercial",
+  "communications",
+  "compliance",
+  "contract",
+  "contracts",
+  "corporate",
+  "credit",
+  "customer",
+  "data",
+  "delivery",
+  "digital",
+  "employee",
+  "engineering",
+  "enterprise",
+  "emea",
+  "ethics",
+  "executive",
+  "facilities",
+  "field",
+  "finance",
+  "financial",
+  "fraud",
+  "global",
+  "governance",
+  "growth",
+  "hr",
+  "human",
+  "information",
+  "infrastructure",
+  "internal",
+  "inventory",
+  "investment",
+  "it",
+  "legal",
+  "leadership",
+  "local",
+  "logistics",
+  "management",
+  "marketing",
+  "operations",
+  "organizational",
+  "payroll",
+  "payable",
+  "people",
+  "planning",
+  "policy",
+  "procurement",
+  "product",
+  "program",
+  "project",
+  "protection",
+  "privacy",
+  "quality",
+  "assurance",
+  "record",
+  "records",
+  "regional",
+  "reporting",
+  "request",
+  "requests",
+  "research",
+  "regulatory",
+  "affairs",
+  "resource",
+  "resources",
+  "review",
+  "risk",
+  "sales",
+  "security",
+  "senior",
+  "service",
+  "services",
+  "software",
+  "success",
+  "shared",
+  "strategy",
+  "support",
+  "supply",
+  "chain",
+  "systems",
+  "tax",
+  "technical",
+  "technology",
+  "transformation",
+  "treasury",
+  "vendor",
+  "culture",
+  "analysis",
+  "development",
+  "experience",
+  "investor",
+  "relations",
+  "design",
+  "cloud",
+  "cyber",
+  "network",
+  "cybersecurity",
+  "revenue",
+  "science",
+  "talent",
+  "acquisition",
+  "learning",
+  "mergers",
+  "acquisitions",
+  "excellence",
+  "workflow",
+  "workplace",
+]);
+
+const templateCopilotV3PolicyNotificationLatinRecipientDomainFamilies =
+  new Map<string, string>([
+    ["account", "finance"],
+    ["accounts", "finance"],
+    ["accounting", "finance"],
+    ["billing", "finance"],
+    ["credit", "finance"],
+    ["finance", "finance"],
+    ["financial", "finance"],
+    ["investment", "finance"],
+    ["payroll", "finance"],
+    ["tax", "finance"],
+    ["treasury", "finance"],
+    ["compliance", "compliance"],
+    ["contract", "legal"],
+    ["contracts", "legal"],
+    ["ethics", "compliance"],
+    ["fraud", "compliance"],
+    ["governance", "compliance"],
+    ["legal", "legal"],
+    ["policy", "legal"],
+    ["regulatory", "compliance"],
+    ["employee", "people"],
+    ["hr", "people"],
+    ["human", "people"],
+    ["people", "people"],
+    ["data", "technology"],
+    ["information", "technology"],
+    ["application", "technology"],
+    ["applications", "technology"],
+    ["infrastructure", "technology"],
+    ["it", "technology"],
+    ["software", "technology"],
+    ["privacy", "technology"],
+    ["protection", "technology"],
+    ["development", "technology"],
+    ["systems", "technology"],
+    ["network", "technology"],
+    ["cybersecurity", "technology"],
+    ["science", "technology"],
+    ["technology", "technology"],
+    ["client", "customer"],
+    ["customer", "customer"],
+    ["commercial", "commercial"],
+    ["marketing", "commercial"],
+    ["sales", "commercial"],
+    ["revenue", "commercial"],
+    ["procurement", "procurement"],
+    ["chain", "procurement"],
+    ["vendor", "procurement"],
+    ["audit", "compliance"],
+    ["auditing", "compliance"],
+    ["administrative", "operations"],
+    ["advisory", "advisory"],
+    ["analytics", "technology"],
+    ["approval", "operations"],
+    ["approvals", "operations"],
+    ["architecture", "technology"],
+    ["asset", "finance"],
+    ["assets", "finance"],
+    ["business", "operations"],
+    ["capital", "finance"],
+    ["change", "operations"],
+    ["communications", "commercial"],
+    ["delivery", "operations"],
+    ["digital", "technology"],
+    ["engineering", "technology"],
+    ["facilities", "operations"],
+    ["field", "operations"],
+    ["growth", "commercial"],
+    ["inventory", "procurement"],
+    ["leadership", "corporate"],
+    ["logistics", "procurement"],
+    ["management", "operations"],
+    ["operations", "operations"],
+    ["planning", "operations"],
+    ["product", "operations"],
+    ["program", "operations"],
+    ["project", "operations"],
+    ["quality", "quality"],
+    ["record", "records"],
+    ["records", "records"],
+    ["reporting", "operations"],
+    ["research", "technology"],
+    ["resource", "people"],
+    ["resources", "people"],
+    ["review", "operations"],
+    ["risk", "compliance"],
+    ["security", "technology"],
+    ["service", "customer"],
+    ["services", "customer"],
+    ["strategy", "operations"],
+    ["support", "technology"],
+    ["supply", "procurement"],
+    ["technical", "technology"],
+    ["transformation", "technology"],
+    ["workflow", "operations"],
+    ["workplace", "people"],
+    ["talent", "people"],
+    ["acquisition", "people"],
+    ["learning", "people"],
+  ]);
+
+const templateCopilotV3PolicyNotificationLatinAllowedCompoundDomainSequences =
+  new Set([
+    "commercial finance",
+    "business development",
+    "business finance",
+    "contract management",
+    "customer data",
+    "customer operations",
+    "data governance",
+    "data operations",
+    "engineering operations",
+    "finance operations",
+    "finance analytics",
+    "finance technology",
+    "finance planning",
+    "finance reporting",
+    "finance review",
+    "financial planning",
+    "financial reporting",
+    "financial operations",
+    "hr operations",
+    "hr technology",
+    "human resources technology",
+    "human resources operations",
+    "information technology operations",
+    "it operations",
+    "legal operations",
+    "legal technology",
+    "marketing operations",
+    "marketing analytics",
+    "marketing technology",
+    "people analytics",
+    "people operations",
+    "people technology",
+    "product security",
+    "product marketing",
+    "product analytics",
+    "product development",
+    "risk management",
+    "compliance operations",
+    "contract operations",
+    "business analytics",
+    "finance systems",
+    "network operations",
+    "sales finance",
+    "sales operations",
+    "revenue operations",
+    "security operations",
+    "supply chain finance",
+    "supply chain management",
+    "vendor management",
+    "vendor risk",
+    "vendor risk management",
+  ]);
+
+function templateCopilotV3PolicyNotificationLatinDomainProfileFor(
+  tokens: readonly string[],
+) {
+  const domainTokens = tokens.filter((token) =>
+    templateCopilotV3PolicyNotificationLatinRecipientDomainFamilies.has(token)
+  );
+  const firstDomainIndex = tokens.findIndex((token) =>
+    templateCopilotV3PolicyNotificationLatinRecipientDomainFamilies.has(token)
+  );
+  return {
+    families: new Set(domainTokens.map((token) =>
+      templateCopilotV3PolicyNotificationLatinRecipientDomainFamilies.get(
+        token,
+      ) ?? ""
+    )),
+    domainTokensAreContiguousSuffix: firstDomainIndex >= 0 &&
+      tokens.slice(firstDomainIndex).every((token) =>
+        templateCopilotV3PolicyNotificationLatinRecipientDomainFamilies.has(
+          token,
+        )
+      ),
+    tokenSequence: domainTokens.join(" "),
+  };
+}
+
+const templateCopilotV3PolicyNotificationHanRecipientSeparators = new Set([
+  "和",
+  "及",
+  "與",
+  "与",
+  "並",
+  "并",
+  "或",
+  "同",
+  "暨",
+  "跟",
+  "還有",
+  "还有",
+  "以及",
+  "連同",
+  "连同",
+  "加",
+  "加上",
+  "會同",
+  "会同",
+  "同埋",
+  "又",
+  "亦",
+  "也",
+  "且",
+  "而且",
+  "再加",
+  "再",
+  "然後",
+  "然后",
+  "接著",
+  "接着",
+  "接續",
+  "接续",
+  "之後",
+  "之后",
+  "隨後",
+  "随后",
+  "繼而",
+  "继而",
+  "轉而",
+  "转而",
+  "偕同",
+  "夥同",
+  "伙同",
+  "協同",
+  "协同",
+  "外加",
+  "另加",
+  "聯同",
+  "联同",
+  "各",
+  "每",
+  "每個",
+  "每个",
+  "所有",
+  "全部",
+  "多個",
+  "多个",
+  "若干",
+  "數個",
+  "数个",
+  "兩",
+  "两",
+  "三",
+  "分別",
+  "分别",
+  "各自",
+]);
+
+const templateCopilotV3PolicyNotificationHanRecipientHeads = [
+  "部門",
+  "部门",
+  "團隊",
+  "团队",
+  "小組",
+  "小组",
+  "委員會",
+  "委员会",
+  "辦公室",
+  "办公室",
+  "參與者",
+  "参与者",
+  "負責人",
+  "负责人",
+  "處理人",
+  "处理人",
+  "人士",
+  "人員",
+  "人员",
+  "中心",
+  "部",
+  "組",
+  "组",
+  "科",
+  "處",
+  "处",
+] as const;
+
+const templateCopilotV3PolicyNotificationHanRecipientModifiers = new Set([
+  "財務",
+  "财务",
+  "法務",
+  "法务",
+  "合同",
+  "管理",
+  "和諧",
+  "和谐",
+  "服務",
+  "服务",
+  "及時",
+  "及时",
+  "支援",
+  "支持",
+  "國際",
+  "国际",
+  "和平",
+  "合規",
+  "合规",
+  "風險",
+  "风险",
+  "審核",
+  "审核",
+  "審批",
+  "审批",
+  "項目",
+  "项目",
+  "數據",
+  "数据",
+  "保護",
+  "保护",
+  "資訊",
+  "信息",
+  "安全",
+  "採購",
+  "采购",
+  "營運",
+  "运营",
+  "業務",
+  "业务",
+  "行政",
+  "人力",
+  "人力資源",
+  "人力资源",
+  "資源",
+  "资源",
+  "內部",
+  "内部",
+  "品質",
+  "质量",
+  "客戶",
+  "客户",
+  "成功",
+  "軟體",
+  "软件",
+  "保證",
+  "保证",
+  "法規",
+  "法规",
+  "事務",
+  "事务",
+  "供應",
+  "供应",
+  "鏈",
+  "链",
+  "公共",
+  "關係",
+  "关系",
+  "研發",
+  "研发",
+  "技術",
+  "技术",
+  "科技",
+  "策略",
+  "治理",
+  "高級",
+  "高级",
+  "資深",
+  "资深",
+  "工作流程",
+  "流程",
+  "企業",
+  "企业",
+  "商務",
+  "商务",
+  "會計",
+  "会计",
+  "稽核",
+  "审计",
+  "信用",
+  "設施",
+  "设施",
+  "記錄",
+  "记录",
+  "更新",
+  "市場",
+  "市场",
+  "營銷",
+  "营销",
+  "銷售",
+  "销售",
+  "產品",
+  "产品",
+  "研究",
+  "開發",
+  "开发",
+  "工程",
+  "數碼",
+  "数字",
+  "轉型",
+  "转型",
+  "體驗",
+  "体验",
+  "私隱",
+  "隐私",
+  "環境",
+  "环境",
+  "健康",
+  "系統",
+  "系统",
+  "科學",
+  "科学",
+  "網絡",
+  "网络",
+  "人才",
+  "招聘",
+  "學習",
+  "学习",
+  "發展",
+  "发展",
+  "營收",
+  "营收",
+  "亞太",
+  "亚太",
+  "全球",
+  "區域",
+  "区域",
+]);
+
+const templateCopilotV3PolicyNotificationHanRecipientModifierTokens = [
+  ...templateCopilotV3PolicyNotificationHanRecipientModifiers,
+].sort((left, right) =>
+  Array.from(right).length - Array.from(left).length
+);
+
+function templateCopilotV3PolicyNotificationHanRecipientModifierSequenceIsClosed(
+  value: string,
+) {
+  let remainder = value;
+  if (remainder.length === 0) return false;
+  while (remainder.length > 0) {
+    const matched =
+      templateCopilotV3PolicyNotificationHanRecipientModifierTokens.find(
+        (token) => remainder.startsWith(token),
+      );
+    if (!matched) return false;
+    remainder = remainder.slice(matched.length);
+  }
+  return true;
+}
+
+const templateCopilotV3PolicyNotificationHanRecipientDomainFamilies =
+  new Map<string, string>([
+    ["財務", "finance"],
+    ["财务", "finance"],
+    ["會計", "finance"],
+    ["会计", "finance"],
+    ["信用", "finance"],
+    ["法務", "legal"],
+    ["法务", "legal"],
+    ["合同", "legal"],
+    ["合規", "compliance"],
+    ["合规", "compliance"],
+    ["治理", "compliance"],
+    ["法規", "compliance"],
+    ["法规", "compliance"],
+    ["人力", "people"],
+    ["人力資源", "people"],
+    ["人力资源", "people"],
+    ["人才", "people"],
+    ["招聘", "people"],
+    ["學習", "people"],
+    ["学习", "people"],
+    ["數據", "technology"],
+    ["数据", "technology"],
+    ["資訊", "technology"],
+    ["信息", "technology"],
+    ["私隱", "technology"],
+    ["隐私", "technology"],
+    ["技術", "technology"],
+    ["技术", "technology"],
+    ["系統", "technology"],
+    ["系统", "technology"],
+    ["科學", "technology"],
+    ["科学", "technology"],
+    ["網絡", "technology"],
+    ["网络", "technology"],
+    ["發展", "technology"],
+    ["发展", "technology"],
+    ["科技", "technology"],
+    ["軟體", "technology"],
+    ["软件", "technology"],
+    ["研發", "technology"],
+    ["研发", "technology"],
+    ["客戶", "customer"],
+    ["客户", "customer"],
+    ["商務", "commercial"],
+    ["商务", "commercial"],
+    ["市場", "commercial"],
+    ["市场", "commercial"],
+    ["營銷", "commercial"],
+    ["营销", "commercial"],
+    ["銷售", "commercial"],
+    ["销售", "commercial"],
+    ["營收", "commercial"],
+    ["营收", "commercial"],
+    ["採購", "procurement"],
+    ["采购", "procurement"],
+    ["稽核", "finance"],
+    ["审计", "finance"],
+    ["風險", "compliance"],
+    ["风险", "compliance"],
+    ["安全", "technology"],
+    ["工程", "technology"],
+    ["營運", "operations"],
+    ["运营", "operations"],
+    ["管理", "operations"],
+    ["服務", "customer"],
+    ["服务", "customer"],
+    ["支援", "technology"],
+    ["支持", "technology"],
+    ["行政", "operations"],
+    ["品質", "quality"],
+    ["质量", "quality"],
+    ["保證", "quality"],
+    ["保证", "quality"],
+    ["供應", "procurement"],
+    ["供应", "procurement"],
+    ["鏈", "procurement"],
+    ["链", "procurement"],
+    ["業務", "commercial"],
+    ["业务", "commercial"],
+    ["產品", "operations"],
+    ["产品", "operations"],
+    ["研究", "technology"],
+    ["開發", "technology"],
+    ["开发", "technology"],
+    ["數碼", "technology"],
+    ["数字", "technology"],
+    ["轉型", "technology"],
+    ["转型", "technology"],
+    ["策略", "operations"],
+    ["資源", "people"],
+    ["资源", "people"],
+    ["審核", "compliance"],
+    ["审核", "compliance"],
+    ["審批", "compliance"],
+    ["审批", "compliance"],
+    ["保護", "technology"],
+    ["保护", "technology"],
+    ["項目", "operations"],
+    ["项目", "operations"],
+    ["工作流程", "operations"],
+    ["流程", "operations"],
+    ["設施", "operations"],
+    ["设施", "operations"],
+    ["記錄", "operations"],
+    ["记录", "operations"],
+    ["更新", "operations"],
+  ]);
+
+const templateCopilotV3PolicyNotificationHanAllowedCompoundDomainSequences =
+  new Set([
+    "人力營運",
+    "人力运营",
+    "人力資源營運",
+    "人力资源运营",
+    "人力科技",
+    "人力資源科技",
+    "人力资源科技",
+    "供應鏈管理",
+    "供应链管理",
+    "供應鏈財務",
+    "供应链财务",
+    "合同管理",
+    "商務財務",
+    "商务财务",
+    "業務財務",
+    "业务财务",
+    "業務開發",
+    "业务开发",
+    "安全營運",
+    "安全运营",
+    "數據營運",
+    "数据运营",
+    "工程營運",
+    "工程运营",
+    "合同營運",
+    "合同运营",
+    "合規營運",
+    "合规运营",
+    "客戶數據",
+    "客户数据",
+    "客戶營運",
+    "客户运营",
+    "數據治理",
+    "数据治理",
+    "法務營運",
+    "法务运营",
+    "法務科技",
+    "法务科技",
+    "產品安全",
+    "产品安全",
+    "產品開發",
+    "产品开发",
+    "產品營銷",
+    "产品营销",
+    "營銷營運",
+    "营销运营",
+    "財務審核",
+    "财务审核",
+    "財務營運",
+    "财务运营",
+    "財務系統",
+    "财务系统",
+    "財務科技",
+    "财务科技",
+    "銷售營運",
+    "销售运营",
+    "銷售財務",
+    "销售财务",
+    "資訊科技營運",
+    "信息技术运营",
+    "營銷科技",
+    "营销科技",
+    "營收營運",
+    "营收运营",
+    "供應風險",
+    "供应风险",
+    "風險管理",
+    "风险管理",
+  ]);
+
+const templateCopilotV3PolicyNotificationHanRecipientDomainTokens = [
+  ...templateCopilotV3PolicyNotificationHanRecipientDomainFamilies.keys(),
+].sort((left, right) =>
+  Array.from(right).length - Array.from(left).length
+);
+
+function templateCopilotV3PolicyNotificationHanRecipientDomainFamiliesFor(
+  segment: string,
+) {
+  let remainder = segment;
+  const entries: Array<{ family: string; token: string }> = [];
+  while (remainder.length > 0) {
+    const matched =
+      templateCopilotV3PolicyNotificationHanRecipientDomainTokens.find(
+        (token) => remainder.startsWith(token),
+    );
+    if (matched) {
+      const family =
+        templateCopilotV3PolicyNotificationHanRecipientDomainFamilies.get(
+          matched,
+        );
+      if (family) entries.push({ family, token: matched });
+      remainder = remainder.slice(matched.length);
+      continue;
+    }
+    remainder = Array.from(remainder).slice(1).join("");
+  }
+  return entries;
+}
+
+function templateCopilotV3PolicyNotificationHanDomainProfileFor(
+  value: string,
+) {
+  const entries =
+    templateCopilotV3PolicyNotificationHanRecipientDomainFamiliesFor(value);
+  const tokenSequence = entries.map(({ token }) => token).join("");
+  const firstDomainOffset = entries.length > 0
+    ? value.indexOf(entries[0].token)
+    : -1;
+  return {
+    families: new Set(entries.map(({ family }) => family)),
+    domainTokensAreContiguousSuffix: firstDomainOffset >= 0 &&
+      value.slice(firstDomainOffset) === tokenSequence,
+    tokenSequence,
+  };
+}
+
+const templateCopilotV3PolicyNotificationHanRecipientSegmenter =
+  typeof Intl.Segmenter === "function"
+    ? new Intl.Segmenter("zh-Hant", { granularity: "word" })
+    : null;
+
+function templateCopilotV3PolicyNotificationHanRecipientSegmentIsClosedHead(
+  segment: string,
+) {
+  return (
+    templateCopilotV3PolicyNotificationHanRecipientHeads.includes(
+      segment as typeof templateCopilotV3PolicyNotificationHanRecipientHeads[
+        number
+      ],
+    ) ||
+    templateCopilotV3PolicyNotificationHanRecipientHeads.some((head) =>
+      segment.endsWith(head) &&
+      templateCopilotV3PolicyNotificationHanRecipientModifierSequenceIsClosed(
+        segment.slice(0, -head.length),
+      )
+    )
+  );
+}
+
+function templateCopilotV3PolicyNotificationRecipientQuoteIsClosedSingleEntity(
+  recipientQuote: string,
+) {
+  const normalized = templateCopilotV3NormalizeLexicalText(recipientQuote);
+  if (
+    normalized.length === 0 ||
+    /[\p{Cc}\p{Cf}]/u.test(normalized)
+  ) return false;
+  if (
+    templateCopilotV3PolicyNotificationCanonicalRecipientAliases.has(
+      normalized,
+    )
+  ) return true;
+  if (/^[a-z0-9]+(?: [a-z0-9]+)*$/u.test(normalized)) {
+    const tokens = normalized.split(" ");
+    if (
+      tokens.length === 0 ||
+      tokens.length > 12 ||
+      tokens.some((token) => /^\d+$/u.test(token)) ||
+      tokens.some((token) =>
+        templateCopilotV3PolicyNotificationLatinRecipientSeparators.has(token)
+      ) ||
+      /(?:^| )(?:along with|as well as|in addition to|together with|followed by)(?: |$)/u
+        .test(normalized)
+    ) {
+      return false;
+    }
+    if (tokens.length === 1) {
+      return (
+        (!templateCopilotV3PolicyNotificationPluralLatinRecipientHeads.has(
+          tokens[0],
+        ) &&
+          templateCopilotV3PolicyNotificationLatinRecipientHeads.has(
+            tokens[0],
+          )) ||
+        templateCopilotV3PolicyNotificationLatinRecipientDomainFamilies.has(
+          tokens[0],
+        )
+      );
+    }
+    const domainProfile =
+      templateCopilotV3PolicyNotificationLatinDomainProfileFor(
+        tokens.slice(0, -1),
+      );
+    if (
+      domainProfile.families.size > 1 &&
+      (!domainProfile.domainTokensAreContiguousSuffix ||
+        !templateCopilotV3PolicyNotificationLatinAllowedCompoundDomainSequences
+          .has(domainProfile.tokenSequence))
+    ) return false;
+    return (
+      templateCopilotV3PolicyNotificationLatinRecipientHeads.has(
+        tokens.at(-1) ?? "",
+      ) &&
+      !templateCopilotV3PolicyNotificationPluralLatinRecipientHeads.has(
+        tokens.at(-1) ?? "",
+      ) &&
+      tokens.slice(0, -1).every((token) =>
+        templateCopilotV3PolicyNotificationLatinRecipientModifiers.has(token)
+      )
+    );
+  }
+  if (
+    !/^\p{Script=Han}+(?: \p{Script=Han}+)*$/u.test(normalized) ||
+    !templateCopilotV3PolicyNotificationHanRecipientSegmenter
+  ) {
+    return false;
+  }
+  const segments = [
+    ...templateCopilotV3PolicyNotificationHanRecipientSegmenter.segment(
+      normalized,
+    ),
+  ].filter((segment) => segment.isWordLike)
+    .map((segment) =>
+      templateCopilotV3NormalizeLexicalText(segment.segment)
+    );
+  if (
+    segments.length === 0 ||
+    segments.some((segment) =>
+      templateCopilotV3PolicyNotificationHanRecipientSeparators.has(segment)
+    )
+  ) {
+    return false;
+  }
+  const compactRecipient = segments.join("");
+  const matchedRecipientHead =
+    templateCopilotV3PolicyNotificationHanRecipientHeads.find((head) =>
+      compactRecipient.endsWith(head)
+    );
+  const domainSource = matchedRecipientHead
+    ? compactRecipient.slice(0, -matchedRecipientHead.length)
+    : compactRecipient;
+  const domainProfile =
+    templateCopilotV3PolicyNotificationHanDomainProfileFor(domainSource);
+  if (
+    domainProfile.families.size > 1 &&
+    (!domainProfile.domainTokensAreContiguousSuffix ||
+      !templateCopilotV3PolicyNotificationHanAllowedCompoundDomainSequences.has(
+        domainProfile.tokenSequence,
+      ))
+  ) return false;
+  return (
+    templateCopilotV3PolicyNotificationHanRecipientDomainFamilies.has(
+      compactRecipient,
+    ) ||
+    templateCopilotV3PolicyNotificationHanRecipientSegmentIsClosedHead(
+      compactRecipient,
+    )
+  );
+}
+
+function templateCopilotV3PolicyNotificationClosedResidueIsEmpty(
+  value: string,
+  phrases: readonly string[],
+) {
+  const removable = phrases
+    .map((phrase) => templateCopilotV3NormalizeLexicalText(phrase))
+    .filter((phrase, index, values) =>
+      phrase.length > 0 && values.indexOf(phrase) === index
+    )
+    .sort((left, right) => right.length - left.length);
+  let residue = value;
+  for (const phrase of removable) {
+    residue = templateCopilotV3PolicyNotificationStripClosedPhrase(
+      residue,
+      phrase,
+    );
+  }
+  residue = residue.replace(/[\p{P}\p{S}]/gu, " ");
+  return templateCopilotV3NormalizeLexicalText(residue).length === 0;
+}
+
+function templateCopilotV3PolicyNotificationStripClosedPhrase(
+  value: string,
+  phrase: string,
+) {
+  const escaped = escapeRegExp(phrase);
+  const asciiWordPhrase = /^[a-z0-9]/u.test(phrase) &&
+    /[a-z0-9]$/u.test(phrase);
+  const pattern = asciiWordPhrase
+    ? `(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`
+    : escaped;
+  return value.replace(new RegExp(pattern, "gu"), " ");
+}
+
+function templateCopilotV3PolicyNotificationVisibilityIsAffirmative({
+  clauseText,
+  quote,
+  hint,
+  startCodeUnit,
+}: Readonly<{
+  clauseText: string;
+  quote: string;
+  hint: string | null;
+  startCodeUnit: number;
+}>) {
+  const marker = templateCopilotV3NormalizeLexicalText(quote);
+  const aliases: Readonly<Record<string, readonly string[]>> = {
+    recipients_only: ["only", "recipients only", "only recipients", "只", "僅", "仅"],
+    all_participants: [
+      "all participants",
+      "all workflow participants",
+      "所有流程參與者",
+      "所有流程参与者",
+    ],
+  };
+  if (hint === null || !(aliases[hint] ?? []).includes(marker)) return false;
+  const prefix = templateCopilotV3NormalizeLexicalText(
+    clauseText.slice(0, startCodeUnit),
+  );
+  return !templateCopilotV3NormalizedPrefixNegatesFollowingPredicate(prefix) &&
+    !(hint === "recipients_only" && /(?:不|非)\s*$/u.test(prefix));
+}
+
+function templateCopilotV3PolicyNotificationVisibilityHasRecipientAffinity({
+  clauseText,
+  visibilityQuote,
+  visibilityStartCodeUnit,
+  recipientQuote,
+  recipientStartCodeUnit,
+}: Readonly<{
+  clauseText: string;
+  visibilityQuote: string;
+  visibilityStartCodeUnit: number;
+  recipientQuote: string;
+  recipientStartCodeUnit: number;
+}>) {
+  const visibilityEndCodeUnit = visibilityStartCodeUnit +
+    visibilityQuote.length;
+  const recipientEndCodeUnit = recipientStartCodeUnit + recipientQuote.length;
+  const notificationActions = [
+    "notify",
+    "notifies",
+    "notified",
+    "notification",
+    "notifications",
+    "alert",
+    "alerts",
+    "email",
+    "emails",
+    "inform",
+    "informs",
+    "通知",
+    "知會",
+    "知会",
+    "電郵",
+    "电邮",
+    "提醒",
+  ];
+  if (visibilityEndCodeUnit <= recipientStartCodeUnit) {
+    return templateCopilotV3PolicyNotificationClosedResidueIsEmpty(
+      clauseText.slice(visibilityEndCodeUnit, recipientStartCodeUnit),
+      [...notificationActions, "the", "a", "an"],
+    );
+  }
+  if (recipientEndCodeUnit <= visibilityStartCodeUnit) {
+    return templateCopilotV3PolicyNotificationClosedResidueIsEmpty(
+      clauseText.slice(recipientEndCodeUnit, visibilityStartCodeUnit),
+      ["recipient", "recipients"],
+    );
+  }
+  return false;
+}
 
 const conditionRecoveryCoreRoles = Object.freeze([
   "field",

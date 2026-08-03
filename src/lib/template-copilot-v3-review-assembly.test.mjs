@@ -266,6 +266,133 @@ test("keeps underspecified shared evidence separate from every conflicting alter
   }
 });
 
+test("groups notifications by verified event and recipient identity under every item order", () => {
+  const listMessageId = "notification-grouping:event-list";
+  const listText =
+    "Notify directly involved people for assignment and completion.";
+  const recipientMessageId = "notification-grouping:recipient-list";
+  const recipientText =
+    "Notify requester group for correction. Notify owner group for correction.";
+  const items = [
+    located({
+      itemIndex: 40,
+      kind: "notification",
+      messageId: listMessageId,
+      text: listText,
+      leaves: [
+        { role: "event", quote: "assignment", hint: "stage_assigned" },
+        {
+          role: "recipient",
+          quote: "directly involved people",
+          hint: "source_named_group",
+        },
+      ],
+    }),
+    located({
+      itemIndex: 41,
+      kind: "notification",
+      messageId: listMessageId,
+      text: listText,
+      leaves: [
+        { role: "event", quote: "completion", hint: "request_completed" },
+        {
+          role: "recipient",
+          quote: "directly involved people",
+          hint: "source_named_group",
+        },
+      ],
+    }),
+    located({
+      itemIndex: 42,
+      kind: "notification",
+      messageId: recipientMessageId,
+      text: recipientText,
+      anchorQuote: "Notify requester group for correction",
+      leaves: [
+        {
+          role: "event",
+          quote: "correction",
+          hint: "correction_requested",
+        },
+        {
+          role: "recipient",
+          quote: "requester group",
+          hint: "source_named_group",
+        },
+      ],
+    }),
+    located({
+      itemIndex: 43,
+      kind: "notification",
+      messageId: recipientMessageId,
+      text: recipientText,
+      anchorQuote: "Notify owner group for correction",
+      leaves: [
+        {
+          role: "event",
+          quote: "correction",
+          hint: "correction_requested",
+          occurrence: 1,
+        },
+        {
+          role: "recipient",
+          quote: "owner group",
+          hint: "source_named_group",
+        },
+      ],
+    }),
+  ];
+  const sourceMessages = {
+    [listMessageId]: listText,
+    [recipientMessageId]: recipientText,
+  };
+  const expectedPairs = [
+    "assignment|directly involved people",
+    "completion|directly involved people",
+    "correction|owner group",
+    "correction|requester group",
+  ];
+  let stableIds = null;
+  for (const ordered of [items, [...items].reverse()]) {
+    const result = assembleTemplateCopilotV3Review({
+      items: ordered,
+      sourceMessages,
+      sourceMessageOrder: [listMessageId, recipientMessageId],
+    });
+    const notifications = result.review.items.filter(
+      (item) => item.factId === "notifications.rules",
+    );
+    assert.equal(
+      notifications.length,
+      4,
+      JSON.stringify({
+        items: notifications.map((item) => item.semanticValue),
+        rejections: result.review.rejections,
+      }),
+    );
+    assert.ok(
+      notifications.every((item) => item.semanticComplete),
+      JSON.stringify({
+        notifications: notifications.map((item) => ({
+          value: item.semanticValue,
+          semanticComplete: item.semanticComplete,
+          blockingReason: item.blockingReason,
+        })),
+        rejections: result.review.rejections,
+      }),
+    );
+    assert.deepEqual(
+      notifications.map((item) =>
+        `${item.semanticValue.event?.[0]}|${item.semanticValue.recipient?.[0]}`
+      ).sort(),
+      [...expectedPairs].sort(),
+    );
+    const ids = notifications.map((item) => item.reviewItemId).sort();
+    if (stableIds === null) stableIds = ids;
+    else assert.deepEqual(ids, stableIds);
+  }
+});
+
 test("keeps later-stage attachments, native forms, inflected FYI stages, grouped amounts, and raw Chinese thresholds", () => {
   const attachmentId = "message-attach-001";
   const attachmentText = "Supplier invoice PDF required up to 10 MB at Legal Review; invited colleagues may contribute; requester confirms";
@@ -5128,6 +5255,1528 @@ test("keeps ordinarily derivable direct core leaves on the binding path", () => 
   }
 });
 
+test("direct notification fallback is atomic for conditional, adversative, not-only, and competing-recipient clauses", () => {
+  const cases = [
+    {
+      caseId: "conditional",
+      text: "If rejected, notify requester.",
+      event: "rejected",
+      eventHint: "request_rejected",
+      recipient: "requester",
+      recipientHint: "requester",
+    },
+    {
+      caseId: "adversative",
+      text: "Rejection notifies Finance, but Legal receives completion.",
+      event: "Rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "EN-not-only",
+      text: "Rejection not only notifies Finance.",
+      event: "Rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "TC-not-only-zhi",
+      text: "拒絕不只通知財務部。",
+      event: "拒絕",
+      eventHint: "request_rejected",
+      recipient: "財務部",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "TC-not-only-jin",
+      text: "拒絕不僅通知財務部。",
+      event: "拒絕",
+      eventHint: "request_rejected",
+      recipient: "財務部",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "TC-not-merely",
+      text: "拒絕非僅通知財務部。",
+      event: "拒絕",
+      eventHint: "request_rejected",
+      recipient: "財務部",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "SC-not-only",
+      text: "拒绝不仅通知财务部。",
+      event: "拒绝",
+      eventHint: "request_rejected",
+      recipient: "财务部",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "SC-not-merely",
+      text: "拒绝非仅通知财务部。",
+      event: "拒绝",
+      eventHint: "request_rejected",
+      recipient: "财务部",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "arbitrary-named-competing-recipient",
+      text: "Notify Finance for rejection and Legal for completion.",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "generic-plural-competing-recipient",
+      text: "Notify only Finance Team and recipients for rejection.",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance Team",
+      recipientHint: "source_named_group",
+      visibility: "only",
+    },
+    {
+      caseId: "generic-singular-competing-recipient",
+      text: "Notify only Finance Team or the recipient for rejection.",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance Team",
+      recipientHint: "source_named_group",
+      visibility: "only",
+    },
+    {
+      caseId: "compound-selected-recipient",
+      text: "Notify Finance and Legal for rejection.",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance and Legal",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "plus-symbol-compound-selected-recipient",
+      text: "Notify Finance + Legal for rejection.",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance + Legal",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "plus-word-compound-selected-recipient",
+      text: "Notify Finance plus Legal for rejection.",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance plus Legal",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "as-well-as-compound-selected-recipient",
+      text: "Notify Finance as well as Legal for rejection.",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance as well as Legal",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "in-addition-to-compound-selected-recipient",
+      text: "Notify Finance in addition to Legal for rejection.",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance in addition to Legal",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "besides-compound-selected-recipient",
+      text: "Notify Finance besides Legal for rejection.",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance besides Legal",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "mixed-script-confusable-compound-selected-recipient",
+      text: "Notify Finance аnd Legal Team for rejection.",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance аnd Legal Team",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "same-script-confusable-compound-selected-recipient",
+      text: "Notify Finance ɑnd Legal Team for rejection.",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance ɑnd Legal Team",
+      recipientHint: "source_named_group",
+    },
+    ...[
+      ["latin-y", "Finance y Legal Team"],
+      ["latin-et", "Finance et Legal Team"],
+      ["followed-by", "Finance followed by Legal Team"],
+      ["then", "Finance then Legal Team"],
+      ["following", "Finance following Legal Team"],
+      ["after", "Finance after Legal Team"],
+      ["before", "Finance before Legal Team"],
+      ["subsequently", "Finance subsequently Legal Team"],
+      ["excluding", "Finance excluding Legal Team"],
+      ["without", "Finance without Legal Team"],
+      ["rather-than", "Finance rather than Legal Team"],
+      ["instead-of", "Finance instead of Legal Team"],
+      ["title-following", "Finance Following Legal Team"],
+      ["title-excluding", "Finance Excluding Legal Team"],
+      ["title-rather-than", "Finance Rather Than Legal Team"],
+      ["accompanied-by", "Finance Accompanied By Legal Team"],
+      ["joined-by", "Finance Joined By Legal Team"],
+      ["not", "Finance Not Legal Team"],
+      ["only", "Only Finance Team"],
+      ["indefinite-article", "A Finance Team"],
+      ["indefinite-an", "An Operations Team"],
+      ["numeric-prefix", "12 Finance Team"],
+      ["numeric-middle", "Finance 12 Team"],
+      ["another", "Another Finance Team"],
+      ["word-number", "Eleven Finance Team"],
+      ["various", "Various Finance Team"],
+      ["adjacent-domains", "Finance Legal Team"],
+      ["hr-legal-adjacent-domains", "HR Legal Team"],
+      ["it-finance-adjacent-domains", "IT Finance Team"],
+      ["compliance-procurement-adjacent-domains", "Compliance Procurement Team"],
+      ["uppercase-adjacent-domains", "FINANCE LEGAL TEAM"],
+      ["risk-legal-adjacent-domains", "RISK LEGAL TEAM"],
+      ["security-legal-adjacent-domains", "SECURITY LEGAL TEAM"],
+      ["engineering-finance-adjacent-domains", "ENGINEERING FINANCE TEAM"],
+      ["operations-legal-adjacent-domains", "OPERATIONS LEGAL TEAM"],
+      ["privacy-legal-adjacent-domains", "PRIVACY LEGAL TEAM"],
+      ["development-legal-adjacent-domains", "DEVELOPMENT LEGAL TEAM"],
+      ["management-legal-adjacent-domains", "MANAGEMENT LEGAL TEAM"],
+      ["support-legal-adjacent-domains", "SUPPORT LEGAL TEAM"],
+      ["finance-compliance-adjacent-domains", "FINANCE COMPLIANCE TEAM"],
+      ["corporate-legal-finance-adjacent-domains", "CORPORATE LEGAL FINANCE TEAM"],
+      ["enterprise-legal-finance-adjacent-domains", "ENTERPRISE LEGAL FINANCE TEAM"],
+      ["finance-security-adjacent-domains", "FINANCE SECURITY TEAM"],
+      ["finance-engineering-adjacent-domains", "FINANCE ENGINEERING TEAM"],
+      ["legal-marketing-adjacent-domains", "LEGAL MARKETING TEAM"],
+      ["hr-security-adjacent-domains", "HR SECURITY TEAM"],
+      ["procurement-marketing-adjacent-domains", "PROCUREMENT MARKETING TEAM"],
+      ["legal-risk-adjacent-domains", "LEGAL RISK TEAM"],
+      ["extended-risk-compliance-alias", "RISK & COMPLIANCE AND LEGAL TEAM"],
+      ["extended-mergers-acquisitions-alias", "MERGERS AND ACQUISITIONS AND LEGAL TEAM"],
+      ["neutral-inside-supply-chain-finance", "SUPPLY SHARED CHAIN FINANCE TEAM"],
+      ["neutral-inside-financial-planning", "FINANCIAL REGIONAL PLANNING TEAM"],
+      ["neutral-inside-security-operations", "SECURITY CORPORATE OPERATIONS TEAM"],
+      ["neutral-after-commercial-finance", "COMMERCIAL FINANCE CORPORATE TEAM"],
+      ["fullwidth-and", "Finance ａｎｄ Legal Team"],
+      ["zero-width-and", "Finance a​nd Legal Team"],
+      ["fused", "FinanceAndLegalTeam"],
+      ["plural-teams", "Teams"],
+      ["plural-departments", "Departments"],
+      ["plural-groups", "Groups"],
+      ["finance-plural-teams", "Finance Teams"],
+      ["number-finance-plural-teams", "2 Finance Teams"],
+      ["number-legal-plural-departments", "3 Legal Departments"],
+      ["finance-number-plural-teams", "Finance 2 Teams"],
+      ["TC-adjacent-domains", "財務法務團隊"],
+      ["SC-adjacent-domains", "财务法务团队"],
+      ["TC-compliance-adjacent-domains", "財務合規團隊"],
+      ["SC-compliance-adjacent-domains", "财务合规团队"],
+      ["TC-enterprise-legal-finance-adjacent-domains", "企業法務財務團隊"],
+      ["SC-enterprise-legal-finance-adjacent-domains", "企业法务财务团队"],
+      ["TC-regional-finance-legal-adjacent-domains", "亞太財務法務團隊"],
+      ["SC-regional-finance-legal-adjacent-domains", "亚太财务法务团队"],
+      ["TC-finance-security-adjacent-domains", "財務安全團隊"],
+      ["SC-finance-security-adjacent-domains", "财务安全团队"],
+      ["TC-legal-engineering-adjacent-domains", "法務工程團隊"],
+      ["SC-legal-engineering-adjacent-domains", "法务工程团队"],
+      ["TC-people-marketing-adjacent-domains", "人力營銷團隊"],
+      ["SC-people-marketing-adjacent-domains", "人力营销团队"],
+      ["TC-neutral-inside-supply-chain-finance", "供應全球鏈財務團隊"],
+      ["SC-neutral-inside-supply-chain-finance", "供应全球链财务团队"],
+      ["TC-neutral-inside-security-operations", "安全企業營運團隊"],
+      ["SC-neutral-inside-security-operations", "安全企业运营团队"],
+      ["TC-neutral-after-commercial-finance", "商務財務全球團隊"],
+      ["SC-neutral-after-commercial-finance", "商务财务全球团队"],
+      ["TC-risk-legal-adjacent-domains", "風險法務團隊"],
+      ["SC-risk-legal-adjacent-domains", "风险法务团队"],
+      ["TC-security-legal-adjacent-domains", "安全法務團隊"],
+      ["SC-security-legal-adjacent-domains", "安全法务团队"],
+      ["TC-final-composite-adjacent-domains", "財務法務部"],
+      ["TC-review-legal-adjacent-domains", "審核法務團隊"],
+      ["SC-review-legal-adjacent-domains", "审核法务团队"],
+      ["TC-project-legal-adjacent-domains", "項目法務團隊"],
+      ["SC-project-legal-adjacent-domains", "项目法务团队"],
+      ["TC-workflow-legal-adjacent-domains", "流程法務團隊"],
+      ["SC-workflow-legal-adjacent-domains", "流程法务团队"],
+      ["TC-facilities-legal-adjacent-domains", "設施法務團隊"],
+      ["SC-facilities-legal-adjacent-domains", "设施法务团队"],
+      ["TC-records-legal-adjacent-domains", "記錄法務團隊"],
+      ["SC-records-legal-adjacent-domains", "记录法务团队"],
+      ["TC-change-legal-adjacent-domains", "更新法務團隊"],
+      ["SC-change-legal-adjacent-domains", "更新法务团队"],
+      ["TC-management-legal-adjacent-domains", "管理法務團隊"],
+      ["SC-management-legal-adjacent-domains", "管理法务团队"],
+      ["TC-service-legal-adjacent-domains", "服務法務團隊"],
+      ["SC-service-legal-adjacent-domains", "服务法务团队"],
+    ].map(([caseId, recipient]) => ({
+      caseId: `${caseId}-compound-selected-recipient`,
+      text: `Notify ${recipient} for rejection.`,
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient,
+      recipientHint: "source_named_group",
+    })),
+    {
+      caseId: "event-like-named-competing-recipient",
+      text: "Notify Finance and Completion for rejection.",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "event-like-compound-selected-recipient",
+      text: "Notify Finance and Completion for rejection.",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance and Completion",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "TC-compound-selected-recipient",
+      text: "通知財務部和法務部拒絕。",
+      event: "拒絕",
+      eventHint: "request_rejected",
+      recipient: "財務部和法務部",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "TC-tung-compound-selected-recipient",
+      text: "通知財務部同法務部拒絕。",
+      event: "拒絕",
+      eventHint: "request_rejected",
+      recipient: "財務部同法務部",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "TC-ji-compound-selected-recipient",
+      text: "通知財務部暨法務部拒絕。",
+      event: "拒絕",
+      eventHint: "request_rejected",
+      recipient: "財務部暨法務部",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "TC-also-have-compound-selected-recipient",
+      text: "通知財務部還有法務部拒絕。",
+      event: "拒絕",
+      eventHint: "request_rejected",
+      recipient: "財務部還有法務部",
+      recipientHint: "source_named_group",
+    },
+    ...[
+      ["TC-suffix-free-he", "財務和法務"],
+      ["TC-suffix-free-ji", "財務及法務"],
+      ["SC-suffix-free-he", "财务和法务"],
+      ["TC-one-head-compound", "財務和法務團隊"],
+      ["TC-lian-tong-compound", "財務連同法務團隊"],
+      ["TC-jia-shang-compound", "財務加上法務團隊"],
+      ["TC-hui-tong-compound", "財務會同法務團隊"],
+      ["TC-sui-hou-compound", "財務隨後法務團隊"],
+      ["TC-jie-xu-compound", "財務接續法務團隊"],
+      ["TC-tung-maai-compound", "財務同埋法務團隊"],
+      ["SC-lian-tong-compound", "财务连同法务团队"],
+      ["SC-jia-shang-compound", "财务加上法务团队"],
+      ["SC-hui-tong-compound", "财务会同法务团队"],
+      ["SC-sui-hou-compound", "财务随后法务团队"],
+      ["SC-jie-xu-compound", "财务接续法务团队"],
+      ["TC-xie-tong-compound", "財務偕同法務團隊"],
+      ["SC-xie-tong-compound", "财务偕同法务团队"],
+      ["TC-huo-tong-compound", "財務夥同法務團隊"],
+      ["SC-huo-tong-compound", "财务伙同法务团队"],
+      ["TC-coordination-compound", "財務協同法務團隊"],
+      ["SC-coordination-compound", "财务协同法务团队"],
+      ["TC-wai-gaa-compound", "財務外加法務團隊"],
+      ["SC-wai-jia-compound", "财务外加法务团队"],
+      ["TC-ling-jia-compound", "財務另加法務團隊"],
+      ["SC-ling-jia-compound", "财务另加法务团队"],
+      ["TC-two-departments", "兩部"],
+      ["TC-three-departments", "三部"],
+      ["TC-each-department", "各部"],
+      ["TC-each-office", "各處"],
+      ["SC-each-office", "各处"],
+      ["TC-each-group", "各組"],
+      ["SC-each-group", "各组"],
+      ["TC-each-full-department", "各部門"],
+      ["TC-finance-two-departments", "財務兩部"],
+      ["TC-finance-three-departments", "財務三部"],
+      ["TC-finance-each-department", "財務各部"],
+      ["TC-legal-each-office", "法務各處"],
+      ["SC-legal-each-office", "法务各处"],
+      ["TC-legal-each-group", "法務各組"],
+      ["SC-legal-each-group", "法务各组"],
+      ["TC-finance-each-full-department", "財務各部門"],
+    ].map(([caseId, recipient]) => ({
+      caseId,
+      text: `通知${recipient}拒絕。`,
+      event: "拒絕",
+      eventHint: "request_rejected",
+      recipient,
+      recipientHint: "source_named_group",
+    })),
+    {
+      caseId: "recipient-action-event-order",
+      text: "Finance notifies rejection",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "event-recipient-action-order",
+      text: "Rejection Finance notifies",
+      event: "Rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "action-event-recipient-order",
+      text: "Notify rejection Finance",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "visibility-scopes-event-before",
+      text: "Only Rejection notifies Finance",
+      event: "Rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance",
+      recipientHint: "source_named_group",
+      visibility: "Only",
+    },
+    {
+      caseId: "visibility-scopes-event-prefix",
+      text: "Notify Finance for only rejection",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance",
+      recipientHint: "source_named_group",
+      visibility: "only",
+    },
+    {
+      caseId: "visibility-scopes-event-suffix",
+      text: "Notify Finance for rejection only",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance",
+      recipientHint: "source_named_group",
+      visibility: "only",
+    },
+  ];
+
+  for (const [itemIndex, entry] of cases.entries()) {
+    const messageId = `direct-notification-atomic:${entry.caseId}`;
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: { [messageId]: entry.text },
+      items: [located({
+        itemIndex,
+        kind: "notification",
+        messageId,
+        text: entry.text,
+        leaves: [
+          { role: "event", quote: entry.event, hint: entry.eventHint },
+          {
+            role: "recipient",
+            quote: entry.recipient,
+            hint: entry.recipientHint,
+          },
+          ...(entry.visibility
+            ? [{
+                role: "visibility",
+                quote: entry.visibility,
+                hint: "recipients_only",
+              }]
+            : []),
+        ],
+      })],
+    });
+    const item = result.review.items[0];
+    assert.ok(item, entry.caseId);
+    assert.equal(item.semanticComplete, false, entry.caseId);
+    assert.equal(item.value.event, undefined, entry.caseId);
+    assert.equal(item.value.recipients, undefined, entry.caseId);
+    assert.equal(item.value.visibility, undefined, entry.caseId);
+    assert.equal(item.bindings.length, 0, entry.caseId);
+    assert.equal(item.fragmentId, null, entry.caseId);
+    assert.ok(
+      !result.envelope.fragments.some(
+        (fragment) => fragment.factId === "notifications.rules",
+      ),
+      entry.caseId,
+    );
+    const notificationRejections = result.review.rejections.filter(
+      (rejection) => rejection.detail.startsWith("notification:"),
+    );
+    assert.ok(notificationRejections.length > 0, entry.caseId);
+    assert.ok(
+      notificationRejections.every((rejection) =>
+        /^notification:(?:event|recipient|visibility)$/u.test(rejection.detail)
+      ),
+      `${entry.caseId}:${JSON.stringify(notificationRejections)}`,
+    );
+  }
+});
+
+test("assembly independently rejects forged recovered notification scope", () => {
+  const messageId = "forged-recovered-notification-scope";
+  const text = "Notify Finance for rejection and Legal for completion.";
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages: { [messageId]: text },
+    items: [located({
+      itemIndex: 500_000,
+      kind: "notification",
+      messageId,
+      text,
+      anchorExpanded: true,
+      sameLocalClauseRecoveredLeafCount: 1,
+      leaves: [
+        {
+          role: "event",
+          quote: "rejection",
+          hint: "request_rejected",
+        },
+        {
+          role: "recipient",
+          quote: "Finance",
+          hint: "source_named_group",
+          sameLocalClauseRecovered: true,
+        },
+      ],
+    })],
+  });
+  const item = result.review.items[0];
+  assert.ok(item);
+  assert.equal(item.semanticComplete, false);
+  assert.equal(item.value.event, undefined);
+  assert.equal(item.value.recipients, undefined);
+  assert.equal(item.bindings.length, 0);
+  assert.equal(item.fragmentId, null);
+  assert.ok(
+    !result.envelope.fragments.some(
+      (fragment) => fragment.factId === "notifications.rules",
+    ),
+  );
+  assert.ok(
+    result.review.rejections.some(
+      (rejection) =>
+        rejection.code === "unverifiable_leaf" &&
+        rejection.detail.startsWith("notification:"),
+    ),
+  );
+});
+
+test("assembly independently rejects generic competing recovered recipients", () => {
+  const cases = [
+    ["plural", "Notify only Finance Team and recipients for rejection."],
+    ["singular", "Notify only Finance Team or the recipient for rejection."],
+  ];
+  for (const [index, [caseId, text]] of cases.entries()) {
+    const messageId = `forged-recovered-generic-recipient:${caseId}`;
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: { [messageId]: text },
+      items: [located({
+        itemIndex: 500_100 + index,
+        kind: "notification",
+        messageId,
+        text,
+        anchorExpanded: true,
+        sameLocalClauseRecoveredLeafCount: 2,
+        leaves: [
+          {
+            role: "event",
+            quote: "rejection",
+            hint: "request_rejected",
+          },
+          {
+            role: "recipient",
+            quote: "Finance Team",
+            hint: "source_named_group",
+            sameLocalClauseRecovered: true,
+          },
+          {
+            role: "visibility",
+            quote: "only",
+            hint: "recipients_only",
+            sameLocalClauseRecovered: true,
+          },
+        ],
+      })],
+    });
+    const item = result.review.items[0];
+    assert.ok(item, caseId);
+    assert.equal(item.semanticComplete, false, caseId);
+    assert.equal(item.value.event, undefined, caseId);
+    assert.equal(item.value.recipients, undefined, caseId);
+    assert.equal(item.bindings.length, 0, caseId);
+    assert.equal(item.fragmentId, null, caseId);
+    assert.ok(
+      !result.envelope.fragments.some(
+        (fragment) => fragment.factId === "notifications.rules",
+      ),
+      caseId,
+    );
+    assert.ok(
+      result.review.rejections.some(
+        (rejection) =>
+          rejection.code === "unverifiable_leaf" &&
+          rejection.detail.startsWith("notification:"),
+      ),
+      caseId,
+    );
+  }
+});
+
+test("assembly independently rejects a forged whole compound recovered recipient", () => {
+  const messageId = "forged-recovered-compound-recipient";
+  const text = "Notify Finance in addition to Legal for rejection.";
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages: { [messageId]: text },
+    items: [located({
+      itemIndex: 500_001,
+      kind: "notification",
+      messageId,
+      text,
+      anchorExpanded: true,
+      sameLocalClauseRecoveredLeafCount: 1,
+      leaves: [
+        {
+          role: "event",
+          quote: "rejection",
+          hint: "request_rejected",
+        },
+        {
+          role: "recipient",
+          quote: "Finance in addition to Legal",
+          hint: "source_named_group",
+          sameLocalClauseRecovered: true,
+        },
+      ],
+    })],
+  });
+  const item = result.review.items[0];
+  assert.ok(item);
+  assert.equal(item.semanticComplete, false);
+  assert.equal(item.value.event, undefined);
+  assert.equal(item.value.recipients, undefined);
+  assert.equal(item.bindings.length, 0);
+  assert.equal(item.fragmentId, null);
+  assert.ok(
+    !result.envelope.fragments.some(
+      (fragment) => fragment.factId === "notifications.rules",
+    ),
+  );
+  assert.ok(
+    result.review.rejections.some(
+      (rejection) =>
+        rejection.code === "unverifiable_leaf" &&
+        rejection.detail.startsWith("notification:"),
+    ),
+  );
+});
+
+test("assembly independently rejects a forged mixed-script recovered recipient", () => {
+  const messageId = "forged-recovered-mixed-script-recipient";
+  const text = "Notify Finance аnd Legal Team for rejection.";
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages: { [messageId]: text },
+    items: [located({
+      itemIndex: 500_002,
+      kind: "notification",
+      messageId,
+      text,
+      anchorExpanded: true,
+      sameLocalClauseRecoveredLeafCount: 1,
+      leaves: [
+        {
+          role: "event",
+          quote: "rejection",
+          hint: "request_rejected",
+        },
+        {
+          role: "recipient",
+          quote: "Finance аnd Legal Team",
+          hint: "source_named_group",
+          sameLocalClauseRecovered: true,
+        },
+      ],
+    })],
+  });
+  const item = result.review.items[0];
+  assert.ok(item);
+  assert.equal(item.semanticComplete, false);
+  assert.equal(item.value.event, undefined);
+  assert.equal(item.value.recipients, undefined);
+  assert.equal(item.bindings.length, 0);
+  assert.equal(item.fragmentId, null);
+  assert.ok(
+    !result.envelope.fragments.some(
+      (fragment) => fragment.factId === "notifications.rules",
+    ),
+  );
+  assert.ok(
+    result.review.rejections.some(
+      (rejection) =>
+        rejection.code === "unverifiable_leaf" &&
+        rejection.detail.startsWith("notification:"),
+    ),
+  );
+});
+
+test("assembly independently rejects word-segmented forged compound recipients", () => {
+  const cases = [
+    ["same-script-confusable", "Finance ɑnd Legal Team"],
+    ["latin-y", "Finance y Legal Team"],
+    ["latin-et", "Finance et Legal Team"],
+    ["followed-by", "Finance followed by Legal Team"],
+    ["then", "Finance then Legal Team"],
+    ["following", "Finance following Legal Team"],
+    ["after", "Finance after Legal Team"],
+    ["before", "Finance before Legal Team"],
+    ["subsequently", "Finance subsequently Legal Team"],
+    ["excluding", "Finance excluding Legal Team"],
+    ["without", "Finance without Legal Team"],
+    ["rather-than", "Finance rather than Legal Team"],
+    ["instead-of", "Finance instead of Legal Team"],
+    ["title-following", "Finance Following Legal Team"],
+    ["title-excluding", "Finance Excluding Legal Team"],
+    ["title-rather-than", "Finance Rather Than Legal Team"],
+    ["accompanied-by", "Finance Accompanied By Legal Team"],
+    ["joined-by", "Finance Joined By Legal Team"],
+    ["not", "Finance Not Legal Team"],
+    ["only", "Only Finance Team"],
+    ["indefinite-article", "A Finance Team"],
+    ["indefinite-an", "An Operations Team"],
+    ["numeric-prefix", "12 Finance Team"],
+    ["numeric-middle", "Finance 12 Team"],
+    ["another", "Another Finance Team"],
+    ["word-number", "Eleven Finance Team"],
+    ["various", "Various Finance Team"],
+    ["adjacent-domains", "Finance Legal Team"],
+    ["hr-legal-adjacent-domains", "HR Legal Team"],
+    ["it-finance-adjacent-domains", "IT Finance Team"],
+    ["compliance-procurement-adjacent-domains", "Compliance Procurement Team"],
+    ["uppercase-adjacent-domains", "FINANCE LEGAL TEAM"],
+    ["risk-legal-adjacent-domains", "RISK LEGAL TEAM"],
+    ["security-legal-adjacent-domains", "SECURITY LEGAL TEAM"],
+    ["engineering-finance-adjacent-domains", "ENGINEERING FINANCE TEAM"],
+    ["operations-legal-adjacent-domains", "OPERATIONS LEGAL TEAM"],
+    ["privacy-legal-adjacent-domains", "PRIVACY LEGAL TEAM"],
+    ["development-legal-adjacent-domains", "DEVELOPMENT LEGAL TEAM"],
+    ["management-legal-adjacent-domains", "MANAGEMENT LEGAL TEAM"],
+    ["support-legal-adjacent-domains", "SUPPORT LEGAL TEAM"],
+    ["finance-compliance-adjacent-domains", "FINANCE COMPLIANCE TEAM"],
+    ["corporate-legal-finance-adjacent-domains", "CORPORATE LEGAL FINANCE TEAM"],
+    ["enterprise-legal-finance-adjacent-domains", "ENTERPRISE LEGAL FINANCE TEAM"],
+    ["finance-security-adjacent-domains", "FINANCE SECURITY TEAM"],
+    ["finance-engineering-adjacent-domains", "FINANCE ENGINEERING TEAM"],
+    ["legal-marketing-adjacent-domains", "LEGAL MARKETING TEAM"],
+    ["hr-security-adjacent-domains", "HR SECURITY TEAM"],
+    ["procurement-marketing-adjacent-domains", "PROCUREMENT MARKETING TEAM"],
+    ["legal-risk-adjacent-domains", "LEGAL RISK TEAM"],
+    ["extended-risk-compliance-alias", "RISK & COMPLIANCE AND LEGAL TEAM"],
+    ["extended-mergers-acquisitions-alias", "MERGERS AND ACQUISITIONS AND LEGAL TEAM"],
+    ["neutral-inside-supply-chain-finance", "SUPPLY SHARED CHAIN FINANCE TEAM"],
+    ["neutral-inside-financial-planning", "FINANCIAL REGIONAL PLANNING TEAM"],
+    ["neutral-inside-security-operations", "SECURITY CORPORATE OPERATIONS TEAM"],
+    ["neutral-after-commercial-finance", "COMMERCIAL FINANCE CORPORATE TEAM"],
+    ["fullwidth-and", "Finance ａｎｄ Legal Team"],
+    ["zero-width-and", "Finance a​nd Legal Team"],
+    ["fused", "FinanceAndLegalTeam"],
+    ["plural-teams", "Teams"],
+    ["plural-departments", "Departments"],
+    ["plural-groups", "Groups"],
+    ["finance-plural-teams", "Finance Teams"],
+    ["number-finance-plural-teams", "2 Finance Teams"],
+    ["number-legal-plural-departments", "3 Legal Departments"],
+    ["finance-number-plural-teams", "Finance 2 Teams"],
+    ["TC-adjacent-domains", "財務法務團隊"],
+    ["SC-adjacent-domains", "财务法务团队"],
+    ["TC-compliance-adjacent-domains", "財務合規團隊"],
+    ["SC-compliance-adjacent-domains", "财务合规团队"],
+    ["TC-enterprise-legal-finance-adjacent-domains", "企業法務財務團隊"],
+    ["SC-enterprise-legal-finance-adjacent-domains", "企业法务财务团队"],
+    ["TC-regional-finance-legal-adjacent-domains", "亞太財務法務團隊"],
+    ["SC-regional-finance-legal-adjacent-domains", "亚太财务法务团队"],
+    ["TC-finance-security-adjacent-domains", "財務安全團隊"],
+    ["SC-finance-security-adjacent-domains", "财务安全团队"],
+    ["TC-legal-engineering-adjacent-domains", "法務工程團隊"],
+    ["SC-legal-engineering-adjacent-domains", "法务工程团队"],
+    ["TC-people-marketing-adjacent-domains", "人力營銷團隊"],
+    ["SC-people-marketing-adjacent-domains", "人力营销团队"],
+    ["TC-neutral-inside-supply-chain-finance", "供應全球鏈財務團隊"],
+    ["SC-neutral-inside-supply-chain-finance", "供应全球链财务团队"],
+    ["TC-neutral-inside-security-operations", "安全企業營運團隊"],
+    ["SC-neutral-inside-security-operations", "安全企业运营团队"],
+    ["TC-neutral-after-commercial-finance", "商務財務全球團隊"],
+    ["SC-neutral-after-commercial-finance", "商务财务全球团队"],
+    ["TC-risk-legal-adjacent-domains", "風險法務團隊"],
+    ["SC-risk-legal-adjacent-domains", "风险法务团队"],
+    ["TC-security-legal-adjacent-domains", "安全法務團隊"],
+    ["SC-security-legal-adjacent-domains", "安全法务团队"],
+    ["TC-final-composite-adjacent-domains", "財務法務部"],
+    ["TC-review-legal-adjacent-domains", "審核法務團隊"],
+    ["SC-review-legal-adjacent-domains", "审核法务团队"],
+    ["TC-project-legal-adjacent-domains", "項目法務團隊"],
+    ["SC-project-legal-adjacent-domains", "项目法务团队"],
+    ["TC-workflow-legal-adjacent-domains", "流程法務團隊"],
+    ["SC-workflow-legal-adjacent-domains", "流程法务团队"],
+    ["TC-facilities-legal-adjacent-domains", "設施法務團隊"],
+    ["SC-facilities-legal-adjacent-domains", "设施法务团队"],
+    ["TC-records-legal-adjacent-domains", "記錄法務團隊"],
+    ["SC-records-legal-adjacent-domains", "记录法务团队"],
+    ["TC-change-legal-adjacent-domains", "更新法務團隊"],
+    ["SC-change-legal-adjacent-domains", "更新法务团队"],
+    ["TC-management-legal-adjacent-domains", "管理法務團隊"],
+    ["SC-management-legal-adjacent-domains", "管理法务团队"],
+    ["TC-service-legal-adjacent-domains", "服務法務團隊"],
+    ["SC-service-legal-adjacent-domains", "服务法务团队"],
+    ["TC-suffix-free-he", "財務和法務"],
+    ["TC-suffix-free-ji", "財務及法務"],
+    ["SC-suffix-free-he", "财务和法务"],
+    ["TC-one-head-compound", "財務和法務團隊"],
+    ["TC-lian-tong-compound", "財務連同法務團隊"],
+    ["TC-jia-shang-compound", "財務加上法務團隊"],
+    ["TC-hui-tong-compound", "財務會同法務團隊"],
+    ["TC-sui-hou-compound", "財務隨後法務團隊"],
+    ["TC-jie-xu-compound", "財務接續法務團隊"],
+    ["TC-tung-maai-compound", "財務同埋法務團隊"],
+    ["SC-lian-tong-compound", "财务连同法务团队"],
+    ["SC-jia-shang-compound", "财务加上法务团队"],
+    ["SC-hui-tong-compound", "财务会同法务团队"],
+    ["SC-sui-hou-compound", "财务随后法务团队"],
+    ["SC-jie-xu-compound", "财务接续法务团队"],
+    ["TC-xie-tong-compound", "財務偕同法務團隊"],
+    ["SC-xie-tong-compound", "财务偕同法务团队"],
+    ["TC-huo-tong-compound", "財務夥同法務團隊"],
+    ["SC-huo-tong-compound", "财务伙同法务团队"],
+    ["TC-coordination-compound", "財務協同法務團隊"],
+    ["SC-coordination-compound", "财务协同法务团队"],
+    ["TC-wai-gaa-compound", "財務外加法務團隊"],
+    ["SC-wai-jia-compound", "财务外加法务团队"],
+    ["TC-ling-jia-compound", "財務另加法務團隊"],
+    ["SC-ling-jia-compound", "财务另加法务团队"],
+    ["TC-two-departments", "兩部"],
+    ["TC-three-departments", "三部"],
+    ["TC-each-department", "各部"],
+    ["TC-each-office", "各處"],
+    ["SC-each-office", "各处"],
+    ["TC-each-group", "各組"],
+    ["SC-each-group", "各组"],
+    ["TC-each-full-department", "各部門"],
+    ["TC-finance-two-departments", "財務兩部"],
+    ["TC-finance-three-departments", "財務三部"],
+    ["TC-finance-each-department", "財務各部"],
+    ["TC-legal-each-office", "法務各處"],
+    ["SC-legal-each-office", "法务各处"],
+    ["TC-legal-each-group", "法務各組"],
+    ["SC-legal-each-group", "法务各组"],
+    ["TC-finance-each-full-department", "財務各部門"],
+  ];
+  for (const [index, [caseId, recipient]] of cases.entries()) {
+    const messageId = `forged-recovered-segmented-recipient:${caseId}`;
+    const text = `Notify ${recipient} for rejection.`;
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: { [messageId]: text },
+      items: [located({
+        itemIndex: 501_000 + index,
+        kind: "notification",
+        messageId,
+        text,
+        anchorExpanded: true,
+        sameLocalClauseRecoveredLeafCount: 1,
+        leaves: [
+          {
+            role: "event",
+            quote: "rejection",
+            hint: "request_rejected",
+          },
+          {
+            role: "recipient",
+            quote: recipient,
+            hint: "source_named_group",
+            sameLocalClauseRecovered: true,
+          },
+        ],
+      })],
+    });
+    const item = result.review.items[0];
+    assert.ok(item, caseId);
+    assert.equal(item.semanticComplete, false, caseId);
+    assert.equal(item.value.event, undefined, caseId);
+    assert.equal(item.value.recipients, undefined, caseId);
+    assert.equal(item.bindings.length, 0, caseId);
+    assert.equal(item.fragmentId, null, caseId);
+    assert.ok(
+      !result.envelope.fragments.some(
+        (fragment) => fragment.factId === "notifications.rules",
+      ),
+      caseId,
+    );
+    assert.ok(
+      result.review.rejections.some(
+        (rejection) =>
+          rejection.code === "unverifiable_leaf" &&
+          rejection.detail.startsWith("notification:"),
+      ),
+      caseId,
+    );
+  }
+});
+
+test("assembly independently retains closed valid recipient names for forged recovery", () => {
+  const recipients = [
+    "Board of Directors",
+    "Research and Development Team",
+    "Research & Development Team",
+    "People and Culture Team",
+    "People & Culture Team",
+    "Financial Planning and Analysis Team",
+    "Financial Planning & Analysis Team",
+    "R&D",
+    "R&D Team",
+    "Information Technology Department",
+    "資訊科技部",
+    "信息技术部",
+    "Privacy",
+    "Information Security Team",
+    "Data Security Team",
+    "Data Analytics Team",
+    "IT Support Team",
+    "Application Support Team",
+    "Human Resources Department",
+    "Customer Service Team",
+    "Project Management Office",
+    "Vendor Management Office",
+    "Product Management Team",
+    "Business Operations Team",
+    "Digital Transformation Team",
+    "Risk Management Team",
+    "Enterprise Architecture Team",
+    "資訊安全團隊",
+    "信息安全团队",
+    "資訊科技團隊",
+    "信息技术团队",
+    "軟體工程部",
+    "软件工程部",
+    "產品管理團隊",
+    "产品管理团队",
+    "風險管理團隊",
+    "风险管理团队",
+    "客戶服務團隊",
+    "客户服务团队",
+    "Data Governance Team",
+    "Security Operations Team",
+    "Sales Operations Team",
+    "Marketing Operations Team",
+    "People Analytics Team",
+    "HR Operations Team",
+    "Product Marketing Team",
+    "Regulatory Compliance Team",
+    "Customer Operations Team",
+    "Vendor Risk Management Team",
+    "Legal Operations Team",
+    "Finance Review Team",
+    "Corporate Legal Department",
+    "Corporate Finance Team",
+    "Enterprise Legal Team",
+    "Enterprise Finance Team",
+    "Executive Finance Team",
+    "Commercial Finance Team",
+    "Sales Finance Team",
+    "Supply Chain Finance Team",
+    "Legal Technology Team",
+    "People Technology Team",
+    "Customer Data Team",
+    "Security Operations Center",
+    "Security Operations Centre",
+    "Shared Services Center",
+    "Customer Experience Team",
+    "Investor Relations Team",
+    "Product Design Team",
+    "Cloud Security Team",
+    "Risk & Compliance Team",
+    "Mergers and Acquisitions Team",
+    "HR Technology Team",
+    "Strategy and Operations Team",
+    "Environmental Health and Safety Team",
+    "Diversity and Inclusion Team",
+    "Cyber Security Team",
+    "IT Operations Team",
+    "Information Technology Operations Team",
+    "Product Security Team",
+    "Finance Systems Team",
+    "Marketing Technology Team",
+    "Business Analytics Team",
+    "Network Operations Center",
+    "Global Research and Development Team",
+    "Research and Development Center",
+    "Center of Excellence",
+    "Business Finance Team",
+    "Finance Technology Team",
+    "Finance Analytics Team",
+    "Marketing Analytics Team",
+    "Product Analytics Team",
+    "Data Operations Team",
+    "Engineering Operations Team",
+    "Contract Operations Team",
+    "Compliance Operations Team",
+    "Vendor Risk Team",
+    "Human Resources Operations Team",
+    "Financial Operations Team",
+    "Research & Development Centre",
+    "Research and Development Centre",
+    "R&D Center",
+    "R&D Centre",
+    "Finance Center of Excellence",
+    "Corporate People and Culture Team",
+    "Regional Financial Planning and Analysis Team",
+    "Global R&D Team",
+    "Business Development Team",
+    "Product Development Team",
+    "Learning and Development Team",
+    "Talent Acquisition Team",
+    "Revenue Operations Team",
+    "Cybersecurity Team",
+    "Data Science Team",
+    "數據治理團隊",
+    "数据治理团队",
+    "安全營運團隊",
+    "安全运营团队",
+    "銷售營運團隊",
+    "销售运营团队",
+    "營銷營運團隊",
+    "营销运营团队",
+    "產品營銷團隊",
+    "产品营销团队",
+    "法規合規團隊",
+    "法规合规团队",
+    "客戶營運團隊",
+    "客户运营团队",
+    "法務營運團隊",
+    "法务运营团队",
+    "財務審核團隊",
+    "财务审核团队",
+    "企業合同管理部",
+    "企业合同管理部",
+    "企業法務部",
+    "企业法务部",
+    "企業財務部",
+    "企业财务部",
+    "亞太財務營運團隊",
+    "亚太财务运营团队",
+    "全球財務團隊",
+    "全球财务团队",
+    "區域法務團隊",
+    "区域法务团队",
+    "商務財務團隊",
+    "商务财务团队",
+    "銷售財務團隊",
+    "销售财务团队",
+    "供應鏈財務團隊",
+    "供应链财务团队",
+    "法務科技團隊",
+    "法务科技团队",
+    "人力科技團隊",
+    "人力科技团队",
+    "客戶數據團隊",
+    "客户数据团队",
+    "客戶體驗團隊",
+    "客户体验团队",
+    "數據私隱辦公室",
+    "数据隐私办公室",
+    "環境健康安全部",
+    "环境健康安全部",
+    "產品安全團隊",
+    "产品安全团队",
+    "資訊科技營運團隊",
+    "信息技术运营团队",
+    "財務系統團隊",
+    "财务系统团队",
+    "人力資源科技團隊",
+    "人力资源科技团队",
+    "財務科技團隊",
+    "财务科技团队",
+    "營銷科技團隊",
+    "营销科技团队",
+    "業務財務團隊",
+    "业务财务团队",
+    "產品開發團隊",
+    "产品开发团队",
+    "業務開發團隊",
+    "业务开发团队",
+    "學習與發展團隊",
+    "学习与发展团队",
+    "人才招聘團隊",
+    "人才招聘团队",
+    "網絡安全團隊",
+    "网络安全团队",
+    "數據科學團隊",
+    "数据科学团队",
+    "營收營運團隊",
+    "营收运营团队",
+  ];
+  for (const [index, recipient] of recipients.entries()) {
+    const messageId = `forged-recovered-exact-recipient-alias:${index}`;
+    const text = `Notify ${recipient} for rejection.`;
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: { [messageId]: text },
+      items: [located({
+        itemIndex: 502_000 + index,
+        kind: "notification",
+        messageId,
+        text,
+        anchorExpanded: true,
+        sameLocalClauseRecoveredLeafCount: 1,
+        leaves: [
+          {
+            role: "event",
+            quote: "rejection",
+            hint: "request_rejected",
+          },
+          {
+            role: "recipient",
+            quote: recipient,
+            hint: "source_named_group",
+            sameLocalClauseRecovered: true,
+          },
+        ],
+      })],
+    });
+    const item = result.review.items[0];
+    assert.ok(item, recipient);
+    assert.equal(item.semanticComplete, true, recipient);
+    assert.equal(item.value.event, undefined, recipient);
+    assert.equal(item.value.recipients, undefined, recipient);
+    assert.equal(item.bindings.length, 0, recipient);
+    assert.equal(item.fragmentId, null, recipient);
+    assert.ok(
+      !result.envelope.fragments.some(
+        (fragment) => fragment.factId === "notifications.rules",
+      ),
+      recipient,
+    );
+    assert.ok(
+      !result.review.rejections.some((rejection) =>
+        rejection.detail.startsWith("notification:")
+      ),
+      `${recipient}:${JSON.stringify(result.review.rejections)}`,
+    );
+  }
+});
+
+test("closed direct notification fallbacks remain semantic-complete and review-only", () => {
+  const cases = [
+    {
+      caseId: "event-before-action",
+      text: "Request submitted notifies Finance Team recipients only",
+      leaves: [
+        {
+          role: "event",
+          quote: "Request submitted",
+          hint: "request_submitted",
+        },
+        {
+          role: "recipient",
+          quote: "Finance Team",
+          hint: "source_named_group",
+        },
+        {
+          role: "visibility",
+          quote: "recipients only",
+          hint: "recipients_only",
+        },
+      ],
+    },
+    {
+      caseId: "compact-recipient-event",
+      text: "directly involved people assignment",
+      leaves: [
+        {
+          role: "recipient",
+          quote: "directly involved people",
+          hint: "source_named_group",
+        },
+        {
+          role: "event",
+          quote: "assignment",
+          hint: "stage_assigned",
+        },
+      ],
+    },
+    {
+      caseId: "action-recipient-event",
+      text: "Notify Finance for rejection",
+      leaves: [
+        {
+          role: "event",
+          quote: "rejection",
+          hint: "request_rejected",
+        },
+        {
+          role: "recipient",
+          quote: "Finance",
+          hint: "source_named_group",
+        },
+      ],
+    },
+    {
+      caseId: "visibility-before-action-recipient-event",
+      text: "Only notify Finance for rejection",
+      leaves: [
+        {
+          role: "event",
+          quote: "rejection",
+          hint: "request_rejected",
+        },
+        {
+          role: "recipient",
+          quote: "Finance",
+          hint: "source_named_group",
+        },
+        {
+          role: "visibility",
+          quote: "Only",
+          hint: "recipients_only",
+        },
+      ],
+    },
+    {
+      caseId: "event-action-visibility-recipient",
+      text: "Request submitted notifies only Finance",
+      leaves: [
+        {
+          role: "event",
+          quote: "Request submitted",
+          hint: "request_submitted",
+        },
+        {
+          role: "recipient",
+          quote: "Finance",
+          hint: "source_named_group",
+        },
+        {
+          role: "visibility",
+          quote: "only",
+          hint: "recipients_only",
+        },
+      ],
+    },
+    {
+      caseId: "action-recipient-visibility-event",
+      text: "Notify Finance only for rejection",
+      leaves: [
+        {
+          role: "event",
+          quote: "rejection",
+          hint: "request_rejected",
+        },
+        {
+          role: "recipient",
+          quote: "Finance",
+          hint: "source_named_group",
+        },
+        {
+          role: "visibility",
+          quote: "only",
+          hint: "recipients_only",
+        },
+      ],
+    },
+    ...[
+      "Finance Director",
+      "Compliance Officer",
+      "Project Coordinator",
+      "Data Protection Officer",
+      "Senior Finance Risk Review Committee",
+      "finance operations team",
+      "Contract Management Department",
+      "Procurement Approver",
+      "People Operations Team",
+      "HR",
+      "HR Team",
+      "Customer Success Team",
+      "Software Engineering Team",
+      "Quality Assurance Team",
+      "Data Privacy Office",
+      "Regulatory Affairs Department",
+      "Supply Chain Team",
+      "Accounts Payable Team",
+      "Executive Leadership Team",
+      "Board of Directors",
+      "Research and Development Team",
+      "Research & Development Team",
+      "People and Culture Team",
+      "People & Culture Team",
+      "Financial Planning and Analysis Team",
+      "Financial Planning & Analysis Team",
+      "R&D",
+      "R&D Team",
+      "Information Technology Department",
+      "Vendor Excellence Team",
+      "Privacy",
+      "Information Security Team",
+      "Data Security Team",
+      "Data Analytics Team",
+      "IT Support Team",
+      "Application Support Team",
+      "Human Resources Department",
+      "Customer Service Team",
+      "Project Management Office",
+      "Vendor Management Office",
+      "Product Management Team",
+      "Business Operations Team",
+      "Digital Transformation Team",
+      "Risk Management Team",
+      "Enterprise Architecture Team",
+      "Data Governance Team",
+      "Security Operations Team",
+      "Sales Operations Team",
+      "Marketing Operations Team",
+      "People Analytics Team",
+      "HR Operations Team",
+      "Product Marketing Team",
+      "Regulatory Compliance Team",
+      "Customer Operations Team",
+      "Vendor Risk Management Team",
+      "Legal Operations Team",
+      "Finance Review Team",
+      "Corporate Legal Department",
+      "Corporate Finance Team",
+      "Enterprise Legal Team",
+      "Enterprise Finance Team",
+      "Executive Finance Team",
+      "Commercial Finance Team",
+      "Sales Finance Team",
+      "Supply Chain Finance Team",
+      "Legal Technology Team",
+      "People Technology Team",
+      "Customer Data Team",
+      "Security Operations Center",
+      "Security Operations Centre",
+      "Shared Services Center",
+      "Customer Experience Team",
+      "Investor Relations Team",
+      "Product Design Team",
+      "Cloud Security Team",
+      "Risk & Compliance Team",
+      "Mergers and Acquisitions Team",
+      "HR Technology Team",
+      "Strategy and Operations Team",
+      "Environmental Health and Safety Team",
+      "Diversity and Inclusion Team",
+      "Cyber Security Team",
+      "IT Operations Team",
+      "Information Technology Operations Team",
+      "Product Security Team",
+      "Finance Systems Team",
+      "Marketing Technology Team",
+      "Business Analytics Team",
+      "Network Operations Center",
+      "Global Research and Development Team",
+      "Research and Development Center",
+      "Center of Excellence",
+      "Business Finance Team",
+      "Finance Technology Team",
+      "Finance Analytics Team",
+      "Marketing Analytics Team",
+      "Product Analytics Team",
+      "Data Operations Team",
+      "Engineering Operations Team",
+      "Contract Operations Team",
+      "Compliance Operations Team",
+      "Vendor Risk Team",
+      "Human Resources Operations Team",
+      "Financial Operations Team",
+      "Research & Development Centre",
+      "Research and Development Centre",
+      "R&D Center",
+      "R&D Centre",
+      "Finance Center of Excellence",
+      "Corporate People and Culture Team",
+      "Regional Financial Planning and Analysis Team",
+      "Global R&D Team",
+      "Business Development Team",
+      "Product Development Team",
+      "Learning and Development Team",
+      "Talent Acquisition Team",
+      "Revenue Operations Team",
+      "Cybersecurity Team",
+      "Data Science Team",
+      "合同管理部",
+      "和諧服務中心",
+      "及時支援團隊",
+      "國際和平中心",
+      "財務營運團隊",
+      "人力資源部",
+      "法務部",
+      "法务部",
+      "客戶成功團隊",
+      "客户成功团队",
+      "軟體工程團隊",
+      "软件工程团队",
+      "品質保證團隊",
+      "质量保证团队",
+      "法規事務部",
+      "法规事务部",
+      "供應鏈管理部",
+      "供应链管理部",
+      "公共關係部",
+      "公共关系部",
+      "研發部",
+      "研发部",
+      "資訊科技部",
+      "信息技术部",
+      "資訊安全團隊",
+      "信息安全团队",
+      "資訊科技團隊",
+      "信息技术团队",
+      "軟體工程部",
+      "软件工程部",
+      "產品管理團隊",
+      "产品管理团队",
+      "風險管理團隊",
+      "风险管理团队",
+      "客戶服務團隊",
+      "客户服务团队",
+      "數據治理團隊",
+      "数据治理团队",
+      "安全營運團隊",
+      "安全运营团队",
+      "銷售營運團隊",
+      "销售运营团队",
+      "營銷營運團隊",
+      "营销运营团队",
+      "產品營銷團隊",
+      "产品营销团队",
+      "法規合規團隊",
+      "法规合规团队",
+      "客戶營運團隊",
+      "客户运营团队",
+      "法務營運團隊",
+      "法务运营团队",
+      "財務審核團隊",
+      "财务审核团队",
+      "企業合同管理部",
+      "企业合同管理部",
+      "企業法務部",
+      "企业法务部",
+      "企業財務部",
+      "企业财务部",
+      "亞太財務營運團隊",
+      "亚太财务运营团队",
+      "全球財務團隊",
+      "全球财务团队",
+      "區域法務團隊",
+      "区域法务团队",
+      "商務財務團隊",
+      "商务财务团队",
+      "銷售財務團隊",
+      "销售财务团队",
+      "供應鏈財務團隊",
+      "供应链财务团队",
+      "法務科技團隊",
+      "法务科技团队",
+      "人力科技團隊",
+      "人力科技团队",
+      "客戶數據團隊",
+      "客户数据团队",
+      "客戶體驗團隊",
+      "客户体验团队",
+      "數據私隱辦公室",
+      "数据隐私办公室",
+      "環境健康安全部",
+      "环境健康安全部",
+      "產品安全團隊",
+      "产品安全团队",
+      "資訊科技營運團隊",
+      "信息技术运营团队",
+      "財務系統團隊",
+      "财务系统团队",
+      "人力資源科技團隊",
+      "人力资源科技团队",
+      "財務科技團隊",
+      "财务科技团队",
+      "營銷科技團隊",
+      "营销科技团队",
+      "業務財務團隊",
+      "业务财务团队",
+      "產品開發團隊",
+      "产品开发团队",
+      "業務開發團隊",
+      "业务开发团队",
+      "學習與發展團隊",
+      "学习与发展团队",
+      "人才招聘團隊",
+      "人才招聘团队",
+      "網絡安全團隊",
+      "网络安全团队",
+      "數據科學團隊",
+      "数据科学团队",
+      "營收營運團隊",
+      "营收运营团队",
+    ].map((recipient, index) => ({
+      caseId: `single-named-recipient-${index + 1}`,
+      text: `Notify ${recipient} for rejection`,
+      leaves: [
+        {
+          role: "event",
+          quote: "rejection",
+          hint: "request_rejected",
+        },
+        {
+          role: "recipient",
+          quote: recipient,
+          hint: "source_named_group",
+        },
+      ],
+    })),
+  ];
+  for (const [itemIndex, entry] of cases.entries()) {
+    const messageId = `direct-notification-valid:${entry.caseId}`;
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: { [messageId]: entry.text },
+      items: [located({
+        itemIndex,
+        kind: "notification",
+        messageId,
+        text: entry.text,
+        leaves: entry.leaves,
+      })],
+    });
+    const item = result.review.items[0];
+    assert.ok(item, entry.caseId);
+    assert.equal(item.semanticComplete, true, entry.caseId);
+    assert.equal(item.bindings.length, 0, entry.caseId);
+    assert.equal(item.fragmentId, null, entry.caseId);
+    assert.equal(item.value.event, undefined, entry.caseId);
+    assert.equal(item.value.recipients, undefined, entry.caseId);
+    assert.ok(
+      !result.envelope.fragments.some(
+        (fragment) => fragment.factId === "notifications.rules",
+      ),
+      entry.caseId,
+    );
+    assert.ok(
+      !result.review.rejections.some((rejection) =>
+        rejection.detail.startsWith("notification:")
+      ),
+      `${entry.caseId}:${JSON.stringify(result.review.rejections)}`,
+    );
+  }
+});
+
 test("direct review-only aliases fail closed for authority and scope adversaries", () => {
   const cases = [
     {
@@ -5194,7 +6843,6 @@ test("direct review-only aliases fail closed for authority and scope adversaries
         },
       ],
       expectedDetail: "notification:event",
-      expectedSemanticComplete: true,
       forbiddenBindingPath: "/event",
     },
     {
