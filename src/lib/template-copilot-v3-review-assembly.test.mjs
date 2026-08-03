@@ -9,6 +9,9 @@ import {
   templateCopilotV3SourceSpanId,
   validateTemplateCopilotV3ExtractionEnvelopeSourceAuthority,
 } from "./template-copilot-v3-evidence.ts";
+import {
+  templateCopilotV3SourceLocalNotificationItemIndexBase,
+} from "./template-copilot-v3-provider-quotes.ts";
 import { templateCopilotQualificationScenarios } from "../../scripts/template-copilot-qualification-scenarios.mjs";
 
 function span(messageId, text, quote, occurrence = 0) {
@@ -391,6 +394,883 @@ test("groups notifications by verified event and recipient identity under every 
     if (stableIds === null) stableIds = ids;
     else assert.deepEqual(ids, stableIds);
   }
+});
+
+test("an uncovered sibling notification atomically blocks durable canonical-recipient leaves and duplicate masking", () => {
+  const messageId = "notification-scope-coverage:canonical-recipient";
+  const text =
+    "Notify requester for rejection. Notify workflow owner for completion.";
+  const first = located({
+    itemIndex: 44,
+    kind: "notification",
+    messageId,
+    text,
+    anchorQuote: "Notify requester for rejection",
+    leaves: [
+      { role: "event", quote: "rejection", hint: "request_rejected" },
+      { role: "recipient", quote: "requester", hint: "requester" },
+    ],
+  });
+  const duplicate = Object.freeze({ ...first, itemIndex: 45 });
+  for (const items of [[first], [first, duplicate], [duplicate, first]]) {
+    const result = assembleTemplateCopilotV3Review({
+      items,
+      sourceMessages: { [messageId]: text },
+      sourceMessageOrder: [messageId],
+    });
+    const notifications = result.review.items.filter(
+      (item) => item.factId === "notifications.rules",
+    );
+    assert.ok(notifications.length >= 1);
+    assert.ok(notifications.every((item) => !item.semanticComplete));
+    assert.ok(notifications.every((item) => item.fragmentId === null));
+    assert.ok(notifications.every((item) => item.bindings.length === 0));
+    assert.ok(
+      result.review.rejections.some(
+        (rejection) =>
+          rejection.detail ===
+            "notification:unrepresented_or_unsafe_action",
+      ),
+    );
+    assert.equal(
+      result.envelope.fragments.some(
+        (fragment) => fragment.factId === "notifications.rules",
+      ),
+      false,
+    );
+  }
+});
+
+test("forged sibling hints and inflected sibling actions cannot satisfy notification coverage", () => {
+  const forgedMessageId = "notification-scope-coverage:forged-sibling";
+  const forgedText =
+    "申請已提交時通知申請人。Notify workflow owner for completion.";
+  const validFirst = located({
+    itemIndex: 46,
+    kind: "notification",
+    messageId: forgedMessageId,
+    text: forgedText,
+    anchorQuote: "申請已提交時通知申請人",
+    leaves: [
+      { role: "event", quote: "申請已提交", hint: "request_submitted" },
+      { role: "recipient", quote: "申請人", hint: "requester" },
+    ],
+  });
+  const forgedSibling = located({
+    itemIndex: 47,
+    kind: "notification",
+    messageId: forgedMessageId,
+    text: forgedText,
+    anchorQuote: "Notify workflow owner for completion",
+    leaves: [
+      { role: "event", quote: "completion", hint: "request_rejected" },
+      { role: "recipient", quote: "workflow owner", hint: "requester" },
+    ],
+  });
+  for (const items of [
+    [validFirst, forgedSibling],
+    [forgedSibling, validFirst],
+  ]) {
+    const result = assembleTemplateCopilotV3Review({
+      items,
+      sourceMessages: { [forgedMessageId]: forgedText },
+      sourceMessageOrder: [forgedMessageId],
+    });
+    const notifications = result.review.items.filter(
+      (item) => item.factId === "notifications.rules",
+    );
+    assert.ok(notifications.length >= 1);
+    assert.ok(notifications.every((item) => !item.semanticComplete));
+    assert.ok(notifications.every((item) => item.fragmentId === null));
+    assert.ok(notifications.every((item) => item.bindings.length === 0));
+    assert.equal(
+      result.envelope.fragments.some(
+        (fragment) => fragment.factId === "notifications.rules",
+      ),
+      false,
+    );
+  }
+
+  const duplicateRecipientSibling = located({
+    itemIndex: 49,
+    kind: "notification",
+    messageId: forgedMessageId,
+    text: forgedText,
+    anchorQuote: "Notify workflow owner for completion",
+    leaves: [
+      { role: "event", quote: "completion", hint: "request_completed" },
+      { role: "recipient", quote: "workflow owner", hint: "workflow_owner" },
+      { role: "recipient", quote: "workflow owner", hint: "workflow_owner" },
+    ],
+  });
+  const crossClauseAnchorSibling = located({
+    itemIndex: 50,
+    kind: "notification",
+    messageId: forgedMessageId,
+    text: forgedText,
+    leaves: [
+      { role: "event", quote: "completion", hint: "request_completed" },
+      { role: "recipient", quote: "workflow owner", hint: "workflow_owner" },
+    ],
+  });
+  const inconsistentRecoverySibling = located({
+    itemIndex: 54,
+    kind: "notification",
+    messageId: forgedMessageId,
+    text: forgedText,
+    anchorQuote: "Notify workflow owner for completion",
+    sameLocalClauseRecoveredLeafCount: 1,
+    anchorExpanded: false,
+    leaves: [
+      { role: "event", quote: "completion", hint: "request_completed" },
+      {
+        role: "recipient",
+        quote: "workflow owner",
+        hint: "workflow_owner",
+        sameLocalClauseRecovered: true,
+      },
+    ],
+  });
+  for (const sibling of [
+    duplicateRecipientSibling,
+    crossClauseAnchorSibling,
+    inconsistentRecoverySibling,
+  ]) {
+    const result = assembleTemplateCopilotV3Review({
+      items: [validFirst, sibling],
+      sourceMessages: { [forgedMessageId]: forgedText },
+      sourceMessageOrder: [forgedMessageId],
+    });
+    assert.ok(
+      result.review.items
+        .filter((item) => item.factId === "notifications.rules")
+        .every(
+          (item) =>
+            !item.semanticComplete &&
+            item.fragmentId === null &&
+            item.bindings.length === 0,
+        ),
+    );
+    assert.equal(result.envelope.fragments.length, 0);
+  }
+
+  const multipleRecipientMessageId =
+    "notification-scope-coverage:multiple-recipients";
+  const multipleRecipientText =
+    "申請已提交時通知申請人。Notify requester and workflow owner for completion.";
+  const multipleRecipientResult = assembleTemplateCopilotV3Review({
+    items: [
+      located({
+        itemIndex: 51,
+        kind: "notification",
+        messageId: multipleRecipientMessageId,
+        text: multipleRecipientText,
+        anchorQuote: "申請已提交時通知申請人",
+        leaves: [
+          {
+            role: "event",
+            quote: "申請已提交",
+            hint: "request_submitted",
+          },
+          { role: "recipient", quote: "申請人", hint: "requester" },
+        ],
+      }),
+      located({
+        itemIndex: 52,
+        kind: "notification",
+        messageId: multipleRecipientMessageId,
+        text: multipleRecipientText,
+        anchorQuote: "Notify requester and workflow owner for completion",
+        leaves: [
+          { role: "event", quote: "completion", hint: "request_completed" },
+          { role: "recipient", quote: "requester", hint: "requester" },
+          {
+            role: "recipient",
+            quote: "workflow owner",
+            hint: "workflow_owner",
+          },
+        ],
+      }),
+    ],
+    sourceMessages: { [multipleRecipientMessageId]: multipleRecipientText },
+    sourceMessageOrder: [multipleRecipientMessageId],
+  });
+  assert.ok(
+    multipleRecipientResult.review.items
+      .filter((item) => item.factId === "notifications.rules")
+      .every(
+        (item) =>
+          !item.semanticComplete &&
+          item.fragmentId === null &&
+          item.bindings.length === 0,
+      ),
+  );
+  assert.equal(multipleRecipientResult.envelope.fragments.length, 0);
+
+  const inflectedMessageId = "notification-scope-coverage:inflected-action";
+  const inflectedText =
+    "Request submitted notifies requester. Request completed notifies workflow owner.";
+  const inflected = assembleTemplateCopilotV3Review({
+    items: [located({
+      itemIndex: 53,
+      kind: "notification",
+      messageId: inflectedMessageId,
+      text: inflectedText,
+      anchorQuote: "Request submitted notifies requester",
+      leaves: [
+        {
+          role: "event",
+          quote: "Request submitted",
+          hint: "request_submitted",
+        },
+        { role: "recipient", quote: "requester", hint: "requester" },
+      ],
+    })],
+    sourceMessages: { [inflectedMessageId]: inflectedText },
+    sourceMessageOrder: [inflectedMessageId],
+  });
+  const inflectedNotification = inflected.review.items.find(
+    (item) => item.factId === "notifications.rules",
+  );
+  assert.ok(inflectedNotification);
+  assert.equal(inflectedNotification.semanticComplete, false);
+  assert.equal(inflectedNotification.fragmentId, null);
+  assert.deepEqual(inflectedNotification.bindings, []);
+  assert.equal(inflected.envelope.fragments.length, 0);
+
+  for (const [caseId, secondClause] of [
+    ["alerts", "Request completed alerts workflow owner"],
+    ["emails", "Request completed emails workflow owner"],
+    [
+      "notification-goes-to",
+      "A request completion notification goes to workflow owner",
+    ],
+    ["receives-email", "Workflow owner receives email on completion"],
+    ["is-sent-email", "Workflow owner is sent an email on completion"],
+    ["will-be-sent-alert", "Workflow owner will be sent an alert on completion"],
+    ["receives-alert", "Workflow owner receives an alert on completion"],
+    ["passive-alerted", "Workflow owner is alerted on completion"],
+    ["future-receive", "Workflow owner will receive an email on completion"],
+    [
+      "receives-notification",
+      "Workflow owner receives a notification on completion",
+    ],
+    ["send-email", "Send email to workflow owner on completion"],
+    ["send-double-object", "Send workflow owner an email on completion"],
+    ["deliver-email", "Deliver an email to workflow owner on completion"],
+    ["issue-alert", "Issue an alert to workflow owner on completion"],
+    ["trigger-email", "Trigger an email to workflow owner on completion"],
+    ["scheduled-email", "System schedules an email to workflow owner on completion"],
+    ["queued-alert", "System queues an alert for workflow owner on completion"],
+    ["forwarded-email", "System forwards an email to workflow owner on completion"],
+    ["posted-notification", "System posts a notification to workflow owner on completion"],
+    ["email-is-sent", "An email is sent to workflow owner on completion"],
+    ["email-will-be-delivered", "An email will be delivered to Finance on rejection"],
+    ["alert-is-dispatched", "An alert is dispatched to Finance on rejection"],
+    ["notification-is-issued", "A notification is issued to Finance on rejection"],
+    ["alert-is-generated", "An alert is generated for Finance on rejection"],
+    ["copied-on-email", "Workflow owner is copied on an email on completion"],
+    ["blind-copied-on-email", "Workflow owner is blind-copied on an email on completion"],
+    ["progressive-send", "The system is sending an email to Finance on rejection"],
+    ["supported-send", "Alert history supports sending an email to Finance on rejection"],
+    ["supported-email", "Alert history supports emailing Finance on rejection"],
+    ["future-receiving", "Finance will be receiving an email on rejection"],
+    ["present-receiving", "Finance is receiving an alert on rejection"],
+    ["cc-imperative", "CC Finance on rejection"],
+    ["cc-passive", "Finance is cc'd on the rejection email"],
+    ["send-reminder", "Send a reminder to Finance on rejection"],
+    ["deliver-reminder", "Deliver a reminder to Finance on rejection"],
+    ["broadcast-notification", "Broadcast a notification to Finance on rejection"],
+    ["create-email", "Create an email for Finance on rejection"],
+    ["relay-notification", "Relay a notification to Finance on rejection"],
+    ["transmit-alert", "Transmit an alert to Finance on rejection"],
+    ["raise-alert", "Raise an alert for Finance on rejection"],
+    ["passive-triggered-email", "An email is triggered for Finance on rejection"],
+    ["passive-broadcast-notification", "A notification is broadcast to Finance on rejection"],
+    ["passive-raised-alert", "An alert is raised for Finance on rejection"],
+    ["passive-sent-reminder", "A reminder is sent to Finance on rejection"],
+    ["subject-notify", "We notify workflow owner on completion"],
+    ["metadata-and-send", "Email services store audit records and send an email to workflow owner on completion"],
+    ["scheduled-double-object", "System schedules workflow owner an email on completion"],
+    ["forwarded-double-object", "System forwards workflow owner an email on completion"],
+    ["curly-cc-passive", "Workflow owner is cc’d on an email on completion"],
+    ["included-on-email", "Workflow owner is included on an email on completion"],
+    ["mails-recipient", "System mails workflow owner on completion"],
+    ["remind-imperative", "Remind workflow owner on completion"],
+    ["reminds-subject", "The system reminds workflow owner on completion"],
+    ["reminded-passive", "Workflow owner is reminded on completion"],
+    ["metadata-subject-email-action", "Email templates email workflow owner on completion"],
+    ["metadata-subject-remind-action", "Notification settings remind workflow owner on completion"],
+    ["TC-metadata-subject-notify-action", "通知服務通知流程負責人"],
+    ["SC-metadata-subject-notify-action", "通知服务通知流程负责人"],
+    ["send-alert", "On completion, send an alert to workflow owner"],
+    ["TC-send-email", "完成後向流程負責部門發送電郵"],
+    ["SC-send-email", "完成后向流程负责部门发送电邮"],
+    ["TC-receive-notification", "流程負責人會在完成時收到通知"],
+    ["SC-receive-notification", "流程负责人会在完成时收到通知"],
+    ["TC-receive-obtain", "流程負責人會在完成時接獲通知"],
+    ["SC-receive-arrive", "流程负责人会在完成时接到通知"],
+    ["TC-event-first-notify", "完成後通知流程負責人"],
+    ["SC-event-first-notify", "完成后通知流程负责人"],
+    ["TC-event-first-remind", "逾期時提醒流程負責人"],
+    ["SC-event-first-remind", "逾期时提醒流程负责人"],
+    ["TC-passive-notified", "流程負責人會在完成時被通知"],
+    ["SC-passive-notified", "流程负责人会在完成时被通知"],
+    ["TC-mail-email", "向流程負責部門寄送電郵"],
+    ["SC-mail-email", "向流程负责部门寄送电邮"],
+    ["TC-push-notification", "向流程負責部門推送通知"],
+    ["SC-push-notification", "向流程负责部门推送通知"],
+    ["TC-directed-inform", "向流程負責部門告知結果"],
+    ["SC-directed-inform", "向流程负责部门告知结果"],
+    ["TC-system-notify", "完成後，系統會通知流程負責人"],
+    ["SC-system-notify", "完成后，系统会通知流程负责人"],
+    ["TC-passive-system", "流程負責人會在完成時被系統通知"],
+    ["SC-passive-system", "流程负责人会在完成时被系统通知"],
+    ["TC-system-email-verb", "拒絕後系統會電郵財務"],
+    ["TC-receive-system-reminder", "拒絕後財務會收到系統提醒"],
+    ["TC-obtain-notification", "拒絕後財務將獲通知"],
+    ["SC-send-mail", "拒绝后系统会向财务发送邮件"],
+    ["SC-mail-notify", "拒绝后系统会邮件通知财务"],
+    ["TC-receive-mail", "流程負責人會在完成時收到郵件"],
+    ["SC-receive-mail", "流程负责人会在完成时收到邮件"],
+    ["SC-give-send-mail", "完成后系统会给流程负责人发送邮件"],
+    ["TC-mail-reminder", "拒絕後把提醒寄給財務"],
+    ["TC-receive-system-notification", "拒絕後財務會收到系統通知"],
+    ["TC-issued-email", "拒絕後財務將獲發電郵"],
+    ["SC-short-send-mail", "拒绝后系统给财务发邮件"],
+    ["SC-receive-system-notification", "拒绝后财务会接到系统通知"],
+    ["SC-short-send-notification", "拒绝后系统给财务发通知"],
+    ["SC-short-send-reminder", "拒绝后给财务发提醒"],
+    ["TC-obtain-informing", "流程負責人將獲知會"],
+    ["TC-system-cc", "系統會抄送流程負責人"],
+    ["TC-send-electronic-mail", "系統會發送電子郵件給流程負責人"],
+    ["TC-passive-system-email", "電郵會由系統發送給流程負責人"],
+    ["TC-immediate-completion", "申請完成便通知流程負責人"],
+    ["TC-immediate-approval", "申請獲批即通知流程負責人"],
+    ["TC-metadata-and-notify", "通知服務記錄傳送指標並通知流程負責人"],
+    ["SC-metadata-and-notify", "通知服务记录发送指标并通知流程负责人"],
+    ["TC-receive-electronic-mail", "流程負責人會在完成時收到電子郵件"],
+    ["SC-receive-electronic-mail", "流程负责人会在完成时收到电子邮件"],
+    ["TC-send-electronic-mail-directed", "完成後系統會向流程負責人發送電子郵件"],
+    ["SC-send-electronic-mail-directed", "完成后系统会向流程负责人发送电子邮件"],
+    ["TC-mail-one-message", "完成後系統會寄一封郵件給流程負責人"],
+    ["SC-mail-one-message", "完成后系统会寄一封邮件给流程负责人"],
+    ["TC-metadata-plus-action", "通知路由指標保留作審計記錄並在拒絕後向財務發送通知"],
+    ["SC-metadata-plus-action", "通知路由指标保留作审计记录并在拒绝后向财务发送通知"],
+    ["TC-metadata-then-action", "通知路由指標保留作審計記錄，然後向財務知會拒絕結果"],
+    ["SC-metadata-then-action", "通知路由指标保留作审计记录，然后向财务知会拒绝结果"],
+    ["EN-metadata-plus-passive-action", "Email routing metrics are retained for audit and Finance is alerted on rejection"],
+    ["EN-metadata-then-action", "Alert history is retained for audit, then notify Finance on rejection"],
+    ["EN-action-then-metadata", "Notify Finance on rejection and alert history is retained for audit"],
+  ]) {
+    const actionMessageId = `notification-scope-coverage:${caseId}`;
+    const actionText =
+      `Request submitted notifies requester. ${secondClause}.`;
+    const result = assembleTemplateCopilotV3Review({
+      items: [located({
+        itemIndex: 55,
+        kind: "notification",
+        messageId: actionMessageId,
+        text: actionText,
+        anchorQuote: "Request submitted notifies requester",
+        leaves: [
+          {
+            role: "event",
+            quote: "Request submitted",
+            hint: "request_submitted",
+          },
+          { role: "recipient", quote: "requester", hint: "requester" },
+        ],
+      })],
+      sourceMessages: { [actionMessageId]: actionText },
+    });
+    const notification = result.review.items.find(
+      (item) => item.factId === "notifications.rules",
+    );
+    assert.ok(notification, caseId);
+    assert.equal(notification.semanticComplete, false, caseId);
+    assert.equal(notification.fragmentId, null, caseId);
+    assert.deepEqual(notification.bindings, [], caseId);
+    assert.equal(result.envelope.fragments.length, 0, caseId);
+  }
+
+  for (const entry of [
+    {
+      caseId: "literal-notify-tail-action-after",
+      text:
+        "Notify only Finance Team for rejection. The word notify remains in audit history and notify workflow owner on completion.",
+      anchorQuote: "Notify only Finance Team for rejection",
+      event: "rejection",
+      recipient: "Finance Team",
+      visibility: "only",
+    },
+    {
+      caseId: "literal-notify-tail-action-before",
+      text:
+        "The word notify remains in audit history and notify workflow owner on completion. Notify only Finance Team for rejection.",
+      anchorQuote: "Notify only Finance Team for rejection",
+      event: "rejection",
+      recipient: "Finance Team",
+      visibility: "only",
+    },
+    {
+      caseId: "literal-email-tail-action",
+      text:
+        "Notify only Finance Team for rejection. The phrase email is visible in the audit records and email workflow owner on completion.",
+      anchorQuote: "Notify only Finance Team for rejection",
+      event: "rejection",
+      recipient: "Finance Team",
+      visibility: "only",
+    },
+    {
+      caseId: "TC-closed-business-email-tail-action",
+      text:
+        "只通知財務營運團隊，事件包括拒絕。此通知規則已撤銷重複申請並電郵流程負責人。",
+      anchorQuote: "只通知財務營運團隊，事件包括拒絕",
+      event: "拒絕",
+      recipient: "財務營運團隊",
+      visibility: "只",
+    },
+    {
+      caseId: "TC-closed-business-inform-tail-action",
+      text:
+        "只通知財務營運團隊，事件包括拒絕。此通知規則已撤銷重複申請並知會流程負責人。",
+      anchorQuote: "只通知財務營運團隊，事件包括拒絕",
+      event: "拒絕",
+      recipient: "財務營運團隊",
+      visibility: "只",
+    },
+    {
+      caseId: "SC-closed-business-mail-tail-action",
+      text:
+        "仅通知财务运营团队，事件包括拒绝。该通知规则已经撤销重复申请并邮件流程负责人。",
+      anchorQuote: "仅通知财务运营团队，事件包括拒绝",
+      event: "拒绝",
+      recipient: "财务运营团队",
+      visibility: "仅",
+    },
+  ]) {
+    const messageId = `notification-scope-composition:${entry.caseId}`;
+    const result = assembleTemplateCopilotV3Review({
+      items: [located({
+        itemIndex: 58,
+        kind: "notification",
+        messageId,
+        text: entry.text,
+        anchorQuote: entry.anchorQuote,
+        leaves: [
+          {
+            role: "event",
+            quote: entry.event,
+            hint: "request_rejected",
+          },
+          {
+            role: "recipient",
+            quote: entry.recipient,
+            hint: "source_named_group",
+          },
+          {
+            role: "visibility",
+            quote: entry.visibility,
+            hint: "recipients_only",
+          },
+        ],
+      })],
+      sourceMessages: { [messageId]: entry.text },
+    });
+    const notification = result.review.items.find(
+      (item) => item.factId === "notifications.rules",
+    );
+    assert.ok(notification, entry.caseId);
+    assert.equal(notification.semanticComplete, false, entry.caseId);
+    assert.equal(notification.fragmentId, null, entry.caseId);
+    assert.deepEqual(notification.bindings, [], entry.caseId);
+    assert.equal(result.envelope.fragments.length, 0, entry.caseId);
+  }
+
+  const multiActionMessageId = "notification-scope-coverage:multi-action-range";
+  const multiActionText =
+    "申請已提交時通知申請人。Notify requester for rejection, then notify workflow owner for completion.";
+  const multiActionFirst = located({
+    itemIndex: 56,
+    kind: "notification",
+    messageId: multiActionMessageId,
+    text: multiActionText,
+    anchorQuote: "申請已提交時通知申請人",
+    leaves: [
+      { role: "event", quote: "申請已提交", hint: "request_submitted" },
+      { role: "recipient", quote: "申請人", hint: "requester" },
+    ],
+  });
+  const multiActionSibling = located({
+    itemIndex: 57,
+    kind: "notification",
+    messageId: multiActionMessageId,
+    text: multiActionText,
+    anchorQuote:
+      "Notify requester for rejection, then notify workflow owner for completion",
+    leaves: [
+      { role: "event", quote: "rejection", hint: "request_rejected" },
+      { role: "recipient", quote: "requester", hint: "requester" },
+    ],
+  });
+  for (const items of [
+    [multiActionFirst, multiActionSibling],
+    [multiActionSibling, multiActionFirst],
+  ]) {
+    const result = assembleTemplateCopilotV3Review({
+      items,
+      sourceMessages: { [multiActionMessageId]: multiActionText },
+    });
+    assert.ok(
+      result.review.items
+        .filter((item) => item.factId === "notifications.rules")
+        .every(
+          (item) =>
+            !item.semanticComplete &&
+            item.fragmentId === null &&
+            item.bindings.length === 0,
+        ),
+    );
+    assert.equal(result.envelope.fragments.length, 0);
+  }
+
+  for (const [caseId, secondClause, event, eventHint, recipient, visibility] of [
+    [
+      "omitted-event",
+      "Notify workflow owner for rejection and completion",
+      "rejection",
+      "request_rejected",
+      "workflow owner",
+      null,
+    ],
+    [
+      "omitted-recipient",
+      "Notify requester and workflow owner for completion",
+      "completion",
+      "request_completed",
+      "workflow owner",
+      null,
+    ],
+    [
+      "omitted-visibility",
+      "Notify only workflow owner for completion",
+      "completion",
+      "request_completed",
+      "workflow owner",
+      null,
+    ],
+  ]) {
+    const messageId = `notification-scope-coverage:${caseId}`;
+    const text = `申請已提交時通知申請人。${secondClause}.`;
+    const first = located({
+      itemIndex: 59,
+      kind: "notification",
+      messageId,
+      text,
+      anchorQuote: "申請已提交時通知申請人",
+      leaves: [
+        { role: "event", quote: "申請已提交", hint: "request_submitted" },
+        { role: "recipient", quote: "申請人", hint: "requester" },
+      ],
+    });
+    const sibling = located({
+      itemIndex: 60,
+      kind: "notification",
+      messageId,
+      text,
+      anchorQuote: secondClause,
+      leaves: [
+        { role: "event", quote: event, hint: eventHint },
+        { role: "recipient", quote: recipient, hint: "workflow_owner" },
+        ...(visibility
+          ? [{ role: "visibility", quote: visibility, hint: "recipients_only" }]
+          : []),
+      ],
+    });
+    for (const items of [[first, sibling], [sibling, first]]) {
+      const result = assembleTemplateCopilotV3Review({
+        items,
+        sourceMessages: { [messageId]: text },
+      });
+      assert.ok(
+        result.review.items
+          .filter((item) => item.factId === "notifications.rules")
+          .every(
+            (item) =>
+              !item.semanticComplete &&
+              item.fragmentId === null &&
+              item.bindings.length === 0,
+          ),
+        caseId,
+      );
+      assert.equal(result.envelope.fragments.length, 0, caseId);
+    }
+  }
+
+  for (const [caseId, text] of [
+    [
+      "represented-clause-omits-recipient",
+      "Request submitted notifies requester and workflow owner",
+    ],
+    [
+      "represented-clause-omits-visibility",
+      "Request submitted notifies only requester",
+    ],
+    [
+      "represented-clause-omits-exclusive-visibility",
+      "Request submitted notifies requester exclusively",
+    ],
+    [
+      "represented-clause-omits-no-one-else-visibility",
+      "Request submitted notifies requester and no one else",
+    ],
+  ]) {
+    const messageId = `notification-scope-coverage:${caseId}`;
+    const result = assembleTemplateCopilotV3Review({
+      items: [located({
+        itemIndex: 61,
+        kind: "notification",
+        messageId,
+        text,
+        anchorQuote: text,
+        leaves: [
+          {
+            role: "event",
+            quote: "Request submitted",
+            hint: "request_submitted",
+          },
+          { role: "recipient", quote: "requester", hint: "requester" },
+        ],
+      })],
+      sourceMessages: { [messageId]: text },
+    });
+    const notification = result.review.items.find(
+      (item) => item.factId === "notifications.rules",
+    );
+    assert.ok(notification, caseId);
+    assert.equal(notification.semanticComplete, false, caseId);
+    assert.equal(notification.fragmentId, null, caseId);
+    assert.deepEqual(notification.bindings, [], caseId);
+    assert.equal(result.envelope.fragments.length, 0, caseId);
+  }
+
+  for (const [caseId, auditFact] of [
+    ["archived-emails", "Outbound emails archived for audit"],
+    ["logged-alerts", "System alerts logged for audit"],
+    ["alerts-dashboard", "Email alerts dashboard shows aggregate counts"],
+    ["alerts-configuration", "Email alerts configuration belongs to the audit module"],
+    ["alerts-table", "System alerts table stores aggregate counts"],
+    ["alerts-settings", "Email alerts settings are retained for history"],
+    ["email-delivery-metrics", "Email delivery metrics appear on the dashboard"],
+    ["issue-records", "Issue records include an alert history"],
+    ["email-routing-metrics", "Email routing metrics are retained for audit"],
+    ["email-routing-feed", "Email routing metrics feed the dashboard"],
+    ["email-generation-power", "Email generation metrics power the dashboard"],
+    ["email-sending-support", "Email sending metrics support audit reporting"],
+    ["email-push-update", "Email push metrics update aggregate counts"],
+    ["email-publication-populate", "Email publication metrics populate the dashboard"],
+    ["alerts-for-history", "Alerts for audit history are retained"],
+    ["emails-from-runs", "Emails from prior runs are retained for audit"],
+    ["alerts-relating-records", "Alerts relating to legacy records are archived for audit"],
+    ["email-alerts-policy", "Email alerts policy remains active"],
+    ["email-alerts-guidance", "Email alerts guidance remains active"],
+    ["TC-inform-policy", "知會政策仍然有效"],
+    ["SC-inform-policy", "知会政策仍然有效"],
+    ["email-routing-summarize", "Email routing metrics summarize delivery performance"],
+    ["email-generation-measure", "Email generation metrics measure throughput"],
+    ["email-push-provide", "Email push metrics provide audit evidence"],
+    ["email-publication-supply", "Email publication metrics supply dashboard figures"],
+    ["email-dispatch-surface", "Email dispatch metrics surface aggregate counts"],
+    ["alert-metrics-routed", "Alert metrics are routed to the audit dashboard"],
+    ["TC-notification-settings", "通知設定屬於審計模組"],
+    ["SC-notification-settings", "通知设置属于审计模块"],
+    ["TC-notification-verb-settings", "知會設定屬於審計模組"],
+    ["TC-email-metrics", "電郵指標顯示在審計儀表板"],
+    ["SC-email-metrics", "电邮指标显示在审计仪表板"],
+    ["TC-email-delivery-metrics", "電郵傳送指標顯示於儀表板"],
+    ["SC-email-delivery-metrics", "电邮发送指标显示在仪表板"],
+    ["TC-email-alert-settings", "電郵警示設定保留於歷史"],
+    ["system-alerts-documentation", "System alerts documentation is current"],
+    ["notification-policy-global", "The notification policy applies globally"],
+    ["notification-settings-locale", "Notification settings inherit the corporate locale"],
+    ["email-templates-wording", "Email templates define the approved wording"],
+    ["notification-provider-health", "Notification provider health is monitored"],
+    ["email-content-guidance", "Email content follows legal guidance"],
+    ["notification-policy-retention", "The notification policy governs audit retention"],
+    ["reminder-settings-disabled", "Reminder settings default to disabled"],
+    ["mail-templates-branding", "Mail templates use corporate branding"],
+    ["email-history-encrypted", "Email history is encrypted at rest"],
+    ["TC-inform-rules-updated", "知會規則已更新"],
+    ["TC-inform-content-audit", "知會內容僅供審計參考"],
+    ["TC-tell-guidance-updated", "告知指引已更新"],
+    ["TC-tell-content-reference", "告知內容僅供參考"],
+    ["TC-report-rules-updated", "通報規則已更新"],
+    ["SC-inform-rules-updated", "知会规则已更新"],
+    ["SC-inform-content-audit", "知会内容仅供审计参考"],
+    ["SC-tell-guidance-updated", "告知指引已更新"],
+    ["SC-tell-content-reference", "告知内容仅供参考"],
+    ["SC-report-rules-updated", "通报规则已更新"],
+    ["TC-notification-policy-departments", "通知政策適用於所有部門"],
+    ["TC-notification-template-branding", "通知範本使用公司品牌"],
+    ["TC-notification-settings-language", "通知設定沿用公司語言"],
+    ["TC-email-content-translated", "電郵內容已翻譯成中文"],
+    ["TC-notification-service-maintained", "通知服務由資訊科技部維護"],
+    ["TC-notification-report-nightly", "通知報告每晚產生"],
+    ["TC-reminder-policy-updated", "提醒政策已更新"],
+    ["TC-mail-template-branding", "郵件範本使用公司品牌"],
+    ["TC-email-history-encrypted", "電郵歷史已加密"],
+    ["SC-notification-policy-departments", "通知政策适用于所有部门"],
+    ["SC-notification-template-branding", "通知范本使用公司品牌"],
+    ["SC-notification-settings-language", "通知设置沿用公司语言"],
+    ["SC-email-content-translated", "电邮内容已翻译成中文"],
+    ["SC-notification-service-maintained", "通知服务由资讯科技部维护"],
+    ["SC-notification-report-nightly", "通知报告每晚产生"],
+    ["SC-reminder-policy-updated", "提醒政策已更新"],
+    ["SC-mail-template-branding", "邮件范本使用公司品牌"],
+    ["SC-email-history-encrypted", "电邮历史已加密"],
+  ]) {
+    const messageId = `notification-scope-positive:${caseId}`;
+    const text = `申請已提交時通知申請人。${auditFact}.`;
+    const result = assembleTemplateCopilotV3Review({
+      items: [located({
+        itemIndex: 61,
+        kind: "notification",
+        messageId,
+        text,
+        anchorQuote: "申請已提交時通知申請人",
+        leaves: [
+          { role: "event", quote: "申請已提交", hint: "request_submitted" },
+          { role: "recipient", quote: "申請人", hint: "requester" },
+        ],
+      })],
+      sourceMessages: { [messageId]: text },
+    });
+    const notification = result.review.items.find(
+      (item) => item.factId === "notifications.rules",
+    );
+    assert.ok(notification, caseId);
+    assert.equal(notification.semanticComplete, true, caseId);
+    assert.equal(result.envelope.fragments.length, 1, caseId);
+  }
+});
+
+test("notification durable writers enforce slot and server-local provenance", () => {
+  const messageId = "notification-slot-provenance";
+  const text = "申請已提交時通知申請人";
+  const notification = (slot, itemIndex) => located({
+    itemIndex,
+    kind: "notification",
+    slot,
+    messageId,
+    text,
+    leaves: [
+      { role: "event", quote: "申請已提交", hint: "request_submitted" },
+      { role: "recipient", quote: "申請人", hint: "requester" },
+    ],
+  });
+  for (const [caseId, item] of [
+    ["timing", notification("timing_escalation", 0)],
+    ["provider-stage", notification("stages_participants", 0)],
+  ]) {
+    const result = assembleTemplateCopilotV3Review({
+      items: [item],
+      sourceMessages: { [messageId]: text },
+    });
+    const reviewItem = result.review.items.find(
+      (entry) => entry.factId === "notifications.rules",
+    );
+    assert.ok(reviewItem, caseId);
+    assert.equal(reviewItem.semanticComplete, false, caseId);
+    assert.equal(reviewItem.fragmentId, null, caseId);
+    assert.deepEqual(reviewItem.bindings, [], caseId);
+    assert.equal(result.envelope.fragments.length, 0, caseId);
+    assert.ok(
+      result.review.rejections.some(
+        (entry) =>
+          entry.detail === "notification:unsupported_slot_provenance",
+      ),
+      caseId,
+    );
+  }
+
+  const governedStageMessageId = "governed:stages_participants";
+  const governedStage = assembleTemplateCopilotV3Review({
+    items: [located({
+      itemIndex: 0,
+      kind: "notification",
+      slot: "stages_participants",
+      messageId: governedStageMessageId,
+      text,
+      leaves: [
+        { role: "event", quote: "申請已提交", hint: "request_submitted" },
+        { role: "recipient", quote: "申請人", hint: "requester" },
+      ],
+    })],
+    sourceMessages: { [governedStageMessageId]: text },
+  });
+  const governedStageItem = governedStage.review.items.find(
+    (entry) => entry.factId === "notifications.rules",
+  );
+  assert.ok(governedStageItem);
+  assert.equal(governedStageItem.semanticComplete, true);
+  assert.equal(governedStageItem.fragmentId, null);
+  assert.deepEqual(governedStageItem.bindings, []);
+  assert.equal(governedStage.envelope.fragments.length, 0);
+
+  for (const noun of ["Notification", "Notifications"]) {
+    const nounMessageId = `notification-noun:${noun}`;
+    const nounText = `${noun} only Finance Team for rejection.`;
+    const result = assembleTemplateCopilotV3Review({
+      items: [located({
+        itemIndex: 62,
+        kind: "notification",
+        messageId: nounMessageId,
+        text: nounText,
+        leaves: [
+          { role: "event", quote: "rejection", hint: "request_rejected" },
+          {
+            role: "recipient",
+            quote: "Finance Team",
+            hint: "source_named_group",
+          },
+          { role: "visibility", quote: "only", hint: "recipients_only" },
+        ],
+      })],
+      sourceMessages: { [nounMessageId]: nounText },
+    });
+    const item = result.review.items.find(
+      (entry) => entry.factId === "notifications.rules",
+    );
+    assert.ok(item, noun);
+    assert.equal(item.semanticComplete, false, noun);
+    assert.equal(item.fragmentId, null, noun);
+    assert.deepEqual(item.bindings, [], noun);
+    assert.equal(result.envelope.fragments.length, 0, noun);
+  }
+
+  const invalidField = located({
+    itemIndex: 58,
+    kind: "request_field",
+    slot: "governance",
+    messageId: "unsupported-kind-slot",
+    text: "Amount required",
+    leaves: [
+      { role: "label", quote: "Amount" },
+      { role: "required", quote: "required", hint: "true" },
+    ],
+  });
+  const invalidResult = assembleTemplateCopilotV3Review({
+    items: [invalidField],
+    sourceMessages: { "unsupported-kind-slot": "Amount required" },
+  });
+  assert.equal(invalidResult.review.items.length, 0);
+  assert.equal(invalidResult.envelope.fragments.length, 0);
+  assert.ok(
+    invalidResult.review.rejections.some(
+      (entry) => entry.detail === "request_field:unsupported_slot",
+    ),
+  );
 });
 
 test("keeps later-stage attachments, native forms, inflected FYI stages, grouped amounts, and raw Chinese thresholds", () => {
@@ -6372,6 +7252,419 @@ test("assembly independently retains closed valid recipient names for forged rec
         rejection.detail.startsWith("notification:")
       ),
       `${recipient}:${JSON.stringify(result.review.rejections)}`,
+    );
+  }
+});
+
+test("closed stage-local direct notifications remain atomic and review-only", () => {
+  const messageId = "direct-stage-notification";
+  const text = "Notify the requester at completion";
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages: { [messageId]: text },
+    items: [located({
+      itemIndex: templateCopilotV3SourceLocalNotificationItemIndexBase,
+      kind: "notification",
+      slot: "stages_participants",
+      messageId,
+      text,
+      leaves: [
+        {
+          role: "event",
+          quote: "completion",
+          hint: "request_completed",
+        },
+        {
+          role: "recipient",
+          quote: "requester",
+          hint: "requester",
+        },
+      ],
+    })],
+  });
+  const item = result.review.items[0];
+  assert.ok(item);
+  assert.equal(item.factId, "notifications.rules");
+  assert.equal(item.semanticComplete, true);
+  assert.equal(item.value.event, undefined);
+  assert.equal(item.value.recipients, undefined);
+  assert.equal(item.bindings.length, 0);
+  assert.equal(item.fragmentId, null);
+  assert.equal(item.persisted, false);
+  assert.equal(item.executable, false);
+  assert.ok(
+    !result.review.rejections.some((rejection) =>
+      rejection.detail.startsWith("notification:")
+    ),
+    JSON.stringify(result.review.rejections),
+  );
+  assert.ok(
+    !result.envelope.fragments.some(
+      (fragment) => fragment.factId === "notifications.rules",
+    ),
+  );
+});
+
+test("stage-local provider evidence cannot impersonate reserved server notification provenance", () => {
+  const cases = [
+    {
+      caseId: "actionless",
+      text: "requester completion",
+      event: "completion",
+      eventHint: "request_completed",
+      recipient: "requester",
+      recipientHint: "requester",
+    },
+    {
+      caseId: "actionless-marker",
+      text: "requester at completion",
+      event: "completion",
+      eventHint: "request_completed",
+      recipient: "requester",
+      recipientHint: "requester",
+    },
+    {
+      caseId: "actionless-named",
+      text: "Finance Team rejection",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "Finance Team",
+      recipientHint: "source_named_group",
+    },
+    {
+      caseId: "detached-heading",
+      text: "Example:\nOn completion, notify the requester.",
+      anchorQuote: "On completion, notify the requester",
+      event: "completion",
+      eventHint: "request_completed",
+      recipient: "requester",
+      recipientHint: "requester",
+    },
+  ];
+  for (const entry of cases) {
+    const messageId = `direct-stage-provider:${entry.caseId}`;
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: { [messageId]: entry.text },
+      items: [located({
+        itemIndex: 0,
+        kind: "notification",
+        slot: "stages_participants",
+        messageId,
+        text: entry.text,
+        anchorQuote: entry.anchorQuote ?? entry.text,
+        leaves: [
+          {
+            role: "event",
+            quote: entry.event,
+            hint: entry.eventHint,
+          },
+          {
+            role: "recipient",
+            quote: entry.recipient,
+            hint: entry.recipientHint,
+          },
+        ],
+      })],
+    });
+    const item = result.review.items[0];
+    assert.ok(item, entry.caseId);
+    assert.equal(item.factId, "notifications.rules", entry.caseId);
+    assert.equal(item.semanticComplete, false, entry.caseId);
+    assert.equal(item.fragmentId, null, entry.caseId);
+    assert.deepEqual(item.bindings, [], entry.caseId);
+    assert.ok(
+      !result.envelope.fragments.some(
+        (fragment) => fragment.factId === "notifications.rules",
+      ),
+      entry.caseId,
+    );
+  }
+});
+
+test("notification review independently rejects adjacent illustrative and revoked authority", () => {
+  const cases = [
+    {
+      caseId: "server-stage-preceding-deprecated-example",
+      itemIndex: templateCopilotV3SourceLocalNotificationItemIndexBase,
+      slot: "stages_participants",
+      text:
+        "This is a deprecated example. Notify the requester at completion.",
+      anchorQuote: "Notify the requester at completion",
+      leaves: [
+        {
+          role: "event",
+          quote: "completion",
+          hint: "request_completed",
+        },
+        {
+          role: "recipient",
+          quote: "requester",
+          hint: "requester",
+        },
+      ],
+    },
+    {
+      caseId: "provider-policy-following-revocation",
+      itemIndex: 0,
+      slot: "visibility_notifications",
+      text:
+        "Notify only Finance Team for rejection. This rule is revoked.",
+      anchorQuote: "Notify only Finance Team for rejection",
+      leaves: [
+        {
+          role: "event",
+          quote: "rejection",
+          hint: "request_rejected",
+        },
+        {
+          role: "recipient",
+          quote: "Finance Team",
+          hint: "source_named_group",
+        },
+        {
+          role: "visibility",
+          quote: "only",
+          hint: "recipients_only",
+        },
+      ],
+    },
+    {
+      caseId: "server-policy-preceding-cjk-example",
+      itemIndex: templateCopilotV3SourceLocalNotificationItemIndexBase,
+      slot: "visibility_notifications",
+      text: "以下僅為範例。只通知財務營運團隊，事件包括拒絕。",
+      anchorQuote: "只通知財務營運團隊，事件包括拒絕",
+      leaves: [
+        {
+          role: "event",
+          quote: "拒絕",
+          hint: "request_rejected",
+        },
+        {
+          role: "recipient",
+          quote: "財務營運團隊",
+          hint: "source_named_group",
+        },
+        {
+          role: "visibility",
+          quote: "只",
+          hint: "recipients_only",
+        },
+      ],
+    },
+    ...[
+      "For reference only. Notify only Finance Team for rejection.",
+      "This is merely illustrative. Notify only Finance Team for rejection.",
+      "This rule has been repealed. Notify only Finance Team for rejection.",
+      "This is a former policy. Notify only Finance Team for rejection.",
+    ].map((text, index) => ({
+      caseId: `provider-policy-preceding-natural-meta-${index + 1}`,
+      itemIndex: index,
+      slot: "visibility_notifications",
+      text,
+      anchorQuote: "Notify only Finance Team for rejection",
+      leaves: [
+        {
+          role: "event",
+          quote: "rejection",
+          hint: "request_rejected",
+        },
+        {
+          role: "recipient",
+          quote: "Finance Team",
+          hint: "source_named_group",
+        },
+        {
+          role: "visibility",
+          quote: "only",
+          hint: "recipients_only",
+        },
+      ],
+    })),
+    ...[
+      "Notify only Finance Team for rejection. This rule must not be used.",
+      "Notify only Finance Team for rejection. This rule is cancelled.",
+      "Notify only Finance Team for rejection. This rule has been repealed.",
+      "Notify only Finance Team for rejection. This rule does not apply.",
+      "Notify only Finance Team for rejection. This rule is not in force.",
+      "Notify only Finance Team for rejection. Update: Do not use this rule.",
+    ].map((text, index) => ({
+      caseId: `server-policy-following-natural-revocation-${index + 1}`,
+      itemIndex:
+        templateCopilotV3SourceLocalNotificationItemIndexBase + index,
+      slot: "visibility_notifications",
+      text,
+      anchorQuote: "Notify only Finance Team for rejection",
+      leaves: [
+        {
+          role: "event",
+          quote: "rejection",
+          hint: "request_rejected",
+        },
+        {
+          role: "recipient",
+          quote: "Finance Team",
+          hint: "source_named_group",
+        },
+        {
+          role: "visibility",
+          quote: "only",
+          hint: "recipients_only",
+        },
+      ],
+    })),
+    {
+      caseId: "server-policy-following-tc-wrapped-revocation",
+      itemIndex: templateCopilotV3SourceLocalNotificationItemIndexBase,
+      slot: "visibility_notifications",
+      text:
+        "只通知財務營運團隊，事件包括拒絕。更新：不要使用此規則。",
+      anchorQuote: "只通知財務營運團隊，事件包括拒絕",
+      leaves: [
+        { role: "event", quote: "拒絕", hint: "request_rejected" },
+        {
+          role: "recipient",
+          quote: "財務營運團隊",
+          hint: "source_named_group",
+        },
+        { role: "visibility", quote: "只", hint: "recipients_only" },
+      ],
+    },
+    {
+      caseId: "provider-policy-following-sc-revocation",
+      itemIndex: 0,
+      slot: "visibility_notifications",
+      text: "仅通知财务运营团队，事件包括拒绝。此规则不得使用。",
+      anchorQuote: "仅通知财务运营团队，事件包括拒绝",
+      leaves: [
+        { role: "event", quote: "拒绝", hint: "request_rejected" },
+        {
+          role: "recipient",
+          quote: "财务运营团队",
+          hint: "source_named_group",
+        },
+        { role: "visibility", quote: "仅", hint: "recipients_only" },
+      ],
+    },
+  ];
+  for (const entry of cases) {
+    const messageId = `notification-adjacent-authority:${entry.caseId}`;
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: { [messageId]: entry.text },
+      items: [located({
+        itemIndex: entry.itemIndex,
+        kind: "notification",
+        slot: entry.slot,
+        messageId,
+        text: entry.text,
+        anchorQuote: entry.anchorQuote,
+        leaves: entry.leaves,
+      })],
+    });
+    const item = result.review.items[0];
+    assert.ok(item, entry.caseId);
+    assert.equal(item.factId, "notifications.rules", entry.caseId);
+    assert.equal(item.semanticComplete, false, entry.caseId);
+    assert.equal(item.fragmentId, null, entry.caseId);
+    assert.deepEqual(item.bindings, [], entry.caseId);
+    assert.ok(
+      !result.envelope.fragments.some(
+        (fragment) => fragment.factId === "notifications.rules",
+      ),
+      entry.caseId,
+    );
+  }
+});
+
+test("notification review keeps unrelated history and audit facts outside rule authority", () => {
+  const cases = [
+    ...[
+      "Notify only Finance Team for rejection. Historical records remain visible to the workflow owner.",
+      "Notify only Finance Team for rejection. The legacy request identifier is retained.",
+      "Notify only Finance Team for rejection. Invalid requests remain in history.",
+      "Notify only Finance Team for rejection. Revoked credentials trigger an audit.",
+      "Notify only Finance Team for rejection. Withdrawn requests remain visible.",
+      "Notify only Finance Team for rejection. Expired credentials trigger renewal.",
+      "Notify only Finance Team for rejection. Cancelled requests remain visible.",
+      "Notify only Finance Team for rejection. The outdated request identifier is retained.",
+      "Notify only Finance Team for rejection. Disabled user accounts cannot sign in.",
+      "The workflow owner reviews historical records. Notify only Finance Team for rejection.",
+      "The Example field is required. Notify only Finance Team for rejection.",
+      "This rule is not revoked. Notify only Finance Team for rejection.",
+      "This rule remains valid and in force. Notify only Finance Team for rejection.",
+      "This policy is active. Notify only Finance Team for rejection.",
+    ].map((text, index) => ({
+      caseId: `EN-unrelated-authority-word-${index + 1}`,
+      itemIndex: index % 2 === 0
+        ? index
+        : templateCopilotV3SourceLocalNotificationItemIndexBase + index,
+      text,
+      anchorQuote: "Notify only Finance Team for rejection",
+      event: "rejection",
+      recipient: "Finance Team",
+      visibility: "only",
+    })),
+    {
+      caseId: "TC-unrelated-old-request-record",
+      itemIndex: templateCopilotV3SourceLocalNotificationItemIndexBase,
+      text:
+        "只通知財務營運團隊，事件包括拒絕。舊申請記錄仍須保留。",
+      anchorQuote: "只通知財務營運團隊，事件包括拒絕",
+      event: "拒絕",
+      recipient: "財務營運團隊",
+      visibility: "只",
+    },
+    {
+      caseId: "SC-unrelated-invalid-request-history",
+      itemIndex: 0,
+      text:
+        "仅通知财务运营团队，事件包括拒绝。无效申请仍保留于历史。",
+      anchorQuote: "仅通知财务运营团队，事件包括拒绝",
+      event: "拒绝",
+      recipient: "财务运营团队",
+      visibility: "仅",
+    },
+  ];
+  for (const entry of cases) {
+    const messageId = `notification-unrelated-authority:${entry.caseId}`;
+    const result = assembleTemplateCopilotV3Review({
+      sourceMessages: { [messageId]: entry.text },
+      items: [located({
+        itemIndex: entry.itemIndex,
+        kind: "notification",
+        slot: "visibility_notifications",
+        messageId,
+        text: entry.text,
+        anchorQuote: entry.anchorQuote,
+        leaves: [
+          {
+            role: "event",
+            quote: entry.event,
+            hint: "request_rejected",
+          },
+          {
+            role: "recipient",
+            quote: entry.recipient,
+            hint: "source_named_group",
+          },
+          {
+            role: "visibility",
+            quote: entry.visibility,
+            hint: "recipients_only",
+          },
+        ],
+      })],
+    });
+    const item = result.review.items[0];
+    assert.ok(item, entry.caseId);
+    assert.equal(item.factId, "notifications.rules", entry.caseId);
+    assert.equal(item.semanticComplete, true, entry.caseId);
+    assert.equal(item.fragmentId, null, entry.caseId);
+    assert.deepEqual(item.bindings, [], entry.caseId);
+    assert.ok(
+      !result.review.rejections.some((rejection) =>
+        rejection.detail.startsWith("notification:")
+      ),
+      `${entry.caseId}:${JSON.stringify(result.review.rejections)}`,
     );
   }
 });

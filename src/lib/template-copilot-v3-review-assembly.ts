@@ -6,6 +6,10 @@ import type {
   TemplateCopilotV3ProviderQuoteRole,
 } from "./template-copilot-v3-provider-quotes.ts";
 import {
+  templateCopilotV3ProviderQuoteAllowedSlotsByKind,
+  templateCopilotV3SourceLocalNotificationItemIndexBase,
+} from "./template-copilot-v3-provider-quotes.ts";
+import {
   templateCopilotV3CanonicalDecimalText,
   templateCopilotV3DirectEvidenceDerivesLeaf,
   templateCopilotV3EvidenceCompilerVersion,
@@ -47,6 +51,9 @@ import {
   templateCopilotV3RequirementTextContainsUnresolvedSameSubjectAssertion,
   templateCopilotV3RoleClauseBoundaryPattern,
 } from "./template-copilot-v3-clause-boundaries.ts";
+import {
+  templateCopilotV3NotificationAdjacentAuthorityContextIsClosed,
+} from "./template-copilot-v3-notification-authority.ts";
 
 type Confidence = "low" | "medium" | "high";
 type Ambiguity = "none" | "possible" | "ambiguous";
@@ -87,6 +94,20 @@ const confidenceRank = { low: 0, medium: 1, high: 2 } as const;
 const ambiguityRank = { none: 0, possible: 1, ambiguous: 2 } as const;
 
 type SourceOrder = Readonly<{ messageId: string; messageIndex: number; startCodePoint: number; endCodePoint: number }>;
+type RepresentedNotificationClauseRange = Readonly<{
+  startCodePoint: number;
+  endCodePoint: number;
+}>;
+type RepresentedNotificationClauseRangesByScope = ReadonlyMap<
+  string,
+  readonly RepresentedNotificationClauseRange[]
+>;
+type NotificationClauseRangeCandidate = {
+  range: RepresentedNotificationClauseRange;
+  clauseText: string;
+  eventSpans: TemplateCopilotV3SourceSpan[];
+  nonEventSpans: TemplateCopilotV3SourceSpan[];
+};
 export type TemplateCopilotV3ReviewRelationship = Readonly<{ relationship: "sequential" | "parallel"; sourceSpan: TemplateCopilotV3SourceSpan }>;
 export type TemplateCopilotV3ReviewObservation = Readonly<{ role: TemplateCopilotV3ProviderQuoteRole; quote: string; advisoryHint: string | null; sourceSpan: TemplateCopilotV3SourceSpan }>;
 export type TemplateCopilotV3ReviewBlockingReason =
@@ -352,6 +373,14 @@ type ConditionAuthoritySymbols = Readonly<{
   stageReferences: ReadonlySet<string>;
 }>;
 
+function providerQuoteItemSlotIsAllowed(
+  item: TemplateCopilotV3LocatedQuoteItem,
+) {
+  const allowedSlots: readonly string[] =
+    templateCopilotV3ProviderQuoteAllowedSlotsByKind[item.kind];
+  return allowedSlots.includes(item.slot);
+}
+
 const emptyConditionAuthoritySymbols: ConditionAuthoritySymbols =
   Object.freeze({
     fieldLabels: new Set<string>(),
@@ -382,7 +411,18 @@ export function assembleTemplateCopilotV3Review({ items, sourceMessages, sourceM
     compareSpans(a.anchor, b.anchor) || compareText(a.kind, b.kind) ||
     a.itemIndex - b.itemIndex
   );
+  const representedNotificationClauseRangesByScope =
+    buildRepresentedNotificationClauseRangesByScope(
+      orderedItems,
+      sourceMessages,
+    );
   for (const item of orderedItems) {
+    if (!providerQuoteItemSlotIsAllowed(item)) {
+      rejections.push(
+        rejection(item, "unverifiable_leaf", `${item.kind}:unsupported_slot`),
+      );
+      continue;
+    }
     if (Object.hasOwn(arrayFactByKind, item.kind)) {
       const arrayItem = item as TemplateCopilotV3LocatedQuoteItem & {
         kind: keyof typeof arrayFactByKind;
@@ -397,6 +437,7 @@ export function assembleTemplateCopilotV3Review({ items, sourceMessages, sourceM
         sourceMessages,
         compareSpans,
         rejections,
+        representedNotificationClauseRangesByScope,
       );
       if (draft) {
         drafts.push(draft);
@@ -425,6 +466,7 @@ export function assembleTemplateCopilotV3Review({ items, sourceMessages, sourceM
       sourceMessages,
       compareSpans,
       rejections,
+      representedNotificationClauseRangesByScope,
       conditionAuthorityCoverage,
       conditionAuthoritySymbols,
     );
@@ -484,11 +526,376 @@ export function assembleTemplateCopilotV3Review({ items, sourceMessages, sourceM
   });
 }
 
+function notificationClauseScopeKey(messageId: string, slot: string) {
+  return `${messageId}\u0000${slot}`;
+}
+
+function notificationHardClauseRangeForSpan(
+  span: TemplateCopilotV3SourceSpan,
+  messages: Readonly<Record<string, string>>,
+): RepresentedNotificationClauseRange | null {
+  if (!validSpan(span, messages)) return null;
+  const sourceText = messages[span.messageId];
+  if (typeof sourceText !== "string") return null;
+  const codePoints = Array.from(sourceText);
+  let startCodePoint = span.startCodePoint;
+  while (
+    startCodePoint > 0 &&
+    !templateCopilotV3HardClauseSeparator(codePoints[startCodePoint - 1])
+  ) {
+    startCodePoint -= 1;
+  }
+  let endCodePoint = span.endCodePoint;
+  while (
+    endCodePoint < codePoints.length &&
+    !templateCopilotV3HardClauseSeparator(codePoints[endCodePoint])
+  ) {
+    endCodePoint += 1;
+  }
+  return Object.freeze({ startCodePoint, endCodePoint });
+}
+
+function notificationAnchorExtensionIsClosed(
+  anchor: TemplateCopilotV3SourceSpan,
+  range: RepresentedNotificationClauseRange,
+  messages: Readonly<Record<string, string>>,
+) {
+  const sourceText = messages[anchor.messageId];
+  if (typeof sourceText !== "string") return false;
+  const codePoints = Array.from(sourceText);
+  if (
+    anchor.endCodePoint <= range.startCodePoint ||
+    anchor.startCodePoint >= range.endCodePoint
+  ) return false;
+  const extensionIsClosed = (startCodePoint: number, endCodePoint: number) =>
+    codePoints.slice(startCodePoint, endCodePoint).every((codePoint) =>
+      codePoint.trim().length === 0 ||
+      templateCopilotV3HardClauseSeparator(codePoint)
+    );
+  return (
+    (
+      anchor.startCodePoint >= range.startCodePoint ||
+      extensionIsClosed(anchor.startCodePoint, range.startCodePoint)
+    ) &&
+    (
+      anchor.endCodePoint <= range.endCodePoint ||
+      extensionIsClosed(range.endCodePoint, anchor.endCodePoint)
+    )
+  );
+}
+
+function buildRepresentedNotificationClauseRangesByScope(
+  items: readonly TemplateCopilotV3LocatedQuoteItem[],
+  messages: Readonly<Record<string, string>>,
+): RepresentedNotificationClauseRangesByScope {
+  const rangesByScope = new Map<
+    string,
+    Map<string, NotificationClauseRangeCandidate>
+  >();
+  for (const item of items) {
+    if (
+      item.kind !== "notification" ||
+      !providerQuoteItemSlotIsAllowed(item) ||
+      item.ambiguity !== "none" ||
+      !validSpan(item.anchor, messages)
+    ) continue;
+    const events = item.leaves.filter((leaf) => leaf.role === "event");
+    const recipients = item.leaves.filter((leaf) => leaf.role === "recipient");
+    const visibility = item.leaves.filter((leaf) => leaf.role === "visibility");
+    if (
+      events.length !== 1 ||
+      recipients.length !== 1 ||
+      visibility.length > 1
+    ) continue;
+    const recoveredLeaves = item.leaves.filter(
+      (leaf) => leaf.sameLocalClauseRecovered === true,
+    );
+    const recoveryShapeIsClosed = recoveredLeaves.length === 0
+      ? (item.anchorExpanded ?? false) === false &&
+        (item.sameLocalClauseRecoveredLeafCount ?? 0) === 0
+      : item.anchorExpanded === true &&
+        recoveredLeaves.length === item.sameLocalClauseRecoveredLeafCount &&
+        recoveredLeaves.length >= 1 &&
+        recoveredLeaves.length <= 2 &&
+        recoveredLeaves.every(
+          (leaf) => leaf.role === "recipient" || leaf.role === "visibility",
+        ) &&
+        events.every((leaf) => leaf.sameLocalClauseRecovered !== true);
+    if (
+      !recoveryShapeIsClosed ||
+      item.leaves.length !== 2 + visibility.length
+    ) continue;
+    const range = notificationHardClauseRangeForSpan(
+      events[0].sourceSpan,
+      messages,
+    );
+    if (
+      !range ||
+      events[0].sourceSpan.messageId !== item.anchor.messageId ||
+      !notificationAnchorExtensionIsClosed(
+        item.anchor,
+        range,
+        messages,
+      )
+    ) {
+      continue;
+    }
+    const notificationCoreLeaves = item.leaves.filter((leaf) =>
+      leaf.role === "event" ||
+      leaf.role === "recipient" ||
+      leaf.role === "visibility"
+    );
+    if (
+      notificationCoreLeaves.some((leaf) =>
+        !validSpan(leaf.sourceSpan, messages) ||
+        leaf.sourceSpan.messageId !== item.anchor.messageId ||
+        leaf.sourceSpan.startCodePoint < item.anchor.startCodePoint ||
+        leaf.sourceSpan.endCodePoint > item.anchor.endCodePoint ||
+        leaf.sourceSpan.startCodePoint < range.startCodePoint ||
+        leaf.sourceSpan.endCodePoint > range.endCodePoint
+      )
+    ) continue;
+    const semanticContexts = semanticContextsForArrayItem(
+      "notifications.rules",
+      item.anchor,
+      messages,
+    );
+    if (semanticContexts === null) continue;
+    if (!notificationItemSlotProvenanceIsClosed(item, semanticContexts)) {
+      continue;
+    }
+    const notificationCoreObservations = notificationCoreLeaves.map((leaf) =>
+      Object.freeze({
+        role: leaf.role,
+        quote: leaf.sourceSpan.exactText,
+        advisoryHint: leaf.hint,
+        sourceSpan: leaf.sourceSpan,
+      })
+    );
+    if (
+      notificationCoreObservations.some((observation) =>
+        !semanticHintIsVerified(
+          "notifications.rules",
+          observation,
+          semanticContexts,
+        )
+      )
+    ) continue;
+    const sourceText = messages[item.anchor.messageId];
+    const clauseText = Array.from(sourceText).slice(
+      range.startCodePoint,
+      range.endCodePoint,
+    ).join("");
+    if (
+      [...clauseText.matchAll(semanticNotificationActionPattern())].length !== 1 ||
+      /^\s*notifications?\b/iu.test(clauseText) ||
+      semanticNotificationClauseHasCompetingRecipient(
+        clauseText,
+        recipients[0].sourceSpan.exactText,
+      ) ||
+      !semanticNotificationClauseHasClosedVocabulary({
+        clauseText,
+        eventQuote: events[0].sourceSpan.exactText,
+        recipientQuote: recipients[0].sourceSpan.exactText,
+        visibilityQuote: visibility[0]?.sourceSpan.exactText ?? null,
+      })
+    ) {
+      continue;
+    }
+    const scopeKey = notificationClauseScopeKey(
+      item.anchor.messageId,
+      item.slot,
+    );
+    const ranges = rangesByScope.get(scopeKey) ?? new Map();
+    const rangeKey = `${range.startCodePoint}:${range.endCodePoint}`;
+    const candidate = ranges.get(rangeKey) ?? {
+      range,
+      clauseText,
+      eventSpans: [],
+      nonEventSpans: [],
+    };
+    candidate.eventSpans.push(events[0].sourceSpan);
+    candidate.nonEventSpans.push(
+      recipients[0].sourceSpan,
+      ...visibility.map((leaf) => leaf.sourceSpan),
+    );
+    ranges.set(rangeKey, candidate);
+    rangesByScope.set(scopeKey, ranges);
+  }
+  return new Map(
+    [...rangesByScope].map(([scopeKey, ranges]) => [
+      scopeKey,
+      Object.freeze(
+        [...ranges.values()]
+          .filter((candidate) => {
+            const eventAtoms = semanticNotificationClosedEventAtomRanges(
+              candidate.clauseText,
+              candidate.range.startCodePoint,
+            ).filter((atom) =>
+              !candidate.nonEventSpans.some((span) =>
+                sourceSpanOverlapsNotificationRange(span, atom)
+              )
+            );
+            return eventAtoms.length > 0 && eventAtoms.every((atom) =>
+              candidate.eventSpans.some((span) =>
+                sourceSpanOverlapsNotificationRange(span, atom)
+              )
+            );
+          })
+          .map((candidate) => candidate.range)
+          .sort(
+            (left, right) =>
+              left.startCodePoint - right.startCodePoint ||
+              left.endCodePoint - right.endCodePoint,
+          ),
+      ),
+    ]),
+  );
+}
+
+function notificationStageSlotProvenanceIsClosed(
+  item: TemplateCopilotV3LocatedQuoteItem,
+) {
+  return (
+    item.itemIndex >= templateCopilotV3SourceLocalNotificationItemIndexBase ||
+    item.anchor.messageId.endsWith(":stages_participants")
+  );
+}
+
+function notificationItemSlotProvenanceIsClosed(
+  item: TemplateCopilotV3LocatedQuoteItem,
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+) {
+  if (item.kind !== "notification") return true;
+  if (item.slot === "visibility_notifications") return true;
+  if (item.slot === "stages_participants") {
+    return notificationStageSlotProvenanceIsClosed(item);
+  }
+  if (item.slot !== "timing_escalation") return false;
+  const events = item.leaves.filter((leaf) => leaf.role === "event");
+  if (
+    events.length !== 1 ||
+    (events[0].hint !== "due_soon" && events[0].hint !== "overdue")
+  ) {
+    return false;
+  }
+  return semanticHintIsVerified(
+    "notifications.rules",
+    Object.freeze({
+      role: events[0].role,
+      quote: events[0].sourceSpan.exactText,
+      advisoryHint: events[0].hint,
+      sourceSpan: events[0].sourceSpan,
+    }),
+    semanticContexts,
+  );
+}
+
+function notificationItemScopeAuthorityIsClosed({
+  item,
+  messages,
+  representedClauseRanges,
+}: Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem;
+  messages: Readonly<Record<string, string>>;
+  representedClauseRanges: readonly RepresentedNotificationClauseRange[];
+}>) {
+  if (item.kind !== "notification") return true;
+  const events = item.leaves.filter((leaf) => leaf.role === "event");
+  const recipients = item.leaves.filter((leaf) => leaf.role === "recipient");
+  const visibility = item.leaves.filter((leaf) => leaf.role === "visibility");
+  if (
+    events.length !== 1 ||
+    recipients.length !== 1 ||
+    visibility.length > 1 ||
+    item.leaves.length !== 2 + visibility.length
+  ) return false;
+  const range = notificationHardClauseRangeForSpan(
+    events[0].sourceSpan,
+    messages,
+  );
+  const sourceText = messages[item.anchor.messageId];
+  if (
+    !range ||
+    typeof sourceText !== "string" ||
+    events[0].sourceSpan.messageId !== item.anchor.messageId
+  ) return false;
+  const clauseText = Array.from(sourceText).slice(
+    range.startCodePoint,
+    range.endCodePoint,
+  ).join("");
+  const notificationActions = [
+    ...clauseText.matchAll(semanticNotificationActionPattern()),
+  ];
+  if (
+    notificationActions.length > 1 ||
+    (
+      notificationActions.length === 1 &&
+      /^\s*notifications?\b/iu.test(clauseText)
+    )
+  ) return false;
+  const eventAtoms = semanticNotificationClosedEventAtomRanges(
+    clauseText,
+    range.startCodePoint,
+  ).filter((atom) =>
+    ![...recipients, ...visibility].some((leaf) =>
+      sourceSpanOverlapsNotificationRange(leaf.sourceSpan, atom)
+    )
+  );
+  const visibilityResidue = semanticNotificationStripClosedPhrase(
+    templateCopilotV3NormalizeLexicalText(clauseText),
+    templateCopilotV3NormalizeLexicalText(
+      recipients[0].sourceSpan.exactText,
+    ),
+  );
+  if (
+    semanticNotificationClauseHasCompetingRecipient(
+      clauseText,
+      recipients[0].sourceSpan.exactText,
+    ) ||
+    (
+      visibility.length === 0 &&
+      !/\bnot\s+(?:only|exclusively|solely)\b|(?:不只|不僅|不仅|非僅|非仅)/iu.test(
+        visibilityResidue,
+      ) &&
+      /\b(?:only|exclusively|solely)\b|\band\s+no\s+one\s+else\b|(?:只|僅|仅)(?=通知|知會|知会|告知|通報|通报|提醒)/iu.test(
+        visibilityResidue,
+      )
+    )
+  ) return false;
+  if (
+    eventAtoms.length > 1 &&
+    !semanticNotificationClauseHasCompetingRecipient(
+      clauseText,
+      recipients[0].sourceSpan.exactText,
+    ) &&
+    semanticNotificationClauseHasClosedVocabulary({
+      clauseText,
+      eventQuote: events[0].sourceSpan.exactText,
+      recipientQuote: recipients[0].sourceSpan.exactText,
+      visibilityQuote: visibility[0]?.sourceSpan.exactText ?? null,
+    }) &&
+    !representedClauseRanges.some(
+      (represented) =>
+        represented.startCodePoint === range.startCodePoint &&
+        represented.endCodePoint === range.endCodePoint,
+    )
+  ) return false;
+  return templateCopilotV3NotificationAdjacentAuthorityContextIsClosed({
+    sourceText,
+    clauseStartCodePoint: range.startCodePoint,
+    clauseEndCodePoint: range.endCodePoint,
+    representedClauseRanges,
+  });
+}
+
 function compileArrayItem(
   item: TemplateCopilotV3LocatedQuoteItem & { kind: keyof typeof arrayFactByKind },
   messages: Readonly<Record<string, string>>,
   compareSpans: (left: TemplateCopilotV3SourceSpan, right: TemplateCopilotV3SourceSpan) => number,
   rejections: TemplateCopilotV3ReviewRejection[],
+  representedNotificationClauseRangesByScope:
+    RepresentedNotificationClauseRangesByScope,
   conditionAuthorityCoverage: ReadonlySet<string> = new Set<string>(),
   conditionAuthoritySymbols: ConditionAuthoritySymbols =
     emptyConditionAuthoritySymbols,
@@ -574,13 +981,53 @@ function compileArrayItem(
           semanticSubjectObservation,
         ),
     );
+  const representedNotificationClauseRanges =
+    representedNotificationClauseRangesByScope.get(
+      notificationClauseScopeKey(item.anchor.messageId, item.slot),
+    ) ?? [];
+  const notificationSlotProvenanceClosed =
+    notificationItemSlotProvenanceIsClosed(item, semanticContexts);
+  if (item.kind === "notification" && !notificationSlotProvenanceClosed) {
+    draft.semanticAuthorityBlocked = true;
+    rejections.push(
+      rejection(
+        item,
+        "unverifiable_leaf",
+        "notification:unsupported_slot_provenance",
+      ),
+    );
+  }
+  const notificationScopeAuthorityClosed = item.kind !== "notification" ||
+    (
+      notificationSlotProvenanceClosed &&
+      notificationItemScopeAuthorityIsClosed({
+        item,
+        messages,
+        representedClauseRanges: representedNotificationClauseRanges,
+      })
+    );
+  if (!notificationScopeAuthorityClosed) {
+    draft.semanticAuthorityBlocked = true;
+    if (notificationSlotProvenanceClosed) {
+      rejections.push(
+        rejection(
+          item,
+          "unverifiable_leaf",
+          "notification:unrepresented_or_unsafe_action",
+        ),
+      );
+    }
+  }
   const recoveredNotificationReviewOnly =
-    item.kind === "notification" &&
+    notificationScopeAuthorityClosed &&
+      item.kind === "notification" &&
       item.sameLocalClauseRecoveredLeafCount > 0
       ? recoveredNotificationReviewEvidenceIsClosed({
           item,
+          messages,
           semanticContexts,
           semanticAuthorityBlocked: draft.semanticAuthorityBlocked,
+          representedClauseRanges: representedNotificationClauseRanges,
         })
       : null;
   if (recoveredNotificationReviewOnly === false) {
@@ -589,18 +1036,23 @@ function compileArrayItem(
   const directNotificationNeedsReviewOnly =
     item.kind === "notification" &&
     item.sameLocalClauseRecoveredLeafCount === 0 &&
-    item.leaves.some((leaf) => {
-      const mapping = mappingFor(item.kind, leaf.role, leaf.hint);
-      if (mapping === null || mapping.kind === "semantic_only") return true;
-      if (mapping.kind === "relationship") return false;
-      return deriveLeaf(factId, mapping, leaf.hint, leaf.sourceSpan) === null;
-    });
-  const directNotificationReviewOnly = directNotificationNeedsReviewOnly
+    (
+      item.slot === "stages_participants" ||
+      item.leaves.some((leaf) => {
+        const mapping = mappingFor(item.kind, leaf.role, leaf.hint);
+        if (mapping === null || mapping.kind === "semantic_only") return true;
+        if (mapping.kind === "relationship") return false;
+        return deriveLeaf(factId, mapping, leaf.hint, leaf.sourceSpan) === null;
+      })
+    );
+  const directNotificationReviewOnly =
+    notificationScopeAuthorityClosed && directNotificationNeedsReviewOnly
     ? directNotificationReviewEvidenceIsClosed({
         item,
         messages,
         semanticContexts,
         semanticAuthorityBlocked: draft.semanticAuthorityBlocked,
+        representedClauseRanges: representedNotificationClauseRanges,
       })
     : null;
   if (directNotificationReviewOnly === false) {
@@ -642,6 +1094,14 @@ function compileArrayItem(
       continue;
     }
     draft.semanticObservations.push(semanticObservation);
+    if (!notificationScopeAuthorityClosed) {
+      // Notification coverage is atomic. An unsafe or unrepresented sibling
+      // action keeps every leaf in this scope out of durable value writers.
+      rejections.push(
+        rejection(item, "unverifiable_leaf", `${item.kind}:${supplied.role}`),
+      );
+      continue;
+    }
     if (recoveredNotificationReviewOnly !== null) {
       if (!recoveredNotificationReviewOnly) {
         rejections.push(
@@ -836,19 +1296,36 @@ function directNotificationReviewEvidenceIsClosed({
   messages,
   semanticContexts,
   semanticAuthorityBlocked,
+  representedClauseRanges,
 }: Readonly<{
   item: TemplateCopilotV3LocatedQuoteItem;
   messages: Readonly<Record<string, string>>;
   semanticContexts: readonly TemplateCopilotV3SourceSpan[];
   semanticAuthorityBlocked: boolean;
+  representedClauseRanges: readonly RepresentedNotificationClauseRange[];
 }>) {
   if (
     item.kind !== "notification" ||
-    item.slot !== "visibility_notifications" ||
+    (
+      item.slot !== "visibility_notifications" &&
+      item.slot !== "stages_participants"
+    ) ||
     item.ambiguity !== "none" ||
     item.anchorExpanded === true ||
     item.sameLocalClauseRecoveredLeafCount !== 0 ||
     item.leaves.some((leaf) => leaf.sameLocalClauseRecovered === true) ||
+    (
+      item.slot === "stages_participants" &&
+      (
+        !notificationStageSlotProvenanceIsClosed(item) ||
+        [...item.anchor.exactText.matchAll(
+          semanticNotificationActionPattern(),
+        )].length !== 1
+      )
+    ) ||
+    semanticNotificationQuestionPattern.test(
+      messages[item.anchor.messageId] ?? "",
+    ) ||
     semanticAuthorityBlocked
   ) {
     return false;
@@ -896,6 +1373,8 @@ function directNotificationReviewEvidenceIsClosed({
       recipients[0],
       visibility,
       semanticContexts,
+      messages,
+      representedClauseRanges,
     ) &&
     semanticallyComplete(
       "notifications.rules",
@@ -910,12 +1389,16 @@ function directNotificationReviewEvidenceIsClosed({
 
 function recoveredNotificationReviewEvidenceIsClosed({
   item,
+  messages,
   semanticContexts,
   semanticAuthorityBlocked,
+  representedClauseRanges,
 }: Readonly<{
   item: TemplateCopilotV3LocatedQuoteItem;
+  messages: Readonly<Record<string, string>>;
   semanticContexts: readonly TemplateCopilotV3SourceSpan[];
   semanticAuthorityBlocked: boolean;
+  representedClauseRanges: readonly RepresentedNotificationClauseRange[];
 }>) {
   if (
     item.kind !== "notification" ||
@@ -981,6 +1464,8 @@ function recoveredNotificationReviewEvidenceIsClosed({
       recipients[0],
       visibility,
       semanticContexts,
+      messages,
+      representedClauseRanges,
     ) &&
     semanticallyComplete(
       "notifications.rules",
@@ -993,22 +1478,99 @@ function recoveredNotificationReviewEvidenceIsClosed({
   );
 }
 
+const semanticNotificationQuestionPattern =
+  /[?？﹖؟⁇⁈⁉‽;՞፧⸮¿]/u;
+
+function semanticNotificationActionPattern() {
+  return /\b(?:notify|notifies|notified|notification|notifications|alert|alerts|email|emails|inform|informs)\b|(?:通知|知會|知会|電郵|电邮|提醒)/giu;
+}
+
+function semanticNotificationClauseHasConditionalFraming(
+  normalizedClauseText: string,
+  recipientQuote: string,
+) {
+  const residue = semanticNotificationStripClosedPhrase(
+    normalizedClauseText,
+    templateCopilotV3NormalizeLexicalText(recipientQuote),
+  );
+  return (
+    /(?:^|\b)(?:if|when|unless|although|however|otherwise|but)(?:\b|,)/u.test(
+      residue,
+    ) ||
+    /(?:若|如果|如|當|当|除非|但|然而|否則|否则)/u.test(residue)
+  );
+}
+
+function semanticNotificationClauseHasMalformedListConnectors(
+  normalizedClauseText: string,
+) {
+  const marker =
+    /(?:\bevents?\s+(?:include|includes|included|including)\b|\bincluding\b|\b(?:for|on|upon|at|about)\b|事件包括)\s*(?:(?:and|or)\b|(?:以及|及|和|與|与|並|并|或))/u;
+  const doubled =
+    /\b(?:and|or)\s*[,，、]?\s*(?:and|or)\b|(?:以及|及|和|與|与|並|并|或)\s*[,，、]?\s*(?:以及|及|和|與|与|並|并|或)/u;
+  const trailing =
+    /(?:\b(?:and|or)|(?:以及|及|和|與|与|並|并|或))\s*(?:[,，、:：;；]\s*)*$/u;
+  return marker.test(normalizedClauseText) ||
+    doubled.test(normalizedClauseText) ||
+    trailing.test(normalizedClauseText);
+}
+
+function semanticNotificationAdjacentAuthorityContextIsClosed({
+  event,
+  details,
+  messages,
+  representedClauseRanges,
+}: Readonly<{
+  event: TemplateCopilotV3ReviewObservation;
+  details: NonNullable<ReturnType<typeof semanticObservationClauseDetails>>;
+  messages: Readonly<Record<string, string>>;
+  representedClauseRanges: readonly RepresentedNotificationClauseRange[];
+}>) {
+  const sourceText = messages[event.sourceSpan.messageId];
+  if (typeof sourceText !== "string") return false;
+  const sourceCodePoints = Array.from(sourceText);
+  if (
+    details.hardSourceStartCodePoint < 0 ||
+    details.hardSourceEndCodePoint <
+      details.hardSourceStartCodePoint ||
+    details.hardSourceEndCodePoint > sourceCodePoints.length
+  ) {
+    return false;
+  }
+  return templateCopilotV3NotificationAdjacentAuthorityContextIsClosed({
+    sourceText,
+    clauseStartCodePoint: details.hardSourceStartCodePoint,
+    clauseEndCodePoint: details.hardSourceEndCodePoint,
+    representedClauseRanges,
+  });
+}
+
 function semanticRecoveredNotificationPolicyClauseIsClosed(
   event: TemplateCopilotV3ReviewObservation,
   recipient: TemplateCopilotV3ReviewObservation,
   visibility: readonly TemplateCopilotV3ReviewObservation[],
   semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+  messages: Readonly<Record<string, string>>,
+  representedClauseRanges: readonly RepresentedNotificationClauseRange[],
 ) {
   const details = semanticObservationClauseDetails(event, semanticContexts);
   if (!details) return false;
   const normalized = templateCopilotV3NormalizeLexicalText(details.hardText);
   if (
-    /[?？]/u.test(details.hardText) ||
+    semanticNotificationQuestionPattern.test(details.hardText) ||
+    !semanticNotificationAdjacentAuthorityContextIsClosed({
+      event,
+      details,
+      messages,
+      representedClauseRanges,
+    }) ||
     conditionAuthorityTextIsIllustrativeMeta(details.hardText) ||
     semanticNotificationActionIsProhibited(normalized) ||
-    /(?:^|\b)(?:if|when|unless|although|however|otherwise|but)(?:\b|,)|(?:若|如果|如|當|当|除非|但|然而|否則|否则)/u.test(
+    semanticNotificationClauseHasConditionalFraming(
       normalized,
+      recipient.quote,
     ) ||
+    semanticNotificationClauseHasMalformedListConnectors(normalized) ||
     /\bnot\s+only\b/u.test(normalized) ||
     /(?:不只|不僅|不仅|非僅|非仅)/u.test(normalized) ||
     event.sourceSpan.messageId !== recipient.sourceSpan.messageId ||
@@ -1030,7 +1592,7 @@ function semanticRecoveredNotificationPolicyClauseIsClosed(
   }
   const notificationActions = [
     ...details.hardText.matchAll(
-      /\b(?:notify|notifies|notified|notification|notifications|alert|alerts|email|emails|inform|informs)\b|(?:通知|知會|知会|電郵|电邮|提醒)/giu,
+      semanticNotificationActionPattern(),
     ),
   ];
   if (notificationActions.length !== 1) return false;
@@ -1068,18 +1630,28 @@ function semanticDirectNotificationPolicyClauseIsClosed(
   recipient: TemplateCopilotV3ReviewObservation,
   visibility: readonly TemplateCopilotV3ReviewObservation[],
   semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+  messages: Readonly<Record<string, string>>,
+  representedClauseRanges: readonly RepresentedNotificationClauseRange[],
 ) {
   const details = semanticObservationClauseDetails(event, semanticContexts);
   if (!details) return false;
   const normalized = templateCopilotV3NormalizeLexicalText(details.hardText);
   const observations = [event, recipient, ...visibility];
   if (
-    /[?？]/u.test(details.hardText) ||
+    semanticNotificationQuestionPattern.test(details.hardText) ||
+    !semanticNotificationAdjacentAuthorityContextIsClosed({
+      event,
+      details,
+      messages,
+      representedClauseRanges,
+    }) ||
     conditionAuthorityTextIsIllustrativeMeta(details.hardText) ||
     semanticNotificationActionIsProhibited(normalized) ||
-    /(?:^|\b)(?:if|when|unless|although|however|otherwise|but)(?:\b|,)|(?:若|如果|如|當|当|除非|但|然而|否則|否则)/u.test(
+    semanticNotificationClauseHasConditionalFraming(
       normalized,
+      recipient.quote,
     ) ||
+    semanticNotificationClauseHasMalformedListConnectors(normalized) ||
     /\bnot\s+only\b/u.test(normalized) ||
     /(?:不只|不僅|不仅|非僅|非仅)/u.test(normalized) ||
     observations.some(
@@ -1104,7 +1676,7 @@ function semanticDirectNotificationPolicyClauseIsClosed(
   }
   const notificationActions = [
     ...details.hardText.matchAll(
-      /\b(?:notify|notifies|notified|notification|notifications|alert|alerts|email|emails|inform|informs)\b|(?:通知|知會|知会|電郵|电邮|提醒)/giu,
+      semanticNotificationActionPattern(),
     ),
   ];
   if (notificationActions.length > 1) return false;
@@ -1224,6 +1796,73 @@ const semanticNotificationClosedEventAliases = Object.freeze([
   "已逾期",
   "逾期",
 ]);
+
+function sourceSpanOverlapsNotificationRange(
+  span: TemplateCopilotV3SourceSpan,
+  range: RepresentedNotificationClauseRange,
+) {
+  return span.startCodePoint < range.endCodePoint &&
+    range.startCodePoint < span.endCodePoint;
+}
+
+function semanticNotificationClosedEventAtomRanges(
+  clauseText: string,
+  clauseStartCodePoint: number,
+) {
+  const codePoints = Array.from(clauseText);
+  const foldedCodePoints = codePoints.map((codePoint) =>
+    codePoint.replace(/[A-Z]/gu, (letter) => letter.toLowerCase())
+  );
+  const candidates: RepresentedNotificationClauseRange[] = [];
+  for (const alias of semanticNotificationClosedEventAliases) {
+    const aliasCodePoints = Array.from(alias);
+    const foldedAlias = aliasCodePoints.map((codePoint) =>
+      codePoint.replace(/[A-Z]/gu, (letter) => letter.toLowerCase())
+    );
+    const requiresLatinBoundary = /[a-z]/u.test(alias);
+    for (
+      let startCodePoint = 0;
+      startCodePoint + foldedAlias.length <= foldedCodePoints.length;
+      startCodePoint += 1
+    ) {
+      if (
+        !foldedAlias.every(
+          (codePoint, offset) =>
+            foldedCodePoints[startCodePoint + offset] === codePoint,
+        )
+      ) continue;
+      const endCodePoint = startCodePoint + foldedAlias.length;
+      if (
+        requiresLatinBoundary &&
+        (
+          /[A-Za-z0-9_]/u.test(codePoints[startCodePoint - 1] ?? "") ||
+          /[A-Za-z0-9_]/u.test(codePoints[endCodePoint] ?? "")
+        )
+      ) continue;
+      candidates.push(Object.freeze({
+        startCodePoint: clauseStartCodePoint + startCodePoint,
+        endCodePoint: clauseStartCodePoint + endCodePoint,
+      }));
+    }
+  }
+  candidates.sort(
+    (left, right) =>
+      left.startCodePoint - right.startCodePoint ||
+      right.endCodePoint - right.startCodePoint -
+        (left.endCodePoint - left.startCodePoint),
+  );
+  const selected: RepresentedNotificationClauseRange[] = [];
+  for (const candidate of candidates) {
+    if (
+      selected.some((existing) =>
+        candidate.startCodePoint < existing.endCodePoint &&
+        existing.startCodePoint < candidate.endCodePoint
+      )
+    ) continue;
+    selected.push(candidate);
+  }
+  return Object.freeze(selected);
+}
 
 function semanticNotificationClauseHasClosedVocabulary({
   clauseText,

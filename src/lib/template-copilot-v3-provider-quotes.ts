@@ -33,6 +33,10 @@ import {
   templateCopilotV3RequirementGoverningPrefixIsNonAffirmative,
   templateCopilotV3RequirementPrefixNamesCompetingSibling,
 } from "./template-copilot-v3-clause-boundaries.ts";
+import {
+  templateCopilotV3NotificationAdjacentAuthorityContextIsClosed,
+  templateCopilotV3NotificationIsSectionHeading,
+} from "./template-copilot-v3-notification-authority.ts";
 
 export const templateCopilotV3ProviderQuoteContractVersion = 1 as const;
 export const templateCopilotV3ProviderQuoteWireVersion = 3 as const;
@@ -1594,19 +1598,42 @@ export function locateTemplateCopilotV3ProviderQuotes({
 }): TemplateCopilotV3ProviderQuoteLocatorResult {
   const sources = validateAndOrderSourceSlots(batchId, sourceSlots);
   const shell = providerOutputShellSchema.safeParse(output);
-  if (!shell.success) {
-    return result([], [
-      rejection(null, "provider_output_invalid", "envelope"),
-    ]);
-  }
+  const providerItems = shell.success ? shell.data.items : [];
 
   const allowedKinds = new Set(
     templateCopilotV3ProviderQuoteBatches[batchId].allowedKinds,
   );
   const located: TemplateCopilotV3LocatedQuoteItem[] = [];
-  const rejected: TemplateCopilotV3ProviderQuoteRejection[] = [];
+  const rejected: TemplateCopilotV3ProviderQuoteRejection[] = shell.success
+    ? []
+    : [rejection(null, "provider_output_invalid", "envelope")];
+  const sourceLocalNotificationItems =
+    templateCopilotV3SourceLocalNotificationItems({ batchId, sources });
+  const sourceLocalNotificationSlot =
+    batchId === "policy_context"
+      ? "visibility_notifications" as const
+      : batchId === "routing_stages_participants"
+        ? "stages_participants" as const
+        : null;
+  const itemsToLocate = [
+    ...providerItems.map((rawItem, itemIndex) => ({
+      rawItem,
+      itemIndex,
+      sourceLocalSlot: null,
+    })),
+    ...sourceLocalNotificationItems.map((rawItem, sourceLocalIndex) => ({
+      rawItem,
+      itemIndex:
+        templateCopilotV3SourceLocalNotificationItemIndexBase +
+        sourceLocalIndex,
+      sourceLocalSlot: sourceLocalNotificationSlot,
+    })),
+  ];
 
-  shell.data.items.forEach((rawItem, itemIndex) => {
+  itemsToLocate.forEach(({ rawItem, itemIndex, sourceLocalSlot }) => {
+    const eligibleSources = sourceLocalSlot === null
+      ? sources
+      : sources.filter((source) => source.slot === sourceLocalSlot);
     const wholeSlotIntent =
       templateCopilotV3ProviderQuoteWholeSlotIntentSchema.safeParse(rawItem);
     let item: TemplateCopilotV3ProviderQuoteItem;
@@ -1624,11 +1651,13 @@ export function locateTemplateCopilotV3ProviderQuotes({
       let source: TemplateCopilotV3ProviderQuoteSourceSlot | undefined;
       if (wholeSlotIntent.data.selectorQuote === null) {
         if (binding.slots.length === 1) {
-          source = sources.find((entry) => entry.slot === binding.slots[0]);
+          source = eligibleSources.find(
+            (entry) => entry.slot === binding.slots[0],
+          );
         }
       } else {
         let selectorAmbiguous = false;
-        for (const candidate of sources) {
+        for (const candidate of eligibleSources) {
           if (!binding.slots.includes(candidate.slot)) continue;
           const match = uniqueOffset(
             candidate.text,
@@ -1740,7 +1769,7 @@ export function locateTemplateCopilotV3ProviderQuotes({
     let notificationRecoveryContext:
       TemplateCopilotV3PolicyNotificationListRecoveryContext | null = null;
     let anchorIsAmbiguous = false;
-    for (const source of sources) {
+    for (const source of eligibleSources) {
       const match = uniqueOffset(source.text, item.quote);
       if (match.status === "none") continue;
       if (match.status === "ambiguous" || anchorMatch !== null) {
@@ -1757,7 +1786,7 @@ export function locateTemplateCopilotV3ProviderQuotes({
         templateCopilotV3FindPolicyNotificationListEventAnchor({
           batchId,
           item,
-          sources,
+          sources: eligibleSources,
         });
       if (recoveredNotificationAnchor) {
         anchorMatch = {
@@ -2242,9 +2271,11 @@ export function locateTemplateCopilotV3ProviderQuotes({
     (left, right) => (left.itemIndex ?? -1) - (right.itemIndex ?? -1),
   );
   return result(
-    located.filter(
+    templateCopilotV3DedupeSourceLocalNotifications({
+      items: located.filter(
       (locatedItem) => !duplicateWholeSlotItemIndexes.has(locatedItem.itemIndex),
-    ),
+      ),
+    }),
     rejected,
   );
 }
@@ -3091,6 +3122,612 @@ const templateCopilotV3PolicyNotificationClosedEventAliases = Object.freeze([
   "已逾期",
   "逾期",
 ]);
+
+type TemplateCopilotV3PolicyNotificationEventHint =
+  (typeof templateCopilotV3ProviderQuoteNotificationEventHints)[number];
+
+const templateCopilotV3PolicyNotificationEventAliasesByHint = Object.freeze({
+  request_submitted: Object.freeze([
+    "request submitted",
+    "submitted",
+    "申請已提交",
+    "申请已提交",
+  ]),
+  stage_assigned: Object.freeze([
+    "stage assigned",
+    "work assigned",
+    "assignment",
+    "assigned",
+    "獲指派",
+    "获指派",
+    "指派",
+    "分派",
+    "分配",
+    "工作已分派",
+    "工作已分配",
+  ]),
+  stage_completed: Object.freeze([
+    "stage completed",
+    "step completed",
+    "步驟已完成",
+    "步骤已完成",
+  ]),
+  request_rejected: Object.freeze([
+    "request rejected",
+    "rejection",
+    "rejected",
+    "拒絕",
+    "拒绝",
+    "被拒絕",
+    "被拒绝",
+    "申請被拒絕",
+    "申请被拒绝",
+  ]),
+  correction_requested: Object.freeze([
+    "correction requested",
+    "correction",
+    "corrected",
+    "要求更正",
+    "補正",
+    "补正",
+    "修正",
+    "修改",
+  ]),
+  request_completed: Object.freeze([
+    "request completed",
+    "workflow completed",
+    "completion",
+    "complete",
+    "completed",
+    "完成",
+    "已完成",
+    "流程已完成",
+  ]),
+  due_soon: Object.freeze(["due soon", "即將到期", "即将到期"]),
+  overdue: Object.freeze(["overdue", "已逾期", "逾期"]),
+} satisfies Readonly<
+  Record<TemplateCopilotV3PolicyNotificationEventHint, readonly string[]>
+>);
+
+type TemplateCopilotV3SourceLocalNotificationEvent = Readonly<{
+  quote: string;
+  hint: TemplateCopilotV3PolicyNotificationEventHint;
+  startCodeUnit: number;
+  endCodeUnit: number;
+}>;
+
+export const templateCopilotV3SourceLocalNotificationItemIndexBase = 1_000_000;
+
+const templateCopilotV3NotificationQuestionPattern =
+  /[?？﹖؟⁇⁈⁉‽;՞፧⸮¿]/u;
+
+function templateCopilotV3SourceLocalNotificationItems({
+  batchId,
+  sources,
+}: Readonly<{
+  batchId: TemplateCopilotV3ProviderQuoteBatchId;
+  sources: readonly TemplateCopilotV3ProviderQuoteSourceSlot[];
+}>): readonly TemplateCopilotV3ProviderQuoteItem[] {
+  const policy = batchId === "policy_context"
+    ? Object.freeze({
+        slot: "visibility_notifications" as const,
+        requireVisibility: true,
+        requireSingleEvent: false,
+      })
+    : batchId === "routing_stages_participants"
+      ? Object.freeze({
+          slot: "stages_participants" as const,
+          requireVisibility: false,
+          requireSingleEvent: true,
+        })
+      : null;
+  if (!policy) return Object.freeze([]);
+  const source = sources.find((entry) => entry.slot === policy.slot);
+  if (!source) return Object.freeze([]);
+
+  const clauses = new Map<
+    string,
+    Readonly<{ startCodeUnit: number; endCodeUnit: number; text: string }>
+  >();
+  for (const action of source.text.matchAll(
+    templateCopilotV3NotificationActionPattern(),
+  )) {
+    const startCodeUnit = action.index;
+    const hardClause = hardClauseAt(
+      source.text,
+      startCodeUnit,
+      startCodeUnit + action[0].length,
+    );
+    const clause = trimmedLocalClauseRange(
+      source.text,
+      hardClause.startCodeUnit,
+      hardClause.endCodeUnit,
+    );
+    if (templateCopilotV3NotificationIsSectionHeading(clause.text)) {
+      continue;
+    }
+    clauses.set(`${clause.startCodeUnit}:${clause.endCodeUnit}`, clause);
+  }
+  const parsedClauses = [...clauses.values()].flatMap((clause) => {
+    const parsed = templateCopilotV3ParseSourceLocalNotificationClause({
+      source,
+      clause,
+      requireVisibility: policy.requireVisibility,
+      requireSingleEvent: policy.requireSingleEvent,
+    });
+    return parsed ? [{ clause, parsed }] : [];
+  });
+  if (parsedClauses.length !== 1) return Object.freeze([]);
+  const selected = parsedClauses[0];
+  if (
+    !selected ||
+    !templateCopilotV3SourceLocalNotificationContextIsClosed({
+      sourceText: source.text,
+      clauseStartCodeUnit: selected.clause.startCodeUnit,
+      clauseEndCodeUnit: selected.clause.endCodeUnit,
+    })
+  ) {
+    return Object.freeze([]);
+  }
+  return selected.parsed;
+}
+
+function templateCopilotV3SourceLocalNotificationContextIsClosed({
+  sourceText,
+  clauseStartCodeUnit,
+  clauseEndCodeUnit,
+}: Readonly<{
+  sourceText: string;
+  clauseStartCodeUnit: number;
+  clauseEndCodeUnit: number;
+}>) {
+  if (templateCopilotV3NotificationQuestionPattern.test(sourceText)) {
+    return false;
+  }
+  const clauseStartCodePoint = Array.from(
+    sourceText.slice(0, clauseStartCodeUnit),
+  ).length;
+  const clauseEndCodePoint = Array.from(
+    sourceText.slice(0, clauseEndCodeUnit),
+  ).length;
+  return templateCopilotV3NotificationAdjacentAuthorityContextIsClosed({
+    sourceText,
+    clauseStartCodePoint,
+    clauseEndCodePoint,
+  });
+}
+
+function templateCopilotV3ParseSourceLocalNotificationClause({
+  source,
+  clause,
+  requireVisibility,
+  requireSingleEvent,
+}: Readonly<{
+  source: TemplateCopilotV3ProviderQuoteSourceSlot;
+  clause: Readonly<{
+    startCodeUnit: number;
+    endCodeUnit: number;
+    text: string;
+  }>;
+  requireVisibility: boolean;
+  requireSingleEvent: boolean;
+}>): readonly TemplateCopilotV3ProviderQuoteItem[] | null {
+  const sanitized = quarantineTemplateCopilotRequirementText(clause.text);
+  const unsafeReasonCount = Object.values(
+    sanitized.summary.reasonCounts,
+  ).reduce((total, count) => total + (count ?? 0), 0);
+  const normalized = templateCopilotV3NormalizeLexicalText(clause.text);
+  if (
+    clause.text.includes("\u0000") ||
+    sanitized.summary.quarantinedBlockCount > 0 ||
+    unsafeReasonCount > 0 ||
+    templateCopilotV3NotificationQuestionPattern.test(
+      `${clause.text}${source.text[clause.endCodeUnit] ?? ""}`,
+    ) ||
+    /(?:^|\b)(?:examples?|samples?|illustrations?|e\.g\.|for example)(?:\b|:)|(?:例如|示例|範例|范例|例子)/u.test(
+      normalized,
+    ) ||
+    /\b(?:(?:do|does|did|must|shall|should|may|can|will|would)\s+not|(?:don|doesn|didn|mustn|shalln|shouldn|mayn|can|won|wouldn)(?:['’ʼ]|\s*)t|never|no\s+need\s+to|need\s+not)\s+(?:to\s+)?(?:email|inform|message|notify|send)\b/u.test(
+      normalized,
+    ) ||
+    /(?:不要|不得|不准|禁止|切勿|不應|不应|毋須|毋须|無須|无须|毋需|無需|无需)\s*(?:向[^，。；;\r\n]{1,24})?\s*(?:通知|知會|知会|電郵|电邮|發送|发送)/u.test(
+      normalized,
+    ) ||
+    /\bnot\s+only\b/u.test(normalized) ||
+    /(?:不只|不僅|不仅|非僅|非仅)/u.test(normalized)
+  ) {
+    return null;
+  }
+
+  const actions = [
+    ...clause.text.matchAll(templateCopilotV3NotificationActionPattern()),
+  ];
+  const markers = [
+    ...clause.text.matchAll(templateCopilotV3NotificationEventMarkerPattern()),
+  ];
+  if (actions.length !== 1 || markers.length !== 1) return null;
+  const action = actions[0];
+  const marker = markers[0];
+  if (/^notifications?$/iu.test(action[0])) return null;
+  const actionStart = action.index;
+  const actionEnd = actionStart + action[0].length;
+  const markerStart = marker.index;
+  const markerEnd = markerStart + marker[0].length;
+  if (actionEnd > markerStart) return null;
+
+  let visibility: Readonly<{
+    quote: string;
+    startCodeUnit: number;
+  }> | null = null;
+  const prefix = templateCopilotV3TrimNotificationPhraseRange(
+    clause.text,
+    0,
+    actionStart,
+  );
+  if (prefix.text.length > 0) {
+    if (!templateCopilotV3NotificationOnlyMarkers.has(
+      templateCopilotV3NormalizeLexicalText(prefix.text),
+    )) return null;
+    visibility = Object.freeze({
+      quote: prefix.text,
+      startCodeUnit: prefix.startCodeUnit,
+    });
+  }
+
+  let recipientStart = actionEnd;
+  let recipientEnd = markerStart;
+  while (recipientStart < recipientEnd && /\s/u.test(clause.text[recipientStart])) {
+    recipientStart += 1;
+  }
+  const postActionVisibility = /^(only)(?=\s)|^(只|僅|仅)/iu.exec(
+    clause.text.slice(recipientStart, recipientEnd),
+  );
+  if (postActionVisibility) {
+    if (visibility !== null) return null;
+    const quote = postActionVisibility[0];
+    visibility = Object.freeze({ quote, startCodeUnit: recipientStart });
+    recipientStart += quote.length;
+    while (
+      recipientStart < recipientEnd &&
+      /\s/u.test(clause.text[recipientStart])
+    ) {
+      recipientStart += 1;
+    }
+  }
+  const article = /^(?:the|a|an)\s+/iu.exec(
+    clause.text.slice(recipientStart, recipientEnd),
+  );
+  if (article) recipientStart += article[0].length;
+  const recipient = templateCopilotV3TrimNotificationPhraseRange(
+    clause.text,
+    recipientStart,
+    recipientEnd,
+  );
+  if (
+    recipient.text.length === 0 ||
+    !templateCopilotV3PolicyNotificationRecipientQuoteIsClosedSingleEntity(
+      recipient.text,
+    ) ||
+    templateCopilotV3PolicyNotificationClauseHasCompetingRecipient({
+      clauseText: clause.text,
+      recipientQuote: recipient.text,
+    }) ||
+    templateCopilotV3SourceLocalNotificationClauseHasConditionalFraming({
+      clauseText: normalized,
+      recipientQuote: recipient.text,
+    })
+  ) {
+    return null;
+  }
+  recipientStart = recipient.startCodeUnit;
+  recipientEnd = recipient.endCodeUnit;
+
+  if (requireVisibility && visibility === null) return null;
+  if (
+    visibility !== null &&
+    (
+      !templateCopilotV3PolicyNotificationVisibilityIsAffirmative({
+        clauseText: clause.text,
+        quote: visibility.quote,
+        hint: "recipients_only",
+        startCodeUnit: visibility.startCodeUnit,
+      }) ||
+      !templateCopilotV3PolicyNotificationVisibilityHasRecipientAffinity({
+        clauseText: clause.text,
+        visibilityQuote: visibility.quote,
+        visibilityStartCodeUnit: visibility.startCodeUnit,
+        recipientQuote: recipient.text,
+        recipientStartCodeUnit: recipientStart,
+      })
+    )
+  ) {
+    return null;
+  }
+
+  const events = templateCopilotV3SourceLocalNotificationEvents(
+    clause.text,
+    markerEnd,
+  );
+  if (
+    events.length === 0 ||
+    events.length > templateCopilotV3ProviderQuoteNotificationEventHints.length ||
+    (requireSingleEvent && events.length !== 1) ||
+    new Set(events.map((event) => event.hint)).size !== events.length ||
+    !templateCopilotV3SourceLocalNotificationEventListIsClosed(
+      clause.text,
+      markerEnd,
+      events,
+    ) ||
+    events.some(
+      (event) =>
+        event.startCodeUnit < markerEnd ||
+        !templateCopilotV3PolicyNotificationClauseHasClosedVocabulary({
+          clauseText: clause.text,
+          eventQuote: event.quote,
+          recipientQuote: recipient.text,
+          visibilityQuote: visibility?.quote ?? null,
+        }),
+    )
+  ) {
+    return null;
+  }
+
+  const recipientHint =
+    templateCopilotV3SourceLocalNotificationRecipientHint(recipient.text);
+  return Object.freeze(
+    events.map((event) => ({
+      kind: "notification" as const,
+      quote: clause.text.slice(0, event.endCodeUnit),
+      leaves: [
+        { role: "event" as const, quote: event.quote, hint: event.hint },
+        {
+          role: "recipient" as const,
+          quote: recipient.text,
+          hint: recipientHint,
+        },
+        ...(visibility
+          ? [{
+              role: "visibility" as const,
+              quote: visibility.quote,
+              hint: "recipients_only",
+            }]
+          : []),
+      ],
+      confidence: "high" as const,
+      ambiguity: "none" as const,
+    })),
+  );
+}
+
+function templateCopilotV3SourceLocalNotificationEvents(
+  clauseText: string,
+  eventRegionStartCodeUnit: number,
+): readonly TemplateCopilotV3SourceLocalNotificationEvent[] {
+  const candidates = Object.entries(
+    templateCopilotV3PolicyNotificationEventAliasesByHint,
+  ).flatMap(([hint, aliases]) =>
+    aliases.flatMap((alias) =>
+      templateCopilotV3AsciiInsensitiveExactOffsets(
+        clauseText,
+        alias,
+      ).flatMap((startCodeUnit) => {
+        const endCodeUnit = startCodeUnit + alias.length;
+        return startCodeUnit >= eventRegionStartCodeUnit &&
+            sameLocalClauseRecoveredLeafIsLexicallyBounded(
+              clauseText,
+              startCodeUnit,
+              alias,
+            )
+          ? [{
+              quote: clauseText.slice(startCodeUnit, endCodeUnit),
+              hint: hint as TemplateCopilotV3PolicyNotificationEventHint,
+              startCodeUnit,
+              endCodeUnit,
+            }]
+          : [];
+      })
+    )
+  ).sort((left, right) =>
+    left.startCodeUnit - right.startCodeUnit ||
+    right.endCodeUnit - right.startCodeUnit -
+      (left.endCodeUnit - left.startCodeUnit)
+  );
+  const selected: TemplateCopilotV3SourceLocalNotificationEvent[] = [];
+  for (const candidate of candidates) {
+    if (
+      selected.some(
+        (entry) =>
+          candidate.startCodeUnit < entry.endCodeUnit &&
+          candidate.endCodeUnit > entry.startCodeUnit,
+      )
+    ) continue;
+    selected.push(Object.freeze(candidate));
+  }
+  return Object.freeze(
+    selected.sort((left, right) => left.startCodeUnit - right.startCodeUnit),
+  );
+}
+
+function templateCopilotV3AsciiInsensitiveExactOffsets(
+  value: string,
+  needle: string,
+) {
+  const asciiFold = (text: string) =>
+    text.replace(/[A-Z]/gu, (character) => character.toLowerCase());
+  return exactOffsets(asciiFold(value), asciiFold(needle));
+}
+
+function templateCopilotV3SourceLocalNotificationClauseHasConditionalFraming({
+  clauseText,
+  recipientQuote,
+}: Readonly<{
+  clauseText: string;
+  recipientQuote: string;
+}>) {
+  const normalizedRecipient =
+    templateCopilotV3NormalizeLexicalText(recipientQuote);
+  const residue = templateCopilotV3PolicyNotificationStripClosedPhrase(
+    clauseText,
+    normalizedRecipient,
+  );
+  return (
+    /(?:^|\b)(?:if|when|unless|although|however|otherwise|but)(?:\b|,)/u.test(
+      residue,
+    ) ||
+    /(?:若|如果|如|當|当|除非|但|然而|否則|否则)/u.test(residue)
+  );
+}
+
+function templateCopilotV3SourceLocalNotificationEventListIsClosed(
+  clauseText: string,
+  eventRegionStartCodeUnit: number,
+  events: readonly TemplateCopilotV3SourceLocalNotificationEvent[],
+) {
+  const normalizeGap = (value: string) =>
+    templateCopilotV3NormalizeLexicalText(value);
+  const closedInteriorGap =
+    /^(?:[,，、]|(?:and|or|以及|及|和|與|与|並|并|或)|[,，、]\s*(?:and|or|以及|及|和|與|与|並|并|或))$/u;
+  let cursor = eventRegionStartCodeUnit;
+  for (const [index, event] of events.entries()) {
+    if (event.startCodeUnit < cursor) return false;
+    const rawGap = clauseText.slice(cursor, event.startCodeUnit);
+    const gap = normalizeGap(rawGap);
+    if (
+      index === 0
+        ? gap.length !== 0
+        : !closedInteriorGap.test(gap)
+    ) {
+      return false;
+    }
+    cursor = event.endCodeUnit;
+  }
+  return normalizeGap(clauseText.slice(cursor)).length === 0;
+}
+
+function templateCopilotV3SourceLocalNotificationRecipientHint(
+  quote: string,
+): "requester" | "current_stage_participants" |
+  "previous_stage_participants" | "all_participants" | "workflow_owner" |
+  "source_named_group" {
+  const normalized = templateCopilotV3NormalizeLexicalText(quote);
+  if (["requester", "申請人", "申请人", "發起人", "发起人"].includes(normalized)) {
+    return "requester";
+  }
+  if ([
+    "current stage participants",
+    "current step participants",
+    "目前步驟處理人",
+    "当前步骤处理人",
+  ].includes(normalized)) return "current_stage_participants";
+  if ([
+    "previous stage participants",
+    "previous step participants",
+    "上一個步驟處理人",
+    "上一步骤处理人",
+  ].includes(normalized)) return "previous_stage_participants";
+  if ([
+    "all participants",
+    "all workflow participants",
+    "所有流程參與者",
+    "所有流程参与者",
+  ].includes(normalized)) return "all_participants";
+  if (["workflow owner", "流程負責部門", "流程负责部门"].includes(normalized)) {
+    return "workflow_owner";
+  }
+  return "source_named_group";
+}
+
+const templateCopilotV3NotificationOnlyMarkers = new Set([
+  "only",
+  "只",
+  "僅",
+  "仅",
+]);
+
+function templateCopilotV3NotificationActionPattern() {
+  return /\b(?:notify|notifies|notified|notification|notifications|alert|alerts|email|emails|inform|informs)\b|(?:通知|知會|知会|電郵|电邮|提醒)/giu;
+}
+
+function templateCopilotV3NotificationEventMarkerPattern() {
+  return /\bevents?\s+(?:include|includes|included|including)\b|\bincluding\b|\b(?:for|on|upon|at|about)\b|事件包括/giu;
+}
+
+function templateCopilotV3TrimNotificationPhraseRange(
+  value: string,
+  untrimmedStartCodeUnit: number,
+  untrimmedEndCodeUnit: number,
+) {
+  let startCodeUnit = untrimmedStartCodeUnit;
+  let endCodeUnit = untrimmedEndCodeUnit;
+  while (
+    startCodeUnit < endCodeUnit &&
+    /[\s,，:：;；]/u.test(value[startCodeUnit])
+  ) startCodeUnit += 1;
+  while (
+    endCodeUnit > startCodeUnit &&
+    /[\s,，:：;；]/u.test(value[endCodeUnit - 1])
+  ) endCodeUnit -= 1;
+  return Object.freeze({
+    startCodeUnit,
+    endCodeUnit,
+    text: value.slice(startCodeUnit, endCodeUnit),
+  });
+}
+
+function templateCopilotV3DedupeSourceLocalNotifications({
+  items,
+}: Readonly<{
+  items: readonly TemplateCopilotV3LocatedQuoteItem[];
+}>): readonly TemplateCopilotV3LocatedQuoteItem[] {
+  const sourceLocalSignatures = new Set(
+    items
+      .filter(
+        (item) =>
+          item.itemIndex >=
+            templateCopilotV3SourceLocalNotificationItemIndexBase,
+      )
+      .map(templateCopilotV3LocatedNotificationSignature)
+      .filter((signature): signature is string => signature !== null),
+  );
+  const emittedSourceLocalSignatures = new Set<string>();
+  return Object.freeze(
+    items.filter((item) => {
+      const signature = templateCopilotV3LocatedNotificationSignature(item);
+      if (signature === null) return true;
+      if (
+        item.itemIndex <
+          templateCopilotV3SourceLocalNotificationItemIndexBase
+      ) {
+        return !sourceLocalSignatures.has(signature);
+      }
+      if (emittedSourceLocalSignatures.has(signature)) return false;
+      emittedSourceLocalSignatures.add(signature);
+      return true;
+    }),
+  );
+}
+
+function templateCopilotV3LocatedNotificationSignature(
+  item: TemplateCopilotV3LocatedQuoteItem,
+) {
+  if (item.kind !== "notification") return null;
+  return JSON.stringify({
+    slot: item.slot,
+    leaves: [...item.leaves]
+      .map((leaf) => ({
+        role: leaf.role,
+        hint: leaf.hint,
+        messageId: leaf.sourceSpan.messageId,
+        startCodePoint: leaf.sourceSpan.startCodePoint,
+        endCodePoint: leaf.sourceSpan.endCodePoint,
+      }))
+      .sort((left, right) =>
+        left.role.localeCompare(right.role, "en") ||
+        left.startCodePoint - right.startCodePoint ||
+        left.endCodePoint - right.endCodePoint
+      ),
+  });
+}
 
 function templateCopilotV3PolicyNotificationClauseHasClosedVocabulary({
   clauseText,
@@ -4466,7 +5103,7 @@ function templateCopilotV3PolicyNotificationClosedResidueIsEmpty(
       phrase.length > 0 && values.indexOf(phrase) === index
     )
     .sort((left, right) => right.length - left.length);
-  let residue = value;
+  let residue = templateCopilotV3NormalizeLexicalText(value);
   for (const phrase of removable) {
     residue = templateCopilotV3PolicyNotificationStripClosedPhrase(
       residue,
