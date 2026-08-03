@@ -223,6 +223,9 @@ const report = await runTemplateCopilotV3LiveSemanticQualification({
         `locale=${latest.language}`,
         `batches=${latest.successfulBatchCount}/${templateCopilotV3LiveSemanticScoringContract.expectedBatchIds.length}`,
         `capture=${latest.semanticCapture.passed ? "CAPTURE_PASS" : "CAPTURE_FAIL"}`,
+        `iterative=${latest.iterativeQualification.passed ? "ITERATIVE_PASS" : "ITERATIVE_FAIL"}`,
+        `recovery=${latest.iterativeQualification.recoveryAttemptCount}`,
+        `questions=${latest.iterativeQualification.askedQuestionCount}`,
         `holds=${latest.semanticCapture.governedHoldCount}`,
         "executable=BLOCKED",
       ].join(" "),
@@ -249,7 +252,8 @@ if (
     report.summary.fullGatePassed ||
     report.summary.selectedGatePassed ||
     report.summary.pilotGate.passed ||
-    report.summary.semanticCaptureGate.fullCorpusPassed
+    report.summary.semanticCaptureGate.fullCorpusPassed ||
+    report.summary.iterativeQualificationGate.fullCorpusPassed
   )
 ) {
   throw new Error(
@@ -266,6 +270,18 @@ console.log(
 );
 console.log(
   `capture_scenarios=${report.summary.semanticCaptureGate.scenarioPassCount}/${report.summary.semanticCaptureGate.scenarioCount}`,
+);
+console.log(
+  `iterative_qualification=${report.summary.iterativeQualificationGate.fullCorpusPassed ? "ITERATIVE_PASS" : "ITERATIVE_FAIL"}`,
+);
+console.log(
+  `iterative_scenarios=${report.summary.iterativeQualificationGate.scenarioPassCount}/${report.summary.iterativeQualificationGate.scenarioCount}`,
+);
+console.log(
+  `recovery_attempts=${report.summary.iterativeQualificationGate.recoveryAttemptCount}`,
+);
+console.log(
+  `clarification_questions=${report.summary.iterativeQualificationGate.askedQuestionCount}`,
 );
 console.log(
   `governed_holds=${report.summary.semanticCaptureGate.governedHoldCount}`,

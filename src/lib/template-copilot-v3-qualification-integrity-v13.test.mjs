@@ -3,6 +3,7 @@ import test from "node:test";
 import { templateCopilotQualificationScenarios } from "../../scripts/template-copilot-qualification-scenarios.mjs";
 import {
   runTemplateCopilotV3LiveSemanticQualification,
+  summarizeQualification,
   templateCopilotV3QualificationBaselineModel,
   templateCopilotV3QualificationFactIds,
   templateCopilotV3QualificationObservedMetricKeys,
@@ -59,6 +60,18 @@ test("v3 qualification rejects a fabricated scorer pass over an empty assembled 
   assert.equal(report.summary.scenarioPassCount, 0);
   assert.equal(report.summary.selectedGatePassed, false);
   assert.equal(report.summary.fullGatePassed, false);
+
+  for (const scenario of report.scenarios) {
+    scenario.iterativeQualification.passed = true;
+    scenario.iterativeQualification.finalStrictPassed = true;
+    scenario.iterativeQualification.unresolvedGapCount = 0;
+    scenario.iterativeQualification.unsafeAcceptedCount = 0;
+    scenario.iterativeQualification.regressionCount = 0;
+  }
+  const forgedSummary = summarizeQualification(report);
+  assert.equal(forgedSummary.semanticCaptureGate.passed, false);
+  assert.equal(forgedSummary.iterativeQualificationGate.passed, false);
+  assert.equal(forgedSummary.fullGatePassed, false);
 });
 
 function fabricatedPassingScore() {

@@ -25,7 +25,10 @@ import {
   templateCopilotV3SemanticScenarioManifests,
 } from "./template-copilot-v3-semantic-scenario-manifests.mjs";
 import {
+  diagnoseTemplateCopilotV3IterativeSemantic,
   scoreTemplateCopilotV3LiveSemantic,
+  templateCopilotV3IterativeSemanticDiagnosticContract,
+  templateCopilotV3IterativeSemanticDiagnosticVersion,
   templateCopilotV3LiveSemanticScoringContract,
 } from "./template-copilot-v3-live-semantic-scoring.mjs";
 
@@ -2001,6 +2004,417 @@ test("FYI, workflow-notification, route-only, and parallel metrics report observ
   assert.equal(routeResult.scenarioSemantics.observed.conditionNodes, 0);
   assert.equal(routeResult.scenarioSemantics.observed.conditionEntityCount, 0);
   assert.equal(routeResult.scenarioSemantics.observed.approvalNodes, 4);
+});
+
+test("iterative diagnostics recover a known-source miss without asking a question", () => {
+  const expectedFactIds =
+    templateCopilotV3IterativeSemanticDiagnosticContract.expectedFactIds;
+  const diagnostic = diagnoseTemplateCopilotV3IterativeSemantic({
+    semantic: {
+      passed: false,
+      factIds: expectedFactIds.filter(
+        (factId) => factId !== "attachments.requirements",
+      ),
+      governedHolds: [],
+    },
+    disclosedSourceSlots: ["attachments"],
+    factSourceSlots: {
+      "attachments.requirements": "attachments",
+    },
+    slotBatchIds: {
+      attachments: ["intake_documents"],
+    },
+    serverQuestions: [
+      {
+        questionId: "server:attachments",
+        factId: "attachments.requirements",
+        sourceSlot: "attachments",
+        text: "This text must never be copied into diagnostics.",
+      },
+    ],
+  });
+
+  assert.deepEqual(diagnostic.recoveryBatchIds, ["intake_documents"]);
+  assert.deepEqual(diagnostic.questions.expectedQuestionIds, []);
+  assert.equal(diagnostic.metrics.recoverFromSourceCount, 1);
+  assert.equal(diagnostic.metrics.askUserCount, 0);
+  assert.deepEqual(diagnostic.decisions, [
+    {
+      gapId: "fact:attachments.requirements",
+      factId: "attachments.requirements",
+      classification: "recover_from_source",
+      reasonCode: "known_source_gap",
+      recoveryBatchIds: ["intake_documents"],
+      questionId: null,
+      ambiguityContractId: null,
+    },
+  ]);
+  assert.doesNotMatch(JSON.stringify(diagnostic), /never be copied/i);
+});
+
+test("iterative diagnostics prefer exact fact recovery ownership over broad slot consumers", () => {
+  const expectedFactIds =
+    templateCopilotV3IterativeSemanticDiagnosticContract.expectedFactIds;
+  const diagnostic = diagnoseTemplateCopilotV3IterativeSemantic({
+    semantic: {
+      passed: false,
+      factIds: expectedFactIds.filter(
+        (factId) => factId !== "workflow.conditions",
+      ),
+      governedHolds: [],
+    },
+    disclosedSourceSlots: ["conditions_exceptions"],
+    factSourceSlots: {
+      "workflow.conditions": "conditions_exceptions",
+    },
+    factBatchIds: {
+      "workflow.conditions": ["routing_conditions"],
+    },
+    slotBatchIds: {
+      conditions_exceptions: [
+        "routing_conditions",
+        "routing_rejection",
+      ],
+    },
+  });
+  assert.deepEqual(diagnostic.recoveryBatchIds, ["routing_conditions"]);
+  assert.deepEqual(diagnostic.decisions[0].recoveryBatchIds, [
+    "routing_conditions",
+  ]);
+});
+
+test("iterative diagnostics select only a server-owned question for truly missing source", () => {
+  const expectedFactIds =
+    templateCopilotV3IterativeSemanticDiagnosticContract.expectedFactIds;
+  const baseInput = {
+    semantic: {
+      passed: false,
+      factIds: expectedFactIds.filter(
+        (factId) => factId !== "workflow.name",
+      ),
+      governedHolds: [],
+    },
+    disclosedSourceSlots: [],
+    factSourceSlots: {
+      "workflow.name": "identity_scope",
+    },
+    slotBatchIds: {
+      identity_scope: ["policy_context"],
+    },
+    serverQuestions: [
+      {
+        questionId: "server:workflow-name",
+        factIds: ["workflow.name"],
+        sourceSlot: "identity_scope",
+        gapKind: "genuine_ambiguity",
+        ambiguityContractId: "ambiguity:workflow-name",
+        text: "What is the workflow name?",
+      },
+    ],
+  };
+  const missingSourceOnly =
+    diagnoseTemplateCopilotV3IterativeSemantic(baseInput);
+  assert.deepEqual(missingSourceOnly.questions.expectedQuestionIds, []);
+  assert.equal(missingSourceOnly.metrics.askUserCount, 0);
+  assert.equal(missingSourceOnly.metrics.governedHoldCount, 1);
+  assert.equal(
+    missingSourceOnly.decisions[0].reasonCode,
+    "genuine_ambiguity_contract_unavailable",
+  );
+
+  const diagnostic = diagnoseTemplateCopilotV3IterativeSemantic({
+    ...baseInput,
+    ambiguityGaps: [
+      {
+        gapKind: "genuine_ambiguity",
+        factId: "workflow.name",
+        sourceSlot: "identity_scope",
+        ambiguityContractId: "ambiguity:workflow-name",
+      },
+    ],
+    askedQuestionIds: ["server:workflow-name"],
+    answerDisclosedQuestionIds: ["server:workflow-name"],
+  });
+
+  assert.deepEqual(diagnostic.recoveryBatchIds, []);
+  assert.deepEqual(diagnostic.questions.expectedQuestionIds, [
+    "server:workflow-name",
+  ]);
+  assert.deepEqual(diagnostic.questions.correctQuestionIds, [
+    "server:workflow-name",
+  ]);
+  assert.equal(diagnostic.metrics.askUserCount, 1);
+  assert.equal(diagnostic.metrics.correctQuestionCount, 1);
+  assert.equal(diagnostic.metrics.knownFactQuestionCount, 0);
+  assert.equal(diagnostic.metrics.repeatedQuestionCount, 0);
+  assert.equal(diagnostic.metrics.irrelevantQuestionCount, 0);
+  assert.equal(diagnostic.metrics.missedRequiredQuestionCount, 0);
+  assert.equal(diagnostic.metrics.prematureAnswerDisclosureCount, 0);
+  assert.equal(
+    diagnostic.decisions[0].reasonCode,
+    "genuine_ambiguity_requires_question",
+  );
+  assert.equal(
+    diagnostic.decisions[0].ambiguityContractId,
+    "ambiguity:workflow-name",
+  );
+});
+
+test("iterative diagnostics count malformed question and disclosure IDs without copying them", () => {
+  const expectedFactIds =
+    templateCopilotV3IterativeSemanticDiagnosticContract.expectedFactIds;
+  const diagnostic = diagnoseTemplateCopilotV3IterativeSemantic({
+    semantic: {
+      passed: false,
+      factIds: expectedFactIds.filter(
+        (factId) => factId !== "workflow.name",
+      ),
+      governedHolds: [],
+    },
+    disclosedSourceSlots: [],
+    factSourceSlots: { "workflow.name": "identity_scope" },
+    slotBatchIds: { identity_scope: ["policy_context"] },
+    ambiguityGaps: [{
+      gapKind: "genuine_ambiguity",
+      factId: "workflow.name",
+      sourceSlot: "identity_scope",
+      ambiguityContractId: "ambiguity:workflow-name",
+    }],
+    serverQuestions: [{
+      questionId: "server:workflow-name",
+      factId: "workflow.name",
+      sourceSlot: "identity_scope",
+      gapKind: "genuine_ambiguity",
+      ambiguityContractId: "ambiguity:workflow-name",
+    }],
+    askedQuestionIds: [
+      "RAW USER QUESTION WITH SPACES",
+      { providerSecret: "DO NOT COPY THIS" },
+    ],
+    answerDisclosedQuestionIds: ["<PRIVATE ANSWER DISCLOSURE>"],
+  });
+  assert.equal(diagnostic.metrics.invalidAskedQuestionCount, 2);
+  assert.equal(diagnostic.metrics.invalidAnswerDisclosureCount, 1);
+  assert.equal(diagnostic.metrics.askedQuestionCount, 0);
+  assert.equal(diagnostic.metrics.missedRequiredQuestionCount, 1);
+  assert.doesNotMatch(
+    JSON.stringify(diagnostic),
+    /RAW USER|DO NOT COPY|PRIVATE ANSWER|providerSecret/u,
+  );
+});
+
+test("iterative diagnostics keep governed semantic holds out of interviews", () => {
+  const expectedFactIds =
+    templateCopilotV3IterativeSemanticDiagnosticContract.expectedFactIds;
+  const diagnostic = diagnoseTemplateCopilotV3IterativeSemantic({
+    semantic: {
+      passed: true,
+      factIds: [...expectedFactIds],
+      governedHolds: [
+        {
+          factId: "workflow.conditions",
+          blockingReason: "compound_predicate_not_executable",
+        },
+      ],
+    },
+    disclosedSourceSlots: ["conditions_exceptions"],
+    factSourceSlots: {
+      "workflow.conditions": "conditions_exceptions",
+    },
+    slotBatchIds: {
+      conditions_exceptions: [
+        "routing_conditions",
+        "routing_rejection",
+      ],
+    },
+    serverQuestions: [
+      {
+        questionId: "server:conditions",
+        factId: "workflow.conditions",
+        sourceSlot: "conditions_exceptions",
+      },
+    ],
+  });
+
+  assert.deepEqual(diagnostic.recoveryBatchIds, []);
+  assert.deepEqual(diagnostic.questions.expectedQuestionIds, []);
+  assert.equal(diagnostic.metrics.governedHoldCount, 1);
+  assert.deepEqual(diagnostic.decisions, [
+    {
+      gapId:
+        "hold:workflow.conditions:compound_predicate_not_executable:1",
+      factId: "workflow.conditions",
+      classification: "governed_hold",
+      reasonCode: "governed_semantic_hold",
+      recoveryBatchIds: [],
+      questionId: null,
+      ambiguityContractId: null,
+    },
+  ]);
+});
+
+test("iterative diagnostics target a provider failure without widening recovery", () => {
+  const expectedFactIds =
+    templateCopilotV3IterativeSemanticDiagnosticContract.expectedFactIds;
+  const diagnostic = diagnoseTemplateCopilotV3IterativeSemantic({
+    semantic: {
+      passed: false,
+      factIds: [...expectedFactIds],
+      governedHolds: [],
+    },
+    batches: [
+      {
+        batchId: "routing_conditions",
+        status: "failed",
+        providerOutcome: "timeout",
+        failureCount: 1,
+        providerRequestFailureCount: 1,
+      },
+    ],
+    disclosedSourceSlots: [
+      "identity_scope",
+      "initiators_fields",
+      "stages_participants",
+      "conditions_exceptions",
+    ],
+    slotBatchIds: {
+      identity_scope: ["policy_context"],
+      initiators_fields: ["intake_documents"],
+      stages_participants: ["routing_stages_participants"],
+      conditions_exceptions: [
+        "routing_conditions",
+        "routing_rejection",
+      ],
+    },
+  });
+
+  assert.deepEqual(diagnostic.recoveryBatchIds, ["routing_conditions"]);
+  assert.equal(diagnostic.metrics.providerFailureCount, 1);
+  assert.equal(diagnostic.metrics.unidentifiedStrictFailureCount, 0);
+  assert.ok(
+    diagnostic.decisions.some(
+      (decision) =>
+        decision.gapId === "provider:routing_conditions" &&
+        decision.classification === "recover_from_source",
+    ),
+  );
+  assert.equal(
+    diagnostic.decisions.some(
+      (decision) => decision.gapId === "semantic:unidentified",
+    ),
+    false,
+  );
+});
+
+test("iterative diagnostics fail closed on an unidentified strict miss", () => {
+  const expectedFactIds =
+    templateCopilotV3IterativeSemanticDiagnosticContract.expectedFactIds;
+  const diagnostic = diagnoseTemplateCopilotV3IterativeSemantic({
+    semantic: {
+      passed: false,
+      factIds: [...expectedFactIds],
+      governedHolds: [],
+    },
+    disclosedSourceSlots: [
+      "identity_scope",
+      "initiators_fields",
+      "stages_participants",
+      "conditions_exceptions",
+    ],
+    slotBatchIds: {
+      identity_scope: ["policy_context"],
+      initiators_fields: ["intake_documents"],
+      stages_participants: ["routing_stages_participants"],
+      conditions_exceptions: [
+        "routing_conditions",
+        "routing_rejection",
+      ],
+    },
+  });
+
+  assert.deepEqual(diagnostic.recoveryBatchIds, []);
+  assert.equal(diagnostic.metrics.providerFailureCount, 0);
+  assert.equal(diagnostic.metrics.unidentifiedStrictFailureCount, 1);
+  assert.deepEqual(diagnostic.decisions, [
+    {
+      gapId: "semantic:unidentified",
+      factId: null,
+      classification: "governed_hold",
+      reasonCode: "strict_failure_without_identifiable_missing_fact",
+      recoveryBatchIds: [],
+      questionId: null,
+      ambiguityContractId: null,
+    },
+  ]);
+});
+
+test("iterative diagnostic contract is redacted and leaves strict scorer output unchanged", () => {
+  const fixture = makeActualFixture(scenario("EN-01"));
+  const strictBefore = scoreTemplateCopilotV3LiveSemantic(fixture);
+  const strictSnapshot = structuredClone(strictBefore);
+  const diagnostic = diagnoseTemplateCopilotV3IterativeSemantic({
+    semantic: strictBefore,
+    disclosedSourceSlots: ["identity_scope"],
+    factSourceSlots: {
+      "workflow.name": "identity_scope",
+      "workflow.purpose": "identity_scope",
+      "workflow.scope": "identity_scope",
+    },
+    slotBatchIds: {
+      identity_scope: ["policy_context"],
+    },
+  });
+  const strictAfter = scoreTemplateCopilotV3LiveSemantic(fixture);
+
+  assert.equal(
+    diagnostic.version,
+    templateCopilotV3IterativeSemanticDiagnosticVersion,
+  );
+  assert.deepEqual(
+    Object.keys(diagnostic),
+    templateCopilotV3IterativeSemanticDiagnosticContract.resultKeys,
+  );
+  assert.deepEqual(
+    Object.keys(diagnostic.metrics).filter((key) =>
+      templateCopilotV3IterativeSemanticDiagnosticContract.questionMetricKeys.includes(
+        key,
+      ),
+    ),
+    templateCopilotV3IterativeSemanticDiagnosticContract.questionMetricKeys,
+  );
+  assert.deepEqual(strictBefore, strictSnapshot);
+  assert.deepEqual(strictAfter, strictSnapshot);
+  assert.deepEqual(Object.keys(strictAfter), [
+    "passed",
+    "failures",
+    "sourceCapturePassed",
+    "captureFailures",
+    "governedHolds",
+    "batchGate",
+    "candidateCount",
+    "acceptedProjectionCount",
+    "blockedSemanticItemCount",
+    "semanticCompleteItemCount",
+    "completeItemCount",
+    "semanticFactCount",
+    "rawItemCount",
+    "rawScalarFactCount",
+    "rawPolicyItemCount",
+    "distinctFactCount",
+    "factIds",
+    "evidenceLeafCount",
+    "evidenceFailureCount",
+    "forbiddenHits",
+    "quarantineHitCount",
+    "quarantineReasonCounts",
+    "unsafeQuoteCount",
+    "defaultOrUnknownExtraCount",
+    "rejectedProjectionCount",
+    "conflictCount",
+    "scenarioSemantics",
+    "manifestVersion",
+    "manifestCorpusFingerprint",
+  ]);
 });
 
 function makeActualFixture(

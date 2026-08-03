@@ -21,9 +21,16 @@ import {
   templateCopilotV3QualificationRunnerVersion,
 } from "../../scripts/template-copilot-v3-live-semantic-qualification-runner.mjs";
 import { templateCopilotV3SemanticScenarioManifest } from "../../scripts/template-copilot-v3-semantic-scenario-manifests.mjs";
+import {
+  templateCopilotV3SemanticRoundPlanFingerprint,
+  templateCopilotV3SemanticRoundPlanVersion,
+} from "../../scripts/template-copilot-v3-semantic-round-plans.mjs";
 import { templateCopilotV3ProviderQuoteContractVersion } from "./template-copilot-v3-provider-quotes.ts";
 import { templateCopilotV3ProviderPromptVersion } from "./template-copilot-v3-provider-prompt.ts";
-import { templateCopilotV3LiveSemanticScoringContract } from "../../scripts/template-copilot-v3-live-semantic-scoring.mjs";
+import {
+  templateCopilotV3IterativeSemanticDiagnosticVersion,
+  templateCopilotV3LiveSemanticScoringContract,
+} from "../../scripts/template-copilot-v3-live-semantic-scoring.mjs";
 import { templateCopilotOpenRouterQualificationRoutingProfile } from "./template-copilot-openrouter-routing.ts";
 import { templateCopilotProviderFailureReasons } from "./template-copilot-provider-request-tracker.ts";
 
@@ -147,7 +154,31 @@ test("v3 qualification executes exactly five sequential batches for all 24 multi
   assert.equal(report.summary.providerRequestCount, 120);
   assert.equal(
     report.metadata.runnerVersion,
-    "template-copilot-v3-live-semantic-qualification.21",
+    "template-copilot-v3-live-semantic-qualification.22",
+  );
+  assert.equal(report.summary.physicalAttemptCount, 120);
+  assert.equal(report.summary.physicalProviderRequestCount, 120);
+  assert.equal(report.summary.recoveryAttemptCount, 0);
+  assert.equal(report.summary.iterativeQualificationGate.passed, false);
+  assert.equal(
+    report.summary.iterativeQualificationGate.fullCorpusPassed,
+    false,
+  );
+  assert.equal(
+    report.summary.iterativeQualificationGate.expectedQuestionCount,
+    0,
+  );
+  assert.equal(
+    report.summary.iterativeQualificationGate.askedQuestionCount,
+    0,
+  );
+  assert.ok(
+    report.scenarios.every(
+      (scenario) =>
+        scenario.attempts.length === 5 &&
+        scenario.rounds.length === 3 &&
+        scenario.iterativeQualification.passed === true,
+    ),
   );
   assert.equal(report.summary.expandedAnchorItemCount, 0);
   assert.equal(report.summary.sameLocalClauseRecoveredLeafCount, 0);
@@ -166,32 +197,121 @@ test("v3 qualification executes exactly five sequential batches for all 24 multi
 test("v3 qualification reports 24/24 source capture and 64 holds without claiming executable or pilot readiness", () => {
   const scenarios = templateCopilotQualificationScenarios.map((item) => {
     const governedHolds = expectedGovernedHolds(item.id);
+    const batches = formalBatchIds.map((batchId) => ({
+      batchId,
+      status: "applied",
+      durationMs: 1,
+      providerRequestCount: 1,
+      providerRequestSuccessCount: 1,
+      providerRequestFailureCount: 0,
+      providerOutcome: "success",
+      providerFailureReason: null,
+      averageProviderRequestLatencyMs: 1,
+      providerResponseTelemetry: qualificationProviderTelemetry(),
+      acceptedItemCount: 0,
+      rejectedItemCount: 0,
+      expandedAnchorItemCount: 0,
+      sameLocalClauseRecoveredLeafCount: 0,
+      rejectionCodes: {},
+      rejectionDetails: {},
+      failureCount: 0,
+    }));
     return {
       id: item.id,
       language: item.language,
       batchCount: 5,
       successfulBatchCount: 5,
-      batches: formalBatchIds.map((batchId) => ({
-        batchId,
-        status: "applied",
-        providerRequestCount: 1,
-        providerRequestSuccessCount: 1,
-        providerRequestFailureCount: 0,
-        providerOutcome: "success",
-        providerFailureReason: null,
-        averageProviderRequestLatencyMs: 1,
-        providerResponseTelemetry: qualificationProviderTelemetry(),
-        acceptedItemCount: 0,
-        expandedAnchorItemCount: 0,
-        sameLocalClauseRecoveredLeafCount: 0,
-        failureCount: 0,
-      })),
+      batches,
       projection: { acceptedProviderItemCount: 0 },
+      attempts: batches.map((batch) => ({
+        round: 1,
+        purpose: "provisional",
+        ...batch,
+      })),
+      rounds: [
+        {
+          round: 1,
+          kind: "provisional",
+          batchIds: formalBatchIds,
+          semanticPassed: true,
+          capturedContractCount: 16,
+          governedHoldCount: governedHolds.length,
+        },
+        {
+          round: 2,
+          kind: "audit_and_recovery",
+          recoveryBatchIds: [],
+          questionIds: [],
+          answerDisclosureCount: 0,
+        },
+        {
+          round: 3,
+          kind: "final_strict_audit",
+          batchIds: formalBatchIds,
+          semanticPassed: true,
+          capturedContractCount: 16,
+          governedHoldCount: governedHolds.length,
+        },
+      ],
+      sourceAuthority: {
+        sourceSlotCount: 9,
+        quarantine: item.id === "EN-01"
+          ? {
+              inspectedBlockCount: 2,
+              retainedBlockCount: 1,
+              quarantinedBlockCount: 1,
+              reasonCounts: { instruction_override: 1 },
+            }
+          : {
+              inspectedBlockCount: 0,
+              retainedBlockCount: 0,
+              quarantinedBlockCount: 0,
+              reasonCounts: {},
+            },
+      },
       semanticCapture: {
         resultValid: true,
         passed: true,
+        distinctFactCount: 16,
         governedHoldCount: governedHolds.length,
         governedHolds,
+      },
+      iterativeQualification: {
+        version: "template-copilot-v3-iterative-qualification.1",
+        diagnosticVersion:
+          templateCopilotV3IterativeSemanticDiagnosticVersion,
+        roundPlanVersion: templateCopilotV3SemanticRoundPlanVersion,
+        roundPlanFingerprint: templateCopilotV3SemanticRoundPlanFingerprint,
+        roundCount: 3,
+        passed: true,
+        finalStrictPassed: true,
+        capturedContractCount: 16,
+        governedHoldCount: governedHolds.length,
+        gapCount: governedHolds.length,
+        recoverFromSourceCount: 0,
+        askUserGapCount: 0,
+        governedGapCount: governedHolds.length,
+        recoveryAttemptCount: 0,
+        recoverySuccessCount: 0,
+        recoveredGapCount: 0,
+        unresolvedGapCount: 0,
+        expectedQuestionCount: 0,
+        askedQuestionCount: 0,
+        correctQuestionCount: 0,
+        knownFactQuestionCount: 0,
+        repeatedQuestionCount: 0,
+        invalidAskedQuestionCount: 0,
+        invalidAnswerDisclosureCount: 0,
+        irrelevantQuestionCount: 0,
+        missedRequiredQuestionCount: 0,
+        prematureAnswerDisclosureCount: 0,
+        answerDisclosureCount: 0,
+        unsafeAcceptedCount: 0,
+        regressionCount: 0,
+        recoveryBatchIds: [],
+        expectedQuestionIds: [],
+        askedQuestionIds: [],
+        gapDecisions: [],
       },
       executableDraft: { evaluated: false, passed: false },
     };
@@ -214,6 +334,60 @@ test("v3 qualification reports 24/24 source capture and 64 holds without claimin
   assert.equal(summary.semanticCaptureGate.identityAndLocalePassed, true);
   assert.equal(summary.semanticCaptureGate.inventoryMatchedScenarioCount, 24);
   assert.equal(summary.semanticCaptureGate.governedHoldCount, 64);
+  assert.equal(summary.iterativeQualificationGate.passed, true);
+  assert.equal(summary.iterativeQualificationGate.fullCorpusPassed, true);
+  assert.equal(summary.iterativeQualificationGate.expectedQuestionCount, 0);
+  assert.equal(summary.iterativeQualificationGate.askedQuestionCount, 0);
+
+  const tamperedMetadata = structuredClone(report);
+  tamperedMetadata.metadata.semanticRoundPlanFingerprint =
+    `sha256:${"b".repeat(64)}`;
+  const tamperedMetadataSummary = summarizeQualification(tamperedMetadata);
+  assert.equal(
+    tamperedMetadataSummary.semanticCaptureGate.fullCorpusPassed,
+    true,
+  );
+  assert.equal(
+    tamperedMetadataSummary.iterativeQualificationGate.fullCorpusPassed,
+    false,
+  );
+
+  const tamperedScenario = structuredClone(report);
+  tamperedScenario.scenarios[0].iterativeQualification.roundPlanFingerprint =
+    `sha256:${"c".repeat(64)}`;
+  const tamperedScenarioSummary = summarizeQualification(tamperedScenario);
+  assert.equal(tamperedScenarioSummary.semanticCaptureGate.passed, true);
+  assert.equal(tamperedScenarioSummary.iterativeQualificationGate.passed, false);
+
+  const hiddenRetry = structuredClone(report);
+  hiddenRetry.scenarios[0].attempts[0].providerRequestCount = 2;
+  hiddenRetry.scenarios[0].attempts[0].providerRequestSuccessCount = 2;
+  const hiddenRetrySummary = summarizeQualification(hiddenRetry);
+  assert.equal(hiddenRetrySummary.semanticCaptureGate.passed, true);
+  assert.equal(hiddenRetrySummary.iterativeQualificationGate.passed, false);
+
+  const missingAuthority = structuredClone(report);
+  missingAuthority.scenarios[0].sourceAuthority.sourceSlotCount = 8;
+  const missingAuthoritySummary = summarizeQualification(missingAuthority);
+  assert.equal(missingAuthoritySummary.semanticCaptureGate.passed, true);
+  assert.equal(missingAuthoritySummary.iterativeQualificationGate.passed, false);
+
+  const unaccountedQuarantine = structuredClone(report);
+  unaccountedQuarantine.scenarios[0].sourceAuthority.quarantine.reasonCounts = {};
+  const unaccountedQuarantineSummary = summarizeQualification(
+    unaccountedQuarantine,
+  );
+  assert.equal(unaccountedQuarantineSummary.semanticCaptureGate.passed, true);
+  assert.equal(
+    unaccountedQuarantineSummary.iterativeQualificationGate.passed,
+    false,
+  );
+
+  const forgedRound = structuredClone(report);
+  forgedRound.scenarios[0].rounds[1].providerSecret = "must-not-be-accepted";
+  const forgedRoundSummary = summarizeQualification(forgedRound);
+  assert.equal(forgedRoundSummary.semanticCaptureGate.passed, true);
+  assert.equal(forgedRoundSummary.iterativeQualificationGate.passed, false);
   assert.equal(summary.executableDraftGate.evaluated, false);
   assert.equal(summary.executableDraftGate.passed, false);
   assert.equal(summary.executableDraftGate.scenarioPassCount, 0);
@@ -387,11 +561,11 @@ test("v3 qualification keeps stable server source IDs and quarantines the hostil
       return {
         model: templateCopilotV3QualificationBaselineModel,
         batch: batchIdentity(input),
-        accepted: [],
+        accepted: acceptedFixtureBatch(input.batchId),
         rejected: [],
       };
     },
-    assembleReview: emptyAssembly,
+    assembleReview: passingAssembly,
     scoreProjection: passingScore,
     metadata: qualificationMetadata(),
     now: monotonicClock(),
@@ -471,7 +645,16 @@ test("v3 qualification isolates a failed batch, continues later batches, and sto
     now: monotonicClock(),
   });
 
-  assert.deepEqual(calls, formalBatchIds);
+  assert.deepEqual(calls, [...formalBatchIds, formalBatchIds[0]]);
+  assert.equal(report.scenarios[0].attempts.length, 6);
+  assert.deepEqual(
+    report.scenarios[0].iterativeQualification.recoveryBatchIds,
+    [formalBatchIds[0]],
+  );
+  assert.equal(
+    report.scenarios[0].iterativeQualification.askedQuestionCount,
+    0,
+  );
   assert.equal(report.scenarios[0].successfulBatchCount, 4);
   assert.equal(report.scenarios[0].batches[0].providerOutcome, "timeout");
   assert.equal(
@@ -485,6 +668,8 @@ test("v3 qualification isolates a failed batch, continues later batches, and sto
   assert.equal(report.summary.selectedGatePassed, false);
   assert.equal(report.summary.providerRequestCount, 5);
   assert.equal(report.summary.providerRequestFailureCount, 1);
+  assert.equal(report.summary.physicalProviderRequestCount, 6);
+  assert.equal(report.summary.physicalProviderRequestFailureCount, 2);
   assert.equal(report.scenarios[0].batches[0].expandedAnchorItemCount, 0);
   assert.equal(
     report.scenarios[0].batches[0].sameLocalClauseRecoveredLeafCount,
@@ -494,6 +679,91 @@ test("v3 qualification isolates a failed batch, continues later batches, and sto
     JSON.stringify(report),
     /TOP SECRET|raw output|user text/u,
   );
+});
+
+test("v3 qualification recovers one failed known-source batch without asking the user", async () => {
+  const scenario = templateCopilotQualificationScenarios.find(
+    (item) => item.id === "EN-07",
+  );
+  assert.ok(scenario);
+  const calls = [];
+  const scoredBatchSets = [];
+  let intakeAttemptCount = 0;
+  const report = await runTemplateCopilotV3LiveSemanticQualification({
+    corpus: templateCopilotQualificationScenarios,
+    scenarios: [scenario],
+    extractBatch: async (input) => {
+      calls.push(input.batchId);
+      if (
+        input.batchId === formalBatchIds[0] &&
+        ++intakeAttemptCount === 1
+      ) {
+        input.observeProviderRequest({ outcome: "timeout", latencyMs: 18_000 });
+        throw new Error("PRIVATE FIRST-ATTEMPT FAILURE");
+      }
+      input.observeProviderRequest({ outcome: "success", latencyMs: 1 });
+      return {
+        model: templateCopilotV3QualificationBaselineModel,
+        batch: batchIdentity(input),
+        accepted: acceptedFixtureBatch(input.batchId),
+        rejected: [],
+      };
+    },
+    assembleReview: passingAssembly,
+    scoreProjection: ({ batches }) => {
+      scoredBatchSets.push(batches.map((batch) => batch.batchId));
+      const score = passingScore();
+      const failed = batches.filter((batch) => batch.status !== "applied");
+      if (failed.length === 0) return score;
+      const failures = ["A required provider batch failed."];
+      return {
+        ...score,
+        passed: false,
+        failures,
+        sourceCapturePassed: false,
+        captureFailures: failures,
+        batchGate: {
+          ...score.batchGate,
+          passed: false,
+          failures,
+          passedBatchCount: batches.length - failed.length,
+          batchFailureCount: failed.length,
+          providerRequestFailureCount: failed.length,
+          failureCount: failed.length,
+        },
+        scenarioSemantics: {
+          ...score.scenarioSemantics,
+          passed: false,
+          failures,
+          sourceCapturePassed: false,
+          captureFailures: failures,
+        },
+      };
+    },
+    metadata: qualificationMetadata(),
+    now: monotonicClock(),
+  });
+
+  assert.deepEqual(calls, [...formalBatchIds, formalBatchIds[0]]);
+  assert.deepEqual(scoredBatchSets, [formalBatchIds, formalBatchIds]);
+  assert.equal(report.scenarios[0].attempts.length, 6);
+  assert.equal(report.scenarios[0].batches.length, 5);
+  assert.ok(
+    report.scenarios[0].batches.every((batch) => batch.status === "applied"),
+  );
+  assert.deepEqual(
+    report.scenarios[0].iterativeQualification.recoveryBatchIds,
+    [formalBatchIds[0]],
+  );
+  assert.equal(report.scenarios[0].iterativeQualification.askedQuestionCount, 0);
+  assert.equal(report.scenarios[0].iterativeQualification.unresolvedGapCount, 0);
+  assert.equal(report.scenarios[0].iterativeQualification.passed, true);
+  assert.equal(report.scenarios[0].semanticCapture.passed, true);
+  assert.equal(report.summary.iterativeQualificationGate.passed, false);
+  assert.equal(report.summary.physicalProviderRequestCount, 6);
+  assert.equal(report.summary.physicalProviderRequestSuccessCount, 5);
+  assert.equal(report.summary.physicalProviderRequestFailureCount, 1);
+  assert.doesNotMatch(JSON.stringify(report), /PRIVATE FIRST-ATTEMPT FAILURE/u);
 });
 
 test("v3 qualification reports each closed provider transport subtype without provider-private detail", async () => {
@@ -767,7 +1037,7 @@ test("v3 qualification rejects a mismatched returned batch envelope and continue
     metadata: qualificationMetadata(),
     now: monotonicClock(),
   });
-  assert.deepEqual(calls, formalBatchIds);
+  assert.deepEqual(calls, [...formalBatchIds, formalBatchIds[0]]);
   assert.equal(report.scenarios[0].successfulBatchCount, 4);
   assert.equal(report.scenarios[0].batches[0].status, "failed");
   assert.equal(report.scenarios[0].batches[1].status, "applied");
@@ -1046,7 +1316,7 @@ test("v3 qualification rejects hidden retries, zero requests, swapped order, and
     });
     assert.equal(report.summary.selectedGatePassed, false);
     assert.equal(report.scenarios[0].successfulBatchCount, 4);
-    assert.deepEqual(assembledItemCounts, [4]);
+    assert.deepEqual(assembledItemCounts, [4, 4]);
   }
 
   const report = await runTemplateCopilotV3LiveSemanticQualification({
@@ -2220,6 +2490,13 @@ function qualificationMetadata() {
     comparableCleanSource: true,
     sourceEndCheckPassed: true,
     qualificationMode: "clean_source",
+    semanticRoundCount: 3,
+    semanticRoundPlanVersion: templateCopilotV3SemanticRoundPlanVersion,
+    semanticRoundPlanFingerprint:
+      templateCopilotV3SemanticRoundPlanFingerprint,
+    iterativeSemanticDiagnosticVersion:
+      templateCopilotV3IterativeSemanticDiagnosticVersion,
+    maximumRecoveryAttemptsPerBatch: 1,
   };
 }
 

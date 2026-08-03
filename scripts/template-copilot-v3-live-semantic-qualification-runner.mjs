@@ -3,6 +3,8 @@ import {
   classifyTemplateCopilotProviderRequestOutcome,
   createTemplateCopilotProviderRequestTracker,
   sanitizeTemplateCopilotProviderFailureReason,
+  templateCopilotProviderFailureReasons,
+  templateCopilotProviderRequestOutcomes,
 } from "../src/lib/template-copilot-provider-request-tracker.ts";
 import { templateCopilotOpenRouterQualificationRoutingProfile } from "../src/lib/template-copilot-openrouter-routing.ts";
 import {
@@ -31,10 +33,23 @@ import {
   answersForScenario,
   templateCopilotQualificationScenarios,
 } from "./template-copilot-qualification-scenarios.mjs";
-import { templateCopilotV3LiveSemanticScoringContract } from "./template-copilot-v3-live-semantic-scoring.mjs";
+import {
+  diagnoseTemplateCopilotV3IterativeSemantic,
+  templateCopilotV3IterativeSemanticDiagnosticVersion,
+  templateCopilotV3LiveSemanticScoringContract,
+} from "./template-copilot-v3-live-semantic-scoring.mjs";
+import {
+  templateCopilotV3SemanticFactSourceSlots,
+  templateCopilotV3SemanticFactBatchIdsForScenario,
+  templateCopilotV3SemanticFactSourceSlotsForScenario,
+  templateCopilotV3SemanticRoundPlan,
+  templateCopilotV3SemanticRoundPlanFingerprint,
+  templateCopilotV3SemanticRoundPlanVersion,
+  templateCopilotV3SemanticSlotBatchIds,
+} from "./template-copilot-v3-semantic-round-plans.mjs";
 
 export const templateCopilotV3QualificationRunnerVersion =
-  "template-copilot-v3-live-semantic-qualification.21";
+  "template-copilot-v3-live-semantic-qualification.22";
 export const templateCopilotV3QualificationExpectedScenarioCount = 24;
 export const templateCopilotV3QualificationExpectedGovernedHoldCount = 64;
 export const templateCopilotV3QualificationExpectedLocaleCount = 3;
@@ -355,6 +370,84 @@ const qualificationScenarioSemanticsKeySet = new Set([
 const qualificationQuarantineReasonSet = new Set(
   templateCopilotDocumentQuarantineReasons,
 );
+const qualificationProviderOutcomeSet = new Set(
+  templateCopilotProviderRequestOutcomes,
+);
+const qualificationProviderFailureReasonSet = new Set(
+  templateCopilotProviderFailureReasons,
+);
+const qualificationProviderTelemetryKeySet = new Set([
+  "requestedModel",
+  "returnedModel",
+  "upstreamProvider",
+  "finishState",
+  "inputTokens",
+  "outputTokens",
+  "totalTokens",
+  "routerAttemptCount",
+  "providerLatencyMs",
+]);
+const qualificationProviderFinishStateSet = new Set([
+  "stop",
+  "length",
+  "tool_calls",
+  "content_filter",
+  "function_call",
+  "completed",
+  "incomplete",
+  "failed",
+  "in_progress",
+  "interpreting",
+]);
+const qualificationBatchAggregateKeys = Object.freeze([
+  "batchId",
+  "status",
+  "durationMs",
+  "providerRequestCount",
+  "providerRequestSuccessCount",
+  "providerRequestFailureCount",
+  "providerOutcome",
+  "providerFailureReason",
+  "averageProviderRequestLatencyMs",
+  "providerResponseTelemetry",
+  "acceptedItemCount",
+  "rejectedItemCount",
+  "expandedAnchorItemCount",
+  "sameLocalClauseRecoveredLeafCount",
+  "rejectionCodes",
+  "rejectionDetails",
+  "failureCount",
+]);
+const qualificationBatchAttemptKeySet = new Set([
+  "round",
+  "purpose",
+  ...qualificationBatchAggregateKeys,
+]);
+const qualificationSourceAuthorityKeySet = new Set([
+  "sourceSlotCount",
+  "quarantine",
+]);
+const qualificationQuarantineSummaryKeySet = new Set([
+  "inspectedBlockCount",
+  "retainedBlockCount",
+  "quarantinedBlockCount",
+  "reasonCounts",
+]);
+const qualificationProvisionalRoundKeySet = new Set([
+  "round",
+  "kind",
+  "batchIds",
+  "semanticPassed",
+  "capturedContractCount",
+  "governedHoldCount",
+]);
+const qualificationRecoveryRoundKeySet = new Set([
+  "round",
+  "kind",
+  "recoveryBatchIds",
+  "questionIds",
+  "answerDisclosureCount",
+]);
 
 export function selectTemplateCopilotV3QualificationScenarios({
   corpus,
@@ -481,6 +574,13 @@ export async function runTemplateCopilotV3LiveSemanticQualification({
       scenarioWorkerConcurrency: 1,
       providerBatchConcurrency: 1,
       providerRetryCount: 0,
+      semanticRoundCount: 3,
+      semanticRoundPlanVersion: templateCopilotV3SemanticRoundPlanVersion,
+      semanticRoundPlanFingerprint:
+        templateCopilotV3SemanticRoundPlanFingerprint,
+      iterativeSemanticDiagnosticVersion:
+        templateCopilotV3IterativeSemanticDiagnosticVersion,
+      maximumRecoveryAttemptsPerBatch: 1,
       hostileProbeScenarioCount: scenarios.some(
         (item) => item.id === hostileProbeScenarioId,
       )
@@ -529,159 +629,384 @@ export async function runTemplateCopilotV3LiveSemanticQualificationScenario({
   expectedModel,
   now = () => new Date(),
 }) {
+  return runTemplateCopilotV3IterativeQualificationScenario({
+    item,
+    extractBatch,
+    assembleReview,
+    scoreProjection,
+    expectedModel,
+    now,
+  });
+}
+
+export async function runTemplateCopilotV3IterativeQualificationScenario({
+  item,
+  extractBatch,
+  assembleReview,
+  scoreProjection,
+  expectedModel,
+  now = () => new Date(),
+}) {
   const startedAt = now();
-  const authority = createScenarioSourceAuthority(item);
-  const acceptedItems = [];
-  const batches = [];
+  const roundPlan = templateCopilotV3SemanticRoundPlan(item.id);
+  if (!roundPlan) {
+    throw new Error(`The scenario has no governed round plan: ${item.id}.`);
+  }
+  const authority = createScenarioRoundAuthority({
+    item,
+    sourceSlots: roundPlan.provisionalSourceSlots,
+  });
+  const attempts = [];
+  const effectiveResults = new Map();
 
   for (const batchId of templateCopilotV3ProviderQuoteBatchIds) {
-    const batchStartedAt = now();
-    const tracker = createTemplateCopilotProviderRequestTracker();
-    const sourceSlots = templateCopilotV3ProviderQuoteBatches[
-      batchId
-    ].slots.map((slot) => ({
-      slot,
-      messageId: authority.messageIdsBySlot[slot],
-      text: authority.sourceMessages[authority.messageIdsBySlot[slot]],
-    }));
-    try {
-      const extracted = await extractBatch({
-        batchId,
-        sourceSlots,
-        locale: item.language,
-        observeProviderRequest: tracker.observe,
-      });
-      const expectedSourceSlots = [
-        ...templateCopilotV3ProviderQuoteBatches[batchId].slots,
-      ];
-      if (
-        extracted?.model !== expectedModel ||
-        extracted?.batch?.contractVersion !==
-          templateCopilotV3ProviderQuoteContractVersion ||
-        extracted?.batch?.batchId !== batchId ||
-        extracted?.batch?.locale !== item.language ||
-        !sameStringArray(extracted?.batch?.sourceSlots, expectedSourceSlots)
-      ) {
-        throw new Error("The provider batch identity did not match the run.");
-      }
-      if (
-        !Array.isArray(extracted.accepted) ||
-        !Array.isArray(extracted.rejected)
-      ) {
-        throw new Error("The provider batch result collections are invalid.");
-      }
-      const provider = tracker.snapshot();
-      if (
-        provider.requestCount !== 1 ||
-        provider.successCount !== 1 ||
-        provider.failureCount !== 0 ||
-        provider.outcome !== "success"
-      ) {
-        throw new Error(
-          "The provider batch did not use exactly one successful request.",
-        );
-      }
-      if (
-        extracted.accepted.some(
-          (entry) =>
-            !isRecord(entry) ||
-            typeof entry.anchorExpanded !== "boolean" ||
-            !Array.isArray(entry.leaves) ||
-            entry.leaves.some(
-              (leaf) =>
-                !isRecord(leaf) ||
-                typeof leaf.sameLocalClauseRecovered !== "boolean",
-            ) ||
-            !isNonnegativeInteger(
-              entry.sameLocalClauseRecoveredLeafCount,
-            ) ||
-            entry.sameLocalClauseRecoveredLeafCount > 2 ||
-            entry.sameLocalClauseRecoveredLeafCount !==
-              entry.leaves.filter(
-                (leaf) => leaf.sameLocalClauseRecovered === true,
-              ).length ||
-            entry.anchorExpanded !==
-              (entry.sameLocalClauseRecoveredLeafCount > 0),
-        )
-      ) {
-        throw new Error(
-          "The provider batch recovery provenance is invalid.",
-        );
-      }
-      acceptedItems.push(...extracted.accepted);
-      const expandedAnchorItemCount = extracted.accepted.filter(
-        (entry) => entry?.anchorExpanded === true,
-      ).length;
-      const sameLocalClauseRecoveredLeafCount = extracted.accepted.reduce(
-        (total, entry) =>
-          total + (
-            Number.isInteger(entry?.sameLocalClauseRecoveredLeafCount) &&
-              entry.sameLocalClauseRecoveredLeafCount >= 0
-              ? entry.sameLocalClauseRecoveredLeafCount
-              : 0
-          ),
-        0,
-      );
-      batches.push({
-        batchId,
-        status: "applied",
-        durationMs: elapsedMs(batchStartedAt, now()),
-        providerRequestCount: provider.requestCount,
-        providerRequestSuccessCount: provider.successCount,
-        providerRequestFailureCount: provider.failureCount,
-        providerOutcome: provider.outcome,
-        providerFailureReason: null,
-        averageProviderRequestLatencyMs: provider.averageLatencyMs,
-        providerResponseTelemetry: provider.responseTelemetry ?? null,
-        acceptedItemCount: Array.isArray(extracted.accepted)
-          ? extracted.accepted.length
-          : 0,
-        rejectedItemCount: Array.isArray(extracted.rejected)
-          ? extracted.rejected.length
-          : 0,
-        expandedAnchorItemCount,
-        sameLocalClauseRecoveredLeafCount,
-        rejectionCodes: countBy(extracted.rejected, (entry) =>
-          safeCode(entry?.code, providerRejectionCodeSet),
-        ),
-        rejectionDetails: countBy(extracted.rejected, (entry) =>
-          safeCode(entry?.detail, providerRejectionDetailSet),
-        ),
-        failureCount: 0,
-      });
-    } catch (error) {
-      const provider = tracker.snapshot();
-      batches.push({
-        batchId,
-        status: "failed",
-        durationMs: elapsedMs(batchStartedAt, now()),
-        providerRequestCount: provider.requestCount,
-        providerRequestSuccessCount: provider.successCount,
-        providerRequestFailureCount: provider.failureCount,
-        providerOutcome:
-          provider.requestCount > 0
-            ? provider.outcome
-            : classifyTemplateCopilotProviderRequestOutcome(error),
-        providerFailureReason:
-          provider.requestCount > 0 &&
-          provider.outcome === "malformed_output"
-            ? sanitizeTemplateCopilotProviderFailureReason(
-                provider.providerFailureReason,
-              )
-            : null,
-        averageProviderRequestLatencyMs: provider.averageLatencyMs,
-        providerResponseTelemetry: provider.responseTelemetry ?? null,
-        acceptedItemCount: 0,
-        rejectedItemCount: 0,
-        expandedAnchorItemCount: 0,
-        sameLocalClauseRecoveredLeafCount: 0,
-        rejectionCodes: {},
-        rejectionDetails: {},
-        failureCount: 1,
-      });
-    }
+    const result = await runQualificationBatchAttempt({
+      item,
+      batchId,
+      authority,
+      extractBatch,
+      expectedModel,
+      round: 1,
+      purpose: "provisional",
+      now,
+    });
+    attempts.push(result.attempt);
+    replaceEffectiveBatchResult(effectiveResults, result);
   }
 
+  const provisional = evaluateQualificationProjection({
+    item,
+    authority,
+    effectiveResults,
+    assembleReview,
+    scoreProjection,
+  });
+  const diagnostic = diagnoseTemplateCopilotV3IterativeSemantic({
+    semantic: provisional.semanticCapture,
+    batches: provisional.batches,
+    disclosedSourceSlots: roundPlan.provisionalSourceSlots,
+    factSourceSlots:
+      templateCopilotV3SemanticFactSourceSlotsForScenario(item.id) ??
+      templateCopilotV3SemanticFactSourceSlots,
+    factBatchIds:
+      templateCopilotV3SemanticFactBatchIdsForScenario(item.id) ?? {},
+    slotBatchIds: templateCopilotV3SemanticSlotBatchIds,
+    serverQuestions: roundPlan.eligibleAmbiguityQuestions.map((question) => ({
+      questionId: question.questionId,
+      factId: question.factId,
+      sourceSlot: question.sourceSlot,
+      gapKind: question.gapKind,
+      ambiguityContractId: question.ambiguityContractId,
+    })),
+    previouslyAskedQuestionIds: [],
+  });
+  const recoveryBatchIds = templateCopilotV3ProviderQuoteBatchIds.filter(
+    (batchId) => diagnostic.recoveryBatchIds.includes(batchId),
+  );
+  for (const batchId of recoveryBatchIds) {
+    const result = await runQualificationBatchAttempt({
+      item,
+      batchId,
+      authority,
+      extractBatch,
+      expectedModel,
+      round: 2,
+      purpose: "recover_from_source",
+      now,
+    });
+    attempts.push(result.attempt);
+    replaceEffectiveBatchResult(effectiveResults, result);
+  }
+
+  const final = evaluateQualificationProjection({
+    item,
+    authority,
+    effectiveResults,
+    assembleReview,
+    scoreProjection,
+  });
+  const iterativeQualification = buildIterativeQualificationResult({
+    roundPlan,
+    diagnostic,
+    recoveryBatchIds,
+    provisional,
+    final,
+  });
+  return {
+    id: item.id,
+    language: item.language,
+    archetype: item.archetype,
+    batchCount: final.batches.length,
+    successfulBatchCount: final.batches.filter(
+      (batch) => batch.status === "applied",
+    ).length,
+    batches: final.batches,
+    attempts,
+    rounds: [
+      {
+        round: 1,
+        kind: "provisional",
+        batchIds: [...templateCopilotV3ProviderQuoteBatchIds],
+        semanticPassed: provisional.semanticCapture.passed,
+        capturedContractCount: provisional.semanticCapture.distinctFactCount,
+        governedHoldCount: provisional.semanticCapture.governedHoldCount,
+      },
+      {
+        round: 2,
+        kind: "audit_and_recovery",
+        recoveryBatchIds,
+        questionIds: iterativeQualification.askedQuestionIds,
+        answerDisclosureCount:
+          iterativeQualification.answerDisclosureCount,
+      },
+      {
+        round: 3,
+        kind: "final_strict_audit",
+        batchIds: [...templateCopilotV3ProviderQuoteBatchIds],
+        semanticPassed: final.semanticCapture.passed,
+        capturedContractCount: final.semanticCapture.distinctFactCount,
+        governedHoldCount: final.semanticCapture.governedHoldCount,
+      },
+    ],
+    iterativeQualification,
+    sourceAuthority: {
+      sourceSlotCount: authority.sourceMessageOrder.length,
+      quarantine: authority.quarantine,
+    },
+    projection: final.projection,
+    semanticCapture: final.semanticCapture,
+    executableDraft: executableDraftGateFor(
+      final.semanticCapture.governedHoldCount,
+      1,
+    ),
+    durationMs: elapsedMs(startedAt, now()),
+  };
+}
+
+export function createScenarioRoundAuthority({ item, sourceSlots }) {
+  const full = createScenarioSourceAuthority(item);
+  if (
+    !Array.isArray(sourceSlots) ||
+    sourceSlots.length === 0 ||
+    new Set(sourceSlots).size !== sourceSlots.length ||
+    sourceSlots.some((slot) => !Object.hasOwn(full.messageIdsBySlot, slot))
+  ) {
+    throw new Error("The qualification round source-slot plan is invalid.");
+  }
+  const selected = new Set(sourceSlots);
+  const sourceMessages = {};
+  const messageIdsBySlot = {};
+  const sourceMessageOrder = [];
+  for (const [slot, messageId] of Object.entries(full.messageIdsBySlot)) {
+    if (!selected.has(slot)) continue;
+    sourceMessages[messageId] = full.sourceMessages[messageId];
+    messageIdsBySlot[slot] = messageId;
+    sourceMessageOrder.push(messageId);
+  }
+  return Object.freeze({
+    sourceMessages: Object.freeze(sourceMessages),
+    messageIdsBySlot: Object.freeze(messageIdsBySlot),
+    sourceMessageOrder: Object.freeze(sourceMessageOrder),
+    quarantine: full.quarantine,
+  });
+}
+
+export function replaceEffectiveBatchResult(effectiveResults, result) {
+  if (
+    !(effectiveResults instanceof Map) ||
+    !isRecord(result) ||
+    !isRecord(result.batch) ||
+    !templateCopilotV3ProviderQuoteBatchIds.includes(result.batch.batchId) ||
+    !Array.isArray(result.acceptedItems)
+  ) {
+    throw new Error("The effective qualification batch replacement is invalid.");
+  }
+  effectiveResults.set(result.batch.batchId, result);
+  return effectiveResults;
+}
+
+export async function runQualificationBatchAttempt({
+  item,
+  batchId,
+  authority,
+  extractBatch,
+  expectedModel,
+  round,
+  purpose,
+  now = () => new Date(),
+}) {
+  if (
+    !templateCopilotV3ProviderQuoteBatchIds.includes(batchId) ||
+    ![1, 2].includes(round) ||
+    !["provisional", "recover_from_source"].includes(purpose) ||
+    typeof extractBatch !== "function" ||
+    typeof expectedModel !== "string" ||
+    !isRecord(authority)
+  ) {
+    throw new Error("The qualification batch-attempt contract is invalid.");
+  }
+  const batchStartedAt = now();
+  const tracker = createTemplateCopilotProviderRequestTracker();
+  let acceptedItems = [];
+  let batch;
+  try {
+    const sourceSlots = templateCopilotV3ProviderQuoteBatches[
+      batchId
+    ].slots.map((slot) => {
+      const messageId = authority.messageIdsBySlot[slot];
+      const text = authority.sourceMessages[messageId];
+      if (typeof messageId !== "string" || typeof text !== "string") {
+        throw new Error("The provider batch source authority is incomplete.");
+      }
+      return { slot, messageId, text };
+    });
+    const extracted = await extractBatch({
+      batchId,
+      sourceSlots,
+      locale: item.language,
+      observeProviderRequest: tracker.observe,
+    });
+    const expectedSourceSlots = [
+      ...templateCopilotV3ProviderQuoteBatches[batchId].slots,
+    ];
+    if (
+      extracted?.model !== expectedModel ||
+      extracted?.batch?.contractVersion !==
+        templateCopilotV3ProviderQuoteContractVersion ||
+      extracted?.batch?.batchId !== batchId ||
+      extracted?.batch?.locale !== item.language ||
+      !sameStringArray(extracted?.batch?.sourceSlots, expectedSourceSlots)
+    ) {
+      throw new Error("The provider batch identity did not match the run.");
+    }
+    if (!Array.isArray(extracted.accepted) || !Array.isArray(extracted.rejected)) {
+      throw new Error("The provider batch result collections are invalid.");
+    }
+    const provider = tracker.snapshot();
+    if (
+      provider.requestCount !== 1 ||
+      provider.successCount !== 1 ||
+      provider.failureCount !== 0 ||
+      provider.outcome !== "success"
+    ) {
+      throw new Error("The provider batch did not use exactly one successful request.");
+    }
+    if (
+      extracted.accepted.some(
+        (entry) =>
+          !isRecord(entry) ||
+          typeof entry.anchorExpanded !== "boolean" ||
+          !Array.isArray(entry.leaves) ||
+          entry.leaves.some(
+            (leaf) =>
+              !isRecord(leaf) ||
+              typeof leaf.sameLocalClauseRecovered !== "boolean",
+          ) ||
+          !isNonnegativeInteger(entry.sameLocalClauseRecoveredLeafCount) ||
+          entry.sameLocalClauseRecoveredLeafCount > 2 ||
+          entry.sameLocalClauseRecoveredLeafCount !==
+            entry.leaves.filter(
+              (leaf) => leaf.sameLocalClauseRecovered === true,
+            ).length ||
+          entry.anchorExpanded !==
+            (entry.sameLocalClauseRecoveredLeafCount > 0),
+      )
+    ) {
+      throw new Error("The provider batch recovery provenance is invalid.");
+    }
+    acceptedItems = [...extracted.accepted];
+    const expandedAnchorItemCount = acceptedItems.filter(
+      (entry) => entry?.anchorExpanded === true,
+    ).length;
+    const sameLocalClauseRecoveredLeafCount = acceptedItems.reduce(
+      (total, entry) =>
+        total + (
+          Number.isInteger(entry?.sameLocalClauseRecoveredLeafCount) &&
+            entry.sameLocalClauseRecoveredLeafCount >= 0
+            ? entry.sameLocalClauseRecoveredLeafCount
+            : 0
+        ),
+      0,
+    );
+    batch = {
+      batchId,
+      status: "applied",
+      durationMs: elapsedMs(batchStartedAt, now()),
+      providerRequestCount: provider.requestCount,
+      providerRequestSuccessCount: provider.successCount,
+      providerRequestFailureCount: provider.failureCount,
+      providerOutcome: provider.outcome,
+      providerFailureReason: null,
+      averageProviderRequestLatencyMs: provider.averageLatencyMs,
+      providerResponseTelemetry: provider.responseTelemetry ?? null,
+      acceptedItemCount: acceptedItems.length,
+      rejectedItemCount: extracted.rejected.length,
+      expandedAnchorItemCount,
+      sameLocalClauseRecoveredLeafCount,
+      rejectionCodes: countBy(extracted.rejected, (entry) =>
+        safeCode(entry?.code, providerRejectionCodeSet),
+      ),
+      rejectionDetails: countBy(extracted.rejected, (entry) =>
+        safeCode(entry?.detail, providerRejectionDetailSet),
+      ),
+      failureCount: 0,
+    };
+  } catch (error) {
+    const provider = tracker.snapshot();
+    batch = {
+      batchId,
+      status: "failed",
+      durationMs: elapsedMs(batchStartedAt, now()),
+      providerRequestCount: provider.requestCount,
+      providerRequestSuccessCount: provider.successCount,
+      providerRequestFailureCount: provider.failureCount,
+      providerOutcome:
+        provider.requestCount > 0
+          ? provider.outcome
+          : classifyTemplateCopilotProviderRequestOutcome(error),
+      providerFailureReason:
+        provider.requestCount > 0 && provider.outcome === "malformed_output"
+          ? sanitizeTemplateCopilotProviderFailureReason(
+              provider.providerFailureReason,
+            )
+          : null,
+      averageProviderRequestLatencyMs: provider.averageLatencyMs,
+      providerResponseTelemetry: provider.responseTelemetry ?? null,
+      acceptedItemCount: 0,
+      rejectedItemCount: 0,
+      expandedAnchorItemCount: 0,
+      sameLocalClauseRecoveredLeafCount: 0,
+      rejectionCodes: {},
+      rejectionDetails: {},
+      failureCount: 1,
+    };
+  }
+  return {
+    batch,
+    acceptedItems,
+    attempt: {
+      round,
+      purpose,
+      ...batch,
+    },
+  };
+}
+
+function evaluateQualificationProjection({
+  item,
+  authority,
+  effectiveResults,
+  assembleReview,
+  scoreProjection,
+}) {
+  const orderedResults = templateCopilotV3ProviderQuoteBatchIds.map(
+    (batchId) => effectiveResults.get(batchId),
+  );
+  if (orderedResults.some((result) => !result)) {
+    throw new Error("The effective qualification batch set is incomplete.");
+  }
+  const batches = orderedResults.map((result) => result.batch);
+  const acceptedItems = orderedResults.flatMap((result) => result.acceptedItems);
   let assembly;
   let semantic;
   let projectionStatus = "assembled";
@@ -717,7 +1042,6 @@ export async function runTemplateCopilotV3LiveSemanticQualificationScenario({
       scenarioSemantics: { observed: {} },
     };
   }
-
   const projectionRejections = Array.isArray(assembly?.review?.rejections)
     ? assembly.review.rejections
     : [];
@@ -725,22 +1049,10 @@ export async function runTemplateCopilotV3LiveSemanticQualificationScenario({
     assembly?.review,
     acceptedItems.length,
   );
-  const semanticCapture = sanitizeSemanticResult(
-    semantic,
-    projectionIntegrity,
-  );
+  const semanticCapture = sanitizeSemanticResult(semantic, projectionIntegrity);
   return {
-    id: item.id,
-    language: item.language,
-    archetype: item.archetype,
-    batchCount: batches.length,
-    successfulBatchCount: batches.filter((batch) => batch.status === "applied")
-      .length,
     batches,
-    sourceAuthority: {
-      sourceSlotCount: authority.sourceMessageOrder.length,
-      quarantine: authority.quarantine,
-    },
+    semanticCapture,
     projection: {
       status: projectionStatus,
       acceptedProviderItemCount: acceptedItems.length,
@@ -758,13 +1070,167 @@ export async function runTemplateCopilotV3LiveSemanticQualificationScenario({
         safeCode(entry?.detail, reviewRejectionDetailSet),
       ),
     },
-    semanticCapture,
-    executableDraft: executableDraftGateFor(
-      semanticCapture.governedHoldCount,
-      1,
-    ),
-    durationMs: elapsedMs(startedAt, now()),
   };
+}
+
+function buildIterativeQualificationResult({
+  roundPlan,
+  diagnostic,
+  recoveryBatchIds,
+  provisional,
+  final,
+}) {
+  const expectedQuestionIds = [...roundPlan.expectedQuestionIds];
+  const askedQuestionIds = Array.isArray(
+      diagnostic.questions?.askedQuestionIds,
+    )
+    ? [...diagnostic.questions.askedQuestionIds]
+    : [];
+  const correctQuestionCount = askedQuestionIds.filter((questionId) =>
+    expectedQuestionIds.includes(questionId)
+  ).length;
+  const missedRequiredQuestionCount = expectedQuestionIds.filter(
+    (questionId) => !askedQuestionIds.includes(questionId),
+  ).length;
+  const irrelevantQuestionCount = askedQuestionIds.filter(
+    (questionId) => !expectedQuestionIds.includes(questionId),
+  ).length;
+  const provisionalIssues = qualificationIssueCount(provisional);
+  const finalIssues = qualificationIssueCount(final);
+  const regressionCount = qualificationRegressionCount(provisional, final);
+  const recoverySuccessCount = recoveryBatchIds.filter((batchId) =>
+    final.batches.some(
+      (batch) => batch.batchId === batchId && batch.status === "applied",
+    )
+  ).length;
+  const unsafeAcceptedCount =
+    final.semanticCapture.forbiddenHitCount +
+    final.semanticCapture.unsafeQuoteCount;
+  const knownFactQuestionCount = nonnegativeInteger(
+    diagnostic.metrics?.knownFactQuestionCount,
+  );
+  const repeatedQuestionCount = nonnegativeInteger(
+    diagnostic.metrics?.repeatedQuestionCount,
+  );
+  const invalidAskedQuestionCount = nonnegativeInteger(
+    diagnostic.metrics?.invalidAskedQuestionCount,
+  );
+  const invalidAnswerDisclosureCount = nonnegativeInteger(
+    diagnostic.metrics?.invalidAnswerDisclosureCount,
+  );
+  const prematureAnswerDisclosureCount = 0;
+  const answerDisclosureCount = 0;
+  const unresolvedGapCount = final.semanticCapture.passed
+    ? 0
+    : Math.max(1, finalIssues);
+  const recoveredGapCount = Math.max(
+    0,
+    provisionalIssues - unresolvedGapCount,
+  );
+  const passed =
+    final.semanticCapture.passed === true &&
+    unresolvedGapCount === 0 &&
+    correctQuestionCount === expectedQuestionIds.length &&
+    missedRequiredQuestionCount === 0 &&
+    irrelevantQuestionCount === 0 &&
+    knownFactQuestionCount === 0 &&
+    repeatedQuestionCount === 0 &&
+    invalidAskedQuestionCount === 0 &&
+    invalidAnswerDisclosureCount === 0 &&
+    prematureAnswerDisclosureCount === 0 &&
+    answerDisclosureCount === expectedQuestionIds.length &&
+    unsafeAcceptedCount === 0 &&
+    regressionCount === 0;
+  return {
+    version: "template-copilot-v3-iterative-qualification.1",
+    diagnosticVersion: diagnostic.version,
+    roundPlanVersion: templateCopilotV3SemanticRoundPlanVersion,
+    roundPlanFingerprint: templateCopilotV3SemanticRoundPlanFingerprint,
+    roundCount: 3,
+    passed,
+    finalStrictPassed: final.semanticCapture.passed,
+    capturedContractCount: final.semanticCapture.distinctFactCount,
+    governedHoldCount: final.semanticCapture.governedHoldCount,
+    gapCount: nonnegativeInteger(diagnostic.metrics?.gapCount),
+    recoverFromSourceCount: nonnegativeInteger(
+      diagnostic.metrics?.recoverFromSourceCount,
+    ),
+    askUserGapCount: nonnegativeInteger(
+      diagnostic.metrics?.askUserCount ??
+        diagnostic.metrics?.askUserGapCount,
+    ),
+    governedGapCount: nonnegativeInteger(
+      diagnostic.metrics?.governedHoldCount,
+    ),
+    recoveryAttemptCount: recoveryBatchIds.length,
+    recoverySuccessCount,
+    recoveredGapCount,
+    unresolvedGapCount,
+    expectedQuestionCount: expectedQuestionIds.length,
+    askedQuestionCount: askedQuestionIds.length,
+    correctQuestionCount,
+    knownFactQuestionCount,
+    repeatedQuestionCount,
+    invalidAskedQuestionCount,
+    invalidAnswerDisclosureCount,
+    irrelevantQuestionCount,
+    missedRequiredQuestionCount,
+    prematureAnswerDisclosureCount,
+    answerDisclosureCount,
+    unsafeAcceptedCount,
+    regressionCount,
+    recoveryBatchIds: [...recoveryBatchIds],
+    expectedQuestionIds,
+    askedQuestionIds,
+    gapDecisions: Array.isArray(diagnostic.decisions)
+      ? diagnostic.decisions.map((decision) => ({
+          gapId: decision.gapId,
+          factId:
+            decision.factId ??
+            diagnostic.gaps?.find((gap) => gap.gapId === decision.gapId)
+              ?.factId ??
+            null,
+          classification: decision.classification,
+          reasonCode: decision.reasonCode,
+          ...(typeof decision.questionId === "string"
+            ? { questionId: decision.questionId }
+            : {}),
+        }))
+      : [],
+  };
+}
+
+function qualificationIssueCount(evaluation) {
+  const captured = new Set(evaluation.semanticCapture.factIds);
+  const missingFactCount = templateCopilotV3QualificationFactIds.filter(
+    (factId) => !captured.has(factId),
+  ).length;
+  const failedBatchCount = evaluation.batches.filter(
+    (batch) => batch.status !== "applied",
+  ).length;
+  const opaqueFailureCount =
+    evaluation.semanticCapture.passed !== true &&
+      missingFactCount === 0 &&
+      failedBatchCount === 0
+      ? 1
+      : 0;
+  return missingFactCount + failedBatchCount + opaqueFailureCount;
+}
+
+function qualificationRegressionCount(provisional, final) {
+  const finalFactIds = new Set(final.semanticCapture.factIds);
+  const lostFactCount = provisional.semanticCapture.factIds.filter(
+    (factId) => !finalFactIds.has(factId),
+  ).length;
+  const finalBatches = new Map(
+    final.batches.map((batch) => [batch.batchId, batch]),
+  );
+  const lostBatchCount = provisional.batches.filter(
+    (batch) =>
+      batch.status === "applied" &&
+      finalBatches.get(batch.batchId)?.status !== "applied",
+  ).length;
+  return lostFactCount + lostBatchCount;
 }
 
 export function summarizeQualification(report) {
@@ -814,6 +1280,41 @@ export function summarizeQualification(report) {
         ),
       0,
     ),
+  );
+  const physicalAttemptCount = sumScenario((item) =>
+    Array.isArray(item.attempts) ? item.attempts.length : 0
+  );
+  const physicalProviderRequestCount = sumScenario((item) =>
+    Array.isArray(item.attempts)
+      ? item.attempts.reduce(
+          (total, attempt) =>
+            total + nonnegativeInteger(attempt?.providerRequestCount),
+          0,
+        )
+      : 0
+  );
+  const physicalProviderRequestSuccessCount = sumScenario((item) =>
+    Array.isArray(item.attempts)
+      ? item.attempts.reduce(
+          (total, attempt) =>
+            total + nonnegativeInteger(attempt?.providerRequestSuccessCount),
+          0,
+        )
+      : 0
+  );
+  const physicalProviderRequestFailureCount = sumScenario((item) =>
+    Array.isArray(item.attempts)
+      ? item.attempts.reduce(
+          (total, attempt) =>
+            total + nonnegativeInteger(attempt?.providerRequestFailureCount),
+          0,
+        )
+      : 0
+  );
+  const recoveryAttemptCount = sumScenario((item) =>
+    isRecord(item.iterativeQualification)
+      ? nonnegativeInteger(item.iterativeQualification.recoveryAttemptCount)
+      : 0
   );
   const sourceCapturePassCount = scenarios.filter(
     (item) =>
@@ -974,6 +1475,87 @@ export function summarizeQualification(report) {
       ),
     ].sort(),
   };
+  const iterativeScenarioPassCount = scenarios.filter(
+    (item) =>
+      scenarioIterativeQualificationPasses(item, report.metadata.model),
+  ).length;
+  const iterativeFailedScenarioIds = scenarios
+    .filter(
+      (item) =>
+        !scenarioIterativeQualificationPasses(item, report.metadata.model),
+    )
+    .map((item) => item.id)
+    .sort();
+  const iterativeSelectedPassed =
+    semanticCaptureGate.passed === true &&
+    scenarios.length > 0 &&
+    iterativeScenarioPassCount === scenarios.length;
+  const iterativeQualificationGate = {
+    evaluated: true,
+    passed: iterativeSelectedPassed,
+    fullCorpusPassed:
+      iterativeSelectedPassed &&
+      semanticCaptureGate.fullCorpusPassed === true &&
+      report.metadata.semanticRoundCount === 3 &&
+      report.metadata.semanticRoundPlanVersion ===
+        templateCopilotV3SemanticRoundPlanVersion &&
+      report.metadata.semanticRoundPlanFingerprint ===
+        templateCopilotV3SemanticRoundPlanFingerprint &&
+      report.metadata.iterativeSemanticDiagnosticVersion ===
+        templateCopilotV3IterativeSemanticDiagnosticVersion &&
+      report.metadata.maximumRecoveryAttemptsPerBatch === 1,
+    scenarioPassCount: iterativeScenarioPassCount,
+    scenarioCount: scenarios.length,
+    expectedQuestionCount: sumScenario((item) =>
+      nonnegativeInteger(item.iterativeQualification?.expectedQuestionCount)
+    ),
+    askedQuestionCount: sumScenario((item) =>
+      nonnegativeInteger(item.iterativeQualification?.askedQuestionCount)
+    ),
+    correctQuestionCount: sumScenario((item) =>
+      nonnegativeInteger(item.iterativeQualification?.correctQuestionCount)
+    ),
+    knownFactQuestionCount: sumScenario((item) =>
+      nonnegativeInteger(item.iterativeQualification?.knownFactQuestionCount)
+    ),
+    repeatedQuestionCount: sumScenario((item) =>
+      nonnegativeInteger(item.iterativeQualification?.repeatedQuestionCount)
+    ),
+    invalidAskedQuestionCount: sumScenario((item) =>
+      nonnegativeInteger(
+        item.iterativeQualification?.invalidAskedQuestionCount,
+      )
+    ),
+    invalidAnswerDisclosureCount: sumScenario((item) =>
+      nonnegativeInteger(
+        item.iterativeQualification?.invalidAnswerDisclosureCount,
+      )
+    ),
+    irrelevantQuestionCount: sumScenario((item) =>
+      nonnegativeInteger(item.iterativeQualification?.irrelevantQuestionCount)
+    ),
+    missedRequiredQuestionCount: sumScenario((item) =>
+      nonnegativeInteger(
+        item.iterativeQualification?.missedRequiredQuestionCount,
+      )
+    ),
+    prematureAnswerDisclosureCount: sumScenario((item) =>
+      nonnegativeInteger(
+        item.iterativeQualification?.prematureAnswerDisclosureCount,
+      )
+    ),
+    recoveryAttemptCount,
+    unresolvedGapCount: sumScenario((item) =>
+      nonnegativeInteger(item.iterativeQualification?.unresolvedGapCount)
+    ),
+    unsafeAcceptedCount: sumScenario((item) =>
+      nonnegativeInteger(item.iterativeQualification?.unsafeAcceptedCount)
+    ),
+    regressionCount: sumScenario((item) =>
+      nonnegativeInteger(item.iterativeQualification?.regressionCount)
+    ),
+    failedScenarioIds: iterativeFailedScenarioIds,
+  };
   const executableDraftGate = executableDraftGateFor(
     governedHoldCount,
     scenarios.length,
@@ -988,6 +1570,7 @@ export function summarizeQualification(report) {
     fullGatePassed: false,
     selectedGatePassed: false,
     semanticCaptureGate,
+    iterativeQualificationGate,
     executableDraftGate,
     activationGate,
     pilotGate,
@@ -1002,10 +1585,318 @@ export function summarizeQualification(report) {
     providerRequestFailureCount,
     expandedAnchorItemCount,
     sameLocalClauseRecoveredLeafCount,
+    physicalAttemptCount,
+    physicalProviderRequestCount,
+    physicalProviderRequestSuccessCount,
+    physicalProviderRequestFailureCount,
+    recoveryAttemptCount,
     strictBatchScenarioCount,
     languageSummaries,
     failedScenarioIds: semanticCaptureGate.failedScenarioIds,
   };
+}
+
+function scenarioIterativeQualificationPasses(item, expectedModel) {
+  const iterative = item?.iterativeQualification;
+  const plan = templateCopilotV3SemanticRoundPlan(item?.id);
+  if (
+    !isRecord(iterative) ||
+    !plan ||
+    item.semanticCapture?.resultValid !== true ||
+    !scenarioMatchesExpectedGovernedHoldInventory(item) ||
+    !qualificationSourceAuthorityPasses(item.sourceAuthority, plan, item.id) ||
+    iterative.version !== "template-copilot-v3-iterative-qualification.1" ||
+    iterative.diagnosticVersion !==
+      templateCopilotV3IterativeSemanticDiagnosticVersion ||
+    iterative.roundPlanVersion !== templateCopilotV3SemanticRoundPlanVersion ||
+    iterative.roundPlanFingerprint !==
+      templateCopilotV3SemanticRoundPlanFingerprint ||
+    iterative.roundCount !== 3 ||
+    iterative.passed !== true ||
+    iterative.finalStrictPassed !== item.semanticCapture?.passed ||
+    iterative.finalStrictPassed !== true ||
+    iterative.capturedContractCount !==
+      item.semanticCapture?.distinctFactCount ||
+    iterative.governedHoldCount !== item.semanticCapture?.governedHoldCount ||
+    iterative.expectedQuestionCount !== plan.expectedQuestionIds.length ||
+    !sameStringArray(iterative.expectedQuestionIds, plan.expectedQuestionIds) ||
+    !Array.isArray(iterative.askedQuestionIds) ||
+    iterative.askedQuestionCount !== iterative.askedQuestionIds.length ||
+    iterative.correctQuestionCount !== iterative.expectedQuestionCount ||
+    iterative.knownFactQuestionCount !== 0 ||
+    iterative.repeatedQuestionCount !== 0 ||
+    iterative.invalidAskedQuestionCount !== 0 ||
+    iterative.invalidAnswerDisclosureCount !== 0 ||
+    iterative.irrelevantQuestionCount !== 0 ||
+    iterative.missedRequiredQuestionCount !== 0 ||
+    iterative.prematureAnswerDisclosureCount !== 0 ||
+    iterative.answerDisclosureCount !== iterative.expectedQuestionCount ||
+    iterative.unresolvedGapCount !== 0 ||
+    iterative.unsafeAcceptedCount !== 0 ||
+    iterative.regressionCount !== 0 ||
+    !Array.isArray(iterative.recoveryBatchIds) ||
+    new Set(iterative.recoveryBatchIds).size !==
+      iterative.recoveryBatchIds.length ||
+    iterative.recoveryBatchIds.some(
+      (batchId) => !templateCopilotV3ProviderQuoteBatchIds.includes(batchId),
+    ) ||
+    iterative.recoveryAttemptCount !== iterative.recoveryBatchIds.length ||
+    iterative.recoverySuccessCount > iterative.recoveryAttemptCount ||
+    !Array.isArray(item.attempts) ||
+    item.attempts.length !==
+      templateCopilotV3ProviderQuoteBatchIds.length +
+        iterative.recoveryAttemptCount ||
+    !Array.isArray(item.rounds) ||
+    item.rounds.length !== 3
+  ) {
+    return false;
+  }
+  const provisionalAttempts = item.attempts.slice(
+    0,
+    templateCopilotV3ProviderQuoteBatchIds.length,
+  );
+  const recoveryAttempts = item.attempts.slice(
+    templateCopilotV3ProviderQuoteBatchIds.length,
+  );
+  if (
+    !item.attempts.every((attempt) =>
+      qualificationBatchAttemptPasses(attempt, expectedModel)
+    ) ||
+    iterative.recoverySuccessCount !==
+      recoveryAttempts.filter((attempt) => attempt.status === "applied").length ||
+    !qualificationRoundsPass(item.rounds, iterative, item.semanticCapture)
+  ) {
+    return false;
+  }
+  const latestAttemptByBatchId = new Map();
+  for (const attempt of item.attempts) {
+    latestAttemptByBatchId.set(attempt.batchId, attempt);
+  }
+  if (
+    !item.batches.every((batch) =>
+      sameQualificationBatchAggregate(
+        batch,
+        latestAttemptByBatchId.get(batch.batchId),
+      )
+    )
+  ) {
+    return false;
+  }
+  return (
+    provisionalAttempts.every(
+      (attempt, index) =>
+        attempt?.round === 1 &&
+        attempt?.purpose === "provisional" &&
+        attempt?.batchId === templateCopilotV3ProviderQuoteBatchIds[index],
+    ) &&
+    recoveryAttempts.every(
+      (attempt, index) =>
+        attempt?.round === 2 &&
+        attempt?.purpose === "recover_from_source" &&
+        attempt?.batchId === iterative.recoveryBatchIds[index],
+    ) &&
+    recoveryAttempts.every(
+      (attempt, index) =>
+        attempt.batchId === iterative.recoveryBatchIds[index],
+    )
+  );
+}
+
+function qualificationBatchAttemptPasses(attempt, expectedModel) {
+  if (
+    !sameKeySet(attempt, qualificationBatchAttemptKeySet) ||
+    ![1, 2].includes(attempt.round) ||
+    (attempt.round === 1 && attempt.purpose !== "provisional") ||
+    (attempt.round === 2 && attempt.purpose !== "recover_from_source") ||
+    !templateCopilotV3ProviderQuoteBatchIds.includes(attempt.batchId) ||
+    !["applied", "failed"].includes(attempt.status) ||
+    !isNonnegativeInteger(attempt.durationMs) ||
+    !isNonnegativeInteger(attempt.providerRequestCount) ||
+    attempt.providerRequestCount > 1 ||
+    !isNonnegativeInteger(attempt.providerRequestSuccessCount) ||
+    !isNonnegativeInteger(attempt.providerRequestFailureCount) ||
+    attempt.providerRequestSuccessCount +
+        attempt.providerRequestFailureCount !==
+      attempt.providerRequestCount ||
+    !qualificationProviderOutcomeSet.has(attempt.providerOutcome) ||
+    !isNonnegativeInteger(attempt.averageProviderRequestLatencyMs) ||
+    attempt.averageProviderRequestLatencyMs > 300_000 ||
+    !isNonnegativeInteger(attempt.acceptedItemCount) ||
+    !isNonnegativeInteger(attempt.rejectedItemCount) ||
+    !isNonnegativeInteger(attempt.expandedAnchorItemCount) ||
+    !isNonnegativeInteger(attempt.sameLocalClauseRecoveredLeafCount) ||
+    attempt.expandedAnchorItemCount > attempt.acceptedItemCount ||
+    (attempt.expandedAnchorItemCount === 0) !==
+      (attempt.sameLocalClauseRecoveredLeafCount === 0) ||
+    attempt.sameLocalClauseRecoveredLeafCount <
+      attempt.expandedAnchorItemCount ||
+    attempt.sameLocalClauseRecoveredLeafCount >
+      attempt.acceptedItemCount * 2 ||
+    !closedCountMap(attempt.rejectionCodes, providerRejectionCodeSet) ||
+    !closedCountMap(attempt.rejectionDetails, providerRejectionDetailSet) ||
+    !qualificationAttemptProviderTelemetryPasses(attempt, expectedModel)
+  ) {
+    return false;
+  }
+  const failureReasonValid =
+    attempt.providerFailureReason === null ||
+    (
+      attempt.providerOutcome === "malformed_output" &&
+      qualificationProviderFailureReasonSet.has(
+        attempt.providerFailureReason,
+      )
+    );
+  if (!failureReasonValid) return false;
+  if (attempt.status === "applied") {
+    return (
+      attempt.providerRequestCount === 1 &&
+      attempt.providerRequestSuccessCount === 1 &&
+      attempt.providerRequestFailureCount === 0 &&
+      attempt.providerOutcome === "success" &&
+      attempt.providerFailureReason === null &&
+      qualificationProviderTelemetryPass(attempt, expectedModel) &&
+      attempt.failureCount === 0
+    );
+  }
+  return (
+    attempt.failureCount === 1 &&
+    attempt.acceptedItemCount === 0 &&
+    attempt.rejectedItemCount === 0 &&
+    attempt.expandedAnchorItemCount === 0 &&
+    attempt.sameLocalClauseRecoveredLeafCount === 0 &&
+    Object.keys(attempt.rejectionCodes).length === 0 &&
+    Object.keys(attempt.rejectionDetails).length === 0 &&
+    (
+      (
+        attempt.providerRequestCount === 0 &&
+        attempt.providerOutcome !== "success"
+      ) ||
+      (
+        attempt.providerRequestCount === 1 &&
+        attempt.providerRequestSuccessCount === 1 &&
+        attempt.providerOutcome === "success"
+      ) ||
+      (
+        attempt.providerRequestCount === 1 &&
+        attempt.providerRequestFailureCount === 1 &&
+        attempt.providerOutcome !== "success"
+      )
+    )
+  );
+}
+
+function qualificationAttemptProviderTelemetryPasses(attempt, expectedModel) {
+  const telemetry = attempt.providerResponseTelemetry;
+  if (telemetry === null) return true;
+  const nullableCount = (value, maximum) =>
+    value === null ||
+    (isNonnegativeInteger(value) && value <= maximum);
+  const safeLabel = (value, maximum) =>
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maximum &&
+    value.trim() === value &&
+    /^[A-Za-z0-9 ._:/-]+$/u.test(value);
+  return (
+    sameKeySet(telemetry, qualificationProviderTelemetryKeySet) &&
+    telemetry.requestedModel === expectedModel &&
+    (
+      telemetry.returnedModel === null ||
+      safeLabel(telemetry.returnedModel, 160)
+    ) &&
+    (
+      telemetry.upstreamProvider === null ||
+      safeLabel(telemetry.upstreamProvider, 80)
+    ) &&
+    qualificationProviderFinishStateSet.has(telemetry.finishState) &&
+    nullableCount(telemetry.inputTokens, 10_000_000) &&
+    nullableCount(telemetry.outputTokens, 10_000_000) &&
+    nullableCount(telemetry.totalTokens, 20_000_000) &&
+    nullableCount(telemetry.routerAttemptCount, 100) &&
+    isNonnegativeInteger(telemetry.providerLatencyMs) &&
+    telemetry.providerLatencyMs <= 300_000 &&
+    attempt.providerRequestCount === 1 &&
+    attempt.averageProviderRequestLatencyMs === telemetry.providerLatencyMs
+  );
+}
+
+function closedCountMap(value, allowedKeys) {
+  return (
+    isRecord(value) &&
+    Object.entries(value).every(
+      ([key, count]) => allowedKeys.has(key) && isNonnegativeInteger(count),
+    )
+  );
+}
+
+function sameQualificationBatchAggregate(batch, attempt) {
+  if (!isRecord(batch) || !isRecord(attempt)) return false;
+  return qualificationBatchAggregateKeys.every(
+    (key) => JSON.stringify(batch[key]) === JSON.stringify(attempt[key]),
+  );
+}
+
+function qualificationRoundsPass(rounds, iterative, semanticCapture) {
+  const [provisional, recovery, final] = rounds;
+  return (
+    sameKeySet(provisional, qualificationProvisionalRoundKeySet) &&
+    provisional.round === 1 &&
+    provisional.kind === "provisional" &&
+    sameStringArray(
+      provisional.batchIds,
+      templateCopilotV3ProviderQuoteBatchIds,
+    ) &&
+    typeof provisional.semanticPassed === "boolean" &&
+    isNonnegativeInteger(provisional.capturedContractCount) &&
+    provisional.capturedContractCount <=
+      templateCopilotV3QualificationFactIds.length &&
+    isNonnegativeInteger(provisional.governedHoldCount) &&
+    sameKeySet(recovery, qualificationRecoveryRoundKeySet) &&
+    recovery.round === 2 &&
+    recovery.kind === "audit_and_recovery" &&
+    sameStringArray(recovery.recoveryBatchIds, iterative.recoveryBatchIds) &&
+    sameStringArray(recovery.questionIds, iterative.askedQuestionIds) &&
+    recovery.answerDisclosureCount === iterative.answerDisclosureCount &&
+    sameKeySet(final, qualificationProvisionalRoundKeySet) &&
+    final.round === 3 &&
+    final.kind === "final_strict_audit" &&
+    sameStringArray(final.batchIds, templateCopilotV3ProviderQuoteBatchIds) &&
+    final.semanticPassed === semanticCapture.passed &&
+    final.capturedContractCount === semanticCapture.distinctFactCount &&
+    final.governedHoldCount === semanticCapture.governedHoldCount
+  );
+}
+
+function qualificationSourceAuthorityPasses(sourceAuthority, plan, scenarioId) {
+  if (
+    !sameKeySet(sourceAuthority, qualificationSourceAuthorityKeySet) ||
+    sourceAuthority.sourceSlotCount !== plan.provisionalSourceSlots.length ||
+    sourceAuthority.sourceSlotCount !== 9 ||
+    !sameKeySet(
+      sourceAuthority.quarantine,
+      qualificationQuarantineSummaryKeySet,
+    )
+  ) {
+    return false;
+  }
+  const quarantine = sourceAuthority.quarantine;
+  return (
+    isNonnegativeInteger(quarantine.inspectedBlockCount) &&
+    isNonnegativeInteger(quarantine.retainedBlockCount) &&
+    isNonnegativeInteger(quarantine.quarantinedBlockCount) &&
+    quarantine.inspectedBlockCount ===
+      quarantine.retainedBlockCount + quarantine.quarantinedBlockCount &&
+    closedCountMap(quarantine.reasonCounts, qualificationQuarantineReasonSet) &&
+    Object.values(quarantine.reasonCounts).reduce(
+      (total, count) => total + count,
+      0,
+    ) === quarantine.quarantinedBlockCount &&
+    (
+      scenarioId === hostileProbeScenarioId
+        ? quarantine.quarantinedBlockCount >= 1
+        : quarantine.quarantinedBlockCount === 0
+    )
+  );
 }
 
 function executableDraftGateFor(governedHoldCount, scenarioCount) {

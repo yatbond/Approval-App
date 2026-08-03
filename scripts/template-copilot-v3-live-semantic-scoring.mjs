@@ -191,6 +191,46 @@ const forbiddenSourceText = Object.freeze([
   "ignore prior instructions",
 ]);
 
+export const templateCopilotV3IterativeSemanticDiagnosticVersion =
+  "template-copilot-v3-iterative-semantic-diagnostic.3";
+
+const iterativeGapClassifications = Object.freeze([
+  "recover_from_source",
+  "ask_user",
+  "governed_hold",
+]);
+const iterativeGapKinds = Object.freeze([
+  "missing_fact",
+  "governed_semantic_hold",
+  "provider_failure",
+  "unidentified_strict_failure",
+]);
+const iterativeDecisionReasonCodes = Object.freeze([
+  "known_source_gap",
+  "genuine_ambiguity_requires_question",
+  "genuine_ambiguity_contract_unavailable",
+  "server_question_unavailable",
+  "fact_previously_asked",
+  "source_authority_mapping_unavailable",
+  "governed_semantic_hold",
+  "provider_batch_failure",
+  "strict_failure_without_identifiable_missing_fact",
+]);
+const iterativeQuestionMetricKeys = Object.freeze([
+  "expectedQuestionCount",
+  "askedQuestionCount",
+  "correctQuestionCount",
+  "knownFactQuestionCount",
+  "repeatedQuestionCount",
+  "duplicateQuestionCount",
+  "irrelevantQuestionCount",
+  "missedRequiredQuestionCount",
+  "answerDisclosureCount",
+  "prematureAnswerDisclosureCount",
+  "invalidAskedQuestionCount",
+  "invalidAnswerDisclosureCount",
+]);
+
 /** Scores source-derived semantic review meaning without granting persistence
  * or executable authority to incomplete strict fragments. */
 export function scoreTemplateCopilotV3LiveSemantic({
@@ -459,6 +499,575 @@ export function scoreTemplateCopilotV3LiveSemantic({
 }
 
 export const scoreLiveSemanticProjection = scoreTemplateCopilotV3LiveSemantic;
+
+/**
+ * Diagnoses a provisional strict result without changing strict qualification.
+ *
+ * This API intentionally accepts and returns authority IDs, decision codes, and
+ * counts only. Source text, provider output, question text, answers, and raw
+ * scorer failures are neither required nor copied into the result.
+ */
+export function diagnoseTemplateCopilotV3IterativeSemantic({
+  semantic = null,
+  batches = [],
+  disclosedSourceSlots = [],
+  factSourceSlots = {},
+  factBatchIds = {},
+  slotBatchIds = {},
+  serverQuestions = [],
+  ambiguityGaps = [],
+  previouslyAskedQuestionIds = [],
+  askedQuestionIds = [],
+  answerDisclosedQuestionIds = [],
+} = {}) {
+  const checkedSemantic = isRecord(semantic) ? semantic : null;
+  const disclosedSlotSet = new Set(
+    diagnosticSourceSlotIds(disclosedSourceSlots),
+  );
+  const normalizedQuestions = normalizeIterativeServerQuestions({
+    serverQuestions,
+    factSourceSlots,
+  });
+  const normalizedAmbiguityGaps = normalizeIterativeAmbiguityGaps({
+    ambiguityGaps,
+    factSourceSlots,
+  });
+  const questionById = new Map(
+    normalizedQuestions.map((question) => [question.questionId, question]),
+  );
+  const previouslyAskedSet = new Set(
+    diagnosticIds(previouslyAskedQuestionIds),
+  );
+
+  const gaps = [];
+  const decisions = [];
+  const semanticFactInventoryUsable =
+    Array.isArray(checkedSemantic?.factIds) &&
+    checkedSemantic.factIds.every((factId) => typeof factId === "string");
+  const observedFactIdSet = new Set(
+    semanticFactInventoryUsable
+      ? checkedSemantic.factIds.filter((factId) =>
+          expectedFactIdSet.has(factId),
+        )
+      : [],
+  );
+  const missingFactIds = semanticFactInventoryUsable
+    ? expectedFactIds.filter((factId) => !observedFactIdSet.has(factId))
+    : [];
+
+  for (const factId of missingFactIds) {
+    const sourceSlot = diagnosticFactSourceSlot(factSourceSlots, factId);
+    const batchIds = diagnosticBatchIdsForFact({
+      factBatchIds,
+      factId,
+      slotBatchIds,
+      sourceSlot,
+    });
+    const gapId = `fact:${factId}`;
+    gaps.push({
+      gapId,
+      kind: "missing_fact",
+      factId,
+      sourceSlot,
+      batchIds,
+      blockingReason: null,
+    });
+
+    if (sourceSlot !== null && disclosedSlotSet.has(sourceSlot)) {
+      decisions.push({
+        gapId,
+        factId,
+        classification: "recover_from_source",
+        reasonCode: "known_source_gap",
+        recoveryBatchIds: batchIds,
+        questionId: null,
+        ambiguityContractId: null,
+      });
+      continue;
+    }
+
+    if (sourceSlot === null) {
+      decisions.push({
+        gapId,
+        factId,
+        classification: "governed_hold",
+        reasonCode: "source_authority_mapping_unavailable",
+        recoveryBatchIds: [],
+        questionId: null,
+        ambiguityContractId: null,
+      });
+      continue;
+    }
+
+    const ambiguityGap = normalizedAmbiguityGaps.find(
+      (gap) => gap.factId === factId && gap.sourceSlot === sourceSlot,
+    );
+    if (!ambiguityGap) {
+      decisions.push({
+        gapId,
+        factId,
+        classification: "governed_hold",
+        reasonCode: "genuine_ambiguity_contract_unavailable",
+        recoveryBatchIds: [],
+        questionId: null,
+        ambiguityContractId: null,
+      });
+      continue;
+    }
+    const matchingQuestions = normalizedQuestions.filter(
+      (question) =>
+        question.sourceSlot === sourceSlot &&
+        question.factIds.includes(factId) &&
+        question.gapKind === "genuine_ambiguity" &&
+        question.ambiguityContractId ===
+          ambiguityGap.ambiguityContractId,
+    );
+    if (
+      matchingQuestions.some((question) =>
+        previouslyAskedSet.has(question.questionId),
+      )
+    ) {
+      decisions.push({
+        gapId,
+        factId,
+        classification: "governed_hold",
+        reasonCode: "fact_previously_asked",
+        recoveryBatchIds: [],
+        questionId: null,
+        ambiguityContractId: ambiguityGap.ambiguityContractId,
+      });
+      continue;
+    }
+    const selectedQuestion = matchingQuestions[0] ?? null;
+    if (selectedQuestion) {
+      decisions.push({
+        gapId,
+        factId,
+        classification: "ask_user",
+        reasonCode: "genuine_ambiguity_requires_question",
+        recoveryBatchIds: [],
+        questionId: selectedQuestion.questionId,
+        ambiguityContractId: ambiguityGap.ambiguityContractId,
+      });
+      continue;
+    }
+    decisions.push({
+      gapId,
+      factId,
+      classification: "governed_hold",
+      reasonCode: "server_question_unavailable",
+      recoveryBatchIds: [],
+      questionId: null,
+      ambiguityContractId: ambiguityGap.ambiguityContractId,
+    });
+  }
+
+  const governedHolds = normalizeIterativeGovernedHolds(
+    checkedSemantic?.governedHolds,
+  );
+  const governedHoldOrdinals = new Map();
+  for (const hold of governedHolds) {
+    const ordinalKey = `${hold.factId}:${hold.blockingReason}`;
+    const ordinal = (governedHoldOrdinals.get(ordinalKey) ?? 0) + 1;
+    governedHoldOrdinals.set(ordinalKey, ordinal);
+    const sourceSlot = diagnosticFactSourceSlot(
+      factSourceSlots,
+      hold.factId,
+    );
+    const gapId = `hold:${ordinalKey}:${ordinal}`;
+    gaps.push({
+      gapId,
+      kind: "governed_semantic_hold",
+      factId: hold.factId,
+      sourceSlot,
+      batchIds: diagnosticBatchIdsForFact({
+        factBatchIds,
+        factId: hold.factId,
+        slotBatchIds,
+        sourceSlot,
+      }),
+      blockingReason: hold.blockingReason,
+    });
+    decisions.push({
+      gapId,
+      factId: hold.factId,
+      classification: "governed_hold",
+      reasonCode: "governed_semantic_hold",
+      recoveryBatchIds: [],
+      questionId: null,
+      ambiguityContractId: null,
+    });
+  }
+
+  const providerFailureBatchIds = diagnoseProviderFailureBatchIds(batches);
+  for (const batchId of providerFailureBatchIds) {
+    const gapId = `provider:${batchId}`;
+    gaps.push({
+      gapId,
+      kind: "provider_failure",
+      factId: null,
+      sourceSlot: null,
+      batchIds: [batchId],
+      blockingReason: null,
+    });
+    decisions.push({
+      gapId,
+      factId: null,
+      classification: "recover_from_source",
+      reasonCode: "provider_batch_failure",
+      recoveryBatchIds: [batchId],
+      questionId: null,
+      ambiguityContractId: null,
+    });
+  }
+
+  if (
+    checkedSemantic?.passed !== true &&
+    (!semanticFactInventoryUsable || missingFactIds.length === 0) &&
+    providerFailureBatchIds.length === 0
+  ) {
+    const gapId = "semantic:unidentified";
+    gaps.push({
+      gapId,
+      kind: "unidentified_strict_failure",
+      factId: null,
+      sourceSlot: null,
+      batchIds: [],
+      blockingReason: null,
+    });
+    decisions.push({
+      gapId,
+      factId: null,
+      classification: "governed_hold",
+      reasonCode: "strict_failure_without_identifiable_missing_fact",
+      recoveryBatchIds: [],
+      questionId: null,
+      ambiguityContractId: null,
+    });
+  }
+
+  const recoveryBatchIds = expectedBatchIds.filter((batchId) =>
+    decisions.some(
+      (decision) =>
+        decision.classification === "recover_from_source" &&
+        decision.recoveryBatchIds.includes(batchId),
+    ),
+  );
+  const expectedQuestionIds = sortedDiagnosticIds(
+    decisions.flatMap((decision) =>
+      decision.classification === "ask_user" && decision.questionId
+        ? [decision.questionId]
+        : [],
+    ),
+  );
+  const askedQuestionInput = diagnosticIdInput(askedQuestionIds);
+  const askedQuestionIdEntries = askedQuestionInput.ids;
+  const uniqueAskedQuestionIds = sortedDiagnosticIds(askedQuestionIdEntries);
+  const expectedQuestionIdSet = new Set(expectedQuestionIds);
+  const correctQuestionIds = uniqueAskedQuestionIds.filter(
+    (questionId) =>
+      expectedQuestionIdSet.has(questionId) &&
+      !previouslyAskedSet.has(questionId),
+  );
+  const duplicateQuestionIds = sortedDiagnosticIds(
+    askedQuestionIdEntries.filter(
+      (questionId, index) =>
+        askedQuestionIdEntries.indexOf(questionId) !== index,
+    ),
+  );
+  const repeatedQuestionIds = sortedDiagnosticIds([
+    ...uniqueAskedQuestionIds.filter((questionId) =>
+      previouslyAskedSet.has(questionId),
+    ),
+    ...duplicateQuestionIds,
+  ]);
+  const knownFactQuestionIds = uniqueAskedQuestionIds.filter((questionId) => {
+    const question = questionById.get(questionId);
+    return question ? disclosedSlotSet.has(question.sourceSlot) : false;
+  });
+  const irrelevantQuestionIds = uniqueAskedQuestionIds.filter(
+    (questionId) => !expectedQuestionIdSet.has(questionId),
+  );
+  const missedRequiredQuestionIds = expectedQuestionIds.filter(
+    (questionId) => !uniqueAskedQuestionIds.includes(questionId),
+  );
+  const answerDisclosureInput = diagnosticIdInput(
+    answerDisclosedQuestionIds,
+  );
+  const normalizedAnswerDisclosureIds = sortedDiagnosticIds(
+    answerDisclosureInput.ids,
+  );
+  const correctQuestionIdSet = new Set(correctQuestionIds);
+  const prematureAnswerDisclosureQuestionIds =
+    normalizedAnswerDisclosureIds.filter(
+      (questionId) => !correctQuestionIdSet.has(questionId),
+    );
+  const questions = {
+    expectedQuestionIds,
+    askedQuestionIds: uniqueAskedQuestionIds,
+    correctQuestionIds,
+    knownFactQuestionIds,
+    repeatedQuestionIds,
+    duplicateQuestionIds,
+    irrelevantQuestionIds,
+    missedRequiredQuestionIds,
+    answerDisclosedQuestionIds: normalizedAnswerDisclosureIds,
+    prematureAnswerDisclosureQuestionIds,
+  };
+  const metrics = {
+    gapCount: gaps.length,
+    missingFactGapCount: gaps.filter((gap) => gap.kind === "missing_fact")
+      .length,
+    recoverFromSourceCount: decisions.filter(
+      (decision) => decision.classification === "recover_from_source",
+    ).length,
+    askUserCount: decisions.filter(
+      (decision) => decision.classification === "ask_user",
+    ).length,
+    governedHoldCount: decisions.filter(
+      (decision) => decision.classification === "governed_hold",
+    ).length,
+    providerFailureCount: providerFailureBatchIds.length,
+    unidentifiedStrictFailureCount: gaps.filter(
+      (gap) => gap.kind === "unidentified_strict_failure",
+    ).length,
+    recoveryBatchCount: recoveryBatchIds.length,
+    expectedQuestionCount: expectedQuestionIds.length,
+    askedQuestionCount: uniqueAskedQuestionIds.length,
+    correctQuestionCount: correctQuestionIds.length,
+    knownFactQuestionCount: knownFactQuestionIds.length,
+    repeatedQuestionCount: repeatedQuestionIds.length,
+    duplicateQuestionCount: duplicateQuestionIds.length,
+    irrelevantQuestionCount: irrelevantQuestionIds.length,
+    missedRequiredQuestionCount: missedRequiredQuestionIds.length,
+    answerDisclosureCount: normalizedAnswerDisclosureIds.length,
+    prematureAnswerDisclosureCount:
+      prematureAnswerDisclosureQuestionIds.length,
+    invalidAskedQuestionCount: askedQuestionInput.invalidCount,
+    invalidAnswerDisclosureCount: answerDisclosureInput.invalidCount,
+  };
+
+  return {
+    version: templateCopilotV3IterativeSemanticDiagnosticVersion,
+    gaps,
+    decisions,
+    recoveryBatchIds,
+    questions,
+    metrics,
+  };
+}
+
+function diagnosticFactSourceSlot(factSourceSlots, factId) {
+  if (!isRecord(factSourceSlots)) return null;
+  const value = factSourceSlots[factId];
+  return isDiagnosticSourceSlotId(value) ? value : null;
+}
+
+function diagnosticBatchIdsForSlot(slotBatchIds, sourceSlot) {
+  if (!isRecord(slotBatchIds) || !isDiagnosticSourceSlotId(sourceSlot)) {
+    return [];
+  }
+  const supplied = Array.isArray(slotBatchIds[sourceSlot])
+    ? slotBatchIds[sourceSlot]
+    : [slotBatchIds[sourceSlot]];
+  const suppliedSet = new Set(supplied);
+  return expectedBatchIds.filter((batchId) => suppliedSet.has(batchId));
+}
+
+function diagnosticBatchIdsForFact({
+  factBatchIds,
+  factId,
+  slotBatchIds,
+  sourceSlot,
+}) {
+  if (isRecord(factBatchIds) && Object.hasOwn(factBatchIds, factId)) {
+    if (!Array.isArray(factBatchIds[factId])) return [];
+    const suppliedSet = new Set(factBatchIds[factId]);
+    const exact = expectedBatchIds.filter((batchId) =>
+      suppliedSet.has(batchId)
+    );
+    return exact.length > 0 && exact.length === suppliedSet.size ? exact : [];
+  }
+  return diagnosticBatchIdsForSlot(slotBatchIds, sourceSlot);
+}
+
+function normalizeIterativeServerQuestions({
+  serverQuestions,
+  factSourceSlots,
+}) {
+  const normalized = [];
+  const seenQuestionIds = new Set();
+  for (const question of Array.isArray(serverQuestions)
+    ? serverQuestions
+    : []) {
+    if (!isRecord(question) || !isDiagnosticId(question.questionId)) continue;
+    if (seenQuestionIds.has(question.questionId)) continue;
+    const suppliedFactIds = Array.isArray(question.factIds)
+      ? question.factIds
+      : [question.factId];
+    const factIds = expectedFactIds.filter((factId) =>
+      suppliedFactIds.includes(factId),
+    );
+    if (factIds.length === 0) continue;
+    const mappedSlots = [
+      ...new Set(
+        factIds.map((factId) =>
+          diagnosticFactSourceSlot(factSourceSlots, factId),
+        ),
+      ),
+    ];
+    const sourceSlot = isDiagnosticSourceSlotId(question.sourceSlot)
+      ? question.sourceSlot
+      : mappedSlots.length === 1
+        ? mappedSlots[0]
+        : null;
+    if (
+      sourceSlot === null ||
+      mappedSlots.length !== 1 ||
+      mappedSlots[0] !== sourceSlot
+    ) {
+      continue;
+    }
+    seenQuestionIds.add(question.questionId);
+    normalized.push({
+      questionId: question.questionId,
+      factIds,
+      sourceSlot,
+      gapKind:
+        question.gapKind === "genuine_ambiguity"
+          ? "genuine_ambiguity"
+          : null,
+      ambiguityContractId: isDiagnosticId(question.ambiguityContractId)
+        ? question.ambiguityContractId
+        : null,
+    });
+  }
+  return normalized;
+}
+
+function normalizeIterativeAmbiguityGaps({
+  ambiguityGaps,
+  factSourceSlots,
+}) {
+  const normalized = [];
+  const seenFactIds = new Set();
+  for (const gap of Array.isArray(ambiguityGaps) ? ambiguityGaps : []) {
+    if (
+      !isRecord(gap) ||
+      gap.gapKind !== "genuine_ambiguity" ||
+      !expectedFactIdSet.has(gap.factId) ||
+      !isDiagnosticId(gap.ambiguityContractId) ||
+      seenFactIds.has(gap.factId)
+    ) {
+      continue;
+    }
+    const mappedSourceSlot = diagnosticFactSourceSlot(
+      factSourceSlots,
+      gap.factId,
+    );
+    const sourceSlot = isDiagnosticSourceSlotId(gap.sourceSlot)
+      ? gap.sourceSlot
+      : mappedSourceSlot;
+    if (sourceSlot === null || sourceSlot !== mappedSourceSlot) continue;
+    seenFactIds.add(gap.factId);
+    normalized.push({
+      factId: gap.factId,
+      sourceSlot,
+      gapKind: "genuine_ambiguity",
+      ambiguityContractId: gap.ambiguityContractId,
+    });
+  }
+  return normalized;
+}
+
+function normalizeIterativeGovernedHolds(governedHolds) {
+  return (Array.isArray(governedHolds) ? governedHolds : [])
+    .filter(
+      (hold) =>
+        isRecord(hold) &&
+        expectedFactIdSet.has(hold.factId) &&
+        governedHoldBlockingReasonSet.has(hold.blockingReason),
+    )
+    .map((hold) => ({
+      factId: hold.factId,
+      blockingReason: hold.blockingReason,
+    }))
+    .sort((left, right) => {
+      const factComparison = left.factId.localeCompare(right.factId, "en");
+      return factComparison !== 0
+        ? factComparison
+        : left.blockingReason.localeCompare(right.blockingReason, "en");
+    });
+}
+
+function diagnoseProviderFailureBatchIds(batches) {
+  const failedBatchIdSet = new Set();
+  for (const batch of Array.isArray(batches) ? batches : []) {
+    if (!isRecord(batch)) continue;
+    const batchId = batch.batchId ?? batch.id;
+    if (!expectedBatchIds.includes(batchId)) continue;
+    const providerOutcomeFailed =
+      typeof batch.providerOutcome === "string" &&
+      batch.providerOutcome !== "success";
+    const statusFailed =
+      typeof batch.status === "string" && batch.status !== "applied";
+    if (
+      providerOutcomeFailed ||
+      statusFailed ||
+      (Number.isInteger(batch.providerRequestFailureCount) &&
+        batch.providerRequestFailureCount > 0) ||
+      (Number.isInteger(batch.failureCount) && batch.failureCount > 0)
+    ) {
+      failedBatchIdSet.add(batchId);
+    }
+  }
+  return expectedBatchIds.filter((batchId) =>
+    failedBatchIdSet.has(batchId),
+  );
+}
+
+function diagnosticIds(value) {
+  return (Array.isArray(value) ? value : []).filter(isDiagnosticId);
+}
+
+function diagnosticIdInput(value) {
+  if (!Array.isArray(value)) {
+    return {
+      ids: [],
+      invalidCount: value === undefined || value === null ? 0 : 1,
+    };
+  }
+  const ids = value.filter(isDiagnosticId);
+  return {
+    ids,
+    invalidCount: value.length - ids.length,
+  };
+}
+
+function sortedDiagnosticIds(value) {
+  return [...new Set(diagnosticIds(value))].sort((left, right) =>
+    left.localeCompare(right, "en"),
+  );
+}
+
+function diagnosticSourceSlotIds(value) {
+  return [...new Set((Array.isArray(value) ? value : []).filter(
+    isDiagnosticSourceSlotId,
+  ))];
+}
+
+function isDiagnosticId(value) {
+  return (
+    typeof value === "string" &&
+    /^[A-Za-z0-9][A-Za-z0-9:._-]{0,199}$/u.test(value)
+  );
+}
+
+function isDiagnosticSourceSlotId(value) {
+  return (
+    typeof value === "string" && /^[a-z][a-z0-9_]{0,63}$/u.test(value)
+  );
+}
 
 function scoreBatchGate(batches) {
   const failures = [];
@@ -3178,3 +3787,23 @@ export const templateCopilotV3LiveSemanticScoringContract = Object.freeze({
   manifestCorpusFingerprint: templateCopilotV3SemanticManifestCorpusFingerprint,
   providerSlots: [...templateCopilotV3ProviderQuoteSlots],
 });
+
+export const templateCopilotV3IterativeSemanticDiagnosticContract =
+  Object.freeze({
+    version: templateCopilotV3IterativeSemanticDiagnosticVersion,
+    classifications: [...iterativeGapClassifications],
+    gapKinds: [...iterativeGapKinds],
+    decisionReasonCodes: [...iterativeDecisionReasonCodes],
+    expectedBatchIds: [...expectedBatchIds],
+    expectedFactIds: [...expectedFactIds],
+    governedHoldBlockingReasons: [...governedHoldBlockingReasons],
+    questionMetricKeys: [...iterativeQuestionMetricKeys],
+    resultKeys: [
+      "version",
+      "gaps",
+      "decisions",
+      "recoveryBatchIds",
+      "questions",
+      "metrics",
+    ],
+  });
