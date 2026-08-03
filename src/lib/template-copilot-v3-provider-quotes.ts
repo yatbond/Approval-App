@@ -47,54 +47,6 @@ export const templateCopilotV3ProviderQuoteTransportLimits = Object.freeze({
   maximumObjectKeys: 64,
 });
 
-export const templateCopilotV3ProviderQuoteBatchGenerationLimits =
-  Object.freeze({
-    structure: Object.freeze({
-      maximumItems: 48,
-      maximumLeavesPerItem: 16,
-      maximumCompletionTokens: 6_144,
-    }),
-    intake_documents: Object.freeze({
-      maximumItems: 22,
-      maximumLeavesPerItem: 12,
-      maximumCompletionTokens: 3_072,
-    }),
-    routing_execution: Object.freeze({
-      maximumItems: 16,
-      maximumLeavesPerItem: 10,
-      maximumCompletionTokens: 3_072,
-    }),
-    routing_stages_participants: Object.freeze({
-      maximumItems: 11,
-      maximumLeavesPerItem: 8,
-      maximumCompletionTokens: 3_072,
-    }),
-    routing_conditions: Object.freeze({
-      maximumItems: 4,
-      maximumLeavesPerItem: 10,
-      maximumCompletionTokens: 1_536,
-    }),
-    routing_rejection: Object.freeze({
-      maximumItems: 2,
-      maximumLeavesPerItem: 1,
-      maximumCompletionTokens: 256,
-    }),
-    policy_context: Object.freeze({
-      maximumItems: 15,
-      maximumLeavesPerItem: 8,
-      maximumCompletionTokens: 4_096,
-    }),
-  } as const satisfies Readonly<
-    Record<
-      TemplateCopilotV3ProviderQuoteBatchId,
-      Readonly<{
-        maximumItems: number;
-        maximumLeavesPerItem: number;
-        maximumCompletionTokens: number;
-      }>
-    >
-  >);
-
 export type TemplateCopilotV3ProviderQuoteTransportFailureReason =
   | "invalid_json"
   | "transport_limit"
@@ -830,6 +782,17 @@ const hints = <const Values extends readonly string[]>(...values: Values) =>
   Object.freeze(values);
 const roles = (value: RolePolicy) => Object.freeze(value);
 
+export const templateCopilotV3ProviderQuoteNotificationEventHints = hints(
+  "request_submitted",
+  "stage_assigned",
+  "stage_completed",
+  "request_rejected",
+  "correction_requested",
+  "request_completed",
+  "due_soon",
+  "overdue",
+);
+
 /**
  * `null` means the leaf is derived entirely from its exact quote and must not
  * carry a provider hint. Arrays are the complete closed advisory-hint set for
@@ -942,16 +905,7 @@ export const templateCopilotV3ProviderQuoteKindRoleHints = Object.freeze({
   timing: roles({ rule: null }),
   visibility: roles({ description: null, rule: null }),
   notification: roles({
-    event: hints(
-      "request_submitted",
-      "stage_assigned",
-      "stage_completed",
-      "request_rejected",
-      "correction_requested",
-      "request_completed",
-      "due_soon",
-      "overdue",
-    ),
+    event: templateCopilotV3ProviderQuoteNotificationEventHints,
     recipient: hints(
       "requester",
       "current_stage_participants",
@@ -1081,6 +1035,63 @@ export const templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind =
     >
   >);
 
+const templateCopilotV3PolicyContextWholeSlotMaximumItems = Object.keys(
+  templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind.policy_context,
+).length;
+const templateCopilotV3PolicyNotificationMaximumItems =
+  templateCopilotV3ProviderQuoteNotificationEventHints.length;
+
+export const templateCopilotV3ProviderQuoteBatchGenerationLimits =
+  Object.freeze({
+    structure: Object.freeze({
+      maximumItems: 48,
+      maximumLeavesPerItem: 16,
+      maximumCompletionTokens: 6_144,
+    }),
+    intake_documents: Object.freeze({
+      maximumItems: 22,
+      maximumLeavesPerItem: 12,
+      maximumCompletionTokens: 3_072,
+    }),
+    routing_execution: Object.freeze({
+      maximumItems: 16,
+      maximumLeavesPerItem: 10,
+      maximumCompletionTokens: 3_072,
+    }),
+    routing_stages_participants: Object.freeze({
+      maximumItems: 11,
+      maximumLeavesPerItem: 8,
+      maximumCompletionTokens: 3_072,
+    }),
+    routing_conditions: Object.freeze({
+      maximumItems: 4,
+      maximumLeavesPerItem: 10,
+      maximumCompletionTokens: 1_536,
+    }),
+    routing_rejection: Object.freeze({
+      maximumItems: 2,
+      maximumLeavesPerItem: 1,
+      maximumCompletionTokens: 256,
+    }),
+    policy_context: Object.freeze({
+      maximumItems:
+        templateCopilotV3PolicyContextWholeSlotMaximumItems +
+        templateCopilotV3PolicyNotificationMaximumItems +
+        1,
+      maximumLeavesPerItem: 8,
+      maximumCompletionTokens: 4_096,
+    }),
+  } as const satisfies Readonly<
+    Record<
+      TemplateCopilotV3ProviderQuoteBatchId,
+      Readonly<{
+        maximumItems: number;
+        maximumLeavesPerItem: number;
+        maximumCompletionTokens: number;
+      }>
+    >
+  >);
+
 /**
  * Repeatable formal-wire bucket saturation sentinels. Every formal batch also
  * has one nullable property for each whole-slot kind declared above. Provider
@@ -1103,7 +1114,7 @@ export const templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind =
     }),
     routing_rejection: Object.freeze({}),
     policy_context: Object.freeze({
-      notification: 7,
+      notification: templateCopilotV3PolicyNotificationMaximumItems + 1,
     }),
   } as const satisfies Readonly<
     Record<

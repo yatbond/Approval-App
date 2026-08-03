@@ -73,12 +73,12 @@ test("v3 qualification fingerprints the exact compact provider contract", () => 
           "sha256:ef4a9902c2c21946f3e6ac32a35426813ed151e0e3a3c3ca370b0c4f9a91d435",
       },
       policy_context: {
-        maximumItems: 15,
+        maximumItems: 17,
         maximumLeavesPerItem: 8,
         maximumCompletionTokens: 4_096,
         schemaUtf8Bytes: 5_626,
         schemaFingerprint:
-          "sha256:3cc9fbd3e29e995f6cc5eee895e4933bc167637d90f256b8411a4e9c7d95c24a",
+          "sha256:47f991b0d60f339b6b29a59419f02b5327f2b66fe3498886f97a7663891d5327",
       },
     },
   });

@@ -5672,3 +5672,318 @@ test("repeated benign same-subject clauses do not have a 32-item semantic cliff"
     );
   }
 });
+
+test("policy notification lists use distinct progressive anchors across varied multilingual lengths", () => {
+  const cases = [
+    {
+      caseId: "EN",
+      source:
+        "Notify only directly involved people for submitted, assignment, stage completed, rejection, correction, completion, due soon, and overdue.",
+      anchorStart: "only",
+      recipient: "directly involved people",
+      visibility: "only",
+      events: [
+        ["submitted", "request_submitted"],
+        ["assignment", "stage_assigned"],
+        ["stage completed", "stage_completed"],
+        ["rejection", "request_rejected"],
+        ["correction", "correction_requested"],
+        ["completion", "request_completed"],
+        ["due soon", "due_soon"],
+        ["overdue", "overdue"],
+      ],
+    },
+    {
+      caseId: "TC",
+      source:
+        "只通知直接相關人士，事件包括獲指派、逾期及完成。",
+      anchorStart: "只",
+      recipient: "直接相關人士",
+      visibility: "只",
+      events: [
+        ["獲指派", "stage_assigned"],
+        ["逾期", "overdue"],
+        ["完成", "request_completed"],
+      ],
+    },
+    {
+      caseId: "SC",
+      source:
+        "仅通知直接相关人员拒绝。",
+      anchorStart: "仅",
+      recipient: "直接相关人员",
+      visibility: "仅",
+      events: [
+        ["拒绝", "request_rejected"],
+      ],
+    },
+  ];
+
+  for (const entry of cases) {
+    const sourceSlots = templateCopilotV3ProviderQuoteBatches.policy_context
+      .slots.map((slot) => ({
+        slot,
+        messageId: `notification-list:${entry.caseId}:${slot}`,
+        text: slot === "visibility_notifications"
+          ? entry.source
+          : `No ${slot} requirements supplied.`,
+      }));
+    const anchorStart = entry.source.indexOf(entry.anchorStart);
+    assert.ok(anchorStart >= 0, entry.caseId);
+    const items = entry.events.map(([event, hint]) => {
+      const eventStart = entry.source.indexOf(event, anchorStart);
+      assert.ok(eventStart >= 0, `${entry.caseId}:${event}`);
+      return providerItem(
+        "notification",
+        entry.source.slice(anchorStart, eventStart + event.length),
+        [
+          { role: "event", quote: event, hint },
+          {
+            role: "recipient",
+            quote: entry.recipient,
+            hint: "source_named_group",
+          },
+          {
+            role: "visibility",
+            quote: entry.visibility,
+            hint: "recipients_only",
+          },
+        ],
+      );
+    });
+    const located = locateTemplateCopilotV3ProviderQuotes({
+      batchId: "policy_context",
+      sourceSlots,
+      output: { contractVersion: 1, items },
+    });
+    assert.deepEqual(located.rejected, [], entry.caseId);
+    assert.equal(located.accepted.length, entry.events.length, entry.caseId);
+    assert.equal(
+      new Set(located.accepted.map((item) => item.anchor.spanId)).size,
+      entry.events.length,
+      entry.caseId,
+    );
+    const assembly = assembleLocated(located, sourceSlots);
+    const notifications = assembly.review.items.filter(
+      (item) => item.factId === "notifications.rules",
+    );
+    assert.equal(notifications.length, entry.events.length, entry.caseId);
+    assert.ok(
+      notifications.every((item) => item.semanticComplete),
+      `${entry.caseId}:${JSON.stringify(assembly.review.rejections)}`,
+    );
+  }
+});
+
+test("notification visibility cannot strip multilingual not-only scope", () => {
+  const cases = [
+    {
+      caseId: "EN",
+      source:
+        "Notify not only directly involved people on rejection, but all participants.",
+      quote: "only directly involved people on rejection",
+      event: "rejection",
+      eventHint: "request_rejected",
+      recipient: "directly involved people",
+      visibility: "only",
+    },
+    {
+      caseId: "TC-not-only-zhi",
+      source: "不只通知直接相關人士拒絕，也通知所有流程參與者。",
+      quote: "只通知直接相關人士拒絕",
+      event: "拒絕",
+      eventHint: "request_rejected",
+      recipient: "直接相關人士",
+      visibility: "只",
+    },
+    {
+      caseId: "TC-not-only-jin",
+      source: "不僅通知直接相關人士拒絕，也通知所有流程參與者。",
+      quote: "僅通知直接相關人士拒絕",
+      event: "拒絕",
+      eventHint: "request_rejected",
+      recipient: "直接相關人士",
+      visibility: "僅",
+    },
+    {
+      caseId: "TC-not-merely",
+      source: "非僅通知直接相關人士拒絕，也通知所有流程參與者。",
+      quote: "僅通知直接相關人士拒絕",
+      event: "拒絕",
+      eventHint: "request_rejected",
+      recipient: "直接相關人士",
+      visibility: "僅",
+    },
+    {
+      caseId: "SC-not-only",
+      source: "不仅通知直接相关人员拒绝，也通知所有流程参与者。",
+      quote: "仅通知直接相关人员拒绝",
+      event: "拒绝",
+      eventHint: "request_rejected",
+      recipient: "直接相关人员",
+      visibility: "仅",
+    },
+    {
+      caseId: "SC-not-merely",
+      source: "非仅通知直接相关人员拒绝，也通知所有流程参与者。",
+      quote: "仅通知直接相关人员拒绝",
+      event: "拒绝",
+      eventHint: "request_rejected",
+      recipient: "直接相关人员",
+      visibility: "仅",
+    },
+  ];
+
+  for (const entry of cases) {
+    const sourceSlots = templateCopilotV3ProviderQuoteBatches.policy_context
+      .slots.map((slot) => ({
+        slot,
+        messageId: `notification-not-only:${entry.caseId}:${slot}`,
+        text: slot === "visibility_notifications"
+          ? entry.source
+          : `No ${slot} requirements supplied.`,
+      }));
+    const located = locateTemplateCopilotV3ProviderQuotes({
+      batchId: "policy_context",
+      sourceSlots,
+      output: {
+        contractVersion: 1,
+        items: [
+          providerItem("notification", entry.quote, [
+            {
+              role: "event",
+              quote: entry.event,
+              hint: entry.eventHint,
+            },
+            {
+              role: "recipient",
+              quote: entry.recipient,
+              hint: "source_named_group",
+            },
+            {
+              role: "visibility",
+              quote: entry.visibility,
+              hint: "recipients_only",
+            },
+          ]),
+        ],
+      },
+    });
+    assert.deepEqual(located.rejected, [], entry.caseId);
+    const assembly = assembleLocated(located, sourceSlots);
+    const notification = assembly.review.items.find(
+      (item) => item.factId === "notifications.rules",
+    );
+    assert.ok(notification, entry.caseId);
+    assert.equal(notification.semanticComplete, false, entry.caseId);
+    assert.equal(notification.value.visibility, undefined, entry.caseId);
+    for (const field of ["semanticLeaves", "semanticObservations"]) {
+      assert.ok(
+        !notification[field].some((leaf) => leaf.role === "visibility"),
+        `${entry.caseId}:${field}`,
+      );
+    }
+    assert.ok(
+      !notification.bindings.some(
+        (binding) => binding.path === "/visibility",
+      ),
+      entry.caseId,
+    );
+    assert.equal(notification.fragmentId, null, entry.caseId);
+    assert.ok(
+      assembly.review.rejections.some(
+        (rejection) =>
+          rejection.code === "unverifiable_leaf" &&
+          rejection.detail === "notification:visibility",
+      ),
+      entry.caseId,
+    );
+  }
+});
+
+test("notification visibility retains exact affirmative multilingual markers", () => {
+  const cases = [
+    {
+      caseId: "EN-only",
+      source: "Notify only directly involved people on rejection.",
+      quote: "only directly involved people on rejection",
+      event: "rejection",
+      recipient: "directly involved people",
+      visibility: "only",
+    },
+    {
+      caseId: "TC-zhi",
+      source: "只通知直接相關人士拒絕。",
+      quote: "只通知直接相關人士拒絕",
+      event: "拒絕",
+      recipient: "直接相關人士",
+      visibility: "只",
+    },
+    {
+      caseId: "TC-jin",
+      source: "僅通知直接相關人士拒絕。",
+      quote: "僅通知直接相關人士拒絕",
+      event: "拒絕",
+      recipient: "直接相關人士",
+      visibility: "僅",
+    },
+    {
+      caseId: "SC-jin",
+      source: "仅通知直接相关人员拒绝。",
+      quote: "仅通知直接相关人员拒绝",
+      event: "拒绝",
+      recipient: "直接相关人员",
+      visibility: "仅",
+    },
+  ];
+
+  for (const entry of cases) {
+    const sourceSlots = templateCopilotV3ProviderQuoteBatches.policy_context
+      .slots.map((slot) => ({
+        slot,
+        messageId: `notification-affirmative:${entry.caseId}:${slot}`,
+        text: slot === "visibility_notifications"
+          ? entry.source
+          : `No ${slot} requirements supplied.`,
+      }));
+    const located = locateTemplateCopilotV3ProviderQuotes({
+      batchId: "policy_context",
+      sourceSlots,
+      output: {
+        contractVersion: 1,
+        items: [
+          providerItem("notification", entry.quote, [
+            {
+              role: "event",
+              quote: entry.event,
+              hint: "request_rejected",
+            },
+            {
+              role: "recipient",
+              quote: entry.recipient,
+              hint: "source_named_group",
+            },
+            {
+              role: "visibility",
+              quote: entry.visibility,
+              hint: "recipients_only",
+            },
+          ]),
+        ],
+      },
+    });
+    assert.deepEqual(located.rejected, [], entry.caseId);
+    const assembly = assembleLocated(located, sourceSlots);
+    const notification = assembly.review.items.find(
+      (item) => item.factId === "notifications.rules",
+    );
+    assert.ok(notification, entry.caseId);
+    assert.equal(notification.semanticComplete, true, entry.caseId);
+    assert.ok(
+      notification.semanticObservations.some(
+        (leaf) => leaf.role === "visibility",
+      ),
+      entry.caseId,
+    );
+  }
+});

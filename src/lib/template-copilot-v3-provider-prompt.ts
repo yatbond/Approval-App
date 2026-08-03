@@ -10,7 +10,7 @@ import {
 } from "./template-copilot-v3-provider-quotes.ts";
 
 export const templateCopilotV3ProviderPromptVersion =
-  "template-copilot-v3-provider-quotes-27" as const;
+  "template-copilot-v3-provider-quotes-29" as const;
 
 const localeInstruction = Object.freeze({
   en: "Preserve the source language and orthography exactly.",
@@ -19,6 +19,25 @@ const localeInstruction = Object.freeze({
   "zh-Hans":
     "Preserve the source language and Simplified Chinese orthography exactly; never translate or convert it to Traditional Chinese.",
 } satisfies Readonly<Record<TemplateCopilotLocale, string>>);
+
+const policyNotificationEventHintMappings = Object.freeze({
+  en:
+    "submitted=>request_submitted; assignment=>stage_assigned; stage completed=>stage_completed; rejection=>request_rejected; correction=>correction_requested; completion=>request_completed; due soon=>due_soon; overdue=>overdue",
+  "zh-Hant":
+    "申請已提交=>request_submitted; 獲指派=>stage_assigned; 步驟已完成=>stage_completed; 拒絕=>request_rejected; 補正=>correction_requested; 完成=>request_completed; 即將到期=>due_soon; 逾期=>overdue",
+  "zh-Hans":
+    "申请已提交=>request_submitted; 分配=>stage_assigned; 步骤已完成=>stage_completed; 拒绝=>request_rejected; 补正=>correction_requested; 完成=>request_completed; 即将到期=>due_soon; 逾期=>overdue",
+} satisfies Readonly<Record<TemplateCopilotLocale, string>>);
+
+function policyNotificationListInstruction(locale: TemplateCopilotLocale) {
+  return [
+    "For one shared notification recipient or recipients-only marker governing an event list, enumerate EVERY named event separately regardless of list length; caps are not quotas.",
+    `Exact event=>hint map: ${policyNotificationEventHintMappings[locale]}.`,
+    "Repeat the exact recipient and an affirmative exact only/只/僅/仅 visibility leaf in every item; use source_named_group when no closed recipient alias is exact. Never treat not only, 不只, 不僅, 不仅, 非僅, or 非仅 as recipients_only.",
+    "Each q starts far enough before the shared recipient/visibility leaf to retain any scope-changing not/不/非 prefix and ends at its selected event; prior events inside q are context, not event leaves, so q is distinct.",
+    "No event-only q, omitted/merged events, translated/invented hints, or identical whole-list q.",
+  ].join(" ");
+}
 
 const batchInstructions = Object.freeze({
   structure: [
@@ -133,10 +152,13 @@ export function buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
           "Omit stage.sequence unless its exact quote is itself a numeric ordinal or numeric value. Narrative words such as first, then, before, after, 先, 之后, and 之後 are not numeric sequence leaves; the server owns source order.",
         ]
       : []),
-    ...(batchKinds.includes("notification")
+    ...(batchKinds.includes("notification") && batchId !== "policy_context"
       ? [
           "When one exact shared recipient governs a list of notification events in one local clause, emit one notification item per event and repeat that exact shared recipient leaf in every item. Never merge events into one item.",
         ]
+      : []),
+    ...(batchId === "policy_context"
+      ? [policyNotificationListInstruction(locale)]
       : []),
     ...batchInstructions[batchId],
     "Never output source-slot names, IDs, JSON paths, offsets, occurrence selectors, normalization data, inferred defaults, summaries, or explanations. The server owns identity, coordinates, validation, interpretation, and assembly.",

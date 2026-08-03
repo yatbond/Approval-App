@@ -22,6 +22,16 @@ test("the prompt exposes exactly the closed quote batches", () => {
       batchId: "policy_context",
       locale: "en",
     });
+  const policyTraditional =
+    buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
+      batchId: "policy_context",
+      locale: "zh-Hant",
+    });
+  const policySimplified =
+    buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
+      batchId: "policy_context",
+      locale: "zh-Hans",
+    });
   const intake =
     buildTemplateCopilotV3ProviderQuoteDeveloperPrompt({
       batchId: "intake_documents",
@@ -351,13 +361,59 @@ test("the prompt exposes exactly the closed quote batches", () => {
   for (const prompt of [intake, routingConditions, policy]) {
     assert.doesNotMatch(prompt, /Omit stage\.sequence/u);
   }
-  for (const prompt of [structure, routing, routingStages, policy]) {
+  for (const prompt of [structure, routing, routingStages]) {
     assert.match(prompt, /emit one notification item per event and repeat that exact shared recipient leaf in every item/u);
     assert.match(prompt, /Never merge events into one item/u);
   }
   for (const prompt of [intake, routingConditions]) {
     assert.doesNotMatch(prompt, /one notification item per event/u);
   }
+  for (const prompt of [policy, policyTraditional, policySimplified]) {
+    assert.match(prompt, /enumerate EVERY named event separately/u);
+    assert.match(prompt, /regardless of list length/u);
+    assert.match(prompt, /caps are not quotas/u);
+    assert.match(prompt, /Each q starts far enough before the shared recipient\/visibility leaf to retain any scope-changing not\/不\/非 prefix/u);
+    assert.match(prompt, /No event-only q/u);
+    assert.match(prompt, /omitted\/merged events/u);
+    assert.match(prompt, /source_named_group/u);
+    assert.match(prompt, /affirmative exact only\/只\/僅\/仅 visibility leaf/u);
+    assert.match(prompt, /not only, 不只, 不僅, 不仅, 非僅, or 非仅/u);
+    assert.match(prompt, /identical whole-list q/u);
+    assert.doesNotMatch(prompt, /including all six/u);
+  }
+  for (const prompt of [structure, routing, routingStages]) {
+    assert.doesNotMatch(prompt, /enumerate EVERY named event separately/u);
+  }
+  for (const mapping of [
+    "submitted=>request_submitted",
+    "assignment=>stage_assigned",
+    "stage completed=>stage_completed",
+    "due soon=>due_soon",
+    "overdue=>overdue",
+    "rejection=>request_rejected",
+    "correction=>correction_requested",
+    "completion=>request_completed",
+  ]) assert.ok(policy.includes(mapping), mapping);
+  for (const mapping of [
+    "申請已提交=>request_submitted",
+    "獲指派=>stage_assigned",
+    "步驟已完成=>stage_completed",
+    "即將到期=>due_soon",
+    "逾期=>overdue",
+    "拒絕=>request_rejected",
+    "補正=>correction_requested",
+    "完成=>request_completed",
+  ]) assert.ok(policyTraditional.includes(mapping), mapping);
+  for (const mapping of [
+    "申请已提交=>request_submitted",
+    "分配=>stage_assigned",
+    "步骤已完成=>stage_completed",
+    "即将到期=>due_soon",
+    "逾期=>overdue",
+    "拒绝=>request_rejected",
+    "补正=>correction_requested",
+    "完成=>request_completed",
+  ]) assert.ok(policySimplified.includes(mapping), mapping);
   assert.match(
     structure,
     /use 0 when the exact anchor and leaves are unique under the server rules, including an item that uses only a permitted bounded same-local-clause recovery/u,
@@ -402,7 +458,9 @@ test("the prompt exposes exactly the closed quote batches", () => {
     routingConditionsSimplified.length <= 4_800,
     `simplified routing conditions prompt: ${routingConditionsSimplified.length}`,
   );
-  assert.ok(policy.length <= 4_900, `policy prompt: ${policy.length}`);
+  for (const prompt of [policy, policyTraditional, policySimplified]) {
+    assert.ok(prompt.length <= 5_900, `policy prompt: ${prompt.length}`);
+  }
 });
 
 test("the prompt treats injection text as data and withholds provider authority", () => {
@@ -487,7 +545,7 @@ test("the prompt demands complete entity coverage and source-language fidelity",
       /add adjacent exact source text until unique, or omit/u,
     );
     assert.match(prompt, /Copy leaf.quote verbatim/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-27/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-29/u);
     assert.match(prompt, /Caps, not quotas/u);
     assert.match(
       prompt,

@@ -7,7 +7,9 @@ import {
   templateCopilotV3ProviderQuoteBatchGenerationLimits,
   templateCopilotV3ProviderQuoteBatches,
   templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind,
+  templateCopilotV3ProviderQuoteNotificationEventHints,
   templateCopilotV3ProviderQuoteTransportLimits,
+  templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind,
   TemplateCopilotV3ProviderQuoteTransportError,
 } from "./template-copilot-v3-provider-quotes.ts";
 import {
@@ -1482,7 +1484,7 @@ test("formal v3 bucket and leaf sentinels fail closed while schema maxima retain
   );
 });
 
-test("formal v3 bucket and aggregate sentinels stay above schema-producible corpus maxima", () => {
+test("formal v3 sentinels cover corpus maxima and the closed notification vocabulary", () => {
   const maxima = {
     request_field: 0,
     attachment: 0,
@@ -1549,6 +1551,16 @@ test("formal v3 bucket and aggregate sentinels stay above schema-producible corp
     rejection_total: 1,
     policy_total: 14,
   });
+  const policyNotificationMaximumItems =
+    templateCopilotV3ProviderQuoteNotificationEventHints.length;
+  const policyWholeSlotMaximumItems = Object.keys(
+    templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind.policy_context,
+  ).length;
+  assert.ok(maxima.policy_notification <= policyNotificationMaximumItems);
+  assert.ok(
+    maxima.policy_total <=
+      policyWholeSlotMaximumItems + policyNotificationMaximumItems,
+  );
   const buckets = templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind;
   assert.equal(buckets.intake_documents.request_field, maxima.request_field + 1);
   assert.equal(buckets.intake_documents.attachment, maxima.attachment + 1);
@@ -1561,7 +1573,10 @@ test("formal v3 bucket and aggregate sentinels stay above schema-producible corp
     buckets.routing_conditions.condition,
     maxima.condition + 1,
   );
-  assert.equal(buckets.policy_context.notification, maxima.policy_notification + 1);
+  assert.equal(
+    buckets.policy_context.notification,
+    policyNotificationMaximumItems + 1,
+  );
   assert.equal(
     templateCopilotV3ProviderQuoteBatchGenerationLimits.intake_documents
       .maximumItems,
@@ -1592,7 +1607,7 @@ test("formal v3 bucket and aggregate sentinels stay above schema-producible corp
   assert.equal(
     templateCopilotV3ProviderQuoteBatchGenerationLimits.policy_context
       .maximumItems,
-    maxima.policy_total + 1,
+    policyWholeSlotMaximumItems + policyNotificationMaximumItems + 1,
   );
 });
 

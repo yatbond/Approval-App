@@ -17,6 +17,7 @@ import {
   templateCopilotV3ProviderQuoteConditionLeafLocationDiagnosticDetails,
   templateCopilotV3ProviderQuoteKindRoleHints,
   templateCopilotV3ProviderQuoteMinimumSemanticCore,
+  templateCopilotV3ProviderQuoteNotificationEventHints,
   templateCopilotV3ProviderQuoteOutputSchema,
   templateCopilotV3ProviderQuoteSlots,
   templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind,
@@ -827,7 +828,7 @@ test("provider guidance uses required kind buckets for every formal schema", () 
     },
     policy_context: {
       bytes: 5_626,
-      sha256: "3cc9fbd3e29e995f6cc5eee895e4933bc167637d90f256b8411a4e9c7d95c24a",
+      sha256: "47f991b0d60f339b6b29a59419f02b5327f2b66fe3498886f97a7663891d5327",
     },
   };
   for (const batchId of templateCopilotV3ProviderQuoteBatchIds) {
@@ -3268,5 +3269,89 @@ test("accepts exactly 80,000 source code points and rejects 80,001", () => {
         }),
       }),
     /provider quote source slots are invalid/u,
+  );
+});
+
+test("policy notification schema retains the closed eight-event list contract", () => {
+  assert.deepEqual(
+    templateCopilotV3ProviderQuoteNotificationEventHints,
+    [
+      "request_submitted",
+      "stage_assigned",
+      "stage_completed",
+      "request_rejected",
+      "correction_requested",
+      "request_completed",
+      "due_soon",
+      "overdue",
+    ],
+  );
+  assert.equal(
+    templateCopilotV3ProviderQuoteKindRoleHints.notification.event,
+    templateCopilotV3ProviderQuoteNotificationEventHints,
+  );
+  assert.ok(
+    templateCopilotV3ProviderQuoteKindRoleHints.notification.recipient.includes(
+      "source_named_group",
+    ),
+  );
+  assert.ok(
+    templateCopilotV3ProviderQuoteKindRoleHints.notification.visibility.includes(
+      "recipients_only",
+    ),
+  );
+  const schema = buildTemplateCopilotV3ProviderQuoteGuidanceJsonSchema(
+    "policy_context",
+  );
+  const notificationMaximumItems =
+    templateCopilotV3ProviderQuoteNotificationEventHints.length;
+  const policyWholeSlotMaximumItems = Object.keys(
+    templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind.policy_context,
+  ).length;
+  assert.equal(
+    schema.properties.b.properties.notification.maxItems,
+    notificationMaximumItems,
+  );
+  assert.equal(
+    templateCopilotV3ProviderQuoteBucketMaximumItemsByBatchAndKind
+      .policy_context.notification,
+    notificationMaximumItems + 1,
+  );
+  assert.equal(
+    templateCopilotV3ProviderQuoteBatchGenerationLimits.policy_context
+      .maximumItems,
+    policyWholeSlotMaximumItems + notificationMaximumItems + 1,
+  );
+});
+
+test("policy notification compact wire accepts every closed event at the exact cap", () => {
+  const policy =
+    templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind.policy_context;
+  const buckets = Object.fromEntries(
+    templateCopilotV3ProviderQuoteBatches.policy_context.allowedKinds.map(
+      (kind) => [kind, Object.hasOwn(policy, kind) ? null : []],
+    ),
+  );
+  buckets.notification = templateCopilotV3ProviderQuoteNotificationEventHints
+    .map((event) => ({
+      q: `${event} requester`,
+      l: [
+        { r: "event", q: event, h: event },
+        { r: "recipient", q: "requester", h: "requester" },
+      ],
+      a: 0,
+    }));
+
+  const expanded = expandTemplateCopilotV3ProviderQuoteWire({
+    batchId: "policy_context",
+    output: { v: templateCopilotV3ProviderQuoteWireVersion, b: buckets },
+  });
+  assert.equal(
+    expanded.items.length,
+    templateCopilotV3ProviderQuoteNotificationEventHints.length,
+  );
+  assert.deepEqual(
+    expanded.items.map((item) => item.leaves[0].hint),
+    [...templateCopilotV3ProviderQuoteNotificationEventHints],
   );
 });

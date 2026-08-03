@@ -592,6 +592,23 @@ function compileArrayItem(
       advisoryHint: supplied.hint,
       sourceSpan: supplied.sourceSpan,
     });
+    if (
+      item.kind === "notification" &&
+      supplied.role === "visibility" &&
+      semanticObservationIsContradicted(
+        factId,
+        semanticObservation,
+        semanticContexts,
+        semanticAuthorityContexts,
+        semanticSubjectObservation,
+      )
+    ) {
+      draft.semanticAuthorityBlocked = true;
+      rejections.push(
+        rejection(item, "unverifiable_leaf", "notification:visibility"),
+      );
+      continue;
+    }
     draft.semanticObservations.push(semanticObservation);
     if (mapping.kind === "semantic_only") continue;
     if (mapping.kind === "relationship") {
@@ -5642,6 +5659,15 @@ function semanticObservationIsContradicted(
   ) {
     return semanticNotificationActionIsProhibited(wording);
   }
+  if (
+    factId === "notifications.rules" &&
+    observation.role === "visibility"
+  ) {
+    return !semanticNotificationVisibilityIsAffirmative(
+      observation,
+      sourceAnchors,
+    );
+  }
   return false;
 }
 
@@ -6096,6 +6122,51 @@ function semanticNotificationActionIsProhibited(wording: string) {
       .test(wording);
 }
 
+function semanticNotificationVisibilityIsAffirmative(
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const marker = templateCopilotV3NormalizeLexicalText(observation.quote);
+  const aliases: Readonly<Record<string, readonly string[]>> = {
+    recipients_only: ["only", "recipients only", "only recipients", "只", "僅", "仅"],
+    all_participants: [
+      "all participants",
+      "all workflow participants",
+      "所有流程參與者",
+      "所有流程参与者",
+    ],
+  };
+  if (
+    observation.advisoryHint === null ||
+    !(aliases[observation.advisoryHint] ?? []).includes(marker)
+  ) {
+    return false;
+  }
+  const details = semanticObservationClauseDetails(observation, sourceAnchors);
+  if (!details) return false;
+  const quoteStartInHardClause =
+    observation.sourceSpan.startCodePoint - details.hardSourceStartCodePoint;
+  const hardCodePoints = Array.from(details.hardText);
+  if (
+    quoteStartInHardClause < 0 ||
+    quoteStartInHardClause > hardCodePoints.length
+  ) {
+    return false;
+  }
+  const exactPrefix = templateCopilotV3NormalizeLexicalText(
+    hardCodePoints.slice(0, quoteStartInHardClause).join(""),
+  );
+  if (
+    templateCopilotV3NormalizedPrefixNegatesFollowingPredicate(exactPrefix)
+  ) {
+    return false;
+  }
+  return !(
+    observation.advisoryHint === "recipients_only" &&
+    /(?:不|非)\s*$/u.test(exactPrefix)
+  );
+}
+
 function semanticHintIsVerified(
   factId: TemplateCopilotV3FragmentFactId,
   leaf: TemplateCopilotV3ReviewObservation,
@@ -6330,7 +6401,8 @@ function semanticContextsForArrayItem(
   }
   if (
     factId !== "workflow.conditions" &&
-    factId !== "workflow.stages"
+    factId !== "workflow.stages" &&
+    factId !== "notifications.rules"
   ) {
     return [anchor];
   }
