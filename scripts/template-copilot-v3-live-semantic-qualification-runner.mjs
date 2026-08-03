@@ -49,7 +49,7 @@ import {
 } from "./template-copilot-v3-semantic-round-plans.mjs";
 
 export const templateCopilotV3QualificationRunnerVersion =
-  "template-copilot-v3-live-semantic-qualification.22";
+  "template-copilot-v3-live-semantic-qualification.24";
 export const templateCopilotV3QualificationExpectedScenarioCount = 24;
 export const templateCopilotV3QualificationExpectedGovernedHoldCount = 64;
 export const templateCopilotV3QualificationExpectedLocaleCount = 3;
@@ -228,6 +228,14 @@ const reviewRejectionDetailSet = new Set([
   ...templateCopilotV3QualificationFactIds.map(
     (factId) => `${factId}:assembled`,
   ),
+]);
+const monotonicReviewRejectionCodeSet = new Set([
+  ...reviewRejectionCodeSet,
+  "unknown",
+]);
+const monotonicReviewRejectionDetailSet = new Set([
+  ...reviewRejectionDetailSet,
+  "unknown",
 ]);
 const qualificationGovernedHoldKeySet = new Set([
   "factId",
@@ -445,8 +453,106 @@ const qualificationRecoveryRoundKeySet = new Set([
   "round",
   "kind",
   "recoveryBatchIds",
+  "selectedRecoveryBatchIds",
   "questionIds",
   "answerDisclosureCount",
+]);
+const qualificationBatchSelectionKeySet = new Set([
+  "batchId",
+  "selectedRound",
+  "reasonCode",
+]);
+const qualificationBatchSelectionReasonSet = new Set([
+  "provisional_no_recovery",
+  "provisional_retained_failed_recovery",
+  "provisional_retained_non_monotonic_recovery",
+  "recovery_selected_monotonic_improvement",
+]);
+const qualificationMonotonicRecoveryEvidenceVersion =
+  "template-copilot-v3-monotonic-recovery-evidence.1";
+const qualificationMonotonicSnapshotVersion =
+  "template-copilot-v3-monotonic-evaluation-snapshot.1";
+const qualificationMonotonicRecoveryEvidenceKeySet = new Set([
+  "version",
+  "scenarioId",
+  "provisionalAttemptFingerprints",
+  "provisional",
+  "decisions",
+  "finalFingerprint",
+  "fingerprint",
+]);
+const qualificationMonotonicAttemptFingerprintKeySet = new Set([
+  "batchId",
+  "fingerprint",
+]);
+const qualificationMonotonicDecisionKeySet = new Set([
+  "batchId",
+  "selectedRound",
+  "reasonCode",
+  "recoveryAttemptFingerprint",
+  "beforeFingerprint",
+  "candidate",
+  "selectedFingerprint",
+  "fingerprint",
+]);
+const qualificationMonotonicSnapshotKeySet = new Set([
+  "version",
+  "effectiveAttemptFingerprints",
+  "batches",
+  "semanticCapture",
+  "projection",
+  "fingerprint",
+]);
+const qualificationMonotonicBatchStateKeySet = new Set([
+  "batchId",
+  "status",
+]);
+const qualificationMonotonicProjectionKeySet = new Set([
+  "status",
+  "acceptedProviderItemCount",
+  "reviewItemCount",
+  "openFragmentCount",
+  "conflictCount",
+  "rejectionCount",
+  "rejectionCodes",
+  "rejectionDetails",
+]);
+const qualificationMonotonicRiskCountFields = Object.freeze([
+  "failureCount",
+  "evidenceFailureCount",
+  "forbiddenHitCount",
+  "quarantineHitCount",
+  "unsafeQuoteCount",
+  "defaultOrUnknownExtraCount",
+  "rejectedProjectionCount",
+  "conflictCount",
+]);
+const qualificationMonotonicCoverageCountFields = Object.freeze([
+  "candidateCount",
+  "acceptedProjectionCount",
+  "governedHoldCount",
+  "blockedSemanticItemCount",
+  "semanticCompleteItemCount",
+  "completeItemCount",
+  "semanticFactCount",
+  "rawItemCount",
+  "rawScalarFactCount",
+  "rawPolicyItemCount",
+  "distinctFactCount",
+  "evidenceLeafCount",
+]);
+const qualificationMonotonicCaptureKeySet = new Set([
+  "resultValid",
+  "passed",
+  ...qualificationMonotonicRiskCountFields,
+  ...qualificationMonotonicCoverageCountFields,
+  "failureFingerprints",
+  "forbiddenHitFingerprints",
+  "factIds",
+  "governedHolds",
+  "blockerCodes",
+  "quarantineReasonCounts",
+  "observed",
 ]);
 
 export function selectTemplateCopilotV3QualificationScenarios({
@@ -658,6 +764,16 @@ export async function runTemplateCopilotV3IterativeQualificationScenario({
   });
   const attempts = [];
   const effectiveResults = new Map();
+  const batchSelectionById = new Map(
+    templateCopilotV3ProviderQuoteBatchIds.map((batchId) => [
+      batchId,
+      {
+        batchId,
+        selectedRound: 1,
+        reasonCode: "provisional_no_recovery",
+      },
+    ]),
+  );
 
   for (const batchId of templateCopilotV3ProviderQuoteBatchIds) {
     const result = await runQualificationBatchAttempt({
@@ -681,6 +797,10 @@ export async function runTemplateCopilotV3IterativeQualificationScenario({
     assembleReview,
     scoreProjection,
   });
+  let selectedEvaluation = provisional;
+  let provisionalSnapshot = null;
+  let selectedSnapshot = null;
+  const recoveryDecisions = [];
   const diagnostic = diagnoseTemplateCopilotV3IterativeSemantic({
     semantic: provisional.semanticCapture,
     batches: provisional.batches,
@@ -703,6 +823,13 @@ export async function runTemplateCopilotV3IterativeQualificationScenario({
   const recoveryBatchIds = templateCopilotV3ProviderQuoteBatchIds.filter(
     (batchId) => diagnostic.recoveryBatchIds.includes(batchId),
   );
+  if (recoveryBatchIds.length > 0) {
+    provisionalSnapshot = buildQualificationMonotonicSnapshot(
+      provisional,
+      effectiveResults,
+    );
+    selectedSnapshot = provisionalSnapshot;
+  }
   for (const batchId of recoveryBatchIds) {
     const result = await runQualificationBatchAttempt({
       item,
@@ -715,20 +842,93 @@ export async function runTemplateCopilotV3IterativeQualificationScenario({
       now,
     });
     attempts.push(result.attempt);
-    replaceEffectiveBatchResult(effectiveResults, result);
+    const candidateResults = new Map(effectiveResults);
+    replaceEffectiveBatchResult(candidateResults, result);
+    const candidateEvaluation = evaluateQualificationProjection({
+      item,
+      authority,
+      effectiveResults: candidateResults,
+      assembleReview,
+      scoreProjection,
+    });
+    const beforeSnapshot = selectedSnapshot;
+    const candidateSnapshot = buildQualificationMonotonicSnapshot(
+      candidateEvaluation,
+      candidateResults,
+    );
+    const recoverySelected =
+      qualificationRecoveryCandidateImprovesMonotonically(
+        selectedEvaluation,
+        candidateEvaluation,
+        batchId,
+      );
+    let selection;
+    if (recoverySelected) {
+      replaceEffectiveBatchResult(effectiveResults, result);
+      selectedEvaluation = candidateEvaluation;
+      selectedSnapshot = candidateSnapshot;
+      selection = {
+        batchId,
+        selectedRound: 2,
+        reasonCode: "recovery_selected_monotonic_improvement",
+      };
+    } else {
+      selection = {
+        batchId,
+        selectedRound: 1,
+        reasonCode:
+          result.batch.status === "applied"
+            ? "provisional_retained_non_monotonic_recovery"
+            : "provisional_retained_failed_recovery",
+      };
+    }
+    batchSelectionById.set(batchId, selection);
+    recoveryDecisions.push(
+      buildQualificationMonotonicRecoveryDecision({
+        scenarioId: item.id,
+        selection,
+        recoveryAttempt: result.attempt,
+        beforeSnapshot,
+        candidateSnapshot,
+        selectedSnapshot,
+      }),
+    );
   }
 
-  const final = evaluateQualificationProjection({
-    item,
-    authority,
-    effectiveResults,
-    assembleReview,
-    scoreProjection,
-  });
+  const final = selectedEvaluation;
+  const batchSelections = templateCopilotV3ProviderQuoteBatchIds.map(
+    (batchId) => batchSelectionById.get(batchId),
+  );
+  const selectedRecoveryBatchIds = batchSelections
+    .filter((selection) => selection.selectedRound === 2)
+    .map((selection) => selection.batchId);
+  const finalSnapshot =
+    recoveryBatchIds.length > 0
+      ? buildQualificationMonotonicSnapshot(final, effectiveResults)
+      : null;
+  if (
+    recoveryBatchIds.length > 0 &&
+    finalSnapshot.fingerprint !== selectedSnapshot.fingerprint
+  ) {
+    throw new Error("The selected recovery evaluation chain is inconsistent.");
+  }
+  const monotonicRecoveryEvidence =
+    recoveryBatchIds.length > 0
+      ? buildQualificationMonotonicRecoveryEvidence({
+          scenarioId: item.id,
+          provisionalSnapshot,
+          decisions: recoveryDecisions,
+          finalSnapshot,
+        })
+      : null;
   const iterativeQualification = buildIterativeQualificationResult({
     roundPlan,
     diagnostic,
     recoveryBatchIds,
+    selectedRecoveryBatchIds,
+    recoveryAttempts: attempts.slice(
+      templateCopilotV3ProviderQuoteBatchIds.length,
+    ),
     provisional,
     final,
   });
@@ -742,6 +942,10 @@ export async function runTemplateCopilotV3IterativeQualificationScenario({
     ).length,
     batches: final.batches,
     attempts,
+    batchSelections,
+    ...(monotonicRecoveryEvidence
+      ? { monotonicRecoveryEvidence }
+      : {}),
     rounds: [
       {
         round: 1,
@@ -755,6 +959,7 @@ export async function runTemplateCopilotV3IterativeQualificationScenario({
         round: 2,
         kind: "audit_and_recovery",
         recoveryBatchIds,
+        selectedRecoveryBatchIds,
         questionIds: iterativeQualification.askedQuestionIds,
         answerDisclosureCount:
           iterativeQualification.answerDisclosureCount,
@@ -823,6 +1028,452 @@ export function replaceEffectiveBatchResult(effectiveResults, result) {
   }
   effectiveResults.set(result.batch.batchId, result);
   return effectiveResults;
+}
+
+export function qualificationRecoveryCandidateImprovesMonotonically(
+  current,
+  candidate,
+  batchId,
+) {
+  if (
+    !isRecord(current) ||
+    !isRecord(candidate) ||
+    !templateCopilotV3ProviderQuoteBatchIds.includes(batchId)
+  ) {
+    return false;
+  }
+  const currentBatch = current.batches?.find(
+    (batch) => batch?.batchId === batchId,
+  );
+  const candidateBatch = candidate.batches?.find(
+    (batch) => batch?.batchId === batchId,
+  );
+  const currentCapture = current.semanticCapture;
+  const candidateCapture = candidate.semanticCapture;
+  if (
+    !isRecord(currentBatch) ||
+    !isRecord(candidateBatch) ||
+    !isRecord(currentCapture) ||
+    !isRecord(candidateCapture) ||
+    !qualificationMonotonicCaptureValid(currentCapture) ||
+    !qualificationMonotonicCaptureValid(candidateCapture) ||
+    !qualificationMonotonicProjectionValid(current.projection) ||
+    !qualificationMonotonicProjectionValid(candidate.projection) ||
+    candidateCapture.resultValid !== true ||
+    (currentCapture.passed === true && candidateCapture.passed !== true) ||
+    candidateBatch.status !== "applied" ||
+    qualificationRegressionCount(current, candidate) > 0 ||
+    !qualificationRetainsGovernedHolds(currentCapture, candidateCapture) ||
+    !stringMultisetContainsAll(
+      currentCapture.failureFingerprints,
+      candidateCapture.failureFingerprints,
+    ) ||
+    !stringMultisetContainsAll(
+      currentCapture.forbiddenHitFingerprints,
+      candidateCapture.forbiddenHitFingerprints,
+    ) ||
+    !stringSetContainsAll(candidateCapture.factIds, currentCapture.factIds) ||
+    !stringSetContainsAll(
+      candidateCapture.blockerCodes,
+      currentCapture.blockerCodes,
+    ) ||
+    candidateCapture.quarantineHitCount !==
+      currentCapture.quarantineHitCount ||
+    !sameStableValue(
+      candidateCapture.quarantineReasonCounts,
+      currentCapture.quarantineReasonCounts,
+    )
+  ) {
+    return false;
+  }
+  if (
+    qualificationMonotonicRiskCountFields.some(
+      (field) =>
+        nonnegativeInteger(candidateCapture[field]) >
+        nonnegativeInteger(currentCapture[field]),
+    ) ||
+    qualificationMonotonicCoverageCountFields.some(
+      (field) =>
+        nonnegativeInteger(candidateCapture[field]) <
+        nonnegativeInteger(currentCapture[field]),
+    ) ||
+    templateCopilotV3QualificationObservedMetricKeys.some(
+      (field) =>
+        candidateCapture.observed[field] < currentCapture.observed[field],
+    ) ||
+    !qualificationProjectionDoesNotRegress(
+      current.projection,
+      candidate.projection,
+    )
+  ) {
+    return false;
+  }
+  const currentIssues = qualificationIssueCount(current);
+  const candidateIssues = qualificationIssueCount(candidate);
+  const materialCoverageFields = [
+    "acceptedProjectionCount",
+    "governedHoldCount",
+    "blockedSemanticItemCount",
+    "semanticCompleteItemCount",
+    "completeItemCount",
+    "semanticFactCount",
+    "distinctFactCount",
+    "evidenceLeafCount",
+  ];
+  return (
+    (candidateCapture.resultValid === true &&
+      currentCapture.resultValid !== true) ||
+    (candidateCapture.passed === true && currentCapture.passed !== true) ||
+    candidateIssues < currentIssues ||
+    qualificationMonotonicRiskCountFields.some(
+      (field) =>
+        nonnegativeInteger(candidateCapture[field]) <
+        nonnegativeInteger(currentCapture[field]),
+    ) ||
+    materialCoverageFields.some(
+      (field) => candidateCapture[field] > currentCapture[field],
+    ) ||
+    templateCopilotV3QualificationObservedMetricKeys.some(
+      (field) =>
+        candidateCapture.observed[field] > currentCapture.observed[field],
+    ) ||
+    candidateCapture.factIds.length > currentCapture.factIds.length ||
+    candidateCapture.governedHolds.length >
+      currentCapture.governedHolds.length ||
+    qualificationProjectionStrictlyImproves(
+      current.projection,
+      candidate.projection,
+    ) ||
+    (currentBatch.status !== "applied" && candidateBatch.status === "applied")
+  );
+}
+
+function qualificationRetainsGovernedHolds(currentCapture, candidateCapture) {
+  if (
+    !Array.isArray(currentCapture.governedHolds) ||
+    !Array.isArray(candidateCapture.governedHolds)
+  ) {
+    return false;
+  }
+  const holdCount = (holds) => {
+    const counts = new Map();
+    for (const hold of holds) {
+      if (
+        !isRecord(hold) ||
+        typeof hold.factId !== "string" ||
+        typeof hold.blockingReason !== "string"
+      ) {
+        return null;
+      }
+      const key = [hold.factId, hold.blockingReason].join("\u0000");
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return counts;
+  };
+  const currentCounts = holdCount(currentCapture.governedHolds);
+  const candidateCounts = holdCount(candidateCapture.governedHolds);
+  return (
+    currentCounts instanceof Map &&
+    candidateCounts instanceof Map &&
+    [...currentCounts].every(
+      ([key, count]) => (candidateCounts.get(key) || 0) >= count,
+    )
+  );
+}
+
+function qualificationMonotonicCaptureValid(capture) {
+  if (
+    !sameKeySet(capture, qualificationMonotonicCaptureKeySet) ||
+    typeof capture.resultValid !== "boolean" ||
+    typeof capture.passed !== "boolean" ||
+    (capture.passed && !capture.resultValid) ||
+    [...qualificationMonotonicRiskCountFields,
+      ...qualificationMonotonicCoverageCountFields].some(
+      (field) => !isNonnegativeInteger(capture[field]),
+    ) ||
+    !canonicalFingerprintArray(capture.failureFingerprints) ||
+    !canonicalFingerprintArray(capture.forbiddenHitFingerprints) ||
+    !canonicalFactIdArray(capture.factIds) ||
+    !canonicalGovernedHoldArray(capture.governedHolds) ||
+    !canonicalBlockerCodeArray(capture.blockerCodes) ||
+    !closedCountMap(
+      capture.quarantineReasonCounts,
+      qualificationQuarantineReasonSet,
+    ) ||
+    !sanitizeObserved(capture.observed).valid
+  ) {
+    return false;
+  }
+  const expectedBlockerCodes = [
+    ...new Set(capture.governedHolds.map((entry) => entry.blockingReason)),
+  ].sort();
+  const quarantineReasonTotal = Object.values(
+    capture.quarantineReasonCounts,
+  ).reduce((total, count) => total + count, 0);
+  const derivedRelationshipsValid =
+    capture.failureCount ===
+      capture.failureFingerprints.length + (capture.resultValid ? 0 : 1) &&
+    capture.forbiddenHitCount === capture.forbiddenHitFingerprints.length &&
+    capture.quarantineHitCount === quarantineReasonTotal &&
+    capture.governedHoldCount === capture.governedHolds.length &&
+    capture.blockedSemanticItemCount === capture.governedHolds.length &&
+    sameStringArray(capture.blockerCodes, expectedBlockerCodes) &&
+    capture.candidateCount ===
+      capture.rawItemCount +
+        capture.rawScalarFactCount +
+        capture.rawPolicyItemCount &&
+    capture.acceptedProjectionCount ===
+      capture.semanticCompleteItemCount + capture.semanticFactCount &&
+    capture.completeItemCount <= capture.semanticCompleteItemCount &&
+    capture.semanticCompleteItemCount <= capture.rawItemCount &&
+    capture.blockedSemanticItemCount <= capture.rawItemCount &&
+    capture.semanticCompleteItemCount + capture.blockedSemanticItemCount <=
+      capture.rawItemCount &&
+    capture.semanticFactCount <=
+      capture.rawScalarFactCount + capture.rawPolicyItemCount &&
+    capture.acceptedProjectionCount <= capture.candidateCount &&
+    capture.distinctFactCount === capture.factIds.length &&
+    capture.distinctFactCount <=
+      capture.acceptedProjectionCount + capture.blockedSemanticItemCount &&
+    capture.observed.factCount === capture.distinctFactCount &&
+    capture.observed.governedSemanticHoldCount ===
+      capture.governedHoldCount;
+  return !capture.resultValid || derivedRelationshipsValid;
+}
+
+function qualificationMonotonicProjectionValid(projection) {
+  if (
+    !sameKeySet(projection, qualificationMonotonicProjectionKeySet) ||
+    !["assembled", "failed"].includes(projection.status) ||
+    [
+      "acceptedProviderItemCount",
+      "reviewItemCount",
+      "openFragmentCount",
+      "conflictCount",
+      "rejectionCount",
+    ].some((field) => !isNonnegativeInteger(projection[field])) ||
+    !closedCountMap(
+      projection.rejectionCodes,
+      monotonicReviewRejectionCodeSet,
+    ) ||
+    !closedCountMap(
+      projection.rejectionDetails,
+      monotonicReviewRejectionDetailSet,
+    )
+  ) {
+    return false;
+  }
+  const codeTotal = Object.values(projection.rejectionCodes).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  const detailTotal = Object.values(projection.rejectionDetails).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  return (
+    codeTotal === projection.rejectionCount &&
+    detailTotal === projection.rejectionCount
+  );
+}
+
+function qualificationProjectionDoesNotRegress(current, candidate) {
+  const statusRank = { failed: 0, assembled: 1 };
+  return (
+    qualificationMonotonicProjectionValid(current) &&
+    qualificationMonotonicProjectionValid(candidate) &&
+    statusRank[candidate.status] >= statusRank[current.status] &&
+    [
+      "acceptedProviderItemCount",
+      "reviewItemCount",
+      "openFragmentCount",
+    ].every((field) => candidate[field] >= current[field]) &&
+    ["conflictCount", "rejectionCount"].every(
+      (field) => candidate[field] <= current[field],
+    ) &&
+    countMapDoesNotIncrease(
+      current.rejectionCodes,
+      candidate.rejectionCodes,
+    ) &&
+    countMapDoesNotIncrease(
+      current.rejectionDetails,
+      candidate.rejectionDetails,
+    )
+  );
+}
+
+function qualificationProjectionStrictlyImproves(current, candidate) {
+  const statusRank = { failed: 0, assembled: 1 };
+  return (
+    statusRank[candidate.status] > statusRank[current.status] ||
+    [
+      "acceptedProviderItemCount",
+      "reviewItemCount",
+      "openFragmentCount",
+    ].some((field) => candidate[field] > current[field]) ||
+    ["conflictCount", "rejectionCount"].some(
+      (field) => candidate[field] < current[field],
+    ) ||
+    countMapStrictlyDecreases(
+      current.rejectionCodes,
+      candidate.rejectionCodes,
+    ) ||
+    countMapStrictlyDecreases(
+      current.rejectionDetails,
+      candidate.rejectionDetails,
+    )
+  );
+}
+
+function buildQualificationMonotonicSnapshot(evaluation, effectiveResults) {
+  if (!isRecord(evaluation) || !(effectiveResults instanceof Map)) {
+    throw new Error("The monotonic evaluation snapshot input is invalid.");
+  }
+  const effectiveAttemptFingerprints =
+    templateCopilotV3ProviderQuoteBatchIds.map((batchId) => {
+      const attempt = effectiveResults.get(batchId)?.attempt;
+      if (!isRecord(attempt)) {
+        throw new Error("The monotonic attempt vector is incomplete.");
+      }
+      return {
+        batchId,
+        fingerprint: qualificationAttemptFingerprint(attempt),
+      };
+    });
+  const body = {
+    version: qualificationMonotonicSnapshotVersion,
+    effectiveAttemptFingerprints,
+    batches: templateCopilotV3ProviderQuoteBatchIds.map((batchId) => {
+      const batch = evaluation.batches?.find(
+        (entry) => entry?.batchId === batchId,
+      );
+      if (!isRecord(batch) || !["applied", "failed"].includes(batch.status)) {
+        throw new Error("The monotonic batch-state vector is invalid.");
+      }
+      return { batchId, status: batch.status };
+    }),
+    semanticCapture: closedMonotonicCapture(evaluation.semanticCapture),
+    projection: closedMonotonicProjection(evaluation.projection),
+  };
+  return Object.freeze({
+    ...body,
+    fingerprint: qualificationCanonicalFingerprint("evaluation", body),
+  });
+}
+
+function buildQualificationMonotonicRecoveryDecision({
+  scenarioId,
+  selection,
+  recoveryAttempt,
+  beforeSnapshot,
+  candidateSnapshot,
+  selectedSnapshot,
+}) {
+  const body = {
+    batchId: selection.batchId,
+    selectedRound: selection.selectedRound,
+    reasonCode: selection.reasonCode,
+    recoveryAttemptFingerprint:
+      qualificationAttemptFingerprint(recoveryAttempt),
+    beforeFingerprint: beforeSnapshot.fingerprint,
+    candidate: candidateSnapshot,
+    selectedFingerprint: selectedSnapshot.fingerprint,
+  };
+  return Object.freeze({
+    ...body,
+    fingerprint: qualificationCanonicalFingerprint(
+      `decision:${scenarioId}`,
+      body,
+    ),
+  });
+}
+
+function buildQualificationMonotonicRecoveryEvidence({
+  scenarioId,
+  provisionalSnapshot,
+  decisions,
+  finalSnapshot,
+}) {
+  const body = {
+    version: qualificationMonotonicRecoveryEvidenceVersion,
+    scenarioId,
+    provisionalAttemptFingerprints:
+      provisionalSnapshot.effectiveAttemptFingerprints,
+    provisional: provisionalSnapshot,
+    decisions,
+    finalFingerprint: finalSnapshot.fingerprint,
+  };
+  return Object.freeze({
+    ...body,
+    fingerprint: qualificationCanonicalFingerprint(
+      `recovery-chain:${scenarioId}`,
+      body,
+    ),
+  });
+}
+
+function closedMonotonicCapture(capture) {
+  const counts = Object.fromEntries(
+    [
+      ...qualificationMonotonicRiskCountFields,
+      ...qualificationMonotonicCoverageCountFields,
+    ].map((field) => [field, capture?.[field]]),
+  );
+  const closed = {
+    resultValid: capture?.resultValid,
+    passed: capture?.passed,
+    ...counts,
+    failureFingerprints: [...(capture?.failureFingerprints || [])],
+    forbiddenHitFingerprints: [
+      ...(capture?.forbiddenHitFingerprints || []),
+    ],
+    factIds: [...(capture?.factIds || [])],
+    governedHolds: (capture?.governedHolds || []).map((entry) => ({
+      factId: entry.factId,
+      blockingReason: entry.blockingReason,
+    })),
+    blockerCodes: [...(capture?.blockerCodes || [])],
+    quarantineReasonCounts: Object.fromEntries(
+      Object.entries(capture?.quarantineReasonCounts || {}).sort(
+        ([left], [right]) => left.localeCompare(right, "en"),
+      ),
+    ),
+    observed: Object.fromEntries(
+      templateCopilotV3QualificationObservedMetricKeys.map((key) => [
+        key,
+        capture?.observed?.[key],
+      ]),
+    ),
+  };
+  if (!qualificationMonotonicCaptureValid(closed)) {
+    throw new Error("The closed monotonic semantic capture is invalid.");
+  }
+  return closed;
+}
+
+function closedMonotonicProjection(projection) {
+  const closed = {
+    status: projection?.status,
+    acceptedProviderItemCount: projection?.acceptedProviderItemCount,
+    reviewItemCount: projection?.reviewItemCount,
+    openFragmentCount: projection?.openFragmentCount,
+    conflictCount: projection?.conflictCount,
+    rejectionCount: projection?.rejectionCount,
+    rejectionCodes: Object.fromEntries(
+      Object.entries(projection?.rejectionCodes || {}).sort(
+        ([left], [right]) => left.localeCompare(right, "en"),
+      ),
+    ),
+    rejectionDetails: Object.fromEntries(
+      Object.entries(projection?.rejectionDetails || {}).sort(
+        ([left], [right]) => left.localeCompare(right, "en"),
+      ),
+    ),
+  };
+  if (!qualificationMonotonicProjectionValid(closed)) {
+    throw new Error("The closed monotonic projection is invalid.");
+  }
+  return closed;
 }
 
 export async function runQualificationBatchAttempt({
@@ -1077,6 +1728,8 @@ function buildIterativeQualificationResult({
   roundPlan,
   diagnostic,
   recoveryBatchIds,
+  selectedRecoveryBatchIds,
+  recoveryAttempts,
   provisional,
   final,
 }) {
@@ -1098,10 +1751,8 @@ function buildIterativeQualificationResult({
   const provisionalIssues = qualificationIssueCount(provisional);
   const finalIssues = qualificationIssueCount(final);
   const regressionCount = qualificationRegressionCount(provisional, final);
-  const recoverySuccessCount = recoveryBatchIds.filter((batchId) =>
-    final.batches.some(
-      (batch) => batch.batchId === batchId && batch.status === "applied",
-    )
+  const recoverySuccessCount = recoveryAttempts.filter(
+    (attempt) => attempt.status === "applied",
   ).length;
   const unsafeAcceptedCount =
     final.semanticCapture.forbiddenHitCount +
@@ -1142,7 +1793,7 @@ function buildIterativeQualificationResult({
     unsafeAcceptedCount === 0 &&
     regressionCount === 0;
   return {
-    version: "template-copilot-v3-iterative-qualification.1",
+    version: "template-copilot-v3-iterative-qualification.3",
     diagnosticVersion: diagnostic.version,
     roundPlanVersion: templateCopilotV3SemanticRoundPlanVersion,
     roundPlanFingerprint: templateCopilotV3SemanticRoundPlanFingerprint,
@@ -1164,6 +1815,7 @@ function buildIterativeQualificationResult({
     ),
     recoveryAttemptCount: recoveryBatchIds.length,
     recoverySuccessCount,
+    selectedRecoveryCount: selectedRecoveryBatchIds.length,
     recoveredGapCount,
     unresolvedGapCount,
     expectedQuestionCount: expectedQuestionIds.length,
@@ -1180,6 +1832,7 @@ function buildIterativeQualificationResult({
     unsafeAcceptedCount,
     regressionCount,
     recoveryBatchIds: [...recoveryBatchIds],
+    selectedRecoveryBatchIds: [...selectedRecoveryBatchIds],
     expectedQuestionIds,
     askedQuestionIds,
     gapDecisions: Array.isArray(diagnostic.decisions)
@@ -1605,7 +2258,7 @@ function scenarioIterativeQualificationPasses(item, expectedModel) {
     item.semanticCapture?.resultValid !== true ||
     !scenarioMatchesExpectedGovernedHoldInventory(item) ||
     !qualificationSourceAuthorityPasses(item.sourceAuthority, plan, item.id) ||
-    iterative.version !== "template-copilot-v3-iterative-qualification.1" ||
+    iterative.version !== "template-copilot-v3-iterative-qualification.3" ||
     iterative.diagnosticVersion !==
       templateCopilotV3IterativeSemanticDiagnosticVersion ||
     iterative.roundPlanVersion !== templateCopilotV3SemanticRoundPlanVersion ||
@@ -1642,12 +2295,24 @@ function scenarioIterativeQualificationPasses(item, expectedModel) {
     ) ||
     iterative.recoveryAttemptCount !== iterative.recoveryBatchIds.length ||
     iterative.recoverySuccessCount > iterative.recoveryAttemptCount ||
+    !Array.isArray(iterative.selectedRecoveryBatchIds) ||
+    new Set(iterative.selectedRecoveryBatchIds).size !==
+      iterative.selectedRecoveryBatchIds.length ||
+    iterative.selectedRecoveryBatchIds.some(
+      (batchId) => !iterative.recoveryBatchIds.includes(batchId),
+    ) ||
+    iterative.selectedRecoveryCount !==
+      iterative.selectedRecoveryBatchIds.length ||
+    iterative.selectedRecoveryCount > iterative.recoverySuccessCount ||
     !Array.isArray(item.attempts) ||
     item.attempts.length !==
       templateCopilotV3ProviderQuoteBatchIds.length +
         iterative.recoveryAttemptCount ||
     !Array.isArray(item.rounds) ||
-    item.rounds.length !== 3
+    item.rounds.length !== 3 ||
+    !Array.isArray(item.batchSelections) ||
+    item.batchSelections.length !==
+      templateCopilotV3ProviderQuoteBatchIds.length
   ) {
     return false;
   }
@@ -1664,21 +2329,15 @@ function scenarioIterativeQualificationPasses(item, expectedModel) {
     ) ||
     iterative.recoverySuccessCount !==
       recoveryAttempts.filter((attempt) => attempt.status === "applied").length ||
-    !qualificationRoundsPass(item.rounds, iterative, item.semanticCapture)
-  ) {
-    return false;
-  }
-  const latestAttemptByBatchId = new Map();
-  for (const attempt of item.attempts) {
-    latestAttemptByBatchId.set(attempt.batchId, attempt);
-  }
-  if (
-    !item.batches.every((batch) =>
-      sameQualificationBatchAggregate(
-        batch,
-        latestAttemptByBatchId.get(batch.batchId),
-      )
-    )
+    !qualificationMonotonicRecoveryEvidencePasses(item) ||
+    !qualificationRoundsPass(item.rounds, iterative, item.semanticCapture) ||
+    !qualificationBatchSelectionsPass({
+      selections: item.batchSelections,
+      provisionalAttempts,
+      recoveryAttempts,
+      iterative,
+      finalBatches: item.batches,
+    })
   ) {
     return false;
   }
@@ -1699,6 +2358,331 @@ function scenarioIterativeQualificationPasses(item, expectedModel) {
       (attempt, index) =>
         attempt.batchId === iterative.recoveryBatchIds[index],
     )
+  );
+}
+
+export function qualificationMonotonicRecoveryEvidencePasses(item) {
+  const iterative = item?.iterativeQualification;
+  const recoveryBatchIds = iterative?.recoveryBatchIds;
+  if (!isRecord(iterative) || !Array.isArray(recoveryBatchIds)) return false;
+  const hasEvidence = Object.hasOwn(item, "monotonicRecoveryEvidence");
+  if (recoveryBatchIds.length === 0) return !hasEvidence;
+  const evidence = item.monotonicRecoveryEvidence;
+  if (
+    !hasEvidence ||
+    !sameKeySet(evidence, qualificationMonotonicRecoveryEvidenceKeySet) ||
+    evidence.version !== qualificationMonotonicRecoveryEvidenceVersion ||
+    evidence.scenarioId !== item.id ||
+    !Array.isArray(evidence.provisionalAttemptFingerprints) ||
+    !Array.isArray(evidence.decisions) ||
+    evidence.decisions.length !== recoveryBatchIds.length ||
+    !canonicalSha256(evidence.finalFingerprint) ||
+    !canonicalSha256(evidence.fingerprint) ||
+    !qualificationMonotonicSnapshotValid(evidence.provisional)
+  ) {
+    return false;
+  }
+  const provisionalAttempts = item.attempts?.slice(
+    0,
+    templateCopilotV3ProviderQuoteBatchIds.length,
+  );
+  const recoveryAttempts = item.attempts?.slice(
+    templateCopilotV3ProviderQuoteBatchIds.length,
+  );
+  if (
+    !Array.isArray(provisionalAttempts) ||
+    provisionalAttempts.length !==
+      templateCopilotV3ProviderQuoteBatchIds.length ||
+    !Array.isArray(recoveryAttempts) ||
+    recoveryAttempts.length !== recoveryBatchIds.length ||
+    !Array.isArray(item.batchSelections)
+  ) {
+    return false;
+  }
+  const provisionalAttemptFingerprints =
+    templateCopilotV3ProviderQuoteBatchIds.map((batchId, index) => ({
+      batchId,
+      fingerprint: qualificationAttemptFingerprint(
+        provisionalAttempts[index],
+      ),
+    }));
+  if (
+    !qualificationAttemptFingerprintVectorValid(
+      evidence.provisionalAttemptFingerprints,
+    ) ||
+    !sameStableValue(
+      evidence.provisionalAttemptFingerprints,
+      provisionalAttemptFingerprints,
+    ) ||
+    !sameStableValue(
+      evidence.provisional.effectiveAttemptFingerprints,
+      provisionalAttemptFingerprints,
+    ) ||
+    !qualificationSnapshotMatchesAttemptStates(
+      evidence.provisional,
+      provisionalAttempts,
+    )
+  ) {
+    return false;
+  }
+
+  const selectionByBatchId = new Map(
+    item.batchSelections.map((selection) => [selection?.batchId, selection]),
+  );
+  let currentSnapshot = evidence.provisional;
+  for (let index = 0; index < recoveryBatchIds.length; index += 1) {
+    const batchId = recoveryBatchIds[index];
+    const attempt = recoveryAttempts[index];
+    const decision = evidence.decisions[index];
+    const selection = selectionByBatchId.get(batchId);
+    if (
+      !isRecord(attempt) ||
+      attempt.batchId !== batchId ||
+      !sameKeySet(decision, qualificationMonotonicDecisionKeySet) ||
+      decision.batchId !== batchId ||
+      !canonicalSha256(decision.recoveryAttemptFingerprint) ||
+      decision.recoveryAttemptFingerprint !==
+        qualificationAttemptFingerprint(attempt) ||
+      decision.beforeFingerprint !== currentSnapshot.fingerprint ||
+      !qualificationMonotonicSnapshotValid(decision.candidate) ||
+      !sameKeySet(selection, qualificationBatchSelectionKeySet)
+    ) {
+      return false;
+    }
+    const expectedAttemptFingerprints =
+      currentSnapshot.effectiveAttemptFingerprints.map((entry) =>
+        entry.batchId === batchId
+          ? {
+              batchId,
+              fingerprint: decision.recoveryAttemptFingerprint,
+            }
+          : entry,
+      );
+    const expectedBatchStates = currentSnapshot.batches.map((entry) =>
+      entry.batchId === batchId
+        ? { batchId, status: attempt.status }
+        : entry,
+    );
+    if (
+      !sameStableValue(
+        decision.candidate.effectiveAttemptFingerprints,
+        expectedAttemptFingerprints,
+      ) ||
+      !sameStableValue(decision.candidate.batches, expectedBatchStates)
+    ) {
+      return false;
+    }
+    const improves = qualificationRecoveryCandidateImprovesMonotonically(
+      qualificationEvaluationFromSnapshot(currentSnapshot),
+      qualificationEvaluationFromSnapshot(decision.candidate),
+      batchId,
+    );
+    const expectedSelectedRound = improves ? 2 : 1;
+    const expectedReasonCode = improves
+      ? "recovery_selected_monotonic_improvement"
+      : attempt.status === "applied"
+        ? "provisional_retained_non_monotonic_recovery"
+        : "provisional_retained_failed_recovery";
+    const expectedSelectedFingerprint = improves
+      ? decision.candidate.fingerprint
+      : currentSnapshot.fingerprint;
+    const decisionBody = {
+      batchId,
+      selectedRound: decision.selectedRound,
+      reasonCode: decision.reasonCode,
+      recoveryAttemptFingerprint: decision.recoveryAttemptFingerprint,
+      beforeFingerprint: decision.beforeFingerprint,
+      candidate: decision.candidate,
+      selectedFingerprint: decision.selectedFingerprint,
+    };
+    if (
+      decision.selectedRound !== expectedSelectedRound ||
+      decision.reasonCode !== expectedReasonCode ||
+      decision.selectedFingerprint !== expectedSelectedFingerprint ||
+      selection.selectedRound !== expectedSelectedRound ||
+      selection.reasonCode !== expectedReasonCode ||
+      decision.fingerprint !==
+        qualificationCanonicalFingerprint(
+          `decision:${item.id}`,
+          decisionBody,
+        )
+    ) {
+      return false;
+    }
+    if (improves) currentSnapshot = decision.candidate;
+  }
+
+  let finalCapture;
+  let finalProjection;
+  try {
+    finalCapture = closedMonotonicCapture(item.semanticCapture);
+    finalProjection = closedMonotonicProjection(item.projection);
+  } catch {
+    return false;
+  }
+  const finalBatchStates = templateCopilotV3ProviderQuoteBatchIds.map(
+    (batchId) => {
+      const batch = item.batches?.find((entry) => entry?.batchId === batchId);
+      return { batchId, status: batch?.status };
+    },
+  );
+  const evidenceBody = {
+    version: evidence.version,
+    scenarioId: evidence.scenarioId,
+    provisionalAttemptFingerprints:
+      evidence.provisionalAttemptFingerprints,
+    provisional: evidence.provisional,
+    decisions: evidence.decisions,
+    finalFingerprint: evidence.finalFingerprint,
+  };
+  return (
+    currentSnapshot.fingerprint === evidence.finalFingerprint &&
+    sameStableValue(currentSnapshot.semanticCapture, finalCapture) &&
+    sameStableValue(currentSnapshot.projection, finalProjection) &&
+    sameStableValue(currentSnapshot.batches, finalBatchStates) &&
+    evidence.fingerprint ===
+      qualificationCanonicalFingerprint(
+        `recovery-chain:${item.id}`,
+        evidenceBody,
+      )
+  );
+}
+
+function qualificationMonotonicSnapshotValid(snapshot) {
+  if (
+    !sameKeySet(snapshot, qualificationMonotonicSnapshotKeySet) ||
+    snapshot.version !== qualificationMonotonicSnapshotVersion ||
+    !qualificationAttemptFingerprintVectorValid(
+      snapshot.effectiveAttemptFingerprints,
+    ) ||
+    !Array.isArray(snapshot.batches) ||
+    snapshot.batches.length !== templateCopilotV3ProviderQuoteBatchIds.length ||
+    !qualificationMonotonicCaptureValid(snapshot.semanticCapture) ||
+    !qualificationMonotonicProjectionValid(snapshot.projection) ||
+    !canonicalSha256(snapshot.fingerprint)
+  ) {
+    return false;
+  }
+  for (let index = 0; index < snapshot.batches.length; index += 1) {
+    const batch = snapshot.batches[index];
+    if (
+      !sameKeySet(batch, qualificationMonotonicBatchStateKeySet) ||
+      batch.batchId !== templateCopilotV3ProviderQuoteBatchIds[index] ||
+      !["applied", "failed"].includes(batch.status)
+    ) {
+      return false;
+    }
+  }
+  const body = {
+    version: snapshot.version,
+    effectiveAttemptFingerprints: snapshot.effectiveAttemptFingerprints,
+    batches: snapshot.batches,
+    semanticCapture: snapshot.semanticCapture,
+    projection: snapshot.projection,
+  };
+  return (
+    snapshot.fingerprint ===
+    qualificationCanonicalFingerprint("evaluation", body)
+  );
+}
+
+function qualificationAttemptFingerprintVectorValid(vector) {
+  if (
+    !Array.isArray(vector) ||
+    vector.length !== templateCopilotV3ProviderQuoteBatchIds.length
+  ) {
+    return false;
+  }
+  return vector.every(
+    (entry, index) =>
+      sameKeySet(entry, qualificationMonotonicAttemptFingerprintKeySet) &&
+      entry.batchId === templateCopilotV3ProviderQuoteBatchIds[index] &&
+      canonicalSha256(entry.fingerprint),
+  );
+}
+
+function qualificationSnapshotMatchesAttemptStates(snapshot, attempts) {
+  return snapshot.batches.every(
+    (batch, index) =>
+      attempts[index]?.batchId === batch.batchId &&
+      attempts[index]?.status === batch.status,
+  );
+}
+
+function qualificationEvaluationFromSnapshot(snapshot) {
+  return {
+    batches: snapshot.batches,
+    semanticCapture: snapshot.semanticCapture,
+    projection: snapshot.projection,
+  };
+}
+
+function qualificationBatchSelectionsPass({
+  selections,
+  provisionalAttempts,
+  recoveryAttempts,
+  iterative,
+  finalBatches,
+}) {
+  const recoveryAttemptByBatchId = new Map(
+    recoveryAttempts.map((attempt) => [attempt.batchId, attempt]),
+  );
+  const finalBatchById = new Map(
+    finalBatches.map((batch) => [batch.batchId, batch]),
+  );
+  const selectedRecoveryBatchIds = [];
+  for (let index = 0; index < selections.length; index += 1) {
+    const selection = selections[index];
+    const batchId = templateCopilotV3ProviderQuoteBatchIds[index];
+    const provisionalAttempt = provisionalAttempts[index];
+    const recoveryAttempt = recoveryAttemptByBatchId.get(batchId);
+    if (
+      !sameKeySet(selection, qualificationBatchSelectionKeySet) ||
+      selection.batchId !== batchId ||
+      ![1, 2].includes(selection.selectedRound) ||
+      !qualificationBatchSelectionReasonSet.has(selection.reasonCode) ||
+      provisionalAttempt?.batchId !== batchId
+    ) {
+      return false;
+    }
+    let selectedAttempt = provisionalAttempt;
+    if (!recoveryAttempt) {
+      if (
+        selection.selectedRound !== 1 ||
+        selection.reasonCode !== "provisional_no_recovery"
+      ) {
+        return false;
+      }
+    } else if (selection.selectedRound === 2) {
+      if (
+        selection.reasonCode !== "recovery_selected_monotonic_improvement" ||
+        recoveryAttempt.status !== "applied"
+      ) {
+        return false;
+      }
+      selectedAttempt = recoveryAttempt;
+      selectedRecoveryBatchIds.push(batchId);
+    } else {
+      const expectedReason =
+        recoveryAttempt.status === "applied"
+          ? "provisional_retained_non_monotonic_recovery"
+          : "provisional_retained_failed_recovery";
+      if (selection.reasonCode !== expectedReason) {
+        return false;
+      }
+    }
+    if (
+      !sameQualificationBatchAggregate(
+        finalBatchById.get(batchId),
+        selectedAttempt,
+      )
+    ) {
+      return false;
+    }
+  }
+  return sameStringArray(
+    selectedRecoveryBatchIds,
+    iterative.selectedRecoveryBatchIds,
   );
 }
 
@@ -1855,6 +2839,10 @@ function qualificationRoundsPass(rounds, iterative, semanticCapture) {
     recovery.round === 2 &&
     recovery.kind === "audit_and_recovery" &&
     sameStringArray(recovery.recoveryBatchIds, iterative.recoveryBatchIds) &&
+    sameStringArray(
+      recovery.selectedRecoveryBatchIds,
+      iterative.selectedRecoveryBatchIds,
+    ) &&
     sameStringArray(recovery.questionIds, iterative.askedQuestionIds) &&
     recovery.answerDisclosureCount === iterative.answerDisclosureCount &&
     sameKeySet(final, qualificationProvisionalRoundKeySet) &&
@@ -2069,6 +3057,17 @@ function sanitizeSemanticResult(semantic, projectionIntegrity) {
         qualificationQuarantineReasonSet.has(reason) &&
         isNonnegativeInteger(count),
     );
+  const quarantineReasonCounts = quarantineReasonCountsValid
+    ? Object.fromEntries(
+        Object.entries(record.quarantineReasonCounts).sort(
+          ([left], [right]) => left.localeCompare(right, "en"),
+        ),
+      )
+    : {};
+  const quarantineReasonTotal = Object.values(quarantineReasonCounts).reduce(
+    (total, count) => total + count,
+    0,
+  );
   const manifestIdentityValid =
     record.manifestVersion ===
       templateCopilotV3LiveSemanticScoringContract.manifestVersion &&
@@ -2168,6 +3167,7 @@ function sanitizeSemanticResult(semantic, projectionIntegrity) {
     countRelationshipsValid &&
     projectionCountsMatch &&
     quarantineReasonCountsValid &&
+    quarantineReasonTotal === counts.quarantineHitCount &&
     manifestIdentityValid &&
     counts.distinctFactCount === factIds.length &&
     batchGateShapeValid &&
@@ -2202,6 +3202,7 @@ function sanitizeSemanticResult(semantic, projectionIntegrity) {
     failureCount: captureFailures.length + (resultValid ? 0 : 1),
     failureFingerprints: captureFailures.map(fingerprint).sort(),
     candidateCount: counts.candidateCount,
+    acceptedProjectionCount: counts.acceptedProjectionCount,
     governedHoldCount: governedHoldsResult.value.length,
     governedHolds: governedHoldsResult.value,
     blockerCodes: [
@@ -2212,15 +3213,28 @@ function sanitizeSemanticResult(semantic, projectionIntegrity) {
     blockedSemanticItemCount: counts.blockedSemanticItemCount,
     semanticCompleteItemCount: counts.semanticCompleteItemCount,
     completeItemCount: counts.completeItemCount,
+    semanticFactCount: counts.semanticFactCount,
+    rawItemCount: counts.rawItemCount,
+    rawScalarFactCount: counts.rawScalarFactCount,
+    rawPolicyItemCount: counts.rawPolicyItemCount,
     distinctFactCount: counts.distinctFactCount,
     factIds,
     evidenceLeafCount: counts.evidenceLeafCount,
     evidenceFailureCount: counts.evidenceFailureCount,
     forbiddenHitCount: forbiddenHits.length,
+    forbiddenHitFingerprints: forbiddenHits.map(fingerprint).sort(),
+    quarantineHitCount: counts.quarantineHitCount,
+    quarantineReasonCounts,
     unsafeQuoteCount: counts.unsafeQuoteCount,
     defaultOrUnknownExtraCount: counts.defaultOrUnknownExtraCount,
     rejectedProjectionCount: counts.rejectedProjectionCount,
-    observed: observedResult.value,
+    conflictCount: counts.conflictCount,
+    observed: Object.fromEntries(
+      templateCopilotV3QualificationObservedMetricKeys.map((key) => [
+        key,
+        nonnegativeInteger(observedResult.value[key]),
+      ]),
+    ),
   };
 }
 
@@ -2734,6 +3748,116 @@ function countBy(items, keyFor) {
   }
   return Object.fromEntries(
     [...counts].sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function canonicalFingerprintArray(value) {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (entry) =>
+        typeof entry === "string" && /^sha256:[0-9a-f]{64}$/u.test(entry),
+    ) &&
+    sameStringArray(value, [...value].sort())
+  );
+}
+
+function canonicalSha256(value) {
+  return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value);
+}
+
+function canonicalFactIdArray(value) {
+  return (
+    Array.isArray(value) &&
+    new Set(value).size === value.length &&
+    value.every((entry) => qualificationFactIdSet.has(entry)) &&
+    sameStringArray(value, [...value].sort())
+  );
+}
+
+function canonicalGovernedHoldArray(value) {
+  const sanitized = sanitizeGovernedHolds(value);
+  return (
+    sanitized.valid &&
+    sameStableValue(value, sortGovernedHolds(sanitized.value))
+  );
+}
+
+function canonicalBlockerCodeArray(value) {
+  return (
+    Array.isArray(value) &&
+    new Set(value).size === value.length &&
+    value.every((entry) => qualificationGovernedHoldReasonSet.has(entry)) &&
+    sameStringArray(value, [...value].sort())
+  );
+}
+
+function stringSetContainsAll(container, required) {
+  if (!Array.isArray(container) || !Array.isArray(required)) return false;
+  const values = new Set(container);
+  return required.every((entry) => values.has(entry));
+}
+
+function stringMultisetContainsAll(container, required) {
+  if (!Array.isArray(container) || !Array.isArray(required)) return false;
+  const counts = new Map();
+  for (const entry of container) {
+    counts.set(entry, (counts.get(entry) || 0) + 1);
+  }
+  for (const entry of required) {
+    const count = counts.get(entry) || 0;
+    if (count === 0) return false;
+    counts.set(entry, count - 1);
+  }
+  return true;
+}
+
+function countMapDoesNotIncrease(current, candidate) {
+  if (!isRecord(current) || !isRecord(candidate)) return false;
+  return [...new Set([...Object.keys(current), ...Object.keys(candidate)])].every(
+    (key) =>
+      nonnegativeInteger(candidate[key]) <= nonnegativeInteger(current[key]),
+  );
+}
+
+function countMapStrictlyDecreases(current, candidate) {
+  return (
+    countMapDoesNotIncrease(current, candidate) &&
+    [...new Set([...Object.keys(current), ...Object.keys(candidate)])].some(
+      (key) =>
+        nonnegativeInteger(candidate[key]) < nonnegativeInteger(current[key]),
+    )
+  );
+}
+
+function qualificationAttemptFingerprint(attempt) {
+  return qualificationCanonicalFingerprint("attempt", attempt);
+}
+
+function qualificationCanonicalFingerprint(domain, value) {
+  return `sha256:${createHash("sha256")
+    .update(
+      `approval-workflow/template-copilot-v3/${domain}\u0000${stableJson(value)}`,
+      "utf8",
+    )
+    .digest("hex")}`;
+}
+
+function sameStableValue(left, right) {
+  return stableJson(left) === stableJson(right);
+}
+
+function stableJson(value) {
+  return JSON.stringify(stableValue(value));
+}
+
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right, "en"))
+      .map(([key, nested]) => [key, stableValue(nested)]),
   );
 }
 

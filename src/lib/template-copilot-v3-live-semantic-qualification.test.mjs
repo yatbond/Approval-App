@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import { templateCopilotQualificationScenarios } from "../../scripts/template-copilot-qualification-scenarios.mjs";
 import {
   assertTemplateCopilotV3QualificationSource,
+  qualificationMonotonicRecoveryEvidencePasses,
+  qualificationRecoveryCandidateImprovesMonotonically,
   runTemplateCopilotV3LiveSemanticQualification,
   selectTemplateCopilotV3QualificationScenarios,
   summarizeQualification,
@@ -32,6 +34,7 @@ import {
   templateCopilotV3LiveSemanticScoringContract,
 } from "../../scripts/template-copilot-v3-live-semantic-scoring.mjs";
 import { templateCopilotOpenRouterQualificationRoutingProfile } from "./template-copilot-openrouter-routing.ts";
+import { templateCopilotDocumentQuarantineReasons } from "./template-copilot-safety.ts";
 import { templateCopilotProviderFailureReasons } from "./template-copilot-provider-request-tracker.ts";
 
 const formalBatchIds = [
@@ -154,7 +157,7 @@ test("v3 qualification executes exactly five sequential batches for all 24 multi
   assert.equal(report.summary.providerRequestCount, 120);
   assert.equal(
     report.metadata.runnerVersion,
-    "template-copilot-v3-live-semantic-qualification.22",
+    "template-copilot-v3-live-semantic-qualification.24",
   );
   assert.equal(report.summary.physicalAttemptCount, 120);
   assert.equal(report.summary.physicalProviderRequestCount, 120);
@@ -228,6 +231,11 @@ test("v3 qualification reports 24/24 source capture and 64 holds without claimin
         purpose: "provisional",
         ...batch,
       })),
+      batchSelections: formalBatchIds.map((batchId) => ({
+        batchId,
+        selectedRound: 1,
+        reasonCode: "provisional_no_recovery",
+      })),
       rounds: [
         {
           round: 1,
@@ -241,6 +249,7 @@ test("v3 qualification reports 24/24 source capture and 64 holds without claimin
           round: 2,
           kind: "audit_and_recovery",
           recoveryBatchIds: [],
+          selectedRecoveryBatchIds: [],
           questionIds: [],
           answerDisclosureCount: 0,
         },
@@ -277,7 +286,7 @@ test("v3 qualification reports 24/24 source capture and 64 holds without claimin
         governedHolds,
       },
       iterativeQualification: {
-        version: "template-copilot-v3-iterative-qualification.1",
+        version: "template-copilot-v3-iterative-qualification.3",
         diagnosticVersion:
           templateCopilotV3IterativeSemanticDiagnosticVersion,
         roundPlanVersion: templateCopilotV3SemanticRoundPlanVersion,
@@ -293,6 +302,7 @@ test("v3 qualification reports 24/24 source capture and 64 holds without claimin
         governedGapCount: governedHolds.length,
         recoveryAttemptCount: 0,
         recoverySuccessCount: 0,
+        selectedRecoveryCount: 0,
         recoveredGapCount: 0,
         unresolvedGapCount: 0,
         expectedQuestionCount: 0,
@@ -309,6 +319,7 @@ test("v3 qualification reports 24/24 source capture and 64 holds without claimin
         unsafeAcceptedCount: 0,
         regressionCount: 0,
         recoveryBatchIds: [],
+        selectedRecoveryBatchIds: [],
         expectedQuestionIds: [],
         askedQuestionIds: [],
         gapDecisions: [],
@@ -388,6 +399,54 @@ test("v3 qualification reports 24/24 source capture and 64 holds without claimin
   const forgedRoundSummary = summarizeQualification(forgedRound);
   assert.equal(forgedRoundSummary.semanticCaptureGate.passed, true);
   assert.equal(forgedRoundSummary.iterativeQualificationGate.passed, false);
+
+  for (const [label, mutate] of [
+    [
+      "forged selected round",
+      (selection) => {
+        selection.selectedRound = 2;
+      },
+    ],
+    [
+      "forged selection reason",
+      (selection) => {
+        selection.reasonCode = "recovery_selected_monotonic_improvement";
+      },
+    ],
+    [
+      "extra selection field",
+      (selection) => {
+        selection.providerSecret = "must-not-be-accepted";
+      },
+    ],
+  ]) {
+    const forgedSelection = structuredClone(report);
+    mutate(forgedSelection.scenarios[0].batchSelections[0]);
+    const forgedSelectionSummary = summarizeQualification(forgedSelection);
+    assert.equal(
+      forgedSelectionSummary.semanticCaptureGate.passed,
+      true,
+      label,
+    );
+    assert.equal(
+      forgedSelectionSummary.iterativeQualificationGate.passed,
+      false,
+      label,
+    );
+  }
+  const forgedSelectedAggregate = structuredClone(report);
+  forgedSelectedAggregate.scenarios[0].batches[0].durationMs = 2;
+  const forgedSelectedAggregateSummary = summarizeQualification(
+    forgedSelectedAggregate,
+  );
+  assert.equal(
+    forgedSelectedAggregateSummary.semanticCaptureGate.passed,
+    true,
+  );
+  assert.equal(
+    forgedSelectedAggregateSummary.iterativeQualificationGate.passed,
+    false,
+  );
   assert.equal(summary.executableDraftGate.evaluated, false);
   assert.equal(summary.executableDraftGate.passed, false);
   assert.equal(summary.executableDraftGate.scenarioPassCount, 0);
@@ -758,12 +817,303 @@ test("v3 qualification recovers one failed known-source batch without asking the
   assert.equal(report.scenarios[0].iterativeQualification.askedQuestionCount, 0);
   assert.equal(report.scenarios[0].iterativeQualification.unresolvedGapCount, 0);
   assert.equal(report.scenarios[0].iterativeQualification.passed, true);
+  assert.deepEqual(
+    report.scenarios[0].iterativeQualification.selectedRecoveryBatchIds,
+    [formalBatchIds[0]],
+  );
+  assert.equal(
+    report.scenarios[0].iterativeQualification.selectedRecoveryCount,
+    1,
+  );
+  assert.deepEqual(report.scenarios[0].batchSelections[0], {
+    batchId: formalBatchIds[0],
+    selectedRound: 2,
+    reasonCode: "recovery_selected_monotonic_improvement",
+  });
   assert.equal(report.scenarios[0].semanticCapture.passed, true);
+  assert.equal(
+    qualificationMonotonicRecoveryEvidencePasses(report.scenarios[0]),
+    true,
+  );
+  const coordinatedForgery = structuredClone(report.scenarios[0]);
+  coordinatedForgery.batchSelections[0] = {
+    batchId: formalBatchIds[0],
+    selectedRound: 1,
+    reasonCode: "provisional_retained_non_monotonic_recovery",
+  };
+  coordinatedForgery.iterativeQualification.selectedRecoveryBatchIds = [];
+  coordinatedForgery.iterativeQualification.selectedRecoveryCount = 0;
+  coordinatedForgery.rounds[1].selectedRecoveryBatchIds = [];
+  const forgedProvisionalAggregate = Object.fromEntries(
+    Object.entries(coordinatedForgery.attempts[0]).filter(
+      ([key]) => !["round", "purpose"].includes(key),
+    ),
+  );
+  coordinatedForgery.batches[0] = forgedProvisionalAggregate;
+  assert.equal(
+    qualificationMonotonicRecoveryEvidencePasses(coordinatedForgery),
+    false,
+  );
   assert.equal(report.summary.iterativeQualificationGate.passed, false);
   assert.equal(report.summary.physicalProviderRequestCount, 6);
   assert.equal(report.summary.physicalProviderRequestSuccessCount, 5);
   assert.equal(report.summary.physicalProviderRequestFailureCount, 1);
   assert.doesNotMatch(JSON.stringify(report), /PRIVATE FIRST-ATTEMPT FAILURE/u);
+});
+
+test("v3 recovery selection rejects failed, regressive, hold-losing, and unsafe trials", () => {
+  const evaluation = ({
+    factIds = [...templateCopilotV3QualificationFactIds],
+    governedHolds = [],
+    batchStatus = "applied",
+    failureCount = 1,
+    evidenceFailureCount = 0,
+    unsafeQuoteCount = 0,
+    semanticCompleteItemCount = 5,
+    completeItemCount = 5,
+    evidenceLeafCount = 20,
+    conflictCount = 0,
+    quarantineHitCount = 0,
+    quarantineReasonCounts = {},
+  } = {}) => ({
+    batches: formalBatchIds.map((batchId) => ({
+      batchId,
+      status: batchId === formalBatchIds[0] ? batchStatus : "applied",
+    })),
+    semanticCapture: {
+      resultValid: true,
+      passed: false,
+      failureCount,
+      failureFingerprints: Array.from({ length: failureCount }, (_, index) =>
+        qualificationFailureFingerprint(`closed-failure-${index}`),
+      ),
+      evidenceFailureCount,
+      forbiddenHitCount: 0,
+      quarantineHitCount,
+      unsafeQuoteCount,
+      defaultOrUnknownExtraCount: 0,
+      rejectedProjectionCount: 0,
+      conflictCount,
+      candidateCount: 16,
+      acceptedProjectionCount: semanticCompleteItemCount + 11,
+      governedHoldCount: governedHolds.length,
+      blockedSemanticItemCount: governedHolds.length,
+      semanticCompleteItemCount,
+      completeItemCount,
+      semanticFactCount: 11,
+      rawItemCount: 5,
+      rawScalarFactCount: 8,
+      rawPolicyItemCount: 3,
+      distinctFactCount: factIds.length,
+      evidenceLeafCount,
+      forbiddenHitFingerprints: [],
+      factIds: [...factIds].sort(),
+      governedHolds: [...governedHolds].sort((left, right) =>
+        `${left.factId}:${left.blockingReason}`.localeCompare(
+          `${right.factId}:${right.blockingReason}`,
+          "en",
+        ),
+      ),
+      blockerCodes: [
+        ...new Set(governedHolds.map((entry) => entry.blockingReason)),
+      ].sort(),
+      quarantineReasonCounts,
+      observed: Object.fromEntries(
+        templateCopilotV3QualificationObservedMetricKeys.map((key) => [
+          key,
+          key === "factCount"
+            ? factIds.length
+            : key === "governedSemanticHoldCount"
+              ? governedHolds.length
+              : 1,
+        ]),
+      ),
+    },
+    projection: {
+      status: "assembled",
+      acceptedProviderItemCount: 16,
+      reviewItemCount: 16,
+      openFragmentCount: 1,
+      conflictCount,
+      rejectionCount: 0,
+      rejectionCodes: {},
+      rejectionDetails: {},
+    },
+  });
+  const missingCondition = templateCopilotV3QualificationFactIds.filter(
+    (factId) => factId !== "workflow.conditions",
+  );
+  const current = evaluation({ factIds: missingCondition, failureCount: 2 });
+
+  assert.equal(
+    qualificationRecoveryCandidateImprovesMonotonically(
+      current,
+      evaluation({ factIds: missingCondition, batchStatus: "failed" }),
+      formalBatchIds[0],
+    ),
+    false,
+  );
+  assert.equal(
+    qualificationRecoveryCandidateImprovesMonotonically(
+      current,
+      evaluation({
+        factIds: templateCopilotV3QualificationFactIds.filter(
+          (factId) => factId !== "attachments.requirements",
+        ),
+      }),
+      formalBatchIds[0],
+    ),
+    false,
+  );
+  assert.equal(
+    qualificationRecoveryCandidateImprovesMonotonically(
+      evaluation({
+        factIds: missingCondition,
+        governedHolds: [
+          {
+            factId: "workflow.conditions",
+            blockingReason: "unsupported_semantics_not_executable",
+          },
+        ],
+      }),
+      evaluation(),
+      formalBatchIds[0],
+    ),
+    false,
+  );
+  assert.equal(
+    qualificationRecoveryCandidateImprovesMonotonically(
+      current,
+      evaluation({ unsafeQuoteCount: 1 }),
+      formalBatchIds[0],
+    ),
+    false,
+  );
+  for (const [label, candidate] of [
+    ["complete item loss", evaluation({ completeItemCount: 4 })],
+    ["evidence loss", evaluation({ evidenceLeafCount: 19 })],
+    ["new conflict", evaluation({ conflictCount: 1 })],
+    [
+      "changed quarantine authority",
+      evaluation({
+        quarantineHitCount: 1,
+        quarantineReasonCounts: {
+          [templateCopilotDocumentQuarantineReasons[0]]: 1,
+        },
+      }),
+    ],
+  ]) {
+    assert.equal(
+      qualificationRecoveryCandidateImprovesMonotonically(
+        current,
+        candidate,
+        formalBatchIds[0],
+      ),
+      false,
+      label,
+    );
+  }
+  assert.equal(
+    qualificationRecoveryCandidateImprovesMonotonically(
+      current,
+      evaluation({ factIds: missingCondition, failureCount: 2 }),
+      formalBatchIds[0],
+    ),
+    false,
+    "an equal candidate has no strict improvement witness",
+  );
+  assert.equal(
+    qualificationRecoveryCandidateImprovesMonotonically(
+      current,
+      evaluation({ failureCount: 1 }),
+      formalBatchIds[0],
+    ),
+    true,
+  );
+});
+
+test("v3 qualification retains a successful provisional batch after failed or regressive recovery", async () => {
+  const scenario = templateCopilotQualificationScenarios.find(
+    (item) => item.id === "EN-03",
+  );
+  assert.ok(scenario);
+  for (const recoveryMode of ["failed", "regressive"]) {
+    let evaluationCount = 0;
+    let conditionAttemptCount = 0;
+    const report = await runTemplateCopilotV3LiveSemanticQualification({
+      corpus: templateCopilotQualificationScenarios,
+      scenarios: [scenario],
+      extractBatch: async (input) => {
+        if (
+          input.batchId === "routing_conditions" &&
+          ++conditionAttemptCount === 2 &&
+          recoveryMode === "failed"
+        ) {
+          input.observeProviderRequest({ outcome: "timeout", latencyMs: 18_000 });
+          throw new Error("PRIVATE RECOVERY FAILURE");
+        }
+        input.observeProviderRequest({ outcome: "success", latencyMs: 1 });
+        return {
+          model: templateCopilotV3QualificationBaselineModel,
+          batch: batchIdentity(input),
+          accepted: acceptedFixtureBatch(input.batchId),
+          rejected: [],
+        };
+      },
+      assembleReview: () => {
+        evaluationCount += 1;
+        return assemblyWithoutItemFact(
+          evaluationCount === 1 || recoveryMode === "failed"
+            ? "workflow.conditions"
+            : "attachments.requirements",
+        );
+      },
+      scoreProjection: ({ projection, batches }) =>
+        scoreForMissingItemFact(
+          templateCopilotV3QualificationFactIds.find(
+            (factId) =>
+              templateCopilotV3LiveSemanticScoringContract.itemFactIds.includes(
+                factId,
+              ) &&
+              !projection.items.some((entry) => entry.factId === factId),
+          ),
+          batches,
+        ),
+      metadata: qualificationMetadata(),
+      now: monotonicClock(),
+    });
+
+    const result = report.scenarios[0];
+    assert.deepEqual(result.iterativeQualification.recoveryBatchIds, [
+      "routing_conditions",
+    ]);
+    assert.deepEqual(result.iterativeQualification.selectedRecoveryBatchIds, []);
+    assert.equal(result.iterativeQualification.selectedRecoveryCount, 0);
+    assert.equal(result.semanticCapture.factIds.includes("workflow.conditions"), false);
+    assert.equal(
+      result.semanticCapture.factIds.includes("attachments.requirements"),
+      true,
+    );
+    assert.deepEqual(
+      result.batchSelections.find(
+        (selection) => selection.batchId === "routing_conditions",
+      ),
+      {
+        batchId: "routing_conditions",
+        selectedRound: 1,
+        reasonCode:
+          recoveryMode === "failed"
+            ? "provisional_retained_failed_recovery"
+            : "provisional_retained_non_monotonic_recovery",
+      },
+    );
+    assert.equal(
+      result.batches.find((batch) => batch.batchId === "routing_conditions")
+        .status,
+      "applied",
+    );
+    assert.doesNotMatch(JSON.stringify(report), /PRIVATE RECOVERY FAILURE/u);
+  }
 });
 
 test("v3 qualification reports each closed provider transport subtype without provider-private detail", async () => {
@@ -2231,6 +2581,59 @@ function passingAssembly({
       rejections: [],
     },
   };
+}
+
+function assemblyWithoutItemFact(factId) {
+  const assembly = passingAssembly();
+  assembly.review.items = assembly.review.items.filter(
+    (entry) => entry.factId !== factId,
+  );
+  return assembly;
+}
+
+function scoreForMissingItemFact(factId, batches) {
+  assert.ok(
+    templateCopilotV3LiveSemanticScoringContract.itemFactIds.includes(factId),
+  );
+  const score = passingScore();
+  const failures = ["Missing governed item fact: " + factId + "."];
+  const failedBatches = batches.filter((batch) => batch.status !== "applied");
+  score.passed = false;
+  score.failures = failures;
+  score.sourceCapturePassed = false;
+  score.captureFailures = failures;
+  score.candidateCount -= 1;
+  score.acceptedProjectionCount -= 1;
+  score.semanticCompleteItemCount -= 1;
+  score.completeItemCount -= 1;
+  score.rawItemCount -= 1;
+  score.distinctFactCount -= 1;
+  score.factIds = score.factIds.filter((entry) => entry !== factId);
+  score.evidenceLeafCount -= 2;
+  score.batchGate = {
+    ...score.batchGate,
+    passed: failedBatches.length === 0,
+    failures:
+      failedBatches.length === 0
+        ? []
+        : ["A required provider batch failed."],
+    passedBatchCount: batches.length - failedBatches.length,
+    batchFailureCount: failedBatches.length,
+    providerRequestFailureCount: failedBatches.length,
+    failureCount: failedBatches.length,
+  };
+  score.scenarioSemantics = {
+    ...score.scenarioSemantics,
+    passed: false,
+    failures,
+    sourceCapturePassed: false,
+    captureFailures: failures,
+    observed: {
+      ...score.scenarioSemantics.observed,
+      factCount: score.distinctFactCount,
+    },
+  };
+  return score;
 }
 
 function safeHoldAssembly({
