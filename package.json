@@ -18,7 +18,7 @@
     "lint": "eslint",
     "typegen": "next typegen",
     "typecheck": "npm run typegen && tsc --noEmit",
-    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types \"src/**/*.test.mjs\" \"scripts/template-copilot-v3-live-semantic-scoring.test.mjs\"",
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types \"src/**/*.test.mjs\" \"scripts/template-copilot-v3-live-semantic-scoring.test.mjs\" \"scripts/template-copilot-v3-release-gate.test.mjs\"",
     "test:db:authoritative": "node scripts/test-authoritative-db.mjs",
     "test:api:authoritative": "node scripts/test-authoritative-api.mjs",
     "test:db:concurrency": "node scripts/test-authoritative-concurrency.mjs",

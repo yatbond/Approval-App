@@ -45,6 +45,7 @@ import {
   templateCopilotV3QualificationFixtureFingerprint,
   templateCopilotV3QualificationProviderContractMetadata,
 } from "./template-copilot-v3-live-semantic-qualification-runner.mjs";
+import { evaluateTemplateCopilotV3ReleaseGate } from "./template-copilot-v3-release-gate.mjs";
 import {
   scoreTemplateCopilotV3LiveSemantic,
   templateCopilotV3LiveSemanticScoringContract,
@@ -99,6 +100,9 @@ function replayResponse(body) {
 
 // Local-server compatibility shim: mirror max_completion_tokens to max_tokens,
 // control Qwen thinking, leave thinking room to finish, and record each call.
+// Live provider call latencies; a replay gates on the recorded ones instead.
+const providerLatenciesMs = [];
+
 async function localModelFetch(url, init) {
   const isChat = typeof init?.body === "string" && String(url).endsWith("/chat/completions");
   if (isChat && replayDir) return replayResponse(JSON.parse(init.body));
@@ -121,11 +125,13 @@ async function localModelFetch(url, init) {
   let parsed = null;
   try { parsed = JSON.parse(text); } catch { /* recorded below as raw error text */ }
   const choice = parsed?.choices?.[0];
+  const ms = Date.now() - started;
+  if (isChat) providerLatenciesMs.push(ms);
   appendFileSync(providerLog, JSON.stringify({
     scenario: currentScenario,
     ...meta,
     httpStatus: response.status,
-    ms: Date.now() - started,
+    ms,
     finish: choice?.finish_reason,
     usage: parsed?.usage,
     reasoningChars: (choice?.message?.reasoning_content || "").length,
@@ -273,4 +279,13 @@ report.summary = summarizeQualification(report);
 save(report);
 const gate = report.summary;
 console.log(`capture=${gate.semanticCaptureGate.scenarioPassCount}/${gate.semanticCaptureGate.scenarioCount} batches=${gate.successfulBatchCount}/${gate.batchCount} coverage=${coverage.matched}/${coverage.expected} (${(100 * coverage.matched / Math.max(1, coverage.expected)).toFixed(1)}%)`);
+const latenciesMs = replayDir
+  ? readFileSync(join(replayDir, "provider-calls.ndjson"), "utf8").trim().split("\n")
+    .map((line) => JSON.parse(line)).filter((call) => call.schema && Number.isFinite(call.ms))
+    .map((call) => call.ms)
+  : providerLatenciesMs;
+const releaseGate = evaluateTemplateCopilotV3ReleaseGate({ report, latenciesMs });
+report.releaseGate = releaseGate;
+save(report);
+console.log(`release-gate=${releaseGate.passed ? "PASS" : "FAIL"} ${releaseGate.checks.map((check) => `${check.name}:${check.passed ? "ok" : "FAIL"} (${check.detail})`).join("; ")}`);
 console.log(`report=${reportPath}`);
