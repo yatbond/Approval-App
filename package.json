@@ -39,6 +39,7 @@
     "test:template-copilot-v2-step3-qualification": "node scripts/test-template-copilot-v2-step3-qualification.mjs",
     "test:template-copilot-v2-live-semantic": "node --conditions=react-server --import tsx scripts/test-template-copilot-v2-live-semantic-qualification.mjs",
     "test:template-copilot-v3-live-semantic": "node --conditions=react-server --import tsx scripts/test-template-copilot-v3-live-semantic-qualification.mjs",
+    "qualify:template-copilot-v3-local": "node --conditions=react-server --import tsx scripts/template-copilot-v3-local-model-qualification.mjs",
     "test:template-copilot-v2-step10": "node --import tsx scripts/template-copilot-v2-step10-runner.mjs",
     "test:db:template-copilot-v2-reviewed-library": "node --import tsx scripts/test-template-copilot-v2-reviewed-library-db.mjs",
     "evaluate:template-copilot-v2-step10-pilot": "node --import tsx scripts/evaluate-template-copilot-v2-step10-pilot.mjs",

@@ -29,6 +29,7 @@ import {
   scoreTemplateCopilotV3LiveSemantic,
   templateCopilotV3IterativeSemanticDiagnosticContract,
   templateCopilotV3IterativeSemanticDiagnosticVersion,
+  templateCopilotV3LiveSemanticLabelEquivalent,
   templateCopilotV3LiveSemanticScoringContract,
 } from "./template-copilot-v3-live-semantic-scoring.mjs";
 
@@ -3197,3 +3198,32 @@ function syncSemanticItem(entry) {
   );
   entry.reviewItemId = templateCopilotV3ReviewItemId(entry);
 }
+
+test("label equivalence accepts only one fixed filler word around the exact term", () => {
+  const accepted = [
+    ["auto-renewal choice", "auto-renewal"],
+    ["Goods or Services choice", "Goods or Services"],
+    ["the requester", "requester"],
+    ["High-Risk-Work option", "high-risk-work"],
+    ["高風險工序選項", "高風險工序"],
+    ["紧急访问选项", "紧急访问"],
+    ["Cost centre", "cost centre"],
+  ];
+  for (const [quote, term] of accepted) {
+    assert.equal(templateCopilotV3LiveSemanticLabelEquivalent(quote, term), true, quote);
+  }
+  const rejected = [
+    // Another noun, a merged sibling field, or a partial term is a real difference.
+    ["estimated residual value", "value"],
+    ["start and end dates", "start"],
+    ["renewal", "auto-renewal"],
+    ["contract type", "contract"],
+    ["auto-renewal choice option", "auto-renewal"],
+    ["not auto-renewal", "auto-renewal"],
+    ["高風險工序類型", "高風險工序"],
+    ["choice", ""],
+  ];
+  for (const [quote, term] of rejected) {
+    assert.equal(templateCopilotV3LiveSemanticLabelEquivalent(quote, term), false, quote);
+  }
+});

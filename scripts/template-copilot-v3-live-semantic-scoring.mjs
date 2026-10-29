@@ -2561,7 +2561,7 @@ function roleLeaves(entry, role) {
 function hasRoleContract(entry, contract) {
   return roleLeaves(entry, contract.role).some(
     (leaf) =>
-      canonicalEquals(leaf.quote, contract.term) &&
+      roleTermMatches(contract.role, leaf.quote, contract.term) &&
       leaf.advisoryHint === contract.hint,
   );
 }
@@ -3148,7 +3148,7 @@ function requireExactRoleContracts(entry, role, expected, label, failures) {
     const index = leaves.findIndex(
       (leaf, leafIndex) =>
         !used.has(leafIndex) &&
-        canonicalEquals(leaf.quote, contract.term) &&
+        roleTermMatches(role, leaf.quote, contract.term) &&
         leaf.advisoryHint === contract.hint,
     );
     if (index === -1) {
@@ -3178,6 +3178,47 @@ function canonicalSemanticText(value) {
 
 function canonicalEquals(left, right) {
   return canonicalSemanticText(left) === canonicalSemanticText(right);
+}
+
+// Words that only say what kind of input a name refers to. A label may carry
+// exactly one of them before or after the reviewed term ("auto-renewal
+// choice", "the requester"). Anything else (numbers, operators, negation,
+// other nouns) must still match exactly. Fixed list, so scoring stays
+// deterministic.
+const labelFillerWords = Object.freeze([
+  "the",
+  "choice",
+  "option",
+  "selection",
+  "field",
+  "選項",
+  "选项",
+  "選擇",
+  "选择",
+  "欄位",
+  "栏位",
+  "字段",
+]);
+const labelFillerSet = new Set(labelFillerWords.map(canonicalSemanticText));
+
+export function templateCopilotV3LiveSemanticLabelEquivalent(quote, term) {
+  const label = canonicalSemanticText(quote);
+  const expected = canonicalSemanticText(term);
+  if (label === expected) return true;
+  if (expected.length === 0) return false;
+  if (label.startsWith(expected)) {
+    return labelFillerSet.has(label.slice(expected.length));
+  }
+  if (label.endsWith(expected)) {
+    return labelFillerSet.has(label.slice(0, label.length - expected.length));
+  }
+  return false;
+}
+
+function roleTermMatches(role, quote, term) {
+  return role === "label"
+    ? templateCopilotV3LiveSemanticLabelEquivalent(quote, term)
+    : canonicalEquals(quote, term);
 }
 
 function canonicalIncludes(text, term) {
