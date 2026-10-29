@@ -1034,6 +1034,43 @@ export function replaceEffectiveBatchResult(effectiveResults, result) {
   return effectiveResults;
 }
 
+// A batch that failed at the provider contributes nothing, so any applied
+// replacement necessarily brings new detail failures and cannot satisfy the
+// strict failure-subset rule below. It is accepted when it adds no safety risk
+// (unsafe, forbidden, quarantined, conflicting or unknown content), keeps every
+// governed hold and loses no fact; the improvement witness is the batch itself.
+const qualificationFailedBatchSafetyCountFields = Object.freeze([
+  "forbiddenHitCount",
+  "quarantineHitCount",
+  "unsafeQuoteCount",
+  "defaultOrUnknownExtraCount",
+  "conflictCount",
+]);
+
+function qualificationRecoveryReplacesFailedBatchSafely(
+  current,
+  candidate,
+  currentCapture,
+  candidateCapture,
+) {
+  return (
+    isRecord(currentCapture) &&
+    isRecord(candidateCapture) &&
+    qualificationMonotonicCaptureValid(currentCapture) &&
+    qualificationMonotonicCaptureValid(candidateCapture) &&
+    qualificationMonotonicProjectionValid(current.projection) &&
+    qualificationMonotonicProjectionValid(candidate.projection) &&
+    candidateCapture.resultValid === true &&
+    qualificationFailedBatchSafetyCountFields.every(
+      (field) =>
+        nonnegativeInteger(candidateCapture[field]) <=
+        nonnegativeInteger(currentCapture[field]),
+    ) &&
+    qualificationRetainsGovernedHolds(currentCapture, candidateCapture) &&
+    stringSetContainsAll(candidateCapture.factIds, currentCapture.factIds)
+  );
+}
+
 export function qualificationRecoveryCandidateImprovesMonotonically(
   current,
   candidate,
@@ -1054,6 +1091,19 @@ export function qualificationRecoveryCandidateImprovesMonotonically(
   );
   const currentCapture = current.semanticCapture;
   const candidateCapture = candidate.semanticCapture;
+  if (
+    isRecord(currentBatch) &&
+    isRecord(candidateBatch) &&
+    currentBatch.status === "failed" &&
+    candidateBatch.status === "applied"
+  ) {
+    return qualificationRecoveryReplacesFailedBatchSafely(
+      current,
+      candidate,
+      currentCapture,
+      candidateCapture,
+    );
+  }
   if (
     !isRecord(currentBatch) ||
     !isRecord(candidateBatch) ||

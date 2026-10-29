@@ -1030,6 +1030,43 @@ test("v3 recovery selection rejects failed, regressive, hold-losing, and unsafe 
     ),
     true,
   );
+  // A batch that failed at the provider may be replaced by an applied retry
+  // even though the retry brings new detail failures, but never by one that
+  // adds safety risk, loses a governed hold, or loses a fact.
+  const failedCurrent = evaluation({ batchStatus: "failed", failureCount: 1 });
+  assert.equal(
+    qualificationRecoveryCandidateImprovesMonotonically(
+      failedCurrent,
+      evaluation({ failureCount: 2 }),
+      formalBatchIds[0],
+    ),
+    true,
+    "an applied retry replaces a failed batch",
+  );
+  for (const [label, candidate] of [
+    ["unsafe quote", evaluation({ failureCount: 2, unsafeQuoteCount: 1 })],
+    ["new conflict", evaluation({ failureCount: 2, conflictCount: 1 })],
+    [
+      "lost fact",
+      evaluation({
+        failureCount: 2,
+        factIds: templateCopilotV3QualificationFactIds.filter(
+          (factId) => factId !== "workflow.conditions",
+        ),
+      }),
+    ],
+    ["still failed", evaluation({ batchStatus: "failed", failureCount: 0 })],
+  ]) {
+    assert.equal(
+      qualificationRecoveryCandidateImprovesMonotonically(
+        failedCurrent,
+        candidate,
+        formalBatchIds[0],
+      ),
+      false,
+      label,
+    );
+  }
 });
 
 test("v3 qualification retains a successful provisional batch after failed or regressive recovery", async () => {
