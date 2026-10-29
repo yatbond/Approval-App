@@ -3355,3 +3355,44 @@ test("policy notification compact wire accepts every closed event at the exact c
     [...templateCopilotV3ProviderQuoteNotificationEventHints],
   );
 });
+
+test("a clause-wide stage label narrows to its single contained participant", () => {
+  const stages = "Requester submits, department manager approves, then Finance and Legal review.";
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "structure",
+    sourceSlots: sourceSlots("structure", { stages_participants: stages }),
+    output: output([
+      item({
+        kind: "stage",
+        quote: "department manager approves",
+        leaves: [
+          { role: "label", quote: "department manager approves", hint: null },
+          { role: "kind", quote: "approves", hint: "approval" },
+          { role: "participant", quote: "department manager", hint: null },
+        ],
+      }),
+      item({
+        kind: "stage",
+        quote: "Finance and Legal review",
+        leaves: [
+          { role: "label", quote: "Finance and Legal review", hint: null },
+          { role: "kind", quote: "review", hint: "review" },
+          { role: "participant", quote: "Finance", hint: null },
+          { role: "participant", quote: "Legal", hint: null },
+        ],
+      }),
+    ]),
+  });
+
+  assert.equal(result.rejected.length, 0);
+  const [narrowed, shared] = result.accepted;
+  const label = (stage) =>
+    stage.leaves.find((leaf) => leaf.role === "label").sourceSpan;
+  const participant = narrowed.leaves.find(
+    (leaf) => leaf.role === "participant",
+  ).sourceSpan;
+  assert.deepEqual(label(narrowed), participant);
+  assert.equal(label(narrowed).exactText, "department manager");
+  // Two participants leave no single name to narrow to.
+  assert.equal(label(shared).exactText, "Finance and Legal review");
+});

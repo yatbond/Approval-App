@@ -477,6 +477,9 @@ export function assembleTemplateCopilotV3Review({ items, sourceMessages, sourceM
     const key = groupKey(draft);
     groups.set(key, [...(groups.get(key) ?? []), draft]);
   }
+  for (const [key, group] of groups) {
+    groups.set(key, withoutSubsumedBlockedNotificationDrafts(group));
+  }
   const completeItems: TemplateCopilotV3ReviewArrayItem[] = [];
   const partialItems: Array<{ item: TemplateCopilotV3ReviewArrayItem; fragment: TemplateCopilotV3Fragment }> = [];
   const conflicts: TemplateCopilotV3ReviewConflict[] = [];
@@ -5337,6 +5340,30 @@ function draftConflictValue(draft: Draft, path: string):
     if (values.length === 1) return { present: true, value: values[0] };
   }
   return { present: false };
+}
+
+// The same notification is often quoted by more than one batch. A copy that
+// was blocked (for example because it dropped an "only" qualifier) and whose
+// evidence is strictly contained in an unblocked copy of the same group adds
+// nothing reviewable; merging it would only poison the complete copy.
+function withoutSubsumedBlockedNotificationDrafts(group: readonly Draft[]) {
+  const observationKeys = (draft: Draft) =>
+    new Set(
+      draft.semanticObservations.map((entry) =>
+        stableJson([entry.role, entry.advisoryHint ?? null, entry.sourceSpan.spanId])
+      ),
+    );
+  const unblocked = group
+    .filter((draft) => draft.kind === "notification" && !draft.semanticAuthorityBlocked)
+    .map(observationKeys);
+  if (unblocked.length === 0) return [...group];
+  return group.filter((draft) => {
+    if (draft.kind !== "notification" || !draft.semanticAuthorityBlocked) return true;
+    const keys = observationKeys(draft);
+    return !unblocked.some((superset) =>
+      superset.size > keys.size && [...keys].every((key) => superset.has(key))
+    );
+  });
 }
 
 function clusterDraftsDeterministically(

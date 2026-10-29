@@ -47,6 +47,10 @@ const observedMetricKeys = Object.freeze([
   "stageEntityCount",
   "conditionEntityCount",
   "governedSemanticHoldCount",
+  "notificationEntityCount",
+  "fyiEntityCount",
+  "expectedEntityCount",
+  "matchedEntityCount",
 ]);
 const itemFactIds = Object.freeze([
   "request.fields",
@@ -2428,6 +2432,16 @@ function scoreScenarioManifestSemantics({
     );
   }
 
+  // Partial credit: entities matched one-to-one against the fixed manifest
+  // across every family, reported alongside (never instead of) the strict gate.
+  const entityMatches = [
+    [manifest.fields, fieldMatch],
+    [manifest.attachments, attachmentMatch],
+    [manifest.stages, stageMatch],
+    [manifest.fyiRecipients, fyiMatch],
+    [manifest.conditions, conditionMatch],
+    [manifest.notificationRules, notificationMatch],
+  ];
   const observed = {
     documents: attachments.length,
     requestFields: fields.length,
@@ -2446,6 +2460,16 @@ function scoreScenarioManifestSemantics({
     conditionEntityCount:
       conditionMatch.matchedCount - governedConditionHoldCount,
     governedSemanticHoldCount: blockedSemanticItems.length,
+    notificationEntityCount: notificationMatch.matchedCount,
+    fyiEntityCount: fyiMatch.matchedCount,
+    expectedEntityCount: entityMatches.reduce(
+      (total, [expected]) => total + expected.length,
+      0,
+    ),
+    matchedEntityCount: entityMatches.reduce(
+      (total, [, match]) => total + match.matchedCount,
+      0,
+    ),
   };
   if (
     JSON.stringify(Object.keys(observed)) !== JSON.stringify(observedMetricKeys)

@@ -126,6 +126,10 @@ export const templateCopilotV3QualificationObservedMetricKeys = Object.freeze([
   "stageEntityCount",
   "conditionEntityCount",
   "governedSemanticHoldCount",
+  "notificationEntityCount",
+  "fyiEntityCount",
+  "expectedEntityCount",
+  "matchedEntityCount",
 ]);
 if (
   JSON.stringify(templateCopilotV3QualificationObservedMetricKeys) !==

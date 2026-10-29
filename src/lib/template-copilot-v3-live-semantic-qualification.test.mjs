@@ -2078,6 +2078,10 @@ test("v3 qualification accepts only the synchronized observed-metric allowlist",
     "stageEntityCount",
     "conditionEntityCount",
     "governedSemanticHoldCount",
+    "notificationEntityCount",
+    "fyiEntityCount",
+    "expectedEntityCount",
+    "matchedEntityCount",
   ]);
   const scenario = templateCopilotQualificationScenarios[0];
   const report = await runTemplateCopilotV3LiveSemanticQualification({
@@ -2807,6 +2811,10 @@ function passingScore() {
         stageEntityCount: 4,
         conditionEntityCount: 1,
         governedSemanticHoldCount: 0,
+        notificationEntityCount: 2,
+        fyiEntityCount: 1,
+        expectedEntityCount: 17,
+        matchedEntityCount: 17,
       },
     },
     manifestVersion: templateCopilotV3LiveSemanticScoringContract.manifestVersion,

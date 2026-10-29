@@ -1583,6 +1583,39 @@ const providerOutputShellSchema = z
   .strict();
 
 /**
+ * A stage is named by who acts on it. Providers tend to quote the whole clause
+ * as the label ("department manager approves"); when that label span strictly
+ * contains the stage's single participant span, the participant is the name.
+ */
+function narrowStageLabelToParticipant(
+  kind: TemplateCopilotV3ProviderQuoteKind,
+  leaves: Array<{
+    role: TemplateCopilotV3ProviderQuoteRole;
+    hint: string | null;
+    sourceSpan: TemplateCopilotV3SourceSpan;
+    sameLocalClauseRecovered: boolean;
+  }>,
+) {
+  if (kind !== "stage") return;
+  const participants = leaves.filter((leaf) => leaf.role === "participant");
+  if (participants.length !== 1) return;
+  const inner = participants[0].sourceSpan;
+  for (const [index, leaf] of leaves.entries()) {
+    if (leaf.role !== "label") continue;
+    const outer = leaf.sourceSpan;
+    if (
+      outer.messageId === inner.messageId &&
+      outer.startCodePoint <= inner.startCodePoint &&
+      outer.endCodePoint >= inner.endCodePoint &&
+      outer.endCodePoint - outer.startCodePoint >
+        inner.endCodePoint - inner.startCodePoint
+    ) {
+      leaves[index] = { ...leaf, sourceSpan: inner };
+    }
+  }
+}
+
+/**
  * Treats the provider response as untrusted labels. Only exact quotes located
  * against the original server-held slots become spans; provider coordinates
  * or source identities are neither accepted nor consulted.
@@ -2229,6 +2262,7 @@ export function locateTemplateCopilotV3ProviderQuotes({
         sameLocalClauseRecovered: recovered,
       });
     }
+    narrowStageLabelToParticipant(item.kind, locatedLeaves);
     located.push(Object.freeze({
       itemIndex,
       kind: item.kind,

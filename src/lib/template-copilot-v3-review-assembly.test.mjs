@@ -8349,3 +8349,66 @@ test("direct review-only fallback preserves unsupported semantic holds", () => {
     ),
   );
 });
+
+test("a blocked duplicate notification that dropped its only-qualifier cannot poison the qualified copy", () => {
+  const messageId = "notification-duplicate:only-qualifier";
+  const text =
+    "Notify only directly involved people for assignment and completion.";
+  const notification = (itemIndex, event, hint, withVisibility) =>
+    located({
+      itemIndex,
+      kind: "notification",
+      messageId,
+      text,
+      leaves: [
+        { role: "event", quote: event, hint },
+        {
+          role: "recipient",
+          quote: "directly involved people",
+          hint: "source_named_group",
+        },
+        ...(withVisibility
+          ? [{ role: "visibility", quote: "only", hint: "recipients_only" }]
+          : []),
+      ],
+    });
+  const qualified = [
+    notification(50, "assignment", "stage_assigned", true),
+    notification(51, "completion", "request_completed", true),
+  ];
+  const unqualifiedAssignment = notification(
+    52,
+    "assignment",
+    "stage_assigned",
+    false,
+  );
+  const assemble = (items) =>
+    assembleTemplateCopilotV3Review({
+      items,
+      sourceMessages: { [messageId]: text },
+      sourceMessageOrder: [messageId],
+    }).review.items.filter((item) => item.factId === "notifications.rules");
+
+  for (const ordered of [
+    [...qualified, unqualifiedAssignment],
+    [unqualifiedAssignment, ...qualified].reverse(),
+  ]) {
+    const notifications = assemble(ordered);
+    assert.equal(notifications.length, 2);
+    assert.ok(
+      notifications.every((item) => item.semanticComplete),
+      JSON.stringify(notifications.map((item) => item.semanticValue)),
+    );
+    assert.ok(
+      notifications.every((item) =>
+        item.semanticValue.visibility?.includes("only")
+      ),
+    );
+  }
+
+  // Without a qualified sibling the unqualified copy stays blocked.
+  const alone = assemble([unqualifiedAssignment, qualified[1]]).find(
+    (item) => item.semanticValue.event?.[0] === "assignment",
+  );
+  assert.notEqual(alone?.semanticComplete, true);
+});
