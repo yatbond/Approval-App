@@ -5576,25 +5576,47 @@ function finishCluster(
       cluster.semanticObservations,
       cluster.semanticContexts,
     );
-  const blockingReason: TemplateCopilotV3ReviewBlockingReason | undefined =
+  const governedBlockingReason:
+    | TemplateCopilotV3ReviewBlockingReason
+    | undefined =
     unsupportedBlockingReason ??
     (compoundPredicateBlocked
       ? "compound_predicate_not_executable"
       : undefined);
+  const semanticComplete =
+    governedBlockingReason === undefined &&
+    semanticallyComplete(
+      cluster.factId,
+      cluster.semanticObservations,
+      cluster.semanticContexts,
+      ambiguity,
+      conflictGroupId !== undefined,
+      cluster.semanticAuthorityBlocked,
+    );
+  // A threshold branch whose only defect is a field carried from an earlier
+  // sentence ("申请额度不超过…。超过一百万元由财务总监批准") is held for review as
+  // non-executable instead of being left unresolved. Misreadings (negation,
+  // truncated fields, split predicates) still fail closed as unresolved.
+  const unprovenConditionHold =
+    cluster.factId === "workflow.conditions" &&
+    governedBlockingReason === undefined &&
+    !semanticComplete &&
+    ambiguity === "none" &&
+    conflictGroupId === undefined &&
+    semanticConditionOnlyCarriesFieldAcrossSentence(
+      cluster.semanticObservations,
+      cluster.semanticContexts,
+    );
+  const blockingReason: TemplateCopilotV3ReviewBlockingReason | undefined =
+    unprovenConditionHold
+      ? "unsupported_semantics_not_executable"
+      : governedBlockingReason;
   const fragmentAuthorityBlocked =
     cluster.semanticAuthorityBlocked ||
     ambiguity !== "none" ||
     blockingReason !== undefined;
   const complete =
     missingPaths.length === 0 && !fragmentAuthorityBlocked;
-  const semanticComplete = blockingReason === undefined && semanticallyComplete(
-    cluster.factId,
-    cluster.semanticObservations,
-    cluster.semanticContexts,
-    ambiguity,
-    conflictGroupId !== undefined,
-    cluster.semanticAuthorityBlocked,
-  );
   const observedRoles = [...cluster.observedRoles].sort(compareText);
   const base = {
     factId: cluster.factId,
@@ -5699,9 +5721,17 @@ function semanticallyComplete(
       semanticRequestGroupsHaveAffinity(groups[0], groups[1], sourceAnchors);
   }
   if (factId === "attachments.requirements") {
+    // A verified file format ("PDF", "image") already establishes an upload
+    // when the provider quoted an unrelated word as its attachment kind.
+    const verifiedKind = verified("kind");
+    const kindEvidence =
+      verifiedKind.length > 0 ||
+      leaves("kind").some((leaf) => leaf.advisoryHint !== "attachment")
+        ? verifiedKind
+        : verified("format");
     const groups = [
       raw("label"),
-      verified("kind"),
+      kindEvidence,
       verified("required"),
     ] as const;
     return groups.every((group) => group.length > 0) &&
@@ -6804,6 +6834,64 @@ function semanticConditionPredicateGroupsHaveAffinity(
       )
     )
   );
+}
+
+function semanticConditionOnlyCarriesFieldAcrossSentence(
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const byRole = (role: TemplateCopilotV3ProviderQuoteRole) =>
+    observations.filter((entry) => entry.role === role);
+  const [fields, operators, values, routes] = [
+    byRole("field"),
+    byRole("operator"),
+    byRole("value"),
+    byRole("matching_route"),
+  ];
+  if (
+    fields.length !== 1 ||
+    operators.length !== 1 ||
+    values.length !== 1 ||
+    routes.length === 0
+  ) {
+    return false;
+  }
+  const [field] = fields;
+  if (
+    !semanticConditionFieldHasClosedLeftBoundary(field, sourceAnchors) ||
+    !semanticConditionFieldHasClosedRightBoundary(field, sourceAnchors) ||
+    !semanticCoreGroupsShareClause([operators, values, routes], sourceAnchors) ||
+    [...operators, ...values, ...routes].some((entry) =>
+      semanticObservationIsContradicted(
+        "workflow.conditions",
+        entry,
+        sourceAnchors,
+      )
+    )
+  ) {
+    return false;
+  }
+  return sourceAnchors.some((anchor) => {
+    const fieldIndex = semanticHardClauseIndexInAnchor(field, anchor);
+    const operatorIndex = semanticHardClauseIndexInAnchor(operators[0], anchor);
+    if (
+      fieldIndex === null ||
+      operatorIndex === null ||
+      fieldIndex >= operatorIndex
+    ) {
+      return false;
+    }
+    // The branch must be operator-led: a clause that names its own subject
+    // ("Discount amount > 100") never inherits an earlier field.
+    const clause = semanticHardClauseSegments(anchor.exactText)[operatorIndex];
+    if (!clause) return false;
+    const operatorStart =
+      operators[0].sourceSpan.startCodePoint - anchor.startCodePoint;
+    const prefix = Array.from(anchor.exactText)
+      .slice(clause.startCodePoint, operatorStart)
+      .join("");
+    return templateCopilotV3NormalizeLexicalText(prefix).length === 0;
+  });
 }
 
 function semanticConditionFieldHasClosedLeftBoundary(
@@ -8815,12 +8903,12 @@ function semanticHintIsVerified(
     return leaf.advisoryHint === "true"
       ? semanticRequiredTrueAliasMatches(wording) ||
         (factId === "attachments.requirements" && wording === "填")
-      : leaf.advisoryHint === "false" && matches("false", "no", "optional", "not required", "選填", "选填", "非必須", "非必须", "不需要", "毋須", "毋须", "無須", "无须", "可選擇上載", "可選上載", "可选上传");
+      : leaf.advisoryHint === "false" && matches("false", "no", "optional", "not required", "選填", "选填", "非必須", "非必须", "不需要", "毋須", "毋须", "無須", "无须", "可選擇上載", "可選上載", "可选上传", "可選擇", "可选择", "可選", "可选");
   }
   if (leaf.role === "kind" && factId === "attachments.requirements") {
     return leaf.advisoryHint === "attachment"
       ? matches("attachment", "document", "file", "uploaded file", "upload", "attach", "pdf", "excel", "csv", "spreadsheet", "image", "photo", "text", "proof", "附件", "檔案", "文件", "上載", "上传", "上載檔案", "上传文件", "試算表", "电子表格", "圖片", "图片", "相片", "照片", "文字", "文本", "證明", "证明")
-      : leaf.advisoryHint === "form" && matches("form", "native", "native form", "in-app form", "in app form", "原生", "原生表格", "原生表单", "應用程式內表格", "应用内表单", "表格", "表单");
+      : leaf.advisoryHint === "form" && matches("form", "native", "native form", "in-app form", "in app form", "原生", "原生表格", "原生表单", "應用程式內表格", "应用内表单", "表格", "表单", "填寫", "填写", "填");
   }
   if (leaf.role === "kind" && factId === "workflow.stages") {
     const aliases: Readonly<Record<string, readonly string[]>> = {

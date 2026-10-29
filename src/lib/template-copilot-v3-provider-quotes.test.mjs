@@ -3397,6 +3397,33 @@ test("a clause-wide stage label narrows to its single contained participant", ()
   assert.equal(label(shared).exactText, "Finance and Legal review");
 });
 
+test("a repeated format directly after its label resolves within one sentence", () => {
+  const attachments = "必須上載商業登記證 PDF、銀行證明 PDF、稅務表格 PDF。";
+  const attachment = (label) =>
+    item({
+      kind: "attachment",
+      quote: attachments,
+      leaves: [
+        { role: "label", quote: label, hint: null },
+        { role: "kind", quote: "上載", hint: "attachment" },
+        { role: "required", quote: "必須", hint: "true" },
+        { role: "format", quote: "PDF", hint: "pdf" },
+      ],
+    });
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "structure",
+    sourceSlots: sourceSlots("structure", { attachments }),
+    output: output(["商業登記證", "銀行證明", "稅務表格"].map(attachment)),
+  });
+
+  assert.equal(result.rejected.length, 0, JSON.stringify(result.rejected));
+  for (const located of result.accepted) {
+    const label = located.leaves.find((leaf) => leaf.role === "label").sourceSpan;
+    const format = located.leaves.find((leaf) => leaf.role === "format").sourceSpan;
+    assert.equal(format.startCodePoint, label.endCodePoint + 1, label.exactText);
+  }
+});
+
 test("a repeated attachment leaf resolves to its single occurrence inside the label", () => {
   const attachments =
     "Require one invoice PDF, one purchase order PDF, and one goods receipt PDF; each up to 25 MB.";
@@ -3434,7 +3461,7 @@ test("a repeated attachment leaf resolves to its single occurrence inside the la
 });
 
 test("a repeated leaf outside the label stays ambiguous", () => {
-  const attachments = "Upload a contract PDF or a redline PDF.";
+  const attachments = "Upload the contract (signed PDF) and the redline (PDF).";
   const result = locateTemplateCopilotV3ProviderQuotes({
     batchId: "structure",
     sourceSlots: sourceSlots("structure", { attachments }),
@@ -3455,4 +3482,86 @@ test("a repeated leaf outside the label stays ambiguous", () => {
     result.rejected.map((entry) => entry.code),
     ["leaf_ambiguous"],
   );
+});
+
+test("stage names fall back to the participant for action-only and composed labels", () => {
+  const stages =
+    "设计经理先审查。信用控制和财务经理并行审核。两者都批准后由采购总监最终批准。若涉及法律，增加法务审查。";
+  const stage = (quote, leaves) => item({ kind: "stage", quote, leaves });
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "structure",
+    sourceSlots: sourceSlots("structure", { stages_participants: stages }),
+    output: output([
+      // Label is only the action verb.
+      stage("设计经理先审查", [
+        { role: "label", quote: "审查", hint: null },
+        { role: "kind", quote: "审查", hint: "review" },
+        { role: "participant", quote: "设计经理", hint: null },
+      ]),
+      // Label composed by the provider, not present in the source.
+      stage("信用控制和财务经理并行审核", [
+        { role: "label", quote: "信用控制审核", hint: null },
+        { role: "kind", quote: "审核", hint: "review" },
+        { role: "participant", quote: "信用控制", hint: null },
+      ]),
+      // Repeated kind resolves after the participant.
+      stage("两者都批准后由采购总监最终批准", [
+        { role: "label", quote: "两者都批准后由采购总监最终批准", hint: null },
+        { role: "kind", quote: "批准", hint: "approval" },
+        { role: "participant", quote: "采购总监", hint: null },
+      ]),
+      // Directory position stands in for a missing participant.
+      stage("增加法务审查", [
+        { role: "label", quote: "法务审查", hint: null },
+        { role: "kind", quote: "审查", hint: "review" },
+        { role: "participant_mode", quote: "法务", hint: "directory_position" },
+      ]),
+    ]),
+  });
+
+  assert.deepEqual(result.rejected, []);
+  const labels = result.accepted.map(
+    (located) => located.leaves.find((leaf) => leaf.role === "label").sourceSpan.exactText,
+  );
+  assert.deepEqual(labels, ["设计经理", "信用控制", "采购总监", "法务"]);
+  const finalKind = result.accepted[2].leaves.find((leaf) => leaf.role === "kind").sourceSpan;
+  assert.equal(
+    finalKind.startCodePoint,
+    Array.from(stages.slice(0, stages.lastIndexOf("批准"))).length,
+  );
+});
+
+test("a requirement word misquoted as the attachment kind is dropped only when a format is present", () => {
+  const attachments = "Require a safety induction certificate PDF. Require a signed waiver.";
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "structure",
+    sourceSlots: sourceSlots("structure", { attachments }),
+    output: output([
+      item({
+        kind: "attachment",
+        quote: "Require a safety induction certificate PDF",
+        leaves: [
+          { role: "label", quote: "safety induction certificate", hint: null },
+          { role: "kind", quote: "Require", hint: "attachment" },
+          { role: "required", quote: "Require", hint: "true" },
+          { role: "format", quote: "PDF", hint: "pdf" },
+        ],
+      }),
+      item({
+        kind: "attachment",
+        quote: "Require a signed waiver",
+        leaves: [
+          { role: "label", quote: "signed waiver", hint: null },
+          { role: "kind", quote: "Require", hint: "attachment" },
+          { role: "required", quote: "Require", hint: "true" },
+        ],
+      }),
+    ]),
+  });
+
+  const roles = result.accepted.map((located) => located.leaves.map((leaf) => leaf.role).sort());
+  assert.deepEqual(roles, [
+    ["format", "label", "required"],
+    ["kind", "label", "required"],
+  ]);
 });

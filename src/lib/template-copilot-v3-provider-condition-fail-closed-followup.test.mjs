@@ -227,3 +227,53 @@ test("bounded operator-led same-field carry-forward remains semantically complet
   assert.equal(review.blockingReason, undefined);
   assert.equal(assembled.envelope.fragments.length, 1);
 });
+
+test("an operator-led later threshold branch carries its field and is held for review", () => {
+  const source =
+    "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元由财务总监批准；超过五百万元再由行政总裁批准。";
+  const { located, sourceSlots } = locateCondition(
+    "carried-threshold-branch",
+    source,
+    "超过五百万元再由行政总裁批准",
+    [
+      leaf("field", "申请额度"),
+      leaf("operator", "超过", ">"),
+      leaf("value", "五百万元"),
+      leaf("matching_route", "再由行政总裁批准", "stage_reference"),
+    ],
+  );
+
+  assert.deepEqual(located.rejected, []);
+  assert.equal(located.accepted.length, 1);
+  const operator = located.accepted[0].leaves.find((entry) => entry.role === "operator");
+  // The operator binds inside the quoted branch, not inside the earlier "不超过".
+  assert.equal(
+    operator.sourceSpan.startCodePoint,
+    Array.from(source.slice(0, source.indexOf("超过五百万元"))).length,
+  );
+  const [review] = assembleLocated(located, sourceSlots).review.items;
+  assert.equal(review.semanticComplete, false);
+  assert.equal(review.executable, false);
+  assert.equal(review.blockingReason, "unsupported_semantics_not_executable");
+});
+
+test("a later branch that names its own subject never inherits an earlier field", () => {
+  const source = "Amount is at most 10, Finance is the final approver. Discount amount > 100 routes to Legal.";
+  const { located, sourceSlots } = locateCondition(
+    "own-subject-branch",
+    source,
+    "> 100 routes to Legal",
+    [
+      leaf("field", "Amount"),
+      leaf("operator", ">", ">"),
+      leaf("value", "100"),
+      leaf("matching_route", "Legal", "stage_reference"),
+    ],
+  );
+  // Even if the quote is widened back to "Amount", the branch clause names its
+  // own subject, so it is neither complete nor held: it stays unresolved.
+  for (const review of assembleLocated(located, sourceSlots).review.items) {
+    assert.notEqual(review.semanticComplete, true);
+    assert.equal(review.blockingReason, undefined);
+  }
+});

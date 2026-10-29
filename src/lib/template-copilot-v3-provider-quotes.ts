@@ -1583,9 +1583,132 @@ const providerOutputShellSchema = z
   .strict();
 
 /**
+ * "Require a safety induction certificate PDF" sometimes comes back with the
+ * requirement word quoted again as the attachment kind. A kind leaf whose span
+ * lies inside the item's required leaf says nothing about the kind; when a
+ * file-format leaf is present it already establishes the upload, so the
+ * misquoted kind leaf is dropped rather than failing the whole attachment.
+ */
+function dropAttachmentKindQuotingRequirement(
+  kind: TemplateCopilotV3ProviderQuoteKind,
+  leaves: Array<{
+    role: TemplateCopilotV3ProviderQuoteRole;
+    hint: string | null;
+    sourceSpan: TemplateCopilotV3SourceSpan;
+    sameLocalClauseRecovered: boolean;
+  }>,
+) {
+  if (kind !== "attachment") return;
+  if (!leaves.some((leaf) => leaf.role === "format")) return;
+  const required = leaves.filter((leaf) => leaf.role === "required");
+  for (let index = leaves.length - 1; index >= 0; index -= 1) {
+    const leaf = leaves[index];
+    if (leaf.role !== "kind" || leaf.hint !== "attachment") continue;
+    const insideRequirement = required.some(
+      (marker) =>
+        marker.sourceSpan.messageId === leaf.sourceSpan.messageId &&
+        marker.sourceSpan.startCodePoint <= leaf.sourceSpan.startCodePoint &&
+        marker.sourceSpan.endCodePoint >= leaf.sourceSpan.endCodePoint,
+    );
+    if (insideRequirement) leaves.splice(index, 1);
+  }
+}
+
+/**
+ * A stage label the provider composed itself ("信用控制审核" from
+ * "信用控制和财务经理并行审核") is not an exact quote. When it is absent from the
+ * item quote but contains the stage's single participant quote, the participant
+ * becomes the label, as narrowStageLabelToParticipant would do for a sourced one.
+ */
+function repairUnquotedStageLabel(
+  item: TemplateCopilotV3ProviderQuoteItem,
+): TemplateCopilotV3ProviderQuoteItem {
+  if (item.kind !== "stage") return item;
+  const participants = item.leaves.filter((leaf) => leaf.role === "participant");
+  if (participants.length !== 1) return item;
+  const participant = participants[0].quote;
+  if (!item.quote.includes(participant)) return item;
+  let repaired = false;
+  const leaves = item.leaves.map((leaf) => {
+    if (
+      leaf.role !== "label" ||
+      item.quote.includes(leaf.quote) ||
+      !leaf.quote.includes(participant)
+    ) {
+      return leaf;
+    }
+    repaired = true;
+    return { ...leaf, quote: participant };
+  });
+  return repaired ? { ...item, leaves } : item;
+}
+
+/**
+ * A threshold chain often states its field once ("申请额度不超过一百万元…。超过一
+ * 百万元由财务总监批准"). When a provider quotes only an operator-led later
+ * branch, widen the quote back to the nearest preceding occurrence of its field
+ * leaf in the same slot, at most one sentence back, so that the existing
+ * bounded same-field carry-forward policy decides whether the field carries.
+ */
+function widenOperatorLedConditionToCarriedField(
+  item: TemplateCopilotV3ProviderQuoteItem,
+  sources: readonly TemplateCopilotV3ProviderQuoteSourceSlot[],
+): TemplateCopilotV3ProviderQuoteItem {
+  if (item.kind !== "condition") return item;
+  const fields = item.leaves.filter((leaf) => leaf.role === "field");
+  const operators = item.leaves.filter((leaf) => leaf.role === "operator");
+  if (fields.length !== 1 || operators.length !== 1) return item;
+  const fieldQuote = fields[0].quote;
+  if (item.quote.includes(fieldQuote)) return item;
+  if (!item.quote.startsWith(operators[0].quote)) return item;
+  const hosts = sources.filter((source) => source.text.includes(item.quote));
+  if (hosts.length !== 1) return item;
+  const text = hosts[0].text;
+  const start = text.indexOf(item.quote);
+  if (text.indexOf(item.quote, start + 1) >= 0) return item;
+  const fieldStart = text.lastIndexOf(fieldQuote, start);
+  if (fieldStart < 0) return item;
+  const sentenceBreaks = Array.from(text.slice(fieldStart, start)).filter(
+    (character) => /[.!?。！？]/u.test(character),
+  ).length;
+  if (sentenceBreaks > 1) return item;
+  const widened = text.slice(fieldStart, start + item.quote.length);
+  if (
+    templateCopilotUnicodeCodePointCount(widened) >
+    templateCopilotV3ProviderQuoteMaximumCodePoints
+  ) {
+    return item;
+  }
+  const widenedItem = { ...item, quote: widened };
+  carriedFieldPrefixLengths.set(widenedItem, start - fieldStart);
+  return widenedItem;
+}
+
+// Provider items widened back to a carried field, with the length of the
+// prepended prefix: their other leaves belong to the originally quoted branch.
+const carriedFieldPrefixLengths = new WeakMap<
+  TemplateCopilotV3ProviderQuoteItem,
+  number
+>();
+
+function resolveAmbiguousLeafInCarriedBranch(
+  item: TemplateCopilotV3ProviderQuoteItem,
+  target: TemplateCopilotV3ProviderQuoteItem["leaves"][number],
+) {
+  const prefixLength = carriedFieldPrefixLengths.get(item);
+  if (prefixLength === undefined || target.role === "field") return null;
+  const inBranch = uniqueOffset(item.quote.slice(prefixLength), target.quote);
+  return inBranch.status === "unique"
+    ? prefixLength + inBranch.startCodeUnit
+    : null;
+}
+
+/**
  * A stage is named by who acts on it. Providers tend to quote the whole clause
- * as the label ("department manager approves"); when that label span strictly
- * contains the stage's single participant span, the participant is the name.
+ * as the label ("department manager approves"), or only the action verb
+ * ("review"). When the stage names a single participant (or, without one, a
+ * single directory position) and the label either strictly contains that span
+ * or is just the stage's action-kind quote, the participant is the name.
  */
 function narrowStageLabelToParticipant(
   kind: TemplateCopilotV3ProviderQuoteKind,
@@ -1598,18 +1721,36 @@ function narrowStageLabelToParticipant(
 ) {
   if (kind !== "stage") return;
   const participants = leaves.filter((leaf) => leaf.role === "participant");
-  if (participants.length !== 1) return;
-  const inner = participants[0].sourceSpan;
+  const positions = leaves.filter(
+    (leaf) =>
+      leaf.role === "participant_mode" && leaf.hint === "directory_position",
+  );
+  const named = participants.length > 0 ? participants : positions;
+  if (named.length !== 1) return;
+  const inner = named[0].sourceSpan;
+  const kindTexts = new Set(
+    leaves
+      .filter((leaf) => leaf.role === "kind")
+      .map((leaf) => leaf.sourceSpan.exactText),
+  );
   for (const [index, leaf] of leaves.entries()) {
     if (leaf.role !== "label") continue;
     const outer = leaf.sourceSpan;
-    if (
+    const containsParticipant =
       outer.messageId === inner.messageId &&
       outer.startCodePoint <= inner.startCodePoint &&
       outer.endCodePoint >= inner.endCodePoint &&
       outer.endCodePoint - outer.startCodePoint >
-        inner.endCodePoint - inner.startCodePoint
-    ) {
+        inner.endCodePoint - inner.startCodePoint;
+    const overlapsParticipant =
+      outer.messageId === inner.messageId &&
+      outer.startCodePoint < inner.endCodePoint &&
+      inner.startCodePoint < outer.endCodePoint;
+    // "reviews mismatches", "审查根本原因": an action phrase, not a name.
+    const isOnlyTheAction =
+      !overlapsParticipant &&
+      [...kindTexts].some((text) => outer.exactText.includes(text));
+    if (containsParticipant || isOnlyTheAction) {
       leaves[index] = { ...leaf, sourceSpan: inner };
     }
   }
@@ -1765,7 +1906,9 @@ export function locateTemplateCopilotV3ProviderQuotes({
         );
         return;
       }
-      item = parsed.data;
+      item = repairUnquotedStageLabel(
+        widenOperatorLedConditionToCarriedField(parsed.data, eligibleSources),
+      );
     }
     if (!allowedKinds.has(item.kind)) {
       rejected.push(
@@ -2112,6 +2255,12 @@ export function locateTemplateCopilotV3ProviderQuotes({
             item,
             staged.leaf,
             stagedLeafMatches,
+          ) ??
+          resolveAmbiguousLeafInCarriedBranch(item, staged.leaf) ??
+          resolveAmbiguousStageKindAfterParticipant(
+            item,
+            staged.leaf,
+            stagedLeafMatches,
           )
         );
       if (relativeStartCodeUnit === null) {
@@ -2268,6 +2417,7 @@ export function locateTemplateCopilotV3ProviderQuotes({
       });
     }
     narrowStageLabelToParticipant(item.kind, locatedLeaves);
+    dropAttachmentKindQuotingRequirement(item.kind, locatedLeaves);
     located.push(Object.freeze({
       itemIndex,
       kind: item.kind,
@@ -6214,8 +6364,9 @@ function resolveAmbiguousConditionNumericValue(
   return candidates.length === 1 ? candidates[0] : null;
 }
 
-// A repeated leaf quote ("PDF" in "one invoice PDF, one purchase order PDF")
-// resolves to its single occurrence inside the item's uniquely located label.
+// A repeated leaf quote ("PDF" in "one invoice PDF, one purchase order PDF",
+// or "商業登記證 PDF、銀行證明 PDF") resolves to its single occurrence inside the
+// item's uniquely located label, or else immediately after it (whitespace only).
 function resolveAmbiguousLeafWithinLabel(
   item: TemplateCopilotV3ProviderQuoteItem,
   target: TemplateCopilotV3ProviderQuoteItem["leaves"][number],
@@ -6233,9 +6384,42 @@ function resolveAmbiguousLeafWithinLabel(
     return null;
   }
   const inner = uniqueOffset(label.leaf.quote, target.quote);
-  return inner.status === "unique"
-    ? label.match.startCodeUnit + inner.startCodeUnit
+  if (inner.status === "unique") {
+    return label.match.startCodeUnit + inner.startCodeUnit;
+  }
+  if (inner.status === "ambiguous") return null;
+  // Adjacency stays entity-local: an anchor spanning sentences or hard clauses
+  // ("Require A PDF. Require B PDF.") must still be quoted per entity.
+  if (Array.from(item.quote.trimEnd().slice(0, -1)).some(templateCopilotV3HardClauseSeparator)) {
+    return null;
+  }
+  const labelEnd = label.match.startCodeUnit + label.leaf.quote.length;
+  const following = item.quote.slice(labelEnd).match(/^\s*/u)?.[0] ?? "";
+  return item.quote.startsWith(target.quote, labelEnd + following.length)
+    ? labelEnd + following.length
     : null;
+}
+
+// "兩者都批准後由採購總監最終批准": a repeated stage kind resolves to its single
+// occurrence after the stage's uniquely located participant.
+function resolveAmbiguousStageKindAfterParticipant(
+  item: TemplateCopilotV3ProviderQuoteItem,
+  target: TemplateCopilotV3ProviderQuoteItem["leaves"][number],
+  staged: readonly StagedProviderLeafMatch[],
+) {
+  if (item.kind !== "stage" || target.role !== "kind") return null;
+  const participants = staged.filter((entry) => entry.leaf.role === "participant");
+  const participant = participants[0];
+  if (
+    participants.length !== 1 ||
+    !participant ||
+    participant.match.status !== "unique"
+  ) {
+    return null;
+  }
+  const after = participant.match.startCodeUnit + participant.leaf.quote.length;
+  const tail = uniqueOffset(item.quote.slice(after), target.quote);
+  return tail.status === "unique" ? after + tail.startCodeUnit : null;
 }
 
 function resolveAmbiguousConditionOtherwiseRoute(
