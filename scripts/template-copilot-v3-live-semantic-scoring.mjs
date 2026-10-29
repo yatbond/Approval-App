@@ -2151,7 +2151,13 @@ function scoreScenarioManifestSemantics({
     label: "conditions",
     expected: manifest.conditions,
     entries: conditions,
-    matches: conditionContractMatchesEntry,
+    matches: (expected, entry) =>
+      conditionContractMatchesEntry(expected, entry) ||
+      templateCopilotV3LiveSemanticHeldConditionWordingMatches(
+        expected,
+        entry,
+        sourceMessages,
+      ),
     failures,
   });
   let governedConditionHoldCount = 0;
@@ -3077,6 +3083,91 @@ function conditionContractMatchesEntry(expected, entry) {
   ].every((contract) => hasRoleContract(entry, contract));
 }
 
+// A condition the Copilot held as non-executable is identified by its
+// predicate wording rather than by how that wording was split into
+// field/operator/value ("High-risk visits" for visits = High-risk). Each
+// expected term must sit inside one contiguous run of the entry's predicate
+// quotes, and the run may not add negation the reviewed rule lacks. Holds never
+// execute, so the split cannot change routing; exact role checks still apply to
+// the matched pair.
+const conditionNegationMarker =
+  /(?:^|\b)(?:not|no|non|never|without|other\s+than)\b|非|不|未|無|无|沒|没|否/u;
+
+export function templateCopilotV3LiveSemanticHeldConditionWordingMatches(
+  expected,
+  entry,
+  sourceMessages,
+) {
+  if (!governedHoldBlockingReasonSet.has(entry.blockingReason)) return false;
+  const leaves = entry.semanticLeaves
+    .filter((leaf) =>
+      ["field", "operator", "value", "currency", "unit"].includes(leaf.role),
+    )
+    .sort(
+      (left, right) =>
+        left.sourceSpan.startCodePoint - right.sourceSpan.startCodePoint ||
+        left.sourceSpan.endCodePoint - right.sourceSpan.endCodePoint,
+    );
+  if (!leaves.some((leaf) => leaf.role === "field" || leaf.role === "value")) {
+    return false;
+  }
+  const runs = [];
+  for (const leaf of leaves) {
+    const previous = runs.at(-1);
+    const span = leaf.sourceSpan;
+    const gap =
+      previous &&
+      previous.messageId === span.messageId &&
+      span.startCodePoint >= previous.endCodePoint
+        ? Array.from(sourceMessages[span.messageId] ?? "")
+            .slice(previous.endCodePoint, span.startCodePoint)
+            .join("")
+        : null;
+    if (gap !== null && canonicalSemanticText(gap).length === 0) {
+      previous.text += leaf.quote;
+      previous.endCodePoint = span.endCodePoint;
+    } else if (
+      previous &&
+      previous.messageId === span.messageId &&
+      span.startCodePoint < previous.endCodePoint
+    ) {
+      // An overlapping quote ("境外" inside "境外受赠机构") adds only its tail.
+      if (span.endCodePoint > previous.endCodePoint) {
+        previous.text += Array.from(leaf.quote)
+          .slice(previous.endCodePoint - span.startCodePoint)
+          .join("");
+        previous.endCodePoint = span.endCodePoint;
+      }
+    } else {
+      runs.push({
+        messageId: span.messageId,
+        endCodePoint: span.endCodePoint,
+        text: leaf.quote,
+      });
+    }
+  }
+  const terms = [expected.field, expected.operator.term, expected.value].filter(
+    (term) => typeof term === "string" && term.length > 0,
+  );
+  const reviewedWording = [
+    ...terms,
+    ...Object.values(expected.predicateContext ?? {}).flatMap((value) =>
+      Array.isArray(value) ? value : [],
+    ),
+  ];
+  const addsNegation = runs.some((run) => {
+    const marker = run.text.match(conditionNegationMarker)?.[0];
+    return (
+      marker !== undefined &&
+      !reviewedWording.some((text) => canonicalIncludes(text, marker))
+    );
+  });
+  return (
+    !addsNegation &&
+    terms.every((term) => runs.some((run) => canonicalIncludes(run.text, term)))
+  );
+}
+
 function matchRoleContractsOneToOne({
   label,
   expected,
@@ -3127,6 +3218,18 @@ function matchRoleContractsOneToOne({
       failures.push(
         `Reviewed ${label} entity was merged with a sibling at index ${expectedIndex}.`,
       );
+    } else if (
+      mergedLabelTerm &&
+      templateCopilotV3LiveSemanticTermSplitAcrossEntries(
+        mergedLabelTerm(expected[expectedIndex]),
+        entries,
+      )
+    ) {
+      // The mirror case: one reviewed term captured as one entity per conjunct.
+      matchedCount += 1;
+      failures.push(
+        `Reviewed ${label} entity was split into its conjuncts at index ${expectedIndex}.`,
+      );
     } else
       failures.push(
         `Reviewed ${label} entity was omitted at index ${expectedIndex}.`,
@@ -3163,6 +3266,25 @@ function labelMergesExpectedSiblings(entry, term, siblingTerms) {
       (templateCopilotV3LiveSemanticLabelEquivalent(right, term) && isSibling(left))
     );
   });
+}
+
+// "起重計劃或密閉空間計劃" reviewed as two entities "起重計劃" and "密閉空間計劃":
+// a term that is exactly two coordinated conjuncts, each one entity's label.
+export function templateCopilotV3LiveSemanticTermSplitAcrossEntries(term, entries) {
+  const text = String(term).normalize("NFKC").trim();
+  const parts =
+    text.match(/^(.+?)\s+(?:and|or)\s+(.+)$/iu) ??
+    text.match(/^(.+?)[及和與与或、](.+)$/u);
+  if (!parts) return false;
+  const labelled = (part) =>
+    entries.findIndex((entry) =>
+      roleLeaves(entry, "label").some((leaf) =>
+        templateCopilotV3LiveSemanticLabelEquivalent(leaf.quote, part),
+      ),
+    );
+  const left = labelled(parts[1]);
+  const right = labelled(parts[2]);
+  return left >= 0 && right >= 0 && left !== right;
 }
 
 function requireExactRoleHints(entry, role, expectedHints, label, failures) {
@@ -3239,6 +3361,11 @@ const labelFillerWords = Object.freeze([
   "native",
   "pdf",
   "excel",
+  "form",
+  "optional",
+  "editable",
+  "each",
+  "各",
   "選項",
   "选项",
   "選擇",
@@ -3261,6 +3388,8 @@ const labelFillerSet = new Set(labelFillerWords.map(canonicalSemanticText));
 
 function differsByOneFiller(longer, shorter) {
   if (shorter.length === 0 || longer.length <= shorter.length) return false;
+  // A bare filler ("native" for "native form") is not a name.
+  if (labelFillerSet.has(shorter)) return false;
   if (longer.startsWith(shorter)) {
     return labelFillerSet.has(longer.slice(shorter.length));
   }
@@ -3432,7 +3561,7 @@ function advisoryHintHasExactSourceMeaning(kind, role, hint, quote) {
     }
     if (optional) return false;
     const requirementMarker =
-      /\b(?:must|required|requires?|mandatory|upload|attach|submit|provide|include|fill|add)\b|必須填寫|必须填写|必須提供|必须提供|必須上載|必须上传|須上載|须上传|要上載|要上传|必須提交|必须提交|須提交|须提交|必須附上|必须附上|必須|必须|需要|必填|上載|上传|提交|附上|提供|填寫|填写|要填|須填|须填|須|须/u.test(
+      /\b(?:must|required|requires?|mandatory|upload|attach|submit|provide|include|fill|add)\b|必須填寫|必须填写|必須提供|必须提供|必須上載|必须上传|須上載|须上传|要上載|要上传|必須提交|必须提交|須提交|须提交|必須附上|必须附上|必須|必须|需要|必填|上載|上传|提交|附上|提供|填寫|填写|要填|須填|须填|須|须|要/u.test(
         meaning,
       );
     // A conditional requirement may be evidenced by its condition ("出售时",

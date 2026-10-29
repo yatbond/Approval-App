@@ -29,7 +29,9 @@ import {
   scoreTemplateCopilotV3LiveSemantic,
   templateCopilotV3IterativeSemanticDiagnosticContract,
   templateCopilotV3IterativeSemanticDiagnosticVersion,
+  templateCopilotV3LiveSemanticHeldConditionWordingMatches,
   templateCopilotV3LiveSemanticLabelEquivalent,
+  templateCopilotV3LiveSemanticTermSplitAcrossEntries,
   templateCopilotV3LiveSemanticScoringContract,
 } from "./template-copilot-v3-live-semantic-scoring.mjs";
 
@@ -3215,6 +3217,11 @@ test("label equivalence accepts only one fixed filler word around the exact term
     ["相關行政總監", "行政總監"],
     // The shorter side may be the label: the format is scored separately.
     ["business-case", "business-case PDF"],
+    // Requiredness, editability, input kind and "each" are scored or implied elsewhere.
+    ["image", "optional image"],
+    ["editable contract file", "contract file"],
+    ["recipient-risk assessment", "recipient-risk assessment form"],
+    ["各措施负责人", "措施负责人"],
   ];
   for (const [quote, term] of accepted) {
     assert.equal(templateCopilotV3LiveSemanticLabelEquivalent(quote, term), true, quote);
@@ -3231,8 +3238,124 @@ test("label equivalence accepts only one fixed filler word around the exact term
     ["choice", ""],
     ["是否不需要监管报告", "监管报告"],
     ["native", "native form"],
+    ["form", "native form"],
+    ["最近财务报表", "财务报表"],
   ];
   for (const [quote, term] of rejected) {
     assert.equal(templateCopilotV3LiveSemanticLabelEquivalent(quote, term), false, quote);
   }
+});
+
+function heldCondition(messageId, source, leaves, blockingReason = "unsupported_semantics_not_executable") {
+  return {
+    blockingReason,
+    semanticLeaves: leaves.map(([role, quote, from = 0]) => {
+      const start = Array.from(source).length - Array.from(source.slice(source.indexOf(quote, from))).length;
+      return {
+        role,
+        quote,
+        advisoryHint: null,
+        sourceSpan: {
+          messageId,
+          startCodePoint: start,
+          endCodePoint: start + Array.from(quote).length,
+          exactText: quote,
+        },
+      };
+    }),
+  };
+}
+
+test("a held condition is identified by its predicate wording, never by added negation", () => {
+  const source = "High-risk visits require Site Manager. 若註冊地不在香港，增加法務審查。非高風險工序則完成。";
+  const messages = { m: source };
+  const expected = (field, operator, value, predicateContext = {}) => ({
+    field,
+    operator: { role: "operator", term: operator, hint: "=" },
+    value,
+    predicateContext,
+  });
+  const visits = expected("visits", "High-risk", "High-risk");
+  assert.equal(
+    templateCopilotV3LiveSemanticHeldConditionWordingMatches(
+      visits,
+      heldCondition("m", source, [["field", "High-risk visits"]]),
+      messages,
+    ),
+    true,
+  );
+  // Executable entries keep the exact field/operator/value identity.
+  assert.equal(
+    templateCopilotV3LiveSemanticHeldConditionWordingMatches(
+      visits,
+      { ...heldCondition("m", source, [["field", "High-risk visits"]]), blockingReason: undefined },
+      messages,
+    ),
+    false,
+  );
+  // Negation present in the reviewed meaning is allowed; added negation is not.
+  assert.equal(
+    templateCopilotV3LiveSemanticHeldConditionWordingMatches(
+      expected("註冊地", "註冊地", "註冊地", { unsupportedMeaning: ["若註冊地不在香港，增加法務審查"] }),
+      heldCondition("m", source, [["field", "註冊地"], ["operator", "不在"], ["value", "香港"]]),
+      messages,
+    ),
+    true,
+  );
+  assert.equal(
+    templateCopilotV3LiveSemanticHeldConditionWordingMatches(
+      expected("工序", "高風險", "高風險"),
+      heldCondition("m", source, [["field", "非高風險工序"]]),
+      messages,
+    ),
+    false,
+  );
+  // Overlapping quotes contribute their tails; a separately quoted unit counts.
+  const overlap = "境外受赠机构增加法务审查。费用超过港币一万元时增加主管。";
+  assert.equal(
+    templateCopilotV3LiveSemanticHeldConditionWordingMatches(
+      expected("受赠机构", "境外", "境外"),
+      heldCondition("m", overlap, [["operator", "境外"], ["field", "境外受赠机构"]]),
+      { m: overlap },
+    ),
+    true,
+  );
+  assert.equal(
+    templateCopilotV3LiveSemanticHeldConditionWordingMatches(
+      expected("费用", "超过", "一万元"),
+      heldCondition("m", overlap, [["field", "费用"], ["operator", "超过"], ["currency", "港币"], ["value", "一万"], ["unit", "元"]]),
+      { m: overlap },
+    ),
+    true,
+  );
+  // A term may not be stitched together from non-adjacent quotes.
+  assert.equal(
+    templateCopilotV3LiveSemanticHeldConditionWordingMatches(
+      expected("visits Site", "visits Site", "visits Site"),
+      heldCondition("m", source, [["field", "visits"], ["value", "Site"]]),
+      messages,
+    ),
+    false,
+  );
+});
+
+test("an expected term split into its two conjunct entities counts once", () => {
+  const entry = (label) => ({ semanticLeaves: [{ role: "label", quote: label }] });
+  assert.equal(
+    templateCopilotV3LiveSemanticTermSplitAcrossEntries("起重計劃或密閉空間計劃", [
+      entry("起重計劃"),
+      entry("密閉空間計劃"),
+    ]),
+    true,
+  );
+  assert.equal(
+    templateCopilotV3LiveSemanticTermSplitAcrossEntries("lifting or confined-space plan", [
+      entry("lifting"),
+    ]),
+    false,
+  );
+  assert.equal(
+    templateCopilotV3LiveSemanticTermSplitAcrossEntries("起重計劃", [entry("起重計劃")]),
+    false,
+  );
 });
