@@ -110,7 +110,7 @@ export function classifyTemplateCopilotV2ProviderFailure(error: unknown) {
 type TemplateCopilotAiConfiguration = {
   client: OpenAI;
   model: string;
-  providerCode: "openrouter" | "zai" | "gateway" | "openai";
+  providerCode: "openrouter" | "zai" | "gateway" | "openai" | "self_hosted";
   privacyMode: "zdr" | "standard";
   protocol: "responses" | "chat_completions";
   structuredOutput?: "json_object" | "json_schema";
@@ -122,6 +122,7 @@ type TemplateCopilotAiConfiguration = {
   openRouterRoutingProfile?: TemplateCopilotOpenRouterRoutingProfile;
 };
 
+import { selfHostedChatFetch } from "./template-copilot-self-hosted-fetch.ts";
 export { templateCopilotProviderTimeoutMs } from "./template-copilot-provider-timeout.ts";
 function boundedProviderClientOptions() {
   return { timeout: templateCopilotProviderTimeoutMs(), maxRetries: 0 };
@@ -131,15 +132,81 @@ function boundedProviderRequestOptions() {
   return { timeout, maxRetries: 0, signal: AbortSignal.timeout(timeout) };
 }
 
+// An OpenAI-compatible server the organisation runs itself (for example
+// llama.cpp behind a Cloudflare Tunnel). It must be keyed, HTTPS on Vercel,
+// and may additionally sit behind Cloudflare Access service-token headers.
+function selfHostedConfiguration(): TemplateCopilotAiConfiguration {
+  const rawBaseUrl = process.env.TEMPLATE_COPILOT_SELF_HOSTED_BASE_URL?.trim();
+  const apiKey = process.env.TEMPLATE_COPILOT_SELF_HOSTED_API_KEY?.trim();
+  const model = process.env.TEMPLATE_COPILOT_MODEL?.trim();
+  if (!rawBaseUrl || !apiKey || !model) {
+    throw new TemplateCopilotConfigurationError(
+      "The self-hosted Template Copilot needs TEMPLATE_COPILOT_SELF_HOSTED_BASE_URL, TEMPLATE_COPILOT_SELF_HOSTED_API_KEY, and TEMPLATE_COPILOT_MODEL.",
+    );
+  }
+  let baseUrl: URL;
+  try {
+    baseUrl = new URL(rawBaseUrl);
+  } catch {
+    throw new TemplateCopilotConfigurationError(
+      "TEMPLATE_COPILOT_SELF_HOSTED_BASE_URL must be an absolute URL.",
+    );
+  }
+  if (
+    baseUrl.protocol !== "https:" &&
+    (process.env.VERCEL_ENV || baseUrl.protocol !== "http:")
+  ) {
+    throw new TemplateCopilotConfigurationError(
+      "TEMPLATE_COPILOT_SELF_HOSTED_BASE_URL must use https on Vercel.",
+    );
+  }
+  const accessClientId =
+    process.env.TEMPLATE_COPILOT_SELF_HOSTED_ACCESS_CLIENT_ID?.trim();
+  const accessClientSecret =
+    process.env.TEMPLATE_COPILOT_SELF_HOSTED_ACCESS_CLIENT_SECRET?.trim();
+  if (Boolean(accessClientId) !== Boolean(accessClientSecret)) {
+    throw new TemplateCopilotConfigurationError(
+      "Set both TEMPLATE_COPILOT_SELF_HOSTED_ACCESS_CLIENT_ID and TEMPLATE_COPILOT_SELF_HOSTED_ACCESS_CLIENT_SECRET, or neither.",
+    );
+  }
+  return {
+    client: new OpenAI({
+      apiKey,
+      baseURL: baseUrl.href.replace(/\/$/u, ""),
+      ...(accessClientId && accessClientSecret
+        ? {
+            defaultHeaders: {
+              "CF-Access-Client-Id": accessClientId,
+              "CF-Access-Client-Secret": accessClientSecret,
+            },
+          }
+        : {}),
+      fetch: selfHostedChatFetch,
+      ...boundedProviderClientOptions(),
+    }),
+    model,
+    providerCode: "self_hosted",
+    privacyMode: "standard",
+    protocol: "chat_completions",
+    structuredOutput: "json_schema",
+  };
+}
+
 function aiConfiguration(): TemplateCopilotAiConfiguration {
   const requestedProvider = process.env.TEMPLATE_COPILOT_PROVIDER?.trim();
   if (
     requestedProvider &&
-    !["openrouter", "zai", "gateway", "openai"].includes(requestedProvider)
+    !["openrouter", "zai", "gateway", "openai", "self_hosted"].includes(
+      requestedProvider,
+    )
   ) {
     throw new TemplateCopilotConfigurationError(
-      "TEMPLATE_COPILOT_PROVIDER must be openrouter, zai, gateway, or openai.",
+      "TEMPLATE_COPILOT_PROVIDER must be openrouter, zai, gateway, openai, or self_hosted.",
     );
+  }
+
+  if (requestedProvider === "self_hosted") {
+    return selfHostedConfiguration();
   }
 
   if (requestedProvider === "openrouter") {
