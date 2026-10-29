@@ -3565,3 +3565,39 @@ test("a requirement word misquoted as the attachment kind is dropped only when a
     ["kind", "label", "required"],
   ]);
 });
+
+test("an unquoted attachment kind is dropped only when a quoted format establishes the upload", () => {
+  const attachments = "Require a data inventory CSV. Require a signed waiver.";
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "structure",
+    sourceSlots: sourceSlots("structure", { attachments }),
+    output: output([
+      item({
+        kind: "attachment",
+        quote: "Require a data inventory CSV",
+        leaves: [
+          { role: "label", quote: "data inventory", hint: null },
+          { role: "kind", quote: "attachment", hint: "attachment" },
+          { role: "required", quote: "Require", hint: "true" },
+          { role: "format", quote: "CSV", hint: "excel_csv" },
+        ],
+      }),
+      item({
+        kind: "attachment",
+        quote: "Require a signed waiver",
+        leaves: [
+          { role: "label", quote: "signed waiver", hint: null },
+          { role: "kind", quote: "attachment", hint: "attachment" },
+          { role: "required", quote: "Require", hint: "true" },
+        ],
+      }),
+    ]),
+  });
+
+  assert.equal(result.accepted.length, 1);
+  assert.deepEqual(
+    result.accepted[0].leaves.map((leaf) => leaf.role).sort(),
+    ["format", "label", "required"],
+  );
+  assert.deepEqual(result.rejected.map((entry) => entry.code), ["leaf_not_found"]);
+});

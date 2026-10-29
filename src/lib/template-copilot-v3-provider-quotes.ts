@@ -1644,6 +1644,29 @@ function repairUnquotedStageLabel(
 }
 
 /**
+ * An attachment kind the provider did not quote from the source (typically the
+ * hint word itself, "attachment") cannot be located. When the item carries a
+ * quoted file-format leaf, that format already establishes the upload, so the
+ * unquoted kind leaf is dropped instead of rejecting the whole attachment.
+ */
+function dropUnquotedAttachmentKind(
+  item: TemplateCopilotV3ProviderQuoteItem,
+): TemplateCopilotV3ProviderQuoteItem {
+  if (item.kind !== "attachment") return item;
+  const hasQuotedFormat = item.leaves.some(
+    (leaf) => leaf.role === "format" && item.quote.includes(leaf.quote),
+  );
+  if (!hasQuotedFormat) return item;
+  const leaves = item.leaves.filter(
+    (leaf) =>
+      leaf.role !== "kind" ||
+      leaf.hint !== "attachment" ||
+      item.quote.includes(leaf.quote),
+  );
+  return leaves.length === item.leaves.length ? item : { ...item, leaves };
+}
+
+/**
  * A threshold chain often states its field once ("申请额度不超过一百万元…。超过一
  * 百万元由财务总监批准"). When a provider quotes only an operator-led later
  * branch, widen the quote back to the nearest preceding occurrence of its field
@@ -1906,8 +1929,10 @@ export function locateTemplateCopilotV3ProviderQuotes({
         );
         return;
       }
-      item = repairUnquotedStageLabel(
-        widenOperatorLedConditionToCarriedField(parsed.data, eligibleSources),
+      item = dropUnquotedAttachmentKind(
+        repairUnquotedStageLabel(
+          widenOperatorLedConditionToCarriedField(parsed.data, eligibleSources),
+        ),
       );
     }
     if (!allowedKinds.has(item.kind)) {
