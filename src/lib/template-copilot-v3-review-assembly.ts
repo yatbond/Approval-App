@@ -5523,6 +5523,11 @@ function finishCluster(
   conflictGroupId: string | undefined,
   rejections: TemplateCopilotV3ReviewRejection[],
 ): { item: TemplateCopilotV3ReviewArrayItem; fragment: TemplateCopilotV3Fragment | null } | null {
+  const semanticObservations = withoutUnverifiedAttachmentKindBesideFormat(
+    cluster.factId,
+    cluster.semanticObservations,
+    cluster.semanticContexts,
+  );
   const value: Record<string, unknown> = {};
   const bindings: Binding[] = [];
   for (const [path, leaf] of [...cluster.leaves].sort(([a], [b]) => compareText(a, b))) {
@@ -5545,7 +5550,7 @@ function finishCluster(
     ...cluster.leaves.values().flatMap((leaf) => leaf.spans),
     ...cluster.arrays.values().flatMap((values) => [...values.values()].flatMap((leaf) => leaf.spans)),
   ], compareSpans);
-  const sourceSpans = dedupeSpans([...boundSpans, ...cluster.relationships.map((item) => item.sourceSpan), ...cluster.semanticObservations.map((item) => item.sourceSpan)], compareSpans);
+  const sourceSpans = dedupeSpans([...boundSpans, ...cluster.relationships.map((item) => item.sourceSpan), ...semanticObservations.map((item) => item.sourceSpan)], compareSpans);
   if (sourceSpans.length === 0) return null;
   const byId = new Map(boundSpans.map((span) => [span.spanId, span]));
   const sourceBound = bindings.every((binding) => binding.spanIds.every((spanId) => {
@@ -5567,13 +5572,13 @@ function finishCluster(
   const sourceAnchors = dedupeSpans(cluster.sourceAnchors, compareSpans);
   const unsupportedBlockingReason = semanticUnsupportedAuthorityReason(
     cluster.factId,
-    cluster.semanticObservations,
+    semanticObservations,
     cluster.semanticContexts,
   );
   const compoundPredicateBlocked =
     cluster.factId === "workflow.conditions" &&
     semanticConditionHasCompoundPredicateContext(
-      cluster.semanticObservations,
+      semanticObservations,
       cluster.semanticContexts,
     );
   const governedBlockingReason:
@@ -5587,7 +5592,7 @@ function finishCluster(
     governedBlockingReason === undefined &&
     semanticallyComplete(
       cluster.factId,
-      cluster.semanticObservations,
+      semanticObservations,
       cluster.semanticContexts,
       ambiguity,
       conflictGroupId !== undefined,
@@ -5604,7 +5609,7 @@ function finishCluster(
     ambiguity === "none" &&
     conflictGroupId === undefined &&
     semanticConditionOnlyCarriesFieldAcrossSentence(
-      cluster.semanticObservations,
+      semanticObservations,
       cluster.semanticContexts,
     );
   const blockingReason: TemplateCopilotV3ReviewBlockingReason | undefined =
@@ -5617,7 +5622,14 @@ function finishCluster(
     blockingReason !== undefined;
   const complete =
     missingPaths.length === 0 && !fragmentAuthorityBlocked;
-  const observedRoles = [...cluster.observedRoles].sort(compareText);
+  const observedRoles = [...cluster.observedRoles]
+    .filter(
+      (role) =>
+        role !== "kind" ||
+        semanticObservations === cluster.semanticObservations ||
+        semanticObservations.some((entry) => entry.role === "kind"),
+    )
+    .sort(compareText);
   const base = {
     factId: cluster.factId,
     value,
@@ -5633,9 +5645,9 @@ function finishCluster(
     ...(blockingReason ? { blockingReason } : {}),
     ...(ambiguityNote ? { ambiguityNote } : {}),
     observedRoles,
-    semanticValue: semanticValue(cluster.semanticObservations, compareSpans),
-    semanticLeaves: dedupeObservations(cluster.semanticObservations, compareSpans),
-    semanticObservations: dedupeObservations(cluster.semanticObservations, compareSpans),
+    semanticValue: semanticValue(semanticObservations, compareSpans),
+    semanticLeaves: dedupeObservations(semanticObservations, compareSpans),
+    semanticObservations: dedupeObservations(semanticObservations, compareSpans),
     sourceAnchors,
     relationships: cluster.relationships,
     sourceSpans,
@@ -5687,6 +5699,28 @@ function finishCluster(
     return null;
   }
   return finalize(parsed.data);
+}
+
+// "Allow an Excel line-item schedule": a verb quoted as the attachment kind is
+// dropped when a verified file format already establishes the upload, so the
+// review keeps no hint its own quote does not support.
+function withoutUnverifiedAttachmentKindBesideFormat(
+  factId: TemplateCopilotV3FragmentFactId,
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+) {
+  if (factId !== "attachments.requirements") return observations;
+  const verified = (observation: TemplateCopilotV3ReviewObservation) =>
+    semanticHintIsVerified(factId, observation, semanticContexts);
+  if (!observations.some((entry) => entry.role === "format" && verified(entry))) {
+    return observations;
+  }
+  return observations.filter(
+    (entry) =>
+      entry.role !== "kind" ||
+      entry.advisoryHint !== "attachment" ||
+      verified(entry),
+  );
 }
 
 function semanticallyComplete(
@@ -8907,7 +8941,7 @@ function semanticHintIsVerified(
   }
   if (leaf.role === "kind" && factId === "attachments.requirements") {
     return leaf.advisoryHint === "attachment"
-      ? matches("attachment", "document", "file", "uploaded file", "upload", "attach", "pdf", "excel", "csv", "spreadsheet", "image", "photo", "text", "proof", "附件", "檔案", "文件", "上載", "上传", "上載檔案", "上传文件", "試算表", "电子表格", "圖片", "图片", "相片", "照片", "文字", "文本", "證明", "证明")
+      ? matches("attachment", "document", "file", "uploaded file", "upload", "attach", "pdf", "excel", "csv", "spreadsheet", "image", "photo", "text", "proof", "附件", "檔案", "文件", "上載", "上传", "上載檔案", "上传文件", "試算表", "电子表格", "圖片", "图片", "相片", "照片", "文字", "文本", "證明", "证明", "補交", "补交")
       : leaf.advisoryHint === "form" && matches("form", "native", "native form", "in-app form", "in app form", "原生", "原生表格", "原生表单", "應用程式內表格", "应用内表单", "表格", "表单", "填寫", "填写", "填");
   }
   if (leaf.role === "kind" && factId === "workflow.stages") {

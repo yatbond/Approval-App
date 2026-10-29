@@ -251,10 +251,35 @@ test("an operator-led later threshold branch carries its field and is held for r
     operator.sourceSpan.startCodePoint,
     Array.from(source.slice(0, source.indexOf("超过五百万元"))).length,
   );
+  // The route quoted with its action verb is narrowed to the stage it names;
+  // "再由" stays in the source as the bounded later-tier bridge.
+  const route = located.accepted[0].leaves.find((entry) => entry.role === "matching_route");
+  assert.equal(route.sourceSpan.exactText, "行政总裁批准");
+  const [review] = assembleLocated(located, sourceSlots).review.items;
+  assert.equal(review.executable, false);
+  assert.equal(review.semanticComplete, true);
+  assert.equal(review.blockingReason, undefined);
+});
+
+test("an operator-led later threshold branch with an unbounded bridge is held for review", () => {
+  const source =
+    "申请额度不超过港币一百万元且风险低时可在财务经理批准后完成。超过一百万元由财务总监批准；超过五百万元另行处理并由行政总裁批准。";
+  const { located, sourceSlots } = locateCondition(
+    "carried-threshold-branch-held",
+    source,
+    "超过五百万元另行处理并由行政总裁批准",
+    [
+      leaf("field", "申请额度"),
+      leaf("operator", "超过", ">"),
+      leaf("value", "五百万元"),
+      leaf("matching_route", "行政总裁批准", "stage_reference"),
+    ],
+  );
+
+  assert.deepEqual(located.rejected, []);
   const [review] = assembleLocated(located, sourceSlots).review.items;
   assert.equal(review.semanticComplete, false);
   assert.equal(review.executable, false);
-  assert.equal(review.blockingReason, "unsupported_semantics_not_executable");
 });
 
 test("a later branch that names its own subject never inherits an earlier field", () => {

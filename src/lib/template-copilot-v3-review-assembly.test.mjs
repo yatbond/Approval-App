@@ -8412,3 +8412,34 @@ test("a blocked duplicate notification that dropped its only-qualifier cannot po
   );
   assert.notEqual(alone?.semanticComplete, true);
 });
+
+test("a verb quoted as the attachment kind is dropped only beside a verified format", () => {
+  const withFormatId = "message-attachment-verb-kind";
+  const withFormat = "Allow an optional Excel line-item schedule.";
+  const withoutFormatId = "message-attachment-verb-kind-bare";
+  const withoutFormat = "Allow an optional line-item schedule.";
+  const messages = { [withFormatId]: withFormat, [withoutFormatId]: withoutFormat };
+  const result = assembleTemplateCopilotV3Review({
+    sourceMessages: messages,
+    sourceMessageOrder: Object.keys(messages),
+    items: [
+      located({ itemIndex: 0, kind: "attachment", messageId: withFormatId, text: withFormat, leaves: [
+        { role: "label", quote: "Excel line-item schedule" }, { role: "kind", quote: "Allow", hint: "attachment" },
+        { role: "required", quote: "optional", hint: "false" }, { role: "format", quote: "Excel", hint: "excel_csv" },
+      ] }),
+      located({ itemIndex: 1, kind: "attachment", messageId: withoutFormatId, text: withoutFormat, leaves: [
+        { role: "label", quote: "line-item schedule" }, { role: "kind", quote: "Allow", hint: "attachment" },
+        { role: "required", quote: "optional", hint: "false" },
+      ] }),
+    ],
+  });
+  const [withFormatItem, withoutFormatItem] = [withFormatId, withoutFormatId].map((messageId) =>
+    result.review.items.find((item) => item.sourceMessageIds.includes(messageId))
+  );
+  assert.equal(withFormatItem.semanticComplete, true);
+  assert.deepEqual(withFormatItem.semanticLeaves.map((leaf) => leaf.role).sort(), ["format", "label", "required"]);
+  assert.deepEqual(withFormatItem.observedRoles, ["format", "label", "required"]);
+  // Without a format the unverified kind stays, and the item cannot complete.
+  assert.equal(withoutFormatItem.semanticComplete, false);
+  assert.ok(withoutFormatItem.semanticLeaves.some((leaf) => leaf.role === "kind"));
+});

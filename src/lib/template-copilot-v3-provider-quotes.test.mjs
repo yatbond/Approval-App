@@ -3601,3 +3601,285 @@ test("an unquoted attachment kind is dropped only when a quoted format establish
   );
   assert.deepEqual(result.rejected.map((entry) => entry.code), ["leaf_not_found"]);
 });
+
+test("a repeated list format stays item-local when the anchor adds a later sentence", () => {
+  const attachments = "必須上載商業登記證 PDF、銀行證明 PDF、稅務表格 PDF。每份檔案最多二十五 MB。";
+  const attachment = (label) =>
+    item({
+      kind: "attachment",
+      quote: attachments,
+      leaves: [
+        { role: "label", quote: label, hint: null },
+        { role: "kind", quote: "上載", hint: "attachment" },
+        { role: "required", quote: "必須", hint: "true" },
+        { role: "format", quote: "PDF", hint: "pdf" },
+      ],
+    });
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "structure",
+    sourceSlots: sourceSlots("structure", { attachments }),
+    output: output(["商業登記證", "銀行證明", "稅務表格"].map(attachment)),
+  });
+
+  assert.equal(result.rejected.length, 0, JSON.stringify(result.rejected));
+  assert.equal(result.accepted.length, 3);
+  for (const located of result.accepted) {
+    const label = located.leaves.find((leaf) => leaf.role === "label").sourceSpan;
+    const format = located.leaves.find((leaf) => leaf.role === "format").sourceSpan;
+    assert.equal(format.startCodePoint, label.endCodePoint + 1, label.exactText);
+  }
+});
+
+test("a condition route quoted with its action verb narrows to the stage it names", () => {
+  const conditions =
+    "预算超过五万元时增加客户经理。Above HKD 100,000 add CEO approval. 金额超过十万元时经理审批。";
+  const condition = (quote, field, operator, value, route) =>
+    item({
+      kind: "condition",
+      quote,
+      leaves: [
+        { role: "field", quote: field, hint: null },
+        { role: "operator", quote: operator, hint: ">" },
+        { role: "value", quote: value, hint: null },
+        { role: "matching_route", quote: route, hint: "stage_reference" },
+      ],
+    });
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_conditions",
+    sourceSlots: sourceSlots("routing_conditions", {
+      conditions_exceptions: conditions,
+    }),
+    output: output([
+      condition("预算超过五万元时增加客户经理", "预算", "超过", "五万元", "增加客户经理"),
+      condition("Above HKD 100,000 add CEO approval", "HKD", "Above", "100,000", "add CEO approval"),
+      // "经理" is a name, not the "经" action prefix.
+      condition("金额超过十万元时经理审批", "金额", "超过", "十万元", "经理审批"),
+    ]),
+  });
+
+  assert.deepEqual(result.rejected, []);
+  assert.deepEqual(
+    result.accepted.map(
+      (located) =>
+        located.leaves.find((leaf) => leaf.role === "matching_route").sourceSpan
+          .exactText,
+    ),
+    ["客户经理", "CEO approval", "经理审批"],
+  );
+});
+
+test("a narrowly quoted stage widens to its relationship later in the same sentence only", () => {
+  const stages =
+    "Send Finance approval and General Manager approval in parallel. Legal review follows. Audit runs in parallel.";
+  const stage = (quote, participant, relationship) =>
+    item({
+      kind: "stage",
+      quote,
+      leaves: [
+        { role: "label", quote: participant, hint: null },
+        { role: "kind", quote: quote.split(" ").at(-1), hint: quote.endsWith("review") ? "review" : "approval" },
+        { role: "participant", quote: participant, hint: null },
+        { role: "relationship", quote: relationship, hint: "parallel" },
+      ],
+    });
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_stages_participants",
+    sourceSlots: sourceSlots("routing_stages_participants", {
+      stages_participants: stages,
+    }),
+    output: output([
+      stage("Finance approval", "Finance", "in parallel"),
+      stage("General Manager approval", "General Manager", "in parallel"),
+      // The only "in parallel" after it lies in a later sentence.
+      stage("Legal review", "Legal", "in parallel"),
+    ]),
+  });
+
+  assert.deepEqual(
+    result.accepted.map((located) => located.anchor.exactText),
+    [
+      "Finance approval and General Manager approval in parallel",
+      "General Manager approval in parallel",
+    ],
+  );
+  assert.deepEqual(result.rejected, [
+    { itemIndex: 2, code: "leaf_not_found", detail: "stage:relationship" },
+  ]);
+});
+
+test("one request-field list item splits per label instead of exhausting leaf capacity", () => {
+  const batchId = "intake_documents";
+  const batch = templateCopilotV3ProviderQuoteBatches[batchId];
+  const emptyBuckets = Object.fromEntries(
+    batch.allowedKinds.map((kind) => [
+      kind,
+      templateCopilotV3ProviderQuoteWholeSlotPoliciesByBatchAndKind[batchId][kind]
+        ? null
+        : [],
+    ]),
+  );
+  const quote = "必填甲、乙、丙、丁、戊、己、庚、辛、壬、癸及子。";
+  const labels = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸", "子"];
+  const label = (q) => ({ r: "label", q, h: null });
+  const required = { r: "required", q: "必填", h: "true" };
+  const expand = (requestFields) =>
+    expandTemplateCopilotV3ProviderQuoteWire({
+      batchId,
+      output: {
+        v: templateCopilotV3ProviderQuoteWireVersion,
+        b: { ...emptyBuckets, request_field: requestFields },
+      },
+    });
+  const shared = expand([{ q: quote, l: [...labels.map(label), required], a: 0 }]);
+  assert.equal(shared.items.length, labels.length);
+  assert.deepEqual(shared.items[3].leaves.map((leaf) => [leaf.role, leaf.quote]), [
+    ["label", "丁"],
+    ["required", "必填"],
+  ]);
+  const alternating = expand([{ q: quote, l: labels.flatMap((entry) => [label(entry), required]), a: 0 }]);
+  assert.equal(alternating.items.length, labels.length);
+  // Unpaired per-label markers or a split list beyond the bucket cap stay fail closed.
+  const capacityError = (error) =>
+    error instanceof TemplateCopilotV3ProviderQuoteTransportError &&
+    error.reasonCode === "output_capacity_exhausted";
+  assert.throws(
+    () => expand([{ q: quote, l: [...labels.map(label), ...labels.map(() => required)], a: 0 }]),
+    capacityError,
+  );
+  const many = Array.from({ length: 16 }, (_, index) => `欄${index}`);
+  assert.throws(
+    () => expand([{ q: quote, l: [...many.map(label), required], a: 0 }]),
+    capacityError,
+  );
+});
+
+test("a repeated list count resolves to the occurrence directly before its label", () => {
+  const attachments =
+    "Require one invoice PDF, one purchase order PDF, and one goods receipt PDF; each up to 25 MB.";
+  const attachment = (label) =>
+    item({
+      kind: "attachment",
+      quote: attachments,
+      leaves: [
+        { role: "label", quote: label, hint: null },
+        { role: "kind", quote: "PDF", hint: "attachment" },
+        { role: "required", quote: "Require", hint: "true" },
+        { role: "minimum_quantity", quote: "one", hint: null },
+      ],
+    });
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "structure",
+    sourceSlots: sourceSlots("structure", { attachments }),
+    output: output(["invoice", "purchase order", "goods receipt"].map(attachment)),
+  });
+
+  assert.equal(result.rejected.length, 0, JSON.stringify(result.rejected));
+  for (const located of result.accepted) {
+    const label = located.leaves.find((leaf) => leaf.role === "label").sourceSpan;
+    const count = located.leaves.find((leaf) => leaf.role === "minimum_quantity").sourceSpan;
+    assert.equal(count.endCodePoint + 1, label.startCodePoint, label.exactText);
+  }
+});
+
+test("an unquoted attachment kind falls back to the one kind word inside its label", () => {
+  const attachments = "Allow an optional incident photo. Require a signed waiver. Attach the photo or file log.";
+  const attachment = (quote, label) =>
+    item({
+      kind: "attachment",
+      quote,
+      leaves: [
+        { role: "label", quote: label, hint: null },
+        { role: "kind", quote: "attachment", hint: "attachment" },
+        { role: "required", quote: quote.split(" ")[0], hint: "true" },
+      ],
+    });
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "structure",
+    sourceSlots: sourceSlots("structure", { attachments }),
+    output: output([
+      attachment("Allow an optional incident photo", "incident photo"),
+      // No kind word, or two of them, in the label: the unquoted kind stays unlocated.
+      attachment("Require a signed waiver", "signed waiver"),
+      attachment("Attach the photo or file log", "photo or file log"),
+    ]),
+  });
+
+  assert.equal(result.accepted.length, 1);
+  assert.equal(
+    result.accepted[0].leaves.find((leaf) => leaf.role === "kind").sourceSpan.exactText,
+    "photo",
+  );
+  assert.deepEqual(result.rejected.map((entry) => [entry.itemIndex, entry.code]), [
+    [1, "leaf_not_found"],
+    [2, "leaf_not_found"],
+  ]);
+});
+
+test("a field label repeated inside a longer sibling resolves to its whole list element", () => {
+  const fields = "必填工程項目、位置、工序、開始日期及高風險工序選項。";
+  const field = (label) =>
+    item({
+      kind: "request_field",
+      quote: fields,
+      leaves: [
+        { role: "label", quote: label, hint: null },
+        { role: "required", quote: "必填", hint: "true" },
+      ],
+    });
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "structure",
+    sourceSlots: sourceSlots("structure", { initiators_fields: fields }),
+    output: output([field("工序"), field("高風險工序選項")]),
+  });
+
+  assert.equal(result.rejected.length, 0, JSON.stringify(result.rejected));
+  const label = result.accepted[0].leaves.find((leaf) => leaf.role === "label").sourceSpan;
+  assert.equal(label.startCodePoint, Array.from("必填工程項目、位置、").length);
+
+  // Two whole-element occurrences stay ambiguous.
+  const twice = "必填位置、工序及工序。";
+  const ambiguous = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "structure",
+    sourceSlots: sourceSlots("structure", { initiators_fields: twice }),
+    output: output([item({
+      kind: "request_field",
+      quote: twice,
+      leaves: [
+        { role: "label", quote: "工序", hint: null },
+        { role: "required", quote: "必填", hint: "true" },
+      ],
+    })]),
+  });
+  assert.deepEqual(ambiguous.rejected.map((entry) => entry.code), ["leaf_ambiguous"]);
+});
+
+test("a shared stage verb resolves to its whole word in the participant's clause", () => {
+  const stages =
+    "Duty manager endorses, Procurement and Finance approve in parallel, then General Manager approves.";
+  const stage = (participant, kind) =>
+    item({
+      kind: "stage",
+      quote: stages,
+      leaves: [
+        { role: "label", quote: participant, hint: null },
+        { role: "kind", quote: kind, hint: "approval" },
+        { role: "participant", quote: participant, hint: null },
+      ],
+    });
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "routing_stages_participants",
+    sourceSlots: sourceSlots("routing_stages_participants", {
+      stages_participants: stages,
+    }),
+    output: output([stage("Procurement", "approve"), stage("Finance", "approve")]),
+  });
+
+  assert.deepEqual(result.rejected, []);
+  const verb = Array.from(stages.slice(0, stages.indexOf("approve in parallel"))).length;
+  for (const located of result.accepted) {
+    assert.equal(
+      located.leaves.find((leaf) => leaf.role === "kind").sourceSpan.startCodePoint,
+      verb,
+    );
+  }
+});

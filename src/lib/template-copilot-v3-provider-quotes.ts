@@ -595,12 +595,15 @@ function expandTemplateCopilotV3ProviderQuoteBucketWire({
     if (typeof maximumItems !== "number" || !Array.isArray(rawBucket)) {
       return invalidCanonicalProviderQuoteItem;
     }
-    if (rawBucket.length >= maximumItems) {
+    const bucketItems = kind === "request_field"
+      ? rawBucket.flatMap(splitRequestFieldListWireItem)
+      : rawBucket;
+    if (bucketItems.length >= maximumItems) {
       throw new TemplateCopilotV3ProviderQuoteTransportError(
         "output_capacity_exhausted",
       );
     }
-    for (const rawItem of rawBucket) {
+    for (const rawItem of bucketItems) {
       if (
         isTemplateCopilotV3ProviderQuoteWireRecord(rawItem) &&
         Array.isArray(rawItem.l) &&
@@ -632,6 +635,36 @@ function expandTemplateCopilotV3ProviderQuoteBucketWire({
       ),
     ),
   });
+}
+
+// "Require A, B, C and D": one request-field item listing every label beside
+// its shared (or per-label) required marker is split into one item per label,
+// as the prompt asks, instead of exhausting the per-item leaf capacity. Any
+// other role, or an uneven marker count, keeps the item as provided.
+function splitRequestFieldListWireItem(rawItem: unknown): unknown[] {
+  if (!isTemplateCopilotV3ProviderQuoteWireRecord(rawItem) || !Array.isArray(rawItem.l)) {
+    return [rawItem];
+  }
+  const leaves = rawItem.l;
+  if (!leaves.every(isTemplateCopilotV3ProviderQuoteWireRecord)) return [rawItem];
+  const labels = leaves.filter((leaf) => leaf.r === "label");
+  const required = leaves.filter((leaf) => leaf.r === "required");
+  if (
+    labels.length < 2 ||
+    labels.length + required.length !== leaves.length ||
+    (required.length !== 1 && required.length !== labels.length)
+  ) {
+    return [rawItem];
+  }
+  if (required.length === 1) {
+    return labels.map((label) => ({ ...rawItem, l: [label, required[0]] }));
+  }
+  // Per-label markers pair only when each label is directly followed by its own.
+  const paired = labels.length === required.length &&
+    leaves.every((leaf, index) => leaf.r === (index % 2 === 0 ? "label" : "required"));
+  return paired
+    ? labels.map((label, index) => ({ ...rawItem, l: [label, leaves[index * 2 + 1]] }))
+    : [rawItem];
 }
 
 function expandTemplateCopilotV3ProviderQuoteLegacyWire({
@@ -1649,6 +1682,40 @@ function repairUnquotedStageLabel(
  * quoted file-format leaf, that format already establishes the upload, so the
  * unquoted kind leaf is dropped instead of rejecting the whole attachment.
  */
+// "Allow an optional incident photo" with an unquoted kind "attachment": the
+// label itself names the upload kind once ("photo"), so that word becomes the
+// kind quote. Labels naming no kind word, or several, are left as provided.
+const attachmentKindWordsInLabel =
+  /\b(?:attachment|document|file|pdf|excel|csv|spreadsheet|image|photo|proof)\b|附件|檔案|文件|試算表|电子表格|圖片|图片|相片|照片|證明|证明/giu;
+
+function repairUnquotedAttachmentKindFromLabel(
+  item: TemplateCopilotV3ProviderQuoteItem,
+): TemplateCopilotV3ProviderQuoteItem {
+  if (item.kind !== "attachment") return item;
+  const kinds = item.leaves.filter((leaf) => leaf.role === "kind");
+  const labels = item.leaves.filter((leaf) => leaf.role === "label");
+  if (
+    kinds.length !== 1 ||
+    kinds[0].hint !== "attachment" ||
+    item.quote.includes(kinds[0].quote) ||
+    labels.length !== 1 ||
+    !item.quote.includes(labels[0].quote)
+  ) {
+    return item;
+  }
+  const words = [...labels[0].quote.matchAll(attachmentKindWordsInLabel)];
+  // The label must name more than the kind ("incident photo", not "document").
+  if (words.length !== 1 || words[0][0].length === labels[0].quote.trim().length) {
+    return item;
+  }
+  return {
+    ...item,
+    leaves: item.leaves.map((leaf) =>
+      leaf === kinds[0] ? { ...leaf, quote: words[0][0] } : leaf
+    ),
+  };
+}
+
 function dropUnquotedAttachmentKind(
   item: TemplateCopilotV3ProviderQuoteItem,
 ): TemplateCopilotV3ProviderQuoteItem {
@@ -1707,6 +1774,46 @@ function widenOperatorLedConditionToCarriedField(
   return widenedItem;
 }
 
+// "send Finance approval and General Manager approval in parallel": a stage
+// quoted narrowly ("Finance approval") with its relationship ("in parallel")
+// outside the quote is widened forward to that relationship when it is the
+// only occurrence later in the same sentence.
+function widenStageToUnquotedRelationship(
+  item: TemplateCopilotV3ProviderQuoteItem,
+  sources: readonly TemplateCopilotV3ProviderQuoteSourceSlot[],
+): TemplateCopilotV3ProviderQuoteItem {
+  if (item.kind !== "stage") return item;
+  const relationships = item.leaves.filter((leaf) => leaf.role === "relationship");
+  if (
+    relationships.length !== 1 ||
+    item.quote.includes(relationships[0].quote) ||
+    item.leaves.some(
+      (leaf) => leaf.role !== "relationship" && !item.quote.includes(leaf.quote),
+    )
+  ) {
+    return item;
+  }
+  const hosts = sources.filter((source) => source.text.includes(item.quote));
+  if (hosts.length !== 1) return item;
+  const text = hosts[0].text;
+  const start = text.indexOf(item.quote);
+  if (text.indexOf(item.quote, start + 1) >= 0) return item;
+  const end = start + item.quote.length;
+  const sentenceEnd = text.slice(end).search(/[.!?。！？]/u);
+  const sentence = text.slice(end, sentenceEnd < 0 ? text.length : end + sentenceEnd);
+  const relationshipQuote = relationships[0].quote;
+  const at = sentence.indexOf(relationshipQuote);
+  if (at < 0 || sentence.indexOf(relationshipQuote, at + 1) >= 0) return item;
+  const widened = text.slice(start, end + at + relationshipQuote.length);
+  if (
+    templateCopilotUnicodeCodePointCount(widened) >
+    templateCopilotV3ProviderQuoteMaximumCodePoints
+  ) {
+    return item;
+  }
+  return { ...item, quote: widened };
+}
+
 // Provider items widened back to a carried field, with the length of the
 // prepended prefix: their other leaves belong to the originally quoted branch.
 const carriedFieldPrefixLengths = new WeakMap<
@@ -1724,6 +1831,33 @@ function resolveAmbiguousLeafInCarriedBranch(
   return inBranch.status === "unique"
     ? prefixLength + inBranch.startCodeUnit
     : null;
+}
+
+const conditionRouteActionPrefix = new RegExp(
+  String.raw`^(?:(?:(?:and\s+)?then\s+)?(?:(?:also\s+)?(?:adds?|requires?|seeks?|obtains?)|routes?(?:\s+(?:the\s+)?(?:request|workflow|it))?\s+to|go(?:es)?\s+to|sends?(?:\s+(?:the\s+)?(?:request|workflow|it))?\s+to)\s+|(?:必須|必须)?(?:先|再)?(?:增加|加入|增設|增设|要求|需要)|走(?:額外|额外)?|(?:(?:必須|必须)再?|再)(?:經|经)|再由|交由|由|送交|轉至|转至|可在)`,
+  "iu",
+);
+
+/**
+ * A stage route quoted with its action verb ("增加客户经理", "add CEO
+ * approval") is narrowed to the stage it names; the verb stays in the source
+ * clause, where route grammar reads it as the affirmative action prefix.
+ */
+function conditionRouteActionPrefixLength(
+  kind: TemplateCopilotV3ProviderQuoteKind,
+  leaf: { role: TemplateCopilotV3ProviderQuoteRole; hint: string | null; quote: string },
+) {
+  if (
+    kind !== "condition" ||
+    (leaf.role !== "matching_route" && leaf.role !== "otherwise_route") ||
+    (leaf.hint !== "stage_reference" && leaf.hint !== "condition_reference")
+  ) {
+    return 0;
+  }
+  const action = conditionRouteActionPrefix.exec(leaf.quote);
+  if (!action) return 0;
+  const rest = leaf.quote.slice(action[0].length);
+  return /^[\p{L}\p{N}]/u.test(rest) ? action[0].length : 0;
 }
 
 /**
@@ -1929,9 +2063,14 @@ export function locateTemplateCopilotV3ProviderQuotes({
         );
         return;
       }
-      item = dropUnquotedAttachmentKind(
-        repairUnquotedStageLabel(
-          widenOperatorLedConditionToCarriedField(parsed.data, eligibleSources),
+      item = repairUnquotedAttachmentKindFromLabel(
+        dropUnquotedAttachmentKind(
+          repairUnquotedStageLabel(
+            widenStageToUnquotedRelationship(
+              widenOperatorLedConditionToCarriedField(parsed.data, eligibleSources),
+              eligibleSources,
+            ),
+          ),
         ),
       );
     }
@@ -2282,6 +2421,7 @@ export function locateTemplateCopilotV3ProviderQuotes({
             stagedLeafMatches,
           ) ??
           resolveAmbiguousLeafInCarriedBranch(item, staged.leaf) ??
+          resolveAmbiguousLabelAsWholeListElement(item, staged.leaf) ??
           resolveAmbiguousStageKindAfterParticipant(
             item,
             staged.leaf,
@@ -2423,10 +2563,11 @@ export function locateTemplateCopilotV3ProviderQuotes({
       sameLocalClauseRecovered: boolean;
     }> = [];
     for (const { leaf, startCodeUnit, recovered } of leafMatches) {
+      const actionLength = conditionRouteActionPrefixLength(item.kind, leaf);
       const sourceSpan = locatedSpan(
         anchorMatch.source,
-        startCodeUnit,
-        leaf.quote,
+        startCodeUnit + actionLength,
+        leaf.quote.slice(actionLength),
       );
       if (!sourceSpan) {
         rejected.push(
@@ -6414,15 +6555,91 @@ function resolveAmbiguousLeafWithinLabel(
   }
   if (inner.status === "ambiguous") return null;
   // Adjacency stays entity-local: an anchor spanning sentences or hard clauses
-  // ("Require A PDF. Require B PDF.") must still be quoted per entity.
-  if (Array.from(item.quote.trimEnd().slice(0, -1)).some(templateCopilotV3HardClauseSeparator)) {
+  // ("Require A PDF. Require B PDF.") must still be quoted per entity. One list
+  // sentence that repeats the format per item ("A PDF、B PDF、C PDF") is the
+  // exception: every repetition sits in the label's own sentence.
+  if (
+    Array.from(item.quote.trimEnd().slice(0, -1)).some(templateCopilotV3HardClauseSeparator) &&
+    !targetRepeatsOnlyInLabelSentence(item.quote, label.match.startCodeUnit, target.quote)
+  ) {
     return null;
+  }
+  // A count precedes its noun ("one invoice PDF", "一份報價"); every other
+  // repeated leaf (a format, a kind) follows the label it qualifies.
+  if (target.role === "minimum_quantity" || target.role === "maximum_quantity") {
+    const labelStart = label.match.startCodeUnit;
+    const preceding = item.quote.slice(0, labelStart).match(/\s*$/u)?.[0] ?? "";
+    const start = labelStart - preceding.length - target.quote.length;
+    const wordBefore = start > 0 && /[\p{L}\p{N}]/u.test(item.quote[start - 1]) &&
+      /^[\p{L}\p{N}]/u.test(target.quote) && /[a-z]/iu.test(target.quote);
+    return start >= 0 && !wordBefore && item.quote.startsWith(target.quote, start)
+      ? start
+      : null;
   }
   const labelEnd = label.match.startCodeUnit + label.leaf.quote.length;
   const following = item.quote.slice(labelEnd).match(/^\s*/u)?.[0] ?? "";
   return item.quote.startsWith(target.quote, labelEnd + following.length)
     ? labelEnd + following.length
     : null;
+}
+
+// "必填工程項目、位置、工序、…、高風險工序選項": a field label that also occurs
+// inside a longer sibling label resolves to its single occurrence that is a
+// whole list element, bounded by list separators on both sides.
+function resolveAmbiguousLabelAsWholeListElement(
+  item: TemplateCopilotV3ProviderQuoteItem,
+  target: TemplateCopilotV3ProviderQuoteItem["leaves"][number],
+) {
+  if (
+    (item.kind !== "request_field" && item.kind !== "attachment") ||
+    target.role !== "label" ||
+    target.quote.trim().length === 0
+  ) {
+    return null;
+  }
+  const before = /(?:^|[、，,;；:：]\s*|\s(?:and|or)\s|[及和與与或])$/iu;
+  const after = /^(?:$|\s*[、，,;；。.]|\s+(?:and|or)\s|[及和與与或])/iu;
+  const whole: number[] = [];
+  for (
+    let at = item.quote.indexOf(target.quote);
+    at >= 0;
+    at = item.quote.indexOf(target.quote, at + 1)
+  ) {
+    if (
+      before.test(item.quote.slice(Math.max(0, at - 6), at)) &&
+      after.test(item.quote.slice(at + target.quote.length))
+    ) {
+      whole.push(at);
+    }
+  }
+  return whole.length === 1 ? whole[0] : null;
+}
+
+function targetRepeatsOnlyInLabelSentence(
+  quote: string,
+  labelStart: number,
+  target: string,
+) {
+  const sentenceEnd = /[。．！？!?]|\.(?=\s|$)/gu;
+  const bounds: number[] = [0];
+  for (const match of quote.matchAll(sentenceEnd)) {
+    bounds.push(match.index + match[0].length);
+  }
+  bounds.push(quote.length);
+  const sentenceOf = (offset: number) =>
+    bounds.findIndex((bound, index) => offset >= bound && offset < bounds[index + 1]);
+  const labelSentence = sentenceOf(labelStart);
+  let occurrences = 0;
+  for (let at = quote.indexOf(target); at >= 0; at = quote.indexOf(target, at + 1)) {
+    occurrences += 1;
+    if (
+      sentenceOf(at) !== labelSentence ||
+      sentenceOf(at + target.length - 1) !== labelSentence
+    ) {
+      return false;
+    }
+  }
+  return occurrences > 1;
 }
 
 // "兩者都批准後由採購總監最終批准": a repeated stage kind resolves to its single
@@ -6444,7 +6661,26 @@ function resolveAmbiguousStageKindAfterParticipant(
   }
   const after = participant.match.startCodeUnit + participant.leaf.quote.length;
   const tail = uniqueOffset(item.quote.slice(after), target.quote);
-  return tail.status === "unique" ? after + tail.startCodeUnit : null;
+  if (tail.status === "unique") return after + tail.startCodeUnit;
+  // "Procurement and Finance approve in parallel, then General Manager
+  // approves": a shared verb is the single whole-word occurrence in the
+  // participant's own clause; "approves" is a different word.
+  const clauseEnd = Array.from(item.quote.slice(after)).findIndex(
+    templateCopilotV3HardClauseSeparator,
+  );
+  const clause = clauseEnd < 0
+    ? item.quote.slice(after)
+    : Array.from(item.quote.slice(after)).slice(0, clauseEnd).join("");
+  const latin = /^[a-z]/iu.test(target.quote);
+  const whole: number[] = [];
+  for (let at = clause.indexOf(target.quote); at >= 0; at = clause.indexOf(target.quote, at + 1)) {
+    const before = clause[at - 1] ?? "";
+    const next = clause[at + target.quote.length] ?? "";
+    if (!latin || (!/[\p{L}\p{N}]/u.test(before) && !/[\p{L}\p{N}]/u.test(next))) {
+      whole.push(at);
+    }
+  }
+  return whole.length === 1 ? after + whole[0] : null;
 }
 
 function resolveAmbiguousConditionOtherwiseRoute(
