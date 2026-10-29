@@ -3396,3 +3396,63 @@ test("a clause-wide stage label narrows to its single contained participant", ()
   // Two participants leave no single name to narrow to.
   assert.equal(label(shared).exactText, "Finance and Legal review");
 });
+
+test("a repeated attachment leaf resolves to its single occurrence inside the label", () => {
+  const attachments =
+    "Require one invoice PDF, one purchase order PDF, and one goods receipt PDF; each up to 25 MB.";
+  const attachment = (label) =>
+    item({
+      kind: "attachment",
+      quote: attachments,
+      leaves: [
+        { role: "label", quote: label, hint: null },
+        { role: "kind", quote: "PDF", hint: "attachment" },
+        { role: "required", quote: "Require", hint: "true" },
+      ],
+    });
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "structure",
+    sourceSlots: sourceSlots("structure", { attachments }),
+    output: output([
+      attachment("invoice PDF"),
+      attachment("purchase order PDF"),
+      attachment("goods receipt PDF"),
+    ]),
+  });
+
+  assert.equal(result.rejected.length, 0, JSON.stringify(result.rejected));
+  for (const located of result.accepted) {
+    const label = located.leaves.find((leaf) => leaf.role === "label").sourceSpan;
+    const kind = located.leaves.find((leaf) => leaf.role === "kind").sourceSpan;
+    assert.equal(kind.exactText, "PDF");
+    assert.ok(
+      kind.startCodePoint >= label.startCodePoint &&
+        kind.endCodePoint <= label.endCodePoint,
+      label.exactText,
+    );
+  }
+});
+
+test("a repeated leaf outside the label stays ambiguous", () => {
+  const attachments = "Upload a contract PDF or a redline PDF.";
+  const result = locateTemplateCopilotV3ProviderQuotes({
+    batchId: "structure",
+    sourceSlots: sourceSlots("structure", { attachments }),
+    output: output([
+      item({
+        kind: "attachment",
+        quote: attachments,
+        leaves: [
+          { role: "label", quote: "contract", hint: null },
+          { role: "kind", quote: "PDF", hint: "attachment" },
+        ],
+      }),
+    ]),
+  });
+
+  assert.equal(result.accepted.length, 0);
+  assert.deepEqual(
+    result.rejected.map((entry) => entry.code),
+    ["leaf_ambiguous"],
+  );
+});

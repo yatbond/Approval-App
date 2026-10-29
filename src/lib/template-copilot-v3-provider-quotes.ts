@@ -2107,6 +2107,11 @@ export function locateTemplateCopilotV3ProviderQuotes({
             item,
             staged.leaf,
             stagedLeafMatches,
+          ) ??
+          resolveAmbiguousLeafWithinLabel(
+            item,
+            staged.leaf,
+            stagedLeafMatches,
           )
         );
       if (relativeStartCodeUnit === null) {
@@ -6207,6 +6212,30 @@ function resolveAmbiguousConditionNumericValue(
     );
   });
   return candidates.length === 1 ? candidates[0] : null;
+}
+
+// A repeated leaf quote ("PDF" in "one invoice PDF, one purchase order PDF")
+// resolves to its single occurrence inside the item's uniquely located label.
+function resolveAmbiguousLeafWithinLabel(
+  item: TemplateCopilotV3ProviderQuoteItem,
+  target: TemplateCopilotV3ProviderQuoteItem["leaves"][number],
+  staged: readonly StagedProviderLeafMatch[],
+) {
+  if (
+    !["attachment", "request_field", "stage"].includes(item.kind) ||
+    target.role === "label"
+  ) {
+    return null;
+  }
+  const labels = staged.filter((entry) => entry.leaf.role === "label");
+  const label = labels[0];
+  if (labels.length !== 1 || !label || label.match.status !== "unique") {
+    return null;
+  }
+  const inner = uniqueOffset(label.leaf.quote, target.quote);
+  return inner.status === "unique"
+    ? label.match.startCodeUnit + inner.startCodeUnit
+    : null;
 }
 
 function resolveAmbiguousConditionOtherwiseRoute(
