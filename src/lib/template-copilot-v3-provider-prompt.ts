@@ -10,7 +10,7 @@ import {
 } from "./template-copilot-v3-provider-quotes.ts";
 
 export const templateCopilotV3ProviderPromptVersion =
-  "template-copilot-v3-provider-quotes-29" as const;
+  "template-copilot-v3-provider-quotes-32" as const;
 
 const localeInstruction = Object.freeze({
   en: "Preserve the source language and orthography exactly.",
@@ -82,7 +82,7 @@ const batchInstructions = Object.freeze({
     "Never convert an ordinary route target, final or completion reference, rejection actor, or already-declared participant into another stage. Do not create conditions, threshold routes, or rejection routes in this batch.",
   ],
   routing_conditions: [
-    "Extract explicit contingent condition branches only. Rejection, failure-return, and return-for-modification clauses are not conditions; omit them. Condition leaves never cross a hard clause or sentence.",
+    "Extract explicit contingent condition branches only. A rule needs no if/when: in 'Remote sites also require Safety' or '海外項目增加法務', field=sites/項目, operator=value=Remote/海外 (hint unsupported_predicate), matching_route=Safety/法務; never the route as value; one field/operator/value per item. Rejection, failure-return, and return-for-modification clauses are not conditions; omit them. Condition leaves never cross a hard clause or sentence.",
     "Condition core: exact field+operator+value+matching_route in one hard clause. No-bypass is non-executable. Emit it only when a separately stated state/value qualifies a field (for example, Retrospective + status): matching_route=no-bypass text/unsupported_outcome, no otherwise_route. A Boolean option/access label without yes/true/selected (for example, 紧急选项不能跳过审批) is policy only; omit it. Never use complete/return_for_correction for no-bypass.",
     "CJK yes: operator q=為是/为是 and value q=是 (overlap); never operator q=為/为/是.",
     "Condition recovery is fail-closed: q has field, value, other leaves. Only operator/matching_route may be outside q: each exact+unique once in same local clause; ≤2; one/core role; no duplicates; a=0. Server expands the clause. Else q has all leaves. No hard-clause crossing; route-first allowed; predicate/route-only invalid.",

@@ -451,11 +451,11 @@ test("the prompt exposes exactly the closed quote batches", () => {
     `simplified routing stages prompt: ${routingStagesSimplified.length}`,
   );
   assert.ok(
-    routingConditions.length <= 4_800,
+    routingConditions.length <= 5_100,
     `routing conditions prompt: ${routingConditions.length}`,
   );
   assert.ok(
-    routingConditionsSimplified.length <= 4_800,
+    routingConditionsSimplified.length <= 5_100,
     `simplified routing conditions prompt: ${routingConditionsSimplified.length}`,
   );
   for (const prompt of [policy, policyTraditional, policySimplified]) {
@@ -545,7 +545,7 @@ test("the prompt demands complete entity coverage and source-language fidelity",
       /add adjacent exact source text until unique, or omit/u,
     );
     assert.match(prompt, /Copy leaf.quote verbatim/u);
-    assert.match(prompt, /template-copilot-v3-provider-quotes-29/u);
+    assert.match(prompt, /template-copilot-v3-provider-quotes-32/u);
     assert.match(prompt, /Caps, not quotas/u);
     assert.match(
       prompt,
