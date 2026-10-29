@@ -133,7 +133,8 @@ const allowedSlotsByKind = Object.freeze({
 });
 const semanticCoreRoles = Object.freeze({
   "request.fields": [["label"], ["required"]],
-  "attachments.requirements": [["label"], ["kind"], ["required"]],
+  // A file format ("PDF", "image") establishes an upload, as in assembly.
+  "attachments.requirements": [["label"], ["kind", "format"], ["required"]],
   "workflow.stages": [["label"], ["kind"], ["participant", "participant_mode"]],
   "workflow.conditions": [
     ["field"],
@@ -1928,6 +1929,7 @@ function scoreScenarioManifestSemantics({
     entries: fields,
     matches: (expected, entry) =>
       hasRoleContract(entry, roleContract("label", expected.label)),
+    mergedLabelTerm: (expected) => expected.label,
     failures,
   });
   for (const [expected, entry] of fieldMatch.pairs) {
@@ -1953,6 +1955,7 @@ function scoreScenarioManifestSemantics({
     entries: attachments,
     matches: (expected, entry) =>
       hasRoleContract(entry, roleContract("label", expected.label)),
+    mergedLabelTerm: (expected) => expected.label,
     failures,
   });
   for (const [expected, entry] of attachmentMatch.pairs) {
@@ -3063,13 +3066,14 @@ function attachmentRequirementHint(requirementMode) {
   return requirementMode;
 }
 
+// A condition is identified by its predicate (what is tested, how, against
+// which value), as other entities are identified by their name. Routes remain
+// exact detail checks on the matched pair.
 function conditionContractMatchesEntry(expected, entry) {
   return [
     roleContract("field", expected.field),
     expected.operator,
     roleContract("value", expected.value),
-    expected.matchingRoute,
-    ...(expected.otherwiseRoute ? [expected.otherwiseRoute] : []),
   ].every((contract) => hasRoleContract(entry, contract));
 }
 
@@ -3078,6 +3082,7 @@ function matchRoleContractsOneToOne({
   expected,
   entries,
   matches,
+  mergedLabelTerm = null,
   failures,
 }) {
   if (entries.length !== expected.length) {
@@ -3106,7 +3111,23 @@ function matchRoleContractsOneToOne({
   let matchedCount = 0;
   for (const expectedIndex of expected.keys()) {
     if (assign(expectedIndex, new Set())) matchedCount += 1;
-    else
+    else if (
+      mergedLabelTerm &&
+      entries.some((entry) =>
+        labelMergesExpectedSiblings(
+          entry,
+          mergedLabelTerm(expected[expectedIndex]),
+          expected.map(mergedLabelTerm),
+        ),
+      )
+    ) {
+      // Partial credit only: the source meaning was captured, but as one
+      // reviewed entity where the contract has two, so the strict gate fails.
+      matchedCount += 1;
+      failures.push(
+        `Reviewed ${label} entity was merged with a sibling at index ${expectedIndex}.`,
+      );
+    } else
       failures.push(
         `Reviewed ${label} entity was omitted at index ${expectedIndex}.`,
       );
@@ -3122,6 +3143,26 @@ function matchRoleContractsOneToOne({
     return entryIndex === undefined ? [] : [[contract, entries[entryIndex]]];
   });
   return { matchedCount, pairs };
+}
+
+// "start and end dates" covering the reviewed terms "start" and "end dates":
+// a label that is exactly two coordinated conjuncts, each an expected sibling.
+function labelMergesExpectedSiblings(entry, term, siblingTerms) {
+  return roleLeaves(entry, "label").some((leaf) => {
+    const text = String(leaf.quote).normalize("NFKC").trim();
+    const parts =
+      text.match(/^(.+?)\s+and\s+(.+)$/iu) ?? text.match(/^(.+?)[及和與与、](.+)$/u);
+    if (!parts) return false;
+    const [left, right] = [parts[1], parts[2]];
+    const isSibling = (part) =>
+      siblingTerms.some((sibling) =>
+        templateCopilotV3LiveSemanticLabelEquivalent(part, sibling),
+      );
+    return (
+      (templateCopilotV3LiveSemanticLabelEquivalent(left, term) && isSibling(right)) ||
+      (templateCopilotV3LiveSemanticLabelEquivalent(right, term) && isSibling(left))
+    );
+  });
 }
 
 function requireExactRoleHints(entry, role, expectedHints, label, failures) {
@@ -3180,17 +3221,24 @@ function canonicalEquals(left, right) {
   return canonicalSemanticText(left) === canonicalSemanticText(right);
 }
 
-// Words that only say what kind of input a name refers to. A label may carry
-// exactly one of them before or after the reviewed term ("auto-renewal
-// choice", "the requester"). Anything else (numbers, operators, negation,
-// other nouns) must still match exactly. Fixed list, so scoring stays
-// deterministic.
+// Words that only say what kind of input a name refers to (an input control,
+// a yes/no question frame, a file format that is scored separately, or the
+// in-app "native" marker). A label and its reviewed term may differ by exactly
+// one of them, before or after ("auto-renewal choice", "是否法定要求",
+// "business-case" for "business-case PDF"). Anything else (numbers, operators,
+// negation, other nouns) must still match exactly. Fixed list, so scoring
+// stays deterministic.
 const labelFillerWords = Object.freeze([
   "the",
   "choice",
   "option",
   "selection",
   "field",
+  "checkbox",
+  "flag",
+  "native",
+  "pdf",
+  "excel",
   "選項",
   "选项",
   "選擇",
@@ -3198,27 +3246,62 @@ const labelFillerWords = Object.freeze([
   "欄位",
   "栏位",
   "字段",
+  "原生",
+  "相關",
+  "相关",
+  "是否",
+  "是否有",
+  "是否需",
+  "是否需要",
+  "是否包含",
+  "是否含",
+  "是否可",
 ]);
 const labelFillerSet = new Set(labelFillerWords.map(canonicalSemanticText));
 
-export function templateCopilotV3LiveSemanticLabelEquivalent(quote, term) {
-  const label = canonicalSemanticText(quote);
-  const expected = canonicalSemanticText(term);
-  if (label === expected) return true;
-  if (expected.length === 0) return false;
-  if (label.startsWith(expected)) {
-    return labelFillerSet.has(label.slice(expected.length));
+function differsByOneFiller(longer, shorter) {
+  if (shorter.length === 0 || longer.length <= shorter.length) return false;
+  if (longer.startsWith(shorter)) {
+    return labelFillerSet.has(longer.slice(shorter.length));
   }
-  if (label.endsWith(expected)) {
-    return labelFillerSet.has(label.slice(0, label.length - expected.length));
+  if (longer.endsWith(shorter)) {
+    return labelFillerSet.has(longer.slice(0, longer.length - shorter.length));
   }
   return false;
 }
 
+export function templateCopilotV3LiveSemanticLabelEquivalent(quote, term) {
+  const label = canonicalSemanticText(quote);
+  const expected = canonicalSemanticText(term);
+  if (expected.length === 0) return false;
+  return (
+    label === expected ||
+    differsByOneFiller(label, expected) ||
+    differsByOneFiller(expected, label)
+  );
+}
+
+// A currency word may lead a value whose currency is scored separately
+// ("港幣一億元" for "一億元"); the amount itself must match exactly.
+const valueCurrencyPrefixes = Object.freeze(
+  ["hkd", "hk$", "港幣", "港币"].map(canonicalSemanticText),
+);
+
+function valueEquivalent(quote, term) {
+  const value = canonicalSemanticText(quote);
+  const expected = canonicalSemanticText(term);
+  return (
+    value === expected ||
+    valueCurrencyPrefixes.some((prefix) => value === prefix + expected)
+  );
+}
+
 function roleTermMatches(role, quote, term) {
-  return role === "label"
-    ? templateCopilotV3LiveSemanticLabelEquivalent(quote, term)
-    : canonicalEquals(quote, term);
+  if (role === "label" || role === "field" || role === "participant") {
+    return templateCopilotV3LiveSemanticLabelEquivalent(quote, term);
+  }
+  if (role === "value") return valueEquivalent(quote, term);
+  return canonicalEquals(quote, term);
 }
 
 function canonicalIncludes(text, term) {
@@ -3347,20 +3430,25 @@ function advisoryHintHasExactSourceMeaning(kind, role, hint, quote) {
     if (["false", "optional_conditional"].includes(hint)) {
       return optional;
     }
-    return (
-      !optional &&
-      /\b(?:must|required|requires?|mandatory|upload|attach|submit|provide|include|fill|add)\b|必須填寫|必须填写|必須提供|必须提供|必須上載|必须上传|須上載|须上传|要上載|要上传|必須提交|必须提交|須提交|须提交|必須附上|必须附上|必須|必须|需要|必填|上載|上传|提交|附上|提供|填寫|填写|要填|須填|须填/u.test(
+    if (optional) return false;
+    const requirementMarker =
+      /\b(?:must|required|requires?|mandatory|upload|attach|submit|provide|include|fill|add)\b|必須填寫|必须填写|必須提供|必须提供|必須上載|必须上传|須上載|须上传|要上載|要上传|必須提交|必须提交|須提交|须提交|必須附上|必须附上|必須|必须|需要|必填|上載|上传|提交|附上|提供|填寫|填写|要填|須填|须填|須|须/u.test(
         meaning,
-      )
-    );
+      );
+    // A conditional requirement may be evidenced by its condition ("出售时",
+    // "if high-risk work is Yes") instead of the requirement word.
+    const conditionMarker =
+      hint !== "true" &&
+      /\b(?:if|when|where|unless)\b|若|如果|如屬|如属|涉及|時$|时$|時，|时，/u.test(meaning);
+    return requirementMarker || conditionMarker;
   }
   if (kind === "attachment" && role === "kind") {
     if (hint === "form") {
-      return /\b(?:native form|in-app form|in app form|native|form)\b|應用程式內表格|应用内表单|原生表格|原生表单|原生|表格|表单/u.test(
+      return /\b(?:native form|in-app form|in app form|native|form)\b|應用程式內表格|应用内表单|原生表格|原生表单|原生|表格|表单|填寫|填写|填/u.test(
         meaning,
       );
     }
-    return /\b(?:uploaded file|spreadsheet|attachment|file|excel|csv|pdf|image|photo|text|proof|document)\b|上載檔案|上传文件|電子表格|电子表格|試算表|檔案|文件|附件|圖片|图片|相片|照片|文字|文本|證明|证明|上載|上传/u.test(
+    return /\b(?:uploaded file|spreadsheet|attachment|file|excel|csv|pdf|image|photo|text|proof|document)\b|上載檔案|上传文件|電子表格|电子表格|試算表|檔案|文件|附件|圖片|图片|相片|照片|文字|文本|證明|证明|上載|上传|補交|补交/u.test(
       meaning,
     );
   }

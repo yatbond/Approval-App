@@ -3208,6 +3208,13 @@ test("label equivalence accepts only one fixed filler word around the exact term
     ["高風險工序選項", "高風險工序"],
     ["紧急访问选项", "紧急访问"],
     ["Cost centre", "cost centre"],
+    ["client-billable checkbox", "client-billable"],
+    ["是否法定要求", "法定要求"],
+    ["是否有关联人士", "关联人士"],
+    ["原生檢查表", "檢查表"],
+    ["相關行政總監", "行政總監"],
+    // The shorter side may be the label: the format is scored separately.
+    ["business-case", "business-case PDF"],
   ];
   for (const [quote, term] of accepted) {
     assert.equal(templateCopilotV3LiveSemanticLabelEquivalent(quote, term), true, quote);
@@ -3222,6 +3229,8 @@ test("label equivalence accepts only one fixed filler word around the exact term
     ["not auto-renewal", "auto-renewal"],
     ["高風險工序類型", "高風險工序"],
     ["choice", ""],
+    ["是否不需要监管报告", "监管报告"],
+    ["native", "native form"],
   ];
   for (const [quote, term] of rejected) {
     assert.equal(templateCopilotV3LiveSemanticLabelEquivalent(quote, term), false, quote);
