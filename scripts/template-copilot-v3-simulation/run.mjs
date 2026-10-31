@@ -207,7 +207,7 @@ async function runWorkflow(user, spec) {
 
     const sections = Object.entries(spec.sections).filter(([, text]) => text).map(([slot, text]) => ({ slot, text }));
     const described = await user.call("POST", `${A}/${sessionId}/describe-v3`, { locale: spec.lang, sections });
-    result.steps.describe = { status: described.status, ms: described.ms, batches: described.json?.batches?.map((b) => `${b.batchId}:${b.status}/${b.attempts}`) };
+    result.steps.describe = { status: described.status, ms: described.ms, batches: described.json?.batches?.map((b) => `${b.batchId}:${b.status}/${b.attempts}/acc${b.acceptedItemCount}/rej${b.rejectedItemCount}`) };
     if (described.status !== 200) throw new Error(`describe ${described.status} ${JSON.stringify(described.json?.error ?? described.text).slice(0, 200)}`);
     const proposal = described.json.proposal;
     const scored = scoreProposal(spec, proposal, intended);
@@ -236,7 +236,7 @@ async function runWorkflow(user, spec) {
       fields: template.fields.length === spec.fields.length,
       documents: template.documents.length === intended["attachments.requirements"].length,
       stages: spec.stages.every((stage) => nodeLabels.some((nodeLabel) => same(nodeLabel, stage.label))),
-      parallel: !spec.stages.some((stage) => stage.parallel) || nodeLabels.some((nodeLabel) => /parallel/i.test(nodeLabel)),
+      parallel: !spec.stages.some((stage) => stage.parallel) || nodeLabels.some((nodeLabel) => /parallel|并行|並行|同時|同时|simultaneous/i.test(nodeLabel)),
       validationErrors: draft.json.validation?.errorCount ?? null,
     };
     result.steps.verify = checks;
@@ -253,7 +253,8 @@ const user = await connectSimulatedUser({
   appUrl, supabaseUrl: env.NEXT_PUBLIC_SUPABASE_URL, anonKey: env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
   serviceKey: env.SUPABASE_SERVICE_ROLE_KEY, label: "sim",
 });
-const selected = simulationWorkflows.slice(start, start + count);
+const only = arg("only", "");
+const selected = only ? simulationWorkflows.filter((spec) => only.split(",").includes(spec.id)) : simulationWorkflows.slice(start, start + count);
 const results = [];
 for (const spec of selected) {
   const row = await runWorkflow(user, spec);

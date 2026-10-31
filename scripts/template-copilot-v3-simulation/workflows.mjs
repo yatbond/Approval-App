@@ -174,6 +174,14 @@ function buildSpec(index) {
     if (!(parallel && position === 2)) phase += 1;
     stages.push({ label: t(entry, lang), kind: position === 0 ? "approval" : position % 2 ? "review" : "approval", phase, parallel });
   });
+  // One sentence names one verb for a simultaneous phase, so its members share a kind.
+  for (const phaseNumber of new Set(stages.map((stage) => stage.phase))) {
+    const members = stages.filter((stage) => stage.phase === phaseNumber);
+    if (members.length > 1) {
+      const kind = members.some((member) => member.kind === "review") ? "review" : "approval";
+      members.forEach((member) => { member.kind = kind; });
+    }
+  }
   const fyi = features.has("fyi") ? [t(domain.fyi[0], lang)] : [];
   const conditions = [];
   if (features.has("tiers") && amountField) {

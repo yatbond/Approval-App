@@ -76,7 +76,7 @@ test("self-hosted configuration fails closed", () => {
   );
 });
 
-test("self-hosted chat requests mirror the token cap and turn thinking off", async () => {
+test("self-hosted chat requests mirror the token cap, sample at temperature 0 and turn thinking off", async () => {
   const { selfHostedChatFetch } = await import("./template-copilot-self-hosted-fetch.ts");
   const original = globalThis.fetch;
   const seen = [];
@@ -97,6 +97,7 @@ test("self-hosted chat requests mirror the token cap and turn thinking off", asy
     model: "m",
     max_completion_tokens: 3072,
     max_tokens: 3072,
+    temperature: 0,
     chat_template_kwargs: { enable_thinking: false },
   });
   assert.equal(seen[1].body, undefined);

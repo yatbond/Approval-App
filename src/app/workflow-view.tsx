@@ -38,6 +38,7 @@ import { ConditionBoxDetails } from "@/app/condition-box-details";
 import { WorkflowTemplateLibrary } from "@/app/workflow-template-library";
 import { WorkflowTemplateBuilder } from "@/app/workflow-template-builder";
 import { TemplateCopilot } from "@/app/template-copilot";
+import { TemplateCopilotV3Sectioned } from "@/app/template-copilot-v3-sectioned";
 import {
   WorkflowBoxDocumentsEditor,
   type WorkflowBoxDocumentDraft,
@@ -1204,9 +1205,8 @@ export function WorkflowView({
         </div>
         {workflowEditorTab === "copilot" && (
           <div className="p-4">
-            <TemplateCopilot
-              businessDirectory={businessDirectory}
-              onDraftCreated={(template) => {
+            {(() => {
+              const openDraft = (template: Parameters<typeof onCreateTemplate>[0]) => {
                 onCreateTemplate(template);
                 setTemplateName(template.name);
                 const business = businessDirectory.find(
@@ -1220,8 +1220,21 @@ export function WorkflowView({
                 setWorkflowActionMessage(
                   "Copilot draft created. Review the generated workflow before requesting publication.",
                 );
-              }}
-            />
+              };
+              // The sectioned v3 Describe replaces the classic Copilot only where
+              // it is switched on (it is built into the page at build time).
+              return process.env.NEXT_PUBLIC_TEMPLATE_COPILOT_V3_DESCRIBE === "true" ? (
+                <TemplateCopilotV3Sectioned
+                  businessDirectory={businessDirectory}
+                  onDraftCreated={openDraft}
+                />
+              ) : (
+                <TemplateCopilot
+                  businessDirectory={businessDirectory}
+                  onDraftCreated={openDraft}
+                />
+              );
+            })()}
           </div>
         )}
         {workflowEditorTab === "builder" && (

@@ -146,14 +146,17 @@ const currencyFor = (text: string) => currencyCodes.find(([pattern]) => pattern.
 type FieldType = "text" | "long_text" | "number" | "date" | "currency" | "email" | "select" | "radio" | "checkbox" | "table";
 
 const fieldTypePatterns: ReadonlyArray<readonly [RegExp, FieldType]> = [
-  [/cost\s*cent(?:re|er)|成本中心|supplier|vendor|供應商|供应商/iu, "text"],
+  [/cost\s*cent(?:re|er)|成本中心|supplier|vendor|供應商|供应商|category|類別|类别|payment\s+(?:method|terms)|付款(?:方式|條款|条款)|budget\s+line|預算項目|预算项目|account|帳戶|账户|registration|註冊|注册|country|merchant|商戶|商户/iu, "text"],
   [/e-?mail|電郵|电邮|邮箱|郵箱/iu, "email"],
   [/date|deadline|due|日期|期限|時間|时间|生效|開始|开始|結束|结束/iu, "date"],
-  [/amount|total|cost|price|budget|fee|salary|payment|value|金額|金额|費用|费用|預算|预算|總額|总额|價格|价格|成本|報價|报价/iu, "currency"],
+  [/amount|total|cost|price|budget|fee|salary|spend|estimate|fare|ticket|net\s+book|payment|value|薪酬|支出|機票|机票|賬面|账面|淨值|净值|金額|金额|費用|费用|預算|预算|總額|总额|價格|价格|成本|報價|报价/iu, "currency"],
   [/quantity|number of|count|days|hours|nights|duration|period|數量|数量|天數|天数|日數|日数|晚數|晚数|工期|時數|时数|人數|人数/iu, "number"],
   [/line items?|schedule|breakdown|itemi[sz]ed|明細|明细|清單|清单|列表/iu, "table"],
+  [/summary|benefits?|objectives?|notes?|handover|摘要|效益|目標|目标|備註|备注|交接|expected/iu, "long_text"],
   [/description|reason|justification|purpose|details|comments?|remarks?|說明|说明|原因|目的|理由|備註|备注|詳情|详情/iu, "long_text"],
 ];
+// A question put as a statement ("is replacement", "visa required", "是否需要簽證").
+const yesNoLabel = /^(?:is|are|has|have|does|do|will|can)\s|\b(?:declared|involved|required|mandatory|replacement|goodwill|privileged|auto-?renewal)\b|是否|有否/iu;
 const choiceMarkers = /\b(?:choice|option|selection|yes\/no|whether)\b|選項|选项|選擇|选择|是否|有否|有沒有|有没有/iu;
 
 function proposeFieldShape(label: string, locale: TemplateCopilotV3DescribeLocale) {
@@ -171,6 +174,9 @@ function proposeFieldShape(label: string, locale: TemplateCopilotV3DescribeLocal
       type: "radio" as const,
       options: locale === "en" ? ["Yes", "No"] : locale === "zh-Hant" ? ["是", "否"] : ["是", "否"],
     };
+  }
+  if (yesNoLabel.test(label)) {
+    return { type: "radio" as const, options: locale === "en" ? ["Yes", "No"] : ["是", "否"] };
   }
   for (const [pattern, type] of fieldTypePatterns) {
     if (pattern.test(label)) return { type, options: [] as string[] };

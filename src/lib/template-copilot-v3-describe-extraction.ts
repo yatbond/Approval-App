@@ -44,6 +44,8 @@ export type TemplateCopilotV3BatchOutcome = Readonly<{
   attempts: number;
   acceptedItemCount: number;
   rejectedItemCount: number;
+  /** Counts by "code:detail" (never source text), to explain missing items. */
+  rejectionSummary: Readonly<Record<string, number>>;
   failureReason: string | null;
 }>;
 
@@ -92,6 +94,16 @@ function failureReasonCode(error: unknown) {
     return "provider_configuration";
   }
   return "provider_error";
+}
+
+function summarizeRejections(rejected: readonly unknown[]) {
+  const counts: Record<string, number> = {};
+  for (const entry of rejected) {
+    const record = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+    const key = `${String(record.code ?? "rejected")}:${String(record.detail ?? "")}`.slice(0, 80);
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return Object.freeze(counts);
 }
 
 export function templateCopilotV3DescribeSourceSlots(
@@ -181,6 +193,7 @@ export async function extractTemplateCopilotV3Description({
           attempts: 0,
           acceptedItemCount: 0,
           rejectedItemCount: 0,
+          rejectionSummary: {},
           failureReason: null,
         }),
       };
@@ -212,6 +225,7 @@ export async function extractTemplateCopilotV3Description({
         attempts,
         acceptedItemCount: result?.accepted.length ?? 0,
         rejectedItemCount: result?.rejected.length ?? 0,
+        rejectionSummary: summarizeRejections(result?.rejected ?? []),
         failureReason,
       }),
     };

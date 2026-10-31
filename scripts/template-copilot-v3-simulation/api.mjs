@@ -99,6 +99,7 @@ export async function connectSimulatedUser({
   return Object.freeze({
     userId,
     email,
+    password,
     businessUnitId: unit.id,
     departmentName: department.name,
     service,
