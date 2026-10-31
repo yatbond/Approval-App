@@ -14,6 +14,7 @@ import {
 import {
   linkTemplateCopilotDraft,
   loadTemplateCopilotSession,
+  markTemplateCopilotV2SessionReady,
 } from "@/lib/template-copilot-server-data";
 import { createStableTemplateCopilotArtifactIdentity } from "@/lib/template-copilot-identity";
 import {
@@ -68,7 +69,8 @@ export async function POST(
   }
 
   try {
-    const current = await loadTemplateCopilotSession({ session, sessionId });
+    let current = await loadTemplateCopilotSession({ session, sessionId });
+    let expectedRevision = parsed.data.expectedRevision;
     if (!current) {
       return approvalJson(
         cookieSource,
@@ -165,6 +167,30 @@ export async function POST(
         definition: existingDraft.definition,
       });
     }
+    if (
+      current.status === "interviewing" &&
+      current.ledger.schemaVersion === 2 &&
+      current.revision === expectedRevision &&
+      getTemplateCopilotV2InterviewState(current.ledger).state === "complete"
+    ) {
+      // A v2 interview never advances its own status; completing it is what
+      // makes the session ready for a draft.
+      const marked = await markTemplateCopilotV2SessionReady({
+        service,
+        actor,
+        sessionId,
+        expectedRevision: current.revision,
+      });
+      if (!["applied", "replayed"].includes(String(marked.outcome))) {
+        return templateAuthoringRpcResponse({ cookieSource, correlationId, result: marked });
+      }
+      const refreshed = await loadTemplateCopilotSession({ session, sessionId });
+      if (!refreshed) {
+        return approvalJson(cookieSource, correlationId, { error: { code: "not_found", message: "The Copilot session was not found." } }, 404);
+      }
+      current = refreshed;
+      expectedRevision = refreshed.revision;
+    }
     if (current.status !== "ready") {
       return approvalJson(
         cookieSource,
@@ -173,7 +199,7 @@ export async function POST(
         409,
       );
     }
-    if (current.revision !== parsed.data.expectedRevision) {
+    if (current.revision !== expectedRevision) {
       return approvalJson(
         cookieSource,
         correlationId,

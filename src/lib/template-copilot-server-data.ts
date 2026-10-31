@@ -317,6 +317,29 @@ export async function advanceTemplateCopilotSession({
   return data as Record<string, unknown>;
 }
 
+/** Moves a completed v2 interview to "ready" so a draft can be created. The
+ * caller must already have proven the interview complete; the database refuses
+ * any ledger that still has an unresolved, candidate or conflicting fact. */
+export async function markTemplateCopilotV2SessionReady({
+  service,
+  actor,
+  sessionId,
+  expectedRevision,
+}: {
+  service: SupabaseClient;
+  actor: Pick<ApprovalRuntimeProfile, "id">;
+  sessionId: string;
+  expectedRevision: number;
+}) {
+  const { data, error } = await service.rpc("mark_template_copilot_v2_session_ready", {
+    p_actor_id: actor.id,
+    p_session_id: sessionId,
+    p_expected_revision: expectedRevision,
+  });
+  if (error) throw error;
+  return data as Record<string, unknown>;
+}
+
 export async function linkTemplateCopilotDraft({
   service,
   actor,
