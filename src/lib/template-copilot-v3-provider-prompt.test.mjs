@@ -669,7 +669,14 @@ test("the quote extractor remains outside application and server-data imports", 
         entry.isFile() && /server-data\.(?:ts|tsx)$/u.test(entry.name),
     )
     .map((entry) => path.join(sourceRoot, "lib", entry.name));
+  // The v3 reader was kept out of the app until it met its release gate. It
+  // is now connected to exactly one route (the sectioned Describe); nothing
+  // else may import it.
+  const approvedV3Routes = new Set([
+    path.join("app", "api", "template-authoring", "copilot", "sessions", "[sessionId]", "describe-v3", "route.ts"),
+  ]);
   for (const file of [...appFiles, ...libFiles]) {
+    if (approvedV3Routes.has(path.relative(sourceRoot, file))) continue;
     const source = await readFile(file, "utf8");
     assert.doesNotMatch(
       source,

@@ -499,6 +499,7 @@ async function requestTemplateCopilotV3RawProviderOutput({
   developerText,
   userText,
   failureMessage,
+  timeoutMs,
   observeProviderResponse,
 }: {
   configured: TemplateCopilotAiConfiguration;
@@ -507,6 +508,7 @@ async function requestTemplateCopilotV3RawProviderOutput({
   developerText: string;
   userText: string;
   failureMessage: string;
+  timeoutMs?: number;
   observeProviderResponse?: (
     telemetry: TemplateCopilotProviderResponseTelemetry,
   ) => void;
@@ -518,7 +520,9 @@ async function requestTemplateCopilotV3RawProviderOutput({
       schemaName,
       developerText,
       userText,
-      requestOptions: boundedProviderRequestOptions(),
+      requestOptions: timeoutMs === undefined
+        ? boundedProviderRequestOptions()
+        : { timeout: timeoutMs, maxRetries: 0, signal: AbortSignal.timeout(timeoutMs) },
       observeProviderResponse,
     });
   } catch (error) {
@@ -598,11 +602,14 @@ export async function extractTemplateCopilotV3QuoteBatch({
   batchId,
   sourceSlots,
   locale,
+  timeoutMs,
   observeProviderRequest,
 }: Readonly<{
   batchId: TemplateCopilotV3ProviderQuoteBatchId;
   sourceSlots: readonly TemplateCopilotV3ProviderQuoteSourceSlot[];
   locale: "en" | "zh-Hant" | "zh-Hans";
+  /** Overrides the shared provider timeout for a caller with a longer window. */
+  timeoutMs?: number;
   observeProviderRequest?: (
     observation: TemplateCopilotProviderRequestObservation,
   ) => void;
@@ -633,6 +640,7 @@ export async function extractTemplateCopilotV3QuoteBatch({
       userText,
       failureMessage:
         "The Copilot could not safely extract source-backed quotes.",
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
       observeProviderResponse: (telemetry) => {
         responseTelemetry = telemetry;
       },

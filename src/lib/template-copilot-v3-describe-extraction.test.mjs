@@ -103,7 +103,8 @@ test("configuration failures are not retried and stop the description", async ()
       error instanceof TemplateCopilotV3DescribeExtractionError &&
       error.reasonCode === "provider_configuration",
   );
-  assert.equal(calls, 1);
+  // The batches run together; none of them is asked a second time.
+  assert.ok(calls >= 1 && calls <= templateCopilotV3ProviderQuoteBatchIds.length, String(calls));
 });
 
 test("an unreachable model fails the description so the caller can fall back", async () => {

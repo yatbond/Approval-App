@@ -64,6 +64,7 @@ export class TemplateCopilotV3DescribeExtractionError extends Error {
 }
 
 export const templateCopilotV3DescribeMaximumAttemptsPerBatch = 2;
+export const templateCopilotV3DescribeMaximumConcurrentBatches = 1;
 
 const unspecifiedSectionText: Readonly<Record<TemplateCopilotV3DescribeLocale, string>> = {
   en: "Not specified.",
@@ -120,12 +121,14 @@ export async function extractTemplateCopilotV3Description({
   locale,
   extractBatch,
   maximumAttemptsPerBatch = templateCopilotV3DescribeMaximumAttemptsPerBatch,
+  maximumConcurrentBatches = templateCopilotV3DescribeMaximumConcurrentBatches,
   shouldContinue = () => true,
 }: Readonly<{
   sections: readonly TemplateCopilotV3DescribeSection[];
   locale: TemplateCopilotV3DescribeLocale;
   extractBatch: TemplateCopilotV3BatchExtractor;
   maximumAttemptsPerBatch?: number;
+  maximumConcurrentBatches?: number;
   /** Lets the caller stop retrying near its own deadline. */
   shouldContinue?: () => boolean;
 }>): Promise<TemplateCopilotV3DescribeExtraction> {
@@ -147,9 +150,13 @@ export async function extractTemplateCopilotV3Description({
     ),
   );
 
-  const accepted: TemplateCopilotV3LocatedQuoteItem[] = [];
-  const batches: TemplateCopilotV3BatchOutcome[] = [];
-  for (const batchId of templateCopilotV3ProviderQuoteBatchIds) {
+  type BatchRun = Readonly<{
+    outcome: TemplateCopilotV3BatchOutcome;
+    accepted: readonly TemplateCopilotV3LocatedQuoteItem[];
+  }>;
+  const runBatch = async (
+    batchId: TemplateCopilotV3ProviderQuoteBatchId,
+  ): Promise<BatchRun> => {
     const sourceSlots = templateCopilotV3ProviderQuoteBatches[batchId].slots.map(
       (slot) => {
         const section = bySlot.get(slot);
@@ -166,15 +173,17 @@ export async function extractTemplateCopilotV3Description({
       },
     );
     if (sourceSlots.every((slot) => !(slot.messageId in sourceMessages))) {
-      batches.push(Object.freeze({
-        batchId,
-        status: "applied",
-        attempts: 0,
-        acceptedItemCount: 0,
-        rejectedItemCount: 0,
-        failureReason: null,
-      }));
-      continue;
+      return {
+        accepted: [],
+        outcome: Object.freeze({
+          batchId,
+          status: "applied" as const,
+          attempts: 0,
+          acceptedItemCount: 0,
+          rejectedItemCount: 0,
+          failureReason: null,
+        }),
+      };
     }
     let attempts = 0;
     let failureReason: string | null = null;
@@ -195,16 +204,38 @@ export async function extractTemplateCopilotV3Description({
         }
       }
     }
-    if (result) accepted.push(...result.accepted);
-    batches.push(Object.freeze({
-      batchId,
-      status: result ? "applied" : "failed",
-      attempts,
-      acceptedItemCount: result?.accepted.length ?? 0,
-      rejectedItemCount: result?.rejected.length ?? 0,
-      failureReason,
-    }));
-  }
+    return {
+      accepted: result?.accepted ?? [],
+      outcome: Object.freeze({
+        batchId,
+        status: result ? ("applied" as const) : ("failed" as const),
+        attempts,
+        acceptedItemCount: result?.accepted.length ?? 0,
+        rejectedItemCount: result?.rejected.length ?? 0,
+        failureReason,
+      }),
+    };
+  };
+  // The batches are independent reads of fixed sections, so a small number run
+  // together (a self-hosted server has few slots; more would only queue and hit
+  // the provider timeout). Results are merged in the fixed batch order.
+  const runs: BatchRun[] = new Array(templateCopilotV3ProviderQuoteBatchIds.length);
+  let nextBatch = 0;
+  const lane = async () => {
+    while (nextBatch < templateCopilotV3ProviderQuoteBatchIds.length) {
+      const index = nextBatch;
+      nextBatch += 1;
+      runs[index] = await runBatch(templateCopilotV3ProviderQuoteBatchIds[index]);
+    }
+  };
+  await Promise.all(
+    Array.from(
+      { length: Math.max(1, Math.min(maximumConcurrentBatches, templateCopilotV3ProviderQuoteBatchIds.length)) },
+      lane,
+    ),
+  );
+  const accepted: TemplateCopilotV3LocatedQuoteItem[] = runs.flatMap((run) => [...run.accepted]);
+  const batches: TemplateCopilotV3BatchOutcome[] = runs.map((run) => run.outcome);
   const attempted = batches.filter((batch) => batch.attempts > 0);
   if (attempted.length > 0 && attempted.every((batch) => batch.status === "failed")) {
     throw new TemplateCopilotV3DescribeExtractionError(

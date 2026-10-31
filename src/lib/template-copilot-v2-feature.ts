@@ -131,3 +131,11 @@ export function isTemplateCopilotV2StructuredEditorEnabled(
       ? flags.conditions
       : flags.notifications;
 }
+
+/** The v3 sectioned Describe flow (quote-first reader with human review). It
+ * rolls out independently of the v2 Describe command it replaces for pilots. */
+export function isTemplateCopilotV3DescribeEnabled(
+  env: Readonly<{ TEMPLATE_COPILOT_V3_DESCRIBE?: string }> = process.env as Readonly<{ TEMPLATE_COPILOT_V3_DESCRIBE?: string }>,
+) {
+  return env.TEMPLATE_COPILOT_V3_DESCRIBE === "true";
+}
