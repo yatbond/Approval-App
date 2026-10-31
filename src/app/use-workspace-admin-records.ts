@@ -38,6 +38,10 @@ import {
   getUpdatedTemplateVersionCommentRecordState,
   getUpdatedTemplateRecordState,
 } from "@/lib/workspace-template-record-state";
+import {
+  activateTemplateAuthoringVersionClient,
+  queueTemplateAuthoringDraftSync,
+} from "@/lib/template-authoring-client";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -168,6 +172,24 @@ export function useWorkspaceAdminRecords({
       : adminAuditEvents;
     setTemplates(nextState.templates);
     setAdminAuditEvents(nextAuditEvents);
+    queueTemplateAuthoringDraftSync({
+      template,
+      actorEmail: activeUser.email,
+      changeReason: "Updated in the visual template builder.",
+      callbacks: {
+        onRevision: (revision) => {
+          setTemplates((current) =>
+            current.map((item) =>
+              item.id === template.id
+                ? { ...item, authoringRevision: revision }
+                : item,
+            ),
+          );
+          setAdminRecordError("");
+        },
+        onError: setAdminRecordError,
+      },
+    });
     void persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({
         workflowTemplates: nextState.templates,
@@ -176,7 +198,45 @@ export function useWorkspaceAdminRecords({
     );
   }
 
-  function activateTemplateVersionRecord(templateId: string) {
+  async function activateTemplateVersionRecord(templateId: string) {
+    const template = templates.find((item) => item.id === templateId);
+    const isAuthoritativeAuthoringActivation = Boolean(
+      template?.authoringFamilyId &&
+        template.databaseVersionId &&
+        template.isDraft === false &&
+        template.version,
+    );
+    if (
+      isAuthoritativeAuthoringActivation &&
+      template?.authoringFamilyId &&
+      template.databaseVersionId &&
+      template.isDraft === false &&
+      template.version
+    ) {
+      setAdminRecordError("");
+      try {
+        const activated = await activateTemplateAuthoringVersionClient({
+          publishedVersionId: template.databaseVersionId,
+          expectedVersionNumber: template.version,
+        });
+        if (
+          activated.familyId !== template.authoringFamilyId ||
+          activated.publishedVersionId !== template.databaseVersionId ||
+          activated.versionNumber !== template.version
+        ) {
+          throw new Error(
+            "The server activation response did not match the selected template version.",
+          );
+        }
+      } catch (error) {
+        setAdminRecordError(
+          error instanceof Error
+            ? error.message
+            : "The exact published template version could not be activated.",
+        );
+        return;
+      }
+    }
     const nextState = getActivatedTemplateVersionRecordState({
       templates,
       selectedTemplateId,
@@ -191,8 +251,14 @@ export function useWorkspaceAdminRecords({
       ? [nextState.auditEvent, ...adminAuditEvents]
       : adminAuditEvents;
     setTemplates(nextState.templates);
-    setAdminAuditEvents(nextAuditEvents);
     setSelectedTemplateId(nextState.selectedTemplateId);
+    if (isAuthoritativeAuthoringActivation) {
+      // The server command already wrote the canonical audit event and active
+      // marker. Do not send the browser's stale whole-workspace snapshot back
+      // over that exact-version result.
+      return;
+    }
+    setAdminAuditEvents(nextAuditEvents);
     void persistWorkspaceSnapshot(
       buildWorkspaceSnapshot({
         workflowTemplates: nextState.templates,

@@ -1,0 +1,9388 @@
+import { createHash } from "node:crypto";
+import { templateCopilotMaximumSourceCodePoints } from "./template-copilot-unicode.ts";
+import type {
+  TemplateCopilotV3LocatedQuoteItem,
+  TemplateCopilotV3ProviderQuoteKind,
+  TemplateCopilotV3ProviderQuoteRole,
+} from "./template-copilot-v3-provider-quotes.ts";
+import {
+  templateCopilotV3ProviderQuoteAllowedSlotsByKind,
+  templateCopilotV3SourceLocalNotificationItemIndexBase,
+} from "./template-copilot-v3-provider-quotes.ts";
+import {
+  templateCopilotV3CanonicalDecimalText,
+  templateCopilotV3DirectEvidenceDerivesLeaf,
+  templateCopilotV3EvidenceCompilerVersion,
+  templateCopilotV3EvidenceContractVersion,
+  templateCopilotV3ExtractionEnvelopeSchema,
+  templateCopilotV3FragmentId,
+  templateCopilotV3FragmentSchema,
+  templateCopilotV3NormalizeLexicalText,
+  templateCopilotV3NormalizeTrimCollapseText,
+  templateCopilotV3SourceSpanId,
+  templateCopilotV3SourceSpanSchema,
+  validateTemplateCopilotV3ExtractionEnvelopeSourceAuthority,
+  validateTemplateCopilotV3SourceSpan,
+  type TemplateCopilotV3ExtractionEnvelope,
+  type TemplateCopilotV3Fragment,
+  type TemplateCopilotV3FragmentFactId,
+  type TemplateCopilotV3SourceSpan,
+} from "./template-copilot-v3-evidence.ts";
+import {
+  templateCopilotV3ImmediateDefaultRouteIsAffirmative,
+  templateCopilotV3MatchingRouteIsAffirmative,
+  templateCopilotV3RouteFirstPredicateIsAffirmative,
+  templateCopilotV3SliceConditionRouteClause,
+  type TemplateCopilotV3ConditionRouteHint,
+} from "./template-copilot-v3-condition-route-grammar.ts";
+import {
+  templateCopilotV3HardClauseSeparator,
+  templateCopilotV3LocalClauseBoundaryPattern,
+  templateCopilotV3NormalizedPrefixNegatesFollowingPredicate,
+  templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority,
+  templateCopilotV3RequirementAffirmativeContrast,
+  templateCopilotV3RequirementAuthorityPairIsNonAffirmative,
+  templateCopilotV3RequirementGapIsClosedPunctuation,
+  templateCopilotV3RequirementGoverningPrefixIsNonAffirmative,
+  templateCopilotV3RequirementPrefixNamesCompetingSibling,
+  templateCopilotV3RequirementSameHardTailIsQualified,
+  templateCopilotV3RequirementAuthorityContinuationIsQualified,
+  templateCopilotV3RequirementTextContainsSameSubjectContradiction,
+  templateCopilotV3RequirementTextContainsUnresolvedSameSubjectAssertion,
+  templateCopilotV3RoleClauseBoundaryPattern,
+} from "./template-copilot-v3-clause-boundaries.ts";
+import {
+  templateCopilotV3NotificationAdjacentAuthorityContextIsClosed,
+} from "./template-copilot-v3-notification-authority.ts";
+
+type Confidence = "low" | "medium" | "high";
+type Ambiguity = "none" | "possible" | "ambiguous";
+type Binding = TemplateCopilotV3Fragment["bindings"][number];
+type Rule = Binding["rule"];
+
+const arrayFactByKind = {
+  request_field: "request.fields",
+  attachment: "attachments.requirements",
+  stage: "workflow.stages",
+  condition: "workflow.conditions",
+  notification: "notifications.rules",
+} as const;
+const semanticFactByKind = {
+  workflow_name: "workflow.name",
+  workflow_purpose: "workflow.purpose",
+  workflow_scope: "workflow.scope",
+  initiator: "request.initiator_policy",
+  rejection: "workflow.rejection_policy",
+  collaboration: "collaboration.policy",
+  timing: "timing.rules",
+  visibility: "visibility.policy",
+  governance_owner: "governance.owner",
+  governance_policy: "governance.policies",
+  retention: "governance.retention",
+} as const;
+const policyKinds = new Set<TemplateCopilotV3ProviderQuoteKind>([
+  "rejection", "collaboration", "timing", "visibility", "governance_policy", "retention",
+]);
+const requiredPaths: Readonly<Record<TemplateCopilotV3FragmentFactId, readonly string[]>> = {
+  "request.fields": ["/label", "/type", "/required", "/options"],
+  "attachments.requirements": ["/id", "/label", "/kind", "/required", "/formats", "/minimumQuantity", "/maximumQuantity", "/stage", "/contributorPolicy", "/confirmationPolicy"],
+  "workflow.stages": ["/label", "/kind", "/participant/mode", "/sequence"],
+  "workflow.conditions": ["/id", "/sequence", "/field", "/operator", "/value", "/matchingRoute", "/otherwiseRoute"],
+  "notifications.rules": ["/id", "/event", "/recipients", "/timing/mode", "/channel", "/visibility"],
+};
+const confidenceRank = { low: 0, medium: 1, high: 2 } as const;
+const ambiguityRank = { none: 0, possible: 1, ambiguous: 2 } as const;
+
+type SourceOrder = Readonly<{ messageId: string; messageIndex: number; startCodePoint: number; endCodePoint: number }>;
+type RepresentedNotificationClauseRange = Readonly<{
+  startCodePoint: number;
+  endCodePoint: number;
+}>;
+type RepresentedNotificationClauseRangesByScope = ReadonlyMap<
+  string,
+  readonly RepresentedNotificationClauseRange[]
+>;
+type NotificationClauseRangeCandidate = {
+  range: RepresentedNotificationClauseRange;
+  clauseText: string;
+  eventSpans: TemplateCopilotV3SourceSpan[];
+  nonEventSpans: TemplateCopilotV3SourceSpan[];
+};
+export type TemplateCopilotV3ReviewRelationship = Readonly<{ relationship: "sequential" | "parallel"; sourceSpan: TemplateCopilotV3SourceSpan }>;
+export type TemplateCopilotV3ReviewObservation = Readonly<{ role: TemplateCopilotV3ProviderQuoteRole; quote: string; advisoryHint: string | null; sourceSpan: TemplateCopilotV3SourceSpan }>;
+export type TemplateCopilotV3ReviewBlockingReason =
+  | "compound_predicate_not_executable"
+  | "unsupported_semantics_not_executable";
+export type TemplateCopilotV3ReviewArrayItem = Readonly<{
+  reviewItemId: string;
+  fragmentId: string | null;
+  factId: TemplateCopilotV3FragmentFactId;
+  value: Readonly<Record<string, unknown>>;
+  bindings: readonly Binding[];
+  missingPaths: readonly string[];
+  complete: boolean;
+  semanticComplete: boolean;
+  persisted: false;
+  executable: false;
+  defaulted: false;
+  confidence: Confidence;
+  ambiguity: Ambiguity;
+  blockingReason?: TemplateCopilotV3ReviewBlockingReason;
+  ambiguityNote?: string;
+  observedRoles: readonly TemplateCopilotV3ProviderQuoteRole[];
+  semanticValue: Readonly<Partial<Record<TemplateCopilotV3ProviderQuoteRole, readonly string[]>>>;
+  semanticLeaves: readonly TemplateCopilotV3ReviewObservation[];
+  semanticObservations: readonly TemplateCopilotV3ReviewObservation[];
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[];
+  relationships: readonly TemplateCopilotV3ReviewRelationship[];
+  sourceSpans: readonly TemplateCopilotV3SourceSpan[];
+  sourceMessageIds: readonly string[];
+  sourceOrder: SourceOrder;
+  providerItemIndexes: readonly number[];
+  conflictGroupId?: string;
+}>;
+export type TemplateCopilotV3SemanticReviewItem = Readonly<{
+  projectionId: string;
+  kind: keyof typeof semanticFactByKind;
+  factId: (typeof semanticFactByKind)[keyof typeof semanticFactByKind];
+  quote: string;
+  sourceSpan: TemplateCopilotV3SourceSpan;
+  leaves: readonly Readonly<{ role: TemplateCopilotV3ProviderQuoteRole; quote: string; advisoryHint: string | null; sourceSpan: TemplateCopilotV3SourceSpan }>[];
+  confidence: Confidence;
+  ambiguity: Ambiguity;
+  sourceOrder: SourceOrder;
+  reviewOnly: true;
+  persisted: false;
+  executable: false;
+  defaulted: false;
+}>;
+export type TemplateCopilotV3ReviewConflict = Readonly<{ conflictId: string; factId: TemplateCopilotV3FragmentFactId; groupingKey: string; paths: readonly string[]; reviewItemIds: readonly string[] }>;
+
+export function templateCopilotV3ReviewItemId(
+  input: Pick<
+    TemplateCopilotV3ReviewArrayItem,
+    | "factId"
+    | "value"
+    | "bindings"
+    | "missingPaths"
+    | "sourceSpans"
+    | "sourceAnchors"
+    | "relationships"
+    | "observedRoles"
+    | "semanticValue"
+    | "semanticLeaves"
+    | "semanticObservations"
+    | "fragmentId"
+    | "complete"
+    | "semanticComplete"
+    | "persisted"
+    | "executable"
+    | "defaulted"
+    | "blockingReason"
+    | "confidence"
+    | "ambiguity"
+    | "ambiguityNote"
+    | "conflictGroupId"
+  >,
+) {
+  const canonicalBindings = input.bindings
+    .map((binding) => ({
+      path: binding.path,
+      rule: binding.rule,
+      spanIds: [...new Set(binding.spanIds)].sort(compareText),
+    }))
+    .sort(
+      (left, right) =>
+        compareText(left.path, right.path) ||
+        compareText(left.rule, right.rule) ||
+        compareText(stableJson(left.spanIds), stableJson(right.spanIds)),
+    );
+  const canonicalRelationships = [
+    ...new Map(
+      input.relationships.map((entry) => [
+        `${entry.relationship}:${entry.sourceSpan.spanId}`,
+        {
+          relationship: entry.relationship,
+          spanId: entry.sourceSpan.spanId,
+        },
+      ]),
+    ).values(),
+  ].sort(
+    (left, right) =>
+      compareText(left.relationship, right.relationship) ||
+      compareText(left.spanId, right.spanId),
+  );
+  const canonicalSourceSpan = (span: TemplateCopilotV3SourceSpan) => ({
+    spanId: span.spanId,
+    messageId: span.messageId,
+    startCodePoint: span.startCodePoint,
+    endCodePoint: span.endCodePoint,
+    exactText: span.exactText,
+  });
+  const canonicalSpans = (spans: readonly TemplateCopilotV3SourceSpan[]) =>
+    spans
+      .map(canonicalSourceSpan)
+      .sort((left, right) =>
+        compareText(stableJson(left), stableJson(right)),
+      );
+  const canonicalObservations = (
+    observations: readonly TemplateCopilotV3ReviewObservation[],
+  ) =>
+    observations
+      .map((observation) => ({
+        role: observation.role,
+        quote: observation.quote,
+        advisoryHint: observation.advisoryHint,
+        sourceSpan: canonicalSourceSpan(observation.sourceSpan),
+      }))
+      .sort((left, right) =>
+        compareText(stableJson(left), stableJson(right)),
+      );
+  const canonicalSemanticValue = Object.fromEntries(
+    Object.entries(input.semanticValue)
+      .map(([role, quotes]) => [
+        role,
+        [...(quotes ?? [])].sort(compareText),
+      ] as const)
+      .sort(([left], [right]) => compareText(left, right)),
+  );
+  return hashJson({
+    authority: {
+      fragmentId: input.fragmentId,
+      complete: input.complete,
+      semanticComplete: input.semanticComplete,
+      persisted: input.persisted,
+      executable: input.executable,
+      defaulted: input.defaulted,
+      missingPaths: [...input.missingPaths].sort(compareText),
+      blockingReason: input.blockingReason ?? null,
+      confidence: input.confidence,
+      ambiguity: input.ambiguity,
+      ambiguityNote: input.ambiguityNote ?? null,
+      conflictGroupId: input.conflictGroupId ?? null,
+    },
+    factId: input.factId,
+    value: input.value,
+    bindings: canonicalBindings,
+    sourceSpanIds: [...new Set(input.sourceSpans.map((span) => span.spanId))].sort(
+      compareText,
+    ),
+    relationships: canonicalRelationships,
+    semanticAuthority: {
+      observedRoles: [...input.observedRoles].sort(compareText),
+      semanticValue: canonicalSemanticValue,
+      semanticLeaves: canonicalObservations(input.semanticLeaves),
+      semanticObservations: canonicalObservations(input.semanticObservations),
+      sourceAnchors: canonicalSpans(input.sourceAnchors),
+    },
+  });
+}
+
+export function templateCopilotV3SemanticProjectionId(
+  input: Pick<
+    TemplateCopilotV3SemanticReviewItem,
+    "kind" | "factId" | "sourceSpan" | "leaves" | "confidence" | "ambiguity"
+  >,
+) {
+  const canonicalLeaves = canonicalSemanticProjectionLeaves(input.leaves);
+  return hashJson({
+    kind: input.kind,
+    factId: input.factId,
+    anchor: input.sourceSpan.spanId,
+    leaves: canonicalLeaves.map((leaf) => ({
+      role: leaf.role,
+      hint: leaf.advisoryHint,
+      spanId: leaf.sourceSpan.spanId,
+    })),
+    confidence: input.confidence,
+    ambiguity: input.ambiguity,
+  });
+}
+
+export const templateCopilotV3ReviewRejectionCodes = [
+  "untraceable_span",
+  "unsupported_leaf",
+  "unverifiable_leaf",
+  "conflicting_leaf",
+  "invalid_fragment",
+  "invalid_envelope",
+  "empty_item",
+] as const;
+export type TemplateCopilotV3ReviewRejection = Readonly<{
+  itemIndex: number;
+  kind: TemplateCopilotV3ProviderQuoteKind;
+  code: (typeof templateCopilotV3ReviewRejectionCodes)[number];
+  detail: string;
+}>;
+export type TemplateCopilotV3ReviewAssembly = Readonly<{
+  envelope: TemplateCopilotV3ExtractionEnvelope;
+  review: Readonly<{
+    items: readonly TemplateCopilotV3ReviewArrayItem[];
+    scalarFacts: readonly TemplateCopilotV3SemanticReviewItem[];
+    policyItems: readonly TemplateCopilotV3SemanticReviewItem[];
+    conflicts: readonly TemplateCopilotV3ReviewConflict[];
+    rejections: readonly TemplateCopilotV3ReviewRejection[];
+  }>;
+}>;
+
+type Leaf = { value: string | number | boolean | readonly string[]; rule: Rule; spans: TemplateCopilotV3SourceSpan[] };
+type Draft = {
+  itemIndex: number;
+  kind: keyof typeof arrayFactByKind;
+  factId: TemplateCopilotV3FragmentFactId;
+  anchor: TemplateCopilotV3SourceSpan;
+  leaves: Map<string, Leaf>;
+  arrays: Map<string, Map<string, Leaf>>;
+  relationships: TemplateCopilotV3ReviewRelationship[];
+  observedRoles: Set<TemplateCopilotV3ProviderQuoteRole>;
+  semanticObservations: TemplateCopilotV3ReviewObservation[];
+  semanticAuthorityBlocked: boolean;
+  semanticContexts: TemplateCopilotV3SourceSpan[];
+  sourceAnchors: TemplateCopilotV3SourceSpan[];
+  confidence: Confidence;
+  ambiguity: Ambiguity;
+};
+type Cluster = Omit<Draft, "itemIndex" | "kind"> & { groupingKey: string; itemIndexes: number[] };
+type Mapping =
+  | Readonly<{ kind: "scalar"; path: string; mode: "text" | "enum" | "boolean" | "number" | "condition_value" | "route" }>
+  | Readonly<{ kind: "array"; path: string; mode: "text" | "enum" }>
+  | Readonly<{ kind: "relationship" }>
+  | Readonly<{ kind: "semantic_only" }>;
+
+type ConditionAuthorityUnit = Readonly<{
+  messageId: string;
+  startCodePoint: number;
+  endCodePoint: number;
+  terminatorEndCodePoint: number;
+  terminator: string;
+  blockIndex: number;
+  unitIndex: number;
+  balancedQuotes: boolean;
+}>;
+
+type OrdinaryDraft = Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem & {
+    kind: keyof typeof arrayFactByKind;
+  };
+  draft: Draft;
+  rejectionFree: boolean;
+}>;
+
+type ConditionAuthoritySymbols = Readonly<{
+  fieldLabels: ReadonlySet<string>;
+  stageReferences: ReadonlySet<string>;
+}>;
+
+function providerQuoteItemSlotIsAllowed(
+  item: TemplateCopilotV3LocatedQuoteItem,
+) {
+  const allowedSlots: readonly string[] =
+    templateCopilotV3ProviderQuoteAllowedSlotsByKind[item.kind];
+  return allowedSlots.includes(item.slot);
+}
+
+const emptyConditionAuthoritySymbols: ConditionAuthoritySymbols =
+  Object.freeze({
+    fieldLabels: new Set<string>(),
+    stageReferences: new Set<string>(),
+  });
+
+export function assembleTemplateCopilotV3Review({ items, sourceMessages, sourceMessageOrder }: {
+  items: readonly TemplateCopilotV3LocatedQuoteItem[];
+  sourceMessages: Readonly<Record<string, string>>;
+  sourceMessageOrder?: readonly string[];
+}): TemplateCopilotV3ReviewAssembly {
+  const order = makeOrder(sourceMessages, sourceMessageOrder);
+  const compareSpans = (left: TemplateCopilotV3SourceSpan, right: TemplateCopilotV3SourceSpan) =>
+    (order.get(left.messageId) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.messageId) ?? Number.MAX_SAFE_INTEGER) ||
+    compareText(left.messageId, right.messageId) || left.startCodePoint - right.startCodePoint ||
+    left.endCodePoint - right.endCodePoint || compareText(left.spanId, right.spanId);
+  const rejections: TemplateCopilotV3ReviewRejection[] = [];
+  const drafts: Draft[] = [];
+  const scalarFacts: TemplateCopilotV3SemanticReviewItem[] = [];
+  const policyItems: TemplateCopilotV3SemanticReviewItem[] = [];
+  const ordinaryDrafts: OrdinaryDraft[] = [];
+  const deferredSplitConditions: Array<
+    TemplateCopilotV3LocatedQuoteItem & {
+      kind: keyof typeof arrayFactByKind;
+    }
+  > = [];
+  const orderedItems = [...items].sort((a, b) =>
+    compareSpans(a.anchor, b.anchor) || compareText(a.kind, b.kind) ||
+    a.itemIndex - b.itemIndex
+  );
+  const representedNotificationClauseRangesByScope =
+    buildRepresentedNotificationClauseRangesByScope(
+      orderedItems,
+      sourceMessages,
+    );
+  for (const item of orderedItems) {
+    if (!providerQuoteItemSlotIsAllowed(item)) {
+      rejections.push(
+        rejection(item, "unverifiable_leaf", `${item.kind}:unsupported_slot`),
+      );
+      continue;
+    }
+    if (Object.hasOwn(arrayFactByKind, item.kind)) {
+      const arrayItem = item as TemplateCopilotV3LocatedQuoteItem & {
+        kind: keyof typeof arrayFactByKind;
+      };
+      if (isSimplifiedCjkYesOperatorSplitShape(arrayItem)) {
+        deferredSplitConditions.push(arrayItem);
+        continue;
+      }
+      const rejectionCountBeforeCompile = rejections.length;
+      const draft = compileArrayItem(
+        arrayItem,
+        sourceMessages,
+        compareSpans,
+        rejections,
+        representedNotificationClauseRangesByScope,
+      );
+      if (draft) {
+        drafts.push(draft);
+        ordinaryDrafts.push(Object.freeze({
+          item: arrayItem,
+          draft,
+          rejectionFree: rejections.length === rejectionCountBeforeCompile,
+        }));
+      }
+    } else if (Object.hasOwn(semanticFactByKind, item.kind)) {
+      const projected = compileSemanticItem(item as TemplateCopilotV3LocatedQuoteItem & { kind: keyof typeof semanticFactByKind }, sourceMessages, order, rejections);
+      if (projected) (policyKinds.has(item.kind) ? policyItems : scalarFacts).push(projected);
+    }
+  }
+  const conditionAuthorityCoverage = buildConditionAuthorityCoverage(
+    ordinaryDrafts,
+    sourceMessages,
+  );
+  const conditionAuthoritySymbols = buildConditionAuthoritySymbols(
+    ordinaryDrafts,
+    sourceMessages,
+  );
+  for (const item of deferredSplitConditions) {
+    const draft = compileArrayItem(
+      item,
+      sourceMessages,
+      compareSpans,
+      rejections,
+      representedNotificationClauseRangesByScope,
+      conditionAuthorityCoverage,
+      conditionAuthoritySymbols,
+    );
+    if (draft) drafts.push(draft);
+  }
+  const groups = new Map<string, Draft[]>();
+  for (const draft of drafts) {
+    const key = groupKey(draft);
+    groups.set(key, [...(groups.get(key) ?? []), draft]);
+  }
+  for (const [key, group] of groups) {
+    groups.set(key, withoutSubsumedBlockedNotificationDrafts(group));
+  }
+  const completeItems: TemplateCopilotV3ReviewArrayItem[] = [];
+  const partialItems: Array<{ item: TemplateCopilotV3ReviewArrayItem; fragment: TemplateCopilotV3Fragment }> = [];
+  const conflicts: TemplateCopilotV3ReviewConflict[] = [];
+  for (const [key, group] of [...groups].sort(([a], [b]) => compareText(a, b))) {
+    const paths = findDraftConflictPaths(group);
+    const clusters = clusterDraftsDeterministically(
+      key,
+      group,
+      paths,
+      compareSpans,
+    );
+    const conflictGroupId = paths.length > 0
+      ? hashJson({ factId: clusters[0].factId, key, paths })
+      : undefined;
+    const groupItems: TemplateCopilotV3ReviewArrayItem[] = [];
+    for (const cluster of clusters) {
+      const result = finishCluster(cluster, sourceMessages, order, compareSpans, conflictGroupId, rejections);
+      if (!result) continue;
+      groupItems.push(result.item);
+      if (result.fragment) partialItems.push({ item: result.item, fragment: result.fragment });
+      else completeItems.push(result.item);
+    }
+    if (conflictGroupId && groupItems.length > 1) conflicts.push({ conflictId: conflictGroupId, factId: clusters[0].factId, groupingKey: key, paths, reviewItemIds: groupItems.map((item) => item.reviewItemId).sort(compareText) });
+  }
+  let envelope = templateCopilotV3ExtractionEnvelopeSchema.parse({ contractVersion: templateCopilotV3EvidenceContractVersion, compilerVersion: templateCopilotV3EvidenceCompilerVersion, sourceSpans: [], fragments: [] });
+  const acceptedPartial: TemplateCopilotV3ReviewArrayItem[] = [];
+  for (const candidate of partialItems.sort((a, b) => compareReviewItems(a.item, b.item))) {
+    const used = new Set(candidate.fragment.bindings.flatMap((binding) => binding.spanIds));
+    const sourceSpans = dedupeSpans([...envelope.sourceSpans, ...candidate.item.sourceSpans.filter((span) => used.has(span.spanId))], compareSpans);
+    const parsed = templateCopilotV3ExtractionEnvelopeSchema.safeParse({ contractVersion: templateCopilotV3EvidenceContractVersion, compilerVersion: templateCopilotV3EvidenceCompilerVersion, sourceSpans, fragments: [...envelope.fragments, candidate.fragment] });
+    if (!parsed.success || !validateTemplateCopilotV3ExtractionEnvelopeSourceAuthority(parsed.data, sourceMessages)) {
+      rejections.push({ itemIndex: candidate.item.providerItemIndexes[0] ?? -1, kind: kindForFact(candidate.item.factId), code: "invalid_envelope", detail: `${candidate.item.factId}:${candidate.item.reviewItemId}` });
+      continue;
+    }
+    envelope = parsed.data;
+    acceptedPartial.push(candidate.item);
+  }
+  return Object.freeze({
+    envelope,
+    review: Object.freeze({
+      items: Object.freeze([...completeItems, ...acceptedPartial].sort(compareReviewItems)),
+      scalarFacts: Object.freeze(dedupeSemantic(scalarFacts)),
+      policyItems: Object.freeze(dedupeSemantic(policyItems)),
+      conflicts: Object.freeze(conflicts.sort((a, b) => compareText(a.conflictId, b.conflictId))),
+      rejections: Object.freeze(rejections.sort((a, b) => a.itemIndex - b.itemIndex || compareText(a.kind, b.kind) || compareText(a.code, b.code) || compareText(a.detail, b.detail))),
+    }),
+  });
+}
+
+function notificationClauseScopeKey(messageId: string, slot: string) {
+  return `${messageId}\u0000${slot}`;
+}
+
+function notificationHardClauseRangeForSpan(
+  span: TemplateCopilotV3SourceSpan,
+  messages: Readonly<Record<string, string>>,
+): RepresentedNotificationClauseRange | null {
+  if (!validSpan(span, messages)) return null;
+  const sourceText = messages[span.messageId];
+  if (typeof sourceText !== "string") return null;
+  const codePoints = Array.from(sourceText);
+  let startCodePoint = span.startCodePoint;
+  while (
+    startCodePoint > 0 &&
+    !templateCopilotV3HardClauseSeparator(codePoints[startCodePoint - 1])
+  ) {
+    startCodePoint -= 1;
+  }
+  let endCodePoint = span.endCodePoint;
+  while (
+    endCodePoint < codePoints.length &&
+    !templateCopilotV3HardClauseSeparator(codePoints[endCodePoint])
+  ) {
+    endCodePoint += 1;
+  }
+  return Object.freeze({ startCodePoint, endCodePoint });
+}
+
+function notificationAnchorExtensionIsClosed(
+  anchor: TemplateCopilotV3SourceSpan,
+  range: RepresentedNotificationClauseRange,
+  messages: Readonly<Record<string, string>>,
+) {
+  const sourceText = messages[anchor.messageId];
+  if (typeof sourceText !== "string") return false;
+  const codePoints = Array.from(sourceText);
+  if (
+    anchor.endCodePoint <= range.startCodePoint ||
+    anchor.startCodePoint >= range.endCodePoint
+  ) return false;
+  const extensionIsClosed = (startCodePoint: number, endCodePoint: number) =>
+    codePoints.slice(startCodePoint, endCodePoint).every((codePoint) =>
+      codePoint.trim().length === 0 ||
+      templateCopilotV3HardClauseSeparator(codePoint)
+    );
+  return (
+    (
+      anchor.startCodePoint >= range.startCodePoint ||
+      extensionIsClosed(anchor.startCodePoint, range.startCodePoint)
+    ) &&
+    (
+      anchor.endCodePoint <= range.endCodePoint ||
+      extensionIsClosed(range.endCodePoint, anchor.endCodePoint)
+    )
+  );
+}
+
+function buildRepresentedNotificationClauseRangesByScope(
+  items: readonly TemplateCopilotV3LocatedQuoteItem[],
+  messages: Readonly<Record<string, string>>,
+): RepresentedNotificationClauseRangesByScope {
+  const rangesByScope = new Map<
+    string,
+    Map<string, NotificationClauseRangeCandidate>
+  >();
+  for (const item of items) {
+    if (
+      item.kind !== "notification" ||
+      !providerQuoteItemSlotIsAllowed(item) ||
+      item.ambiguity !== "none" ||
+      !validSpan(item.anchor, messages)
+    ) continue;
+    const events = item.leaves.filter((leaf) => leaf.role === "event");
+    const recipients = item.leaves.filter((leaf) => leaf.role === "recipient");
+    const visibility = item.leaves.filter((leaf) => leaf.role === "visibility");
+    if (
+      events.length !== 1 ||
+      recipients.length !== 1 ||
+      visibility.length > 1
+    ) continue;
+    const recoveredLeaves = item.leaves.filter(
+      (leaf) => leaf.sameLocalClauseRecovered === true,
+    );
+    const recoveryShapeIsClosed = recoveredLeaves.length === 0
+      ? (item.anchorExpanded ?? false) === false &&
+        (item.sameLocalClauseRecoveredLeafCount ?? 0) === 0
+      : item.anchorExpanded === true &&
+        recoveredLeaves.length === item.sameLocalClauseRecoveredLeafCount &&
+        recoveredLeaves.length >= 1 &&
+        recoveredLeaves.length <= 2 &&
+        recoveredLeaves.every(
+          (leaf) => leaf.role === "recipient" || leaf.role === "visibility",
+        ) &&
+        events.every((leaf) => leaf.sameLocalClauseRecovered !== true);
+    if (
+      !recoveryShapeIsClosed ||
+      item.leaves.length !== 2 + visibility.length
+    ) continue;
+    const range = notificationHardClauseRangeForSpan(
+      events[0].sourceSpan,
+      messages,
+    );
+    if (
+      !range ||
+      events[0].sourceSpan.messageId !== item.anchor.messageId ||
+      !notificationAnchorExtensionIsClosed(
+        item.anchor,
+        range,
+        messages,
+      )
+    ) {
+      continue;
+    }
+    const notificationCoreLeaves = item.leaves.filter((leaf) =>
+      leaf.role === "event" ||
+      leaf.role === "recipient" ||
+      leaf.role === "visibility"
+    );
+    if (
+      notificationCoreLeaves.some((leaf) =>
+        !validSpan(leaf.sourceSpan, messages) ||
+        leaf.sourceSpan.messageId !== item.anchor.messageId ||
+        leaf.sourceSpan.startCodePoint < item.anchor.startCodePoint ||
+        leaf.sourceSpan.endCodePoint > item.anchor.endCodePoint ||
+        leaf.sourceSpan.startCodePoint < range.startCodePoint ||
+        leaf.sourceSpan.endCodePoint > range.endCodePoint
+      )
+    ) continue;
+    const semanticContexts = semanticContextsForArrayItem(
+      "notifications.rules",
+      item.anchor,
+      messages,
+    );
+    if (semanticContexts === null) continue;
+    if (!notificationItemSlotProvenanceIsClosed(item, semanticContexts)) {
+      continue;
+    }
+    const notificationCoreObservations = notificationCoreLeaves.map((leaf) =>
+      Object.freeze({
+        role: leaf.role,
+        quote: leaf.sourceSpan.exactText,
+        advisoryHint: leaf.hint,
+        sourceSpan: leaf.sourceSpan,
+      })
+    );
+    if (
+      notificationCoreObservations.some((observation) =>
+        !semanticHintIsVerified(
+          "notifications.rules",
+          observation,
+          semanticContexts,
+        )
+      )
+    ) continue;
+    const sourceText = messages[item.anchor.messageId];
+    const clauseText = Array.from(sourceText).slice(
+      range.startCodePoint,
+      range.endCodePoint,
+    ).join("");
+    if (
+      [...clauseText.matchAll(semanticNotificationActionPattern())].length !== 1 ||
+      /^\s*notifications?\b/iu.test(clauseText) ||
+      semanticNotificationClauseHasCompetingRecipient(
+        clauseText,
+        recipients[0].sourceSpan.exactText,
+      ) ||
+      !semanticNotificationClauseHasClosedVocabulary({
+        clauseText,
+        eventQuote: events[0].sourceSpan.exactText,
+        recipientQuote: recipients[0].sourceSpan.exactText,
+        visibilityQuote: visibility[0]?.sourceSpan.exactText ?? null,
+      })
+    ) {
+      continue;
+    }
+    const scopeKey = notificationClauseScopeKey(
+      item.anchor.messageId,
+      item.slot,
+    );
+    const ranges = rangesByScope.get(scopeKey) ?? new Map();
+    const rangeKey = `${range.startCodePoint}:${range.endCodePoint}`;
+    const candidate = ranges.get(rangeKey) ?? {
+      range,
+      clauseText,
+      eventSpans: [],
+      nonEventSpans: [],
+    };
+    candidate.eventSpans.push(events[0].sourceSpan);
+    candidate.nonEventSpans.push(
+      recipients[0].sourceSpan,
+      ...visibility.map((leaf) => leaf.sourceSpan),
+    );
+    ranges.set(rangeKey, candidate);
+    rangesByScope.set(scopeKey, ranges);
+  }
+  return new Map(
+    [...rangesByScope].map(([scopeKey, ranges]) => [
+      scopeKey,
+      Object.freeze(
+        [...ranges.values()]
+          .filter((candidate) => {
+            const eventAtoms = semanticNotificationClosedEventAtomRanges(
+              candidate.clauseText,
+              candidate.range.startCodePoint,
+            ).filter((atom) =>
+              !candidate.nonEventSpans.some((span) =>
+                sourceSpanOverlapsNotificationRange(span, atom)
+              )
+            );
+            return eventAtoms.length > 0 && eventAtoms.every((atom) =>
+              candidate.eventSpans.some((span) =>
+                sourceSpanOverlapsNotificationRange(span, atom)
+              )
+            );
+          })
+          .map((candidate) => candidate.range)
+          .sort(
+            (left, right) =>
+              left.startCodePoint - right.startCodePoint ||
+              left.endCodePoint - right.endCodePoint,
+          ),
+      ),
+    ]),
+  );
+}
+
+function notificationStageSlotProvenanceIsClosed(
+  item: TemplateCopilotV3LocatedQuoteItem,
+) {
+  return (
+    item.itemIndex >= templateCopilotV3SourceLocalNotificationItemIndexBase ||
+    item.anchor.messageId.endsWith(":stages_participants")
+  );
+}
+
+function notificationItemSlotProvenanceIsClosed(
+  item: TemplateCopilotV3LocatedQuoteItem,
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+) {
+  if (item.kind !== "notification") return true;
+  if (item.slot === "visibility_notifications") return true;
+  if (item.slot === "stages_participants") {
+    return notificationStageSlotProvenanceIsClosed(item);
+  }
+  if (item.slot !== "timing_escalation") return false;
+  const events = item.leaves.filter((leaf) => leaf.role === "event");
+  if (
+    events.length !== 1 ||
+    (events[0].hint !== "due_soon" && events[0].hint !== "overdue")
+  ) {
+    return false;
+  }
+  return semanticHintIsVerified(
+    "notifications.rules",
+    Object.freeze({
+      role: events[0].role,
+      quote: events[0].sourceSpan.exactText,
+      advisoryHint: events[0].hint,
+      sourceSpan: events[0].sourceSpan,
+    }),
+    semanticContexts,
+  );
+}
+
+function notificationItemScopeAuthorityIsClosed({
+  item,
+  messages,
+  representedClauseRanges,
+}: Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem;
+  messages: Readonly<Record<string, string>>;
+  representedClauseRanges: readonly RepresentedNotificationClauseRange[];
+}>) {
+  if (item.kind !== "notification") return true;
+  const events = item.leaves.filter((leaf) => leaf.role === "event");
+  const recipients = item.leaves.filter((leaf) => leaf.role === "recipient");
+  const visibility = item.leaves.filter((leaf) => leaf.role === "visibility");
+  if (
+    events.length !== 1 ||
+    recipients.length !== 1 ||
+    visibility.length > 1 ||
+    item.leaves.length !== 2 + visibility.length
+  ) return false;
+  const range = notificationHardClauseRangeForSpan(
+    events[0].sourceSpan,
+    messages,
+  );
+  const sourceText = messages[item.anchor.messageId];
+  if (
+    !range ||
+    typeof sourceText !== "string" ||
+    events[0].sourceSpan.messageId !== item.anchor.messageId
+  ) return false;
+  const clauseText = Array.from(sourceText).slice(
+    range.startCodePoint,
+    range.endCodePoint,
+  ).join("");
+  const notificationActions = [
+    ...clauseText.matchAll(semanticNotificationActionPattern()),
+  ];
+  if (
+    notificationActions.length > 1 ||
+    (
+      notificationActions.length === 1 &&
+      /^\s*notifications?\b/iu.test(clauseText)
+    )
+  ) return false;
+  const eventAtoms = semanticNotificationClosedEventAtomRanges(
+    clauseText,
+    range.startCodePoint,
+  ).filter((atom) =>
+    ![...recipients, ...visibility].some((leaf) =>
+      sourceSpanOverlapsNotificationRange(leaf.sourceSpan, atom)
+    )
+  );
+  const visibilityResidue = semanticNotificationStripClosedPhrase(
+    templateCopilotV3NormalizeLexicalText(clauseText),
+    templateCopilotV3NormalizeLexicalText(
+      recipients[0].sourceSpan.exactText,
+    ),
+  );
+  if (
+    semanticNotificationClauseHasCompetingRecipient(
+      clauseText,
+      recipients[0].sourceSpan.exactText,
+    ) ||
+    (
+      visibility.length === 0 &&
+      !/\bnot\s+(?:only|exclusively|solely)\b|(?:不只|不僅|不仅|非僅|非仅)/iu.test(
+        visibilityResidue,
+      ) &&
+      /\b(?:only|exclusively|solely)\b|\band\s+no\s+one\s+else\b|(?:只|僅|仅)(?=通知|知會|知会|告知|通報|通报|提醒)/iu.test(
+        visibilityResidue,
+      )
+    )
+  ) return false;
+  if (
+    eventAtoms.length > 1 &&
+    !semanticNotificationClauseHasCompetingRecipient(
+      clauseText,
+      recipients[0].sourceSpan.exactText,
+    ) &&
+    semanticNotificationClauseHasClosedVocabulary({
+      clauseText,
+      eventQuote: events[0].sourceSpan.exactText,
+      recipientQuote: recipients[0].sourceSpan.exactText,
+      visibilityQuote: visibility[0]?.sourceSpan.exactText ?? null,
+    }) &&
+    !representedClauseRanges.some(
+      (represented) =>
+        represented.startCodePoint === range.startCodePoint &&
+        represented.endCodePoint === range.endCodePoint,
+    )
+  ) return false;
+  return templateCopilotV3NotificationAdjacentAuthorityContextIsClosed({
+    sourceText,
+    clauseStartCodePoint: range.startCodePoint,
+    clauseEndCodePoint: range.endCodePoint,
+    representedClauseRanges,
+  });
+}
+
+function compileArrayItem(
+  item: TemplateCopilotV3LocatedQuoteItem & { kind: keyof typeof arrayFactByKind },
+  messages: Readonly<Record<string, string>>,
+  compareSpans: (left: TemplateCopilotV3SourceSpan, right: TemplateCopilotV3SourceSpan) => number,
+  rejections: TemplateCopilotV3ReviewRejection[],
+  representedNotificationClauseRangesByScope:
+    RepresentedNotificationClauseRangesByScope,
+  conditionAuthorityCoverage: ReadonlySet<string> = new Set<string>(),
+  conditionAuthoritySymbols: ConditionAuthoritySymbols =
+    emptyConditionAuthoritySymbols,
+): Draft | null {
+  if (!validSpan(item.anchor, messages)) {
+    rejections.push(rejection(item, "untraceable_span", `${item.kind}:anchor`));
+    return null;
+  }
+  const factId = arrayFactByKind[item.kind];
+  let semanticContexts = semanticContextsForArrayItem(
+    factId,
+    item.anchor,
+    messages,
+  );
+  if (semanticContexts === null) {
+    rejections.push(
+      rejection(item, "untraceable_span", `${item.kind}:semantic_context`),
+    );
+    return null;
+  }
+  if (isDeferredSimplifiedCjkYesOperatorCandidate(item)) {
+    const field = item.leaves.find((leaf) => leaf.role === "field");
+    const matchingRoute = item.leaves.find(
+      (leaf) => leaf.role === "matching_route",
+    );
+    if (field && matchingRoute) {
+      const authorityEnvelope = deriveClosedConditionAuthorityEnvelope({
+        item,
+        field,
+        matchingRoute,
+        messages,
+        conditionAuthorityCoverage,
+        conditionAuthoritySymbols,
+      });
+      if (authorityEnvelope) {
+        semanticContexts = [authorityEnvelope.context];
+      }
+    }
+  }
+  const semanticAuthorityContexts = semanticAuthorityContextsForArrayItem(
+    factId,
+    item.anchor,
+    item.leaves.map((leaf) => leaf.sourceSpan),
+    messages,
+    semanticContexts,
+  );
+  if (semanticAuthorityContexts === null) {
+    rejections.push(
+      rejection(
+        item,
+        "untraceable_span",
+        `${item.kind}:semantic_authority_context`,
+      ),
+    );
+    return null;
+  }
+  const draft: Draft = { itemIndex: item.itemIndex, kind: item.kind, factId, anchor: item.anchor, leaves: new Map(), arrays: new Map(), relationships: [], observedRoles: new Set(), semanticObservations: [], semanticAuthorityBlocked: false, semanticContexts, sourceAnchors: [item.anchor], confidence: item.confidence, ambiguity: item.ambiguity };
+  const suppliedObservations = item.leaves.map((supplied) =>
+    Object.freeze({
+      role: supplied.role,
+      quote: supplied.sourceSpan.exactText,
+      advisoryHint: supplied.hint,
+      sourceSpan: supplied.sourceSpan,
+    }),
+  );
+  const semanticSubjectObservation =
+    suppliedObservations.find((observation) => observation.role === "label") ??
+    null;
+  draft.semanticAuthorityBlocked =
+    semanticCoreObservationsCrossHardClause(
+      factId,
+      suppliedObservations,
+      semanticContexts,
+    ) ||
+    suppliedObservations.some(
+      (observation) =>
+        semanticCoreRole(factId, observation.role) &&
+        semanticObservationIsContradicted(
+          factId,
+          observation,
+          semanticContexts,
+          semanticAuthorityContexts,
+          semanticSubjectObservation,
+        ),
+    );
+  const representedNotificationClauseRanges =
+    representedNotificationClauseRangesByScope.get(
+      notificationClauseScopeKey(item.anchor.messageId, item.slot),
+    ) ?? [];
+  const notificationSlotProvenanceClosed =
+    notificationItemSlotProvenanceIsClosed(item, semanticContexts);
+  if (item.kind === "notification" && !notificationSlotProvenanceClosed) {
+    draft.semanticAuthorityBlocked = true;
+    rejections.push(
+      rejection(
+        item,
+        "unverifiable_leaf",
+        "notification:unsupported_slot_provenance",
+      ),
+    );
+  }
+  const notificationScopeAuthorityClosed = item.kind !== "notification" ||
+    (
+      notificationSlotProvenanceClosed &&
+      notificationItemScopeAuthorityIsClosed({
+        item,
+        messages,
+        representedClauseRanges: representedNotificationClauseRanges,
+      })
+    );
+  if (!notificationScopeAuthorityClosed) {
+    draft.semanticAuthorityBlocked = true;
+    if (notificationSlotProvenanceClosed) {
+      rejections.push(
+        rejection(
+          item,
+          "unverifiable_leaf",
+          "notification:unrepresented_or_unsafe_action",
+        ),
+      );
+    }
+  }
+  const recoveredNotificationReviewOnly =
+    notificationScopeAuthorityClosed &&
+      item.kind === "notification" &&
+      item.sameLocalClauseRecoveredLeafCount > 0
+      ? recoveredNotificationReviewEvidenceIsClosed({
+          item,
+          messages,
+          semanticContexts,
+          semanticAuthorityBlocked: draft.semanticAuthorityBlocked,
+          representedClauseRanges: representedNotificationClauseRanges,
+        })
+      : null;
+  if (recoveredNotificationReviewOnly === false) {
+    draft.semanticAuthorityBlocked = true;
+  }
+  const directNotificationNeedsReviewOnly =
+    item.kind === "notification" &&
+    item.sameLocalClauseRecoveredLeafCount === 0 &&
+    (
+      item.slot === "stages_participants" ||
+      item.leaves.some((leaf) => {
+        const mapping = mappingFor(item.kind, leaf.role, leaf.hint);
+        if (mapping === null || mapping.kind === "semantic_only") return true;
+        if (mapping.kind === "relationship") return false;
+        return deriveLeaf(factId, mapping, leaf.hint, leaf.sourceSpan) === null;
+      })
+    );
+  const directNotificationReviewOnly =
+    notificationScopeAuthorityClosed && directNotificationNeedsReviewOnly
+    ? directNotificationReviewEvidenceIsClosed({
+        item,
+        messages,
+        semanticContexts,
+        semanticAuthorityBlocked: draft.semanticAuthorityBlocked,
+        representedClauseRanges: representedNotificationClauseRanges,
+      })
+    : null;
+  if (directNotificationReviewOnly === false) {
+    draft.semanticAuthorityBlocked = true;
+  }
+  const conflictedPaths = new Set<string>();
+  for (const supplied of item.leaves) {
+    if (!validSpan(supplied.sourceSpan, messages)) {
+      rejections.push(rejection(item, "untraceable_span", `${item.kind}:${supplied.role}`));
+      continue;
+    }
+    const mapping = mappingFor(item.kind, supplied.role, supplied.hint);
+    if (!mapping) {
+      rejections.push(rejection(item, "unsupported_leaf", `${item.kind}:${supplied.role}`));
+      continue;
+    }
+    draft.observedRoles.add(supplied.role);
+    const semanticObservation = Object.freeze({
+      role: supplied.role,
+      quote: supplied.sourceSpan.exactText,
+      advisoryHint: supplied.hint,
+      sourceSpan: supplied.sourceSpan,
+    });
+    if (
+      item.kind === "notification" &&
+      supplied.role === "visibility" &&
+      semanticObservationIsContradicted(
+        factId,
+        semanticObservation,
+        semanticContexts,
+        semanticAuthorityContexts,
+        semanticSubjectObservation,
+      )
+    ) {
+      draft.semanticAuthorityBlocked = true;
+      rejections.push(
+        rejection(item, "unverifiable_leaf", "notification:visibility"),
+      );
+      continue;
+    }
+    draft.semanticObservations.push(semanticObservation);
+    if (!notificationScopeAuthorityClosed) {
+      // Notification coverage is atomic. An unsafe or unrepresented sibling
+      // action keeps every leaf in this scope out of durable value writers.
+      rejections.push(
+        rejection(item, "unverifiable_leaf", `${item.kind}:${supplied.role}`),
+      );
+      continue;
+    }
+    if (recoveredNotificationReviewOnly !== null) {
+      if (!recoveredNotificationReviewOnly) {
+        rejections.push(
+          rejection(item, "unverifiable_leaf", `${item.kind}:${supplied.role}`),
+        );
+      }
+      // Recovered notification-list evidence is review-only as one closed item.
+      // No leaf in the item may reach a durable value or binding writer.
+      continue;
+    }
+    if (directNotificationReviewOnly !== null) {
+      if (!directNotificationReviewOnly) {
+        rejections.push(
+          rejection(item, "unverifiable_leaf", `${item.kind}:${supplied.role}`),
+        );
+      }
+      // Direct notification fallback is atomic and review-only. A closed item
+      // contributes observations only; an open item contributes no durable leaf.
+      continue;
+    }
+    if (mapping.kind === "semantic_only") continue;
+    if (mapping.kind === "relationship") {
+      const relationship = deriveRelationship(supplied.hint, supplied.sourceSpan.exactText);
+      if (!relationship) rejections.push(rejection(item, "unverifiable_leaf", `${item.kind}:${supplied.role}`));
+      else draft.relationships.push(Object.freeze({ relationship, sourceSpan: supplied.sourceSpan }));
+      continue;
+    }
+    if (mapping.kind === "array" && emptyCollectionDerives(factId, mapping.path, supplied.sourceSpan.exactText)) {
+      if (draft.arrays.has(mapping.path)) {
+        conflictedPaths.add(mapping.path);
+        continue;
+      }
+      draft.leaves.set(mapping.path, { value: [], rule: "explicit_empty_collection", spans: [supplied.sourceSpan] });
+      continue;
+    }
+    if (supplied.sameLocalClauseRecovered === true) {
+      if (
+        contextualRecoveredCoreEvidenceCanRemainReviewOnly(
+          item,
+          factId,
+          semanticObservation,
+          semanticContexts,
+          draft.semanticAuthorityBlocked,
+        )
+      ) {
+        continue;
+      }
+      rejections.push(rejection(item, "unverifiable_leaf", `${item.kind}:${supplied.role}`));
+      continue;
+    }
+    let evidenceSpan = supplied.sourceSpan;
+    let derived = deriveLeaf(factId, mapping, supplied.hint, evidenceSpan);
+    if (!derived) {
+      const closedCjkYesOperator =
+        deriveClosedSimplifiedCjkYesOperatorObservation({
+          item,
+          supplied,
+          messages,
+          semanticAuthorityBlocked: draft.semanticAuthorityBlocked,
+          conditionAuthorityCoverage,
+          conditionAuthoritySymbols,
+        });
+      if (closedCjkYesOperator) {
+        evidenceSpan = closedCjkYesOperator.observation.sourceSpan;
+        derived = deriveLeaf(factId, mapping, supplied.hint, evidenceSpan);
+        if (derived) {
+          draft.semanticObservations.push(closedCjkYesOperator.observation);
+          if (closedCjkYesOperator.authorityContext) {
+            draft.semanticContexts = [closedCjkYesOperator.authorityContext];
+          }
+        }
+      }
+    }
+    if (!derived) {
+      if (
+        contextualRecoveredCoreEvidenceCanRemainReviewOnly(
+          item,
+          factId,
+          semanticObservation,
+          semanticContexts,
+          draft.semanticAuthorityBlocked,
+        )
+      ) {
+        continue;
+      }
+      if (
+        contextualDirectCoreEvidenceCanRemainReviewOnly(
+          item,
+          factId,
+          semanticObservation,
+          messages,
+          semanticContexts,
+          draft.semanticAuthorityBlocked,
+        )
+      ) {
+        // Keep this review-only exit before the value and binding writers below.
+        continue;
+      }
+      rejections.push(rejection(item, "unverifiable_leaf", `${item.kind}:${supplied.role}`));
+      continue;
+    }
+    if (mapping.kind === "array") {
+      if (draft.leaves.has(mapping.path)) {
+        conflictedPaths.add(mapping.path);
+        continue;
+      }
+      const values = draft.arrays.get(mapping.path) ?? new Map<string, Leaf>();
+      const key = stableJson(derived.value);
+      const current = values.get(key);
+      values.set(key, current ? { ...current, spans: dedupeSpans([...current.spans, evidenceSpan], compareSpans) } : { ...derived, spans: [evidenceSpan] });
+      draft.arrays.set(mapping.path, values);
+      continue;
+    }
+    const current = draft.leaves.get(mapping.path);
+    if (current && stableJson(current.value) !== stableJson(derived.value)) {
+      conflictedPaths.add(mapping.path);
+      continue;
+    }
+    draft.leaves.set(mapping.path, current ? { ...current, spans: dedupeSpans([...current.spans, evidenceSpan], compareSpans) } : { ...derived, spans: [evidenceSpan] });
+  }
+  for (const path of semanticObservationConflictPaths(draft)) {
+    conflictedPaths.add(path);
+  }
+  if (conflictedPaths.size > 0) {
+    for (const path of [...conflictedPaths].sort(compareText)) {
+      rejections.push(rejection(item, "conflicting_leaf", `${item.kind}:${path}`));
+    }
+    return null;
+  }
+  if (draft.leaves.size === 0 && draft.arrays.size === 0 && draft.semanticObservations.length === 0) {
+    rejections.push(rejection(item, "empty_item", item.kind));
+    return null;
+  }
+  draft.relationships = dedupeRelationships(draft.relationships, compareSpans);
+  return draft;
+}
+
+function contextualRecoveredCoreEvidenceCanRemainReviewOnly(
+  item: TemplateCopilotV3LocatedQuoteItem,
+  factId: TemplateCopilotV3FragmentFactId,
+  observation: TemplateCopilotV3ReviewObservation,
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+  semanticAuthorityBlocked: boolean,
+) {
+  const existingScopedRole =
+    (factId === "request.fields" && observation.role === "required") ||
+    (
+      factId === "attachments.requirements" &&
+      (observation.role === "kind" || observation.role === "required")
+    );
+  const conditionScopedRole =
+    factId === "workflow.conditions" &&
+    (observation.role === "operator" ||
+      observation.role === "matching_route");
+  const scopedRole = existingScopedRole || conditionScopedRole;
+  const label = item.leaves.find((leaf) => leaf.role === "label");
+  const subjectObservation = label
+    ? Object.freeze({
+      role: label.role,
+      quote: label.sourceSpan.exactText,
+      advisoryHint: label.hint,
+      sourceSpan: label.sourceSpan,
+    })
+    : null;
+  return (
+    item.anchorExpanded === true &&
+    item.sameLocalClauseRecoveredLeafCount > 0 &&
+    scopedRole &&
+    !semanticAuthorityBlocked &&
+    observation.sourceSpan.messageId === item.anchor.messageId &&
+    observation.sourceSpan.startCodePoint >= item.anchor.startCodePoint &&
+    observation.sourceSpan.endCodePoint <= item.anchor.endCodePoint &&
+    (
+      !conditionScopedRole ||
+      recoveredConditionCoreEvidenceIsClosed({
+        item,
+        observation,
+        semanticContexts,
+      })
+    ) &&
+    semanticHintIsVerified(
+      factId,
+      observation,
+      semanticContexts,
+      subjectObservation,
+    )
+  );
+}
+
+function directNotificationReviewEvidenceIsClosed({
+  item,
+  messages,
+  semanticContexts,
+  semanticAuthorityBlocked,
+  representedClauseRanges,
+}: Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem;
+  messages: Readonly<Record<string, string>>;
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[];
+  semanticAuthorityBlocked: boolean;
+  representedClauseRanges: readonly RepresentedNotificationClauseRange[];
+}>) {
+  if (
+    item.kind !== "notification" ||
+    (
+      item.slot !== "visibility_notifications" &&
+      item.slot !== "stages_participants"
+    ) ||
+    item.ambiguity !== "none" ||
+    item.anchorExpanded === true ||
+    item.sameLocalClauseRecoveredLeafCount !== 0 ||
+    item.leaves.some((leaf) => leaf.sameLocalClauseRecovered === true) ||
+    (
+      item.slot === "stages_participants" &&
+      (
+        !notificationStageSlotProvenanceIsClosed(item) ||
+        [...item.anchor.exactText.matchAll(
+          semanticNotificationActionPattern(),
+        )].length !== 1
+      )
+    ) ||
+    semanticNotificationQuestionPattern.test(
+      messages[item.anchor.messageId] ?? "",
+    ) ||
+    semanticAuthorityBlocked
+  ) {
+    return false;
+  }
+  const observations = item.leaves.map((leaf) =>
+    Object.freeze({
+      role: leaf.role,
+      quote: leaf.sourceSpan.exactText,
+      advisoryHint: leaf.hint,
+      sourceSpan: leaf.sourceSpan,
+    })
+  );
+  const role = (name: TemplateCopilotV3ProviderQuoteRole) =>
+    observations.filter((entry) => entry.role === name);
+  const events = role("event");
+  const recipients = role("recipient");
+  const visibility = role("visibility");
+  if (
+    events.length !== 1 ||
+    recipients.length !== 1 ||
+    visibility.length > 1 ||
+    observations.length !== 2 + visibility.length ||
+    observations.some(
+      (entry) =>
+        !validSpan(entry.sourceSpan, messages) ||
+        entry.sourceSpan.messageId !== item.anchor.messageId ||
+        entry.sourceSpan.startCodePoint < item.anchor.startCodePoint ||
+        entry.sourceSpan.endCodePoint > item.anchor.endCodePoint,
+    )
+  ) {
+    return false;
+  }
+  return (
+    events.every((entry) =>
+      semanticHintIsVerified("notifications.rules", entry, semanticContexts)
+    ) &&
+    recipients.every((entry) =>
+      semanticHintIsVerified("notifications.rules", entry, semanticContexts)
+    ) &&
+    visibility.every((entry) =>
+      semanticHintIsVerified("notifications.rules", entry, semanticContexts)
+    ) &&
+    semanticDirectNotificationPolicyClauseIsClosed(
+      events[0],
+      recipients[0],
+      visibility,
+      semanticContexts,
+      messages,
+      representedClauseRanges,
+    ) &&
+    semanticallyComplete(
+      "notifications.rules",
+      observations,
+      semanticContexts,
+      item.ambiguity,
+      false,
+      false,
+    )
+  );
+}
+
+function recoveredNotificationReviewEvidenceIsClosed({
+  item,
+  messages,
+  semanticContexts,
+  semanticAuthorityBlocked,
+  representedClauseRanges,
+}: Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem;
+  messages: Readonly<Record<string, string>>;
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[];
+  semanticAuthorityBlocked: boolean;
+  representedClauseRanges: readonly RepresentedNotificationClauseRange[];
+}>) {
+  if (
+    item.kind !== "notification" ||
+    item.slot !== "visibility_notifications" ||
+    item.ambiguity !== "none" ||
+    item.anchorExpanded !== true ||
+    item.sameLocalClauseRecoveredLeafCount < 1 ||
+    item.sameLocalClauseRecoveredLeafCount > 2 ||
+    semanticAuthorityBlocked
+  ) {
+    return false;
+  }
+  const observations = item.leaves.map((leaf) =>
+    Object.freeze({
+      role: leaf.role,
+      quote: leaf.sourceSpan.exactText,
+      advisoryHint: leaf.hint,
+      sourceSpan: leaf.sourceSpan,
+    })
+  );
+  const role = (name: TemplateCopilotV3ProviderQuoteRole) =>
+    observations.filter((entry) => entry.role === name);
+  const events = role("event");
+  const recipients = role("recipient");
+  const visibility = role("visibility");
+  const recoveredLeaves = item.leaves.filter(
+    (leaf) => leaf.sameLocalClauseRecovered === true,
+  );
+  if (
+    events.length !== 1 ||
+    recipients.length !== 1 ||
+    visibility.length > 1 ||
+    observations.length !== 2 + visibility.length ||
+    recoveredLeaves.length !== item.sameLocalClauseRecoveredLeafCount ||
+    recoveredLeaves.some(
+      (leaf) => leaf.role !== "recipient" && leaf.role !== "visibility",
+    ) ||
+    item.leaves.some(
+      (leaf) =>
+        leaf.role === "event" && leaf.sameLocalClauseRecovered === true,
+    ) ||
+    observations.some(
+      (entry) =>
+        entry.sourceSpan.messageId !== item.anchor.messageId ||
+        entry.sourceSpan.startCodePoint < item.anchor.startCodePoint ||
+        entry.sourceSpan.endCodePoint > item.anchor.endCodePoint,
+    )
+  ) {
+    return false;
+  }
+  return (
+    events.every((entry) =>
+      semanticHintIsVerified("notifications.rules", entry, semanticContexts)
+    ) &&
+    recipients.every((entry) =>
+      semanticHintIsVerified("notifications.rules", entry, semanticContexts)
+    ) &&
+    visibility.every((entry) =>
+      semanticHintIsVerified("notifications.rules", entry, semanticContexts)
+    ) &&
+    semanticRecoveredNotificationPolicyClauseIsClosed(
+      events[0],
+      recipients[0],
+      visibility,
+      semanticContexts,
+      messages,
+      representedClauseRanges,
+    ) &&
+    semanticallyComplete(
+      "notifications.rules",
+      observations,
+      semanticContexts,
+      item.ambiguity,
+      false,
+      false,
+    )
+  );
+}
+
+const semanticNotificationQuestionPattern =
+  /[?？﹖؟⁇⁈⁉‽;՞፧⸮¿]/u;
+
+function semanticNotificationActionPattern() {
+  return /\b(?:notify|notifies|notified|notification|notifications|alert|alerts|email|emails|inform|informs)\b|(?:通知|知會|知会|電郵|电邮|提醒)/giu;
+}
+
+function semanticNotificationClauseHasConditionalFraming(
+  normalizedClauseText: string,
+  recipientQuote: string,
+) {
+  const residue = semanticNotificationStripClosedPhrase(
+    normalizedClauseText,
+    templateCopilotV3NormalizeLexicalText(recipientQuote),
+  );
+  return (
+    /(?:^|\b)(?:if|when|unless|although|however|otherwise|but)(?:\b|,)/u.test(
+      residue,
+    ) ||
+    /(?:若|如果|如|當|当|除非|但|然而|否則|否则)/u.test(residue)
+  );
+}
+
+function semanticNotificationClauseHasMalformedListConnectors(
+  normalizedClauseText: string,
+) {
+  const marker =
+    /(?:\bevents?\s+(?:include|includes|included|including)\b|\bincluding\b|\b(?:for|on|upon|at|about)\b|事件包括)\s*(?:(?:and|or)\b|(?:以及|及|和|與|与|並|并|或))/u;
+  const doubled =
+    /\b(?:and|or)\s*[,，、]?\s*(?:and|or)\b|(?:以及|及|和|與|与|並|并|或)\s*[,，、]?\s*(?:以及|及|和|與|与|並|并|或)/u;
+  const trailing =
+    /(?:\b(?:and|or)|(?:以及|及|和|與|与|並|并|或))\s*(?:[,，、:：;；]\s*)*$/u;
+  return marker.test(normalizedClauseText) ||
+    doubled.test(normalizedClauseText) ||
+    trailing.test(normalizedClauseText);
+}
+
+function semanticNotificationAdjacentAuthorityContextIsClosed({
+  event,
+  details,
+  messages,
+  representedClauseRanges,
+}: Readonly<{
+  event: TemplateCopilotV3ReviewObservation;
+  details: NonNullable<ReturnType<typeof semanticObservationClauseDetails>>;
+  messages: Readonly<Record<string, string>>;
+  representedClauseRanges: readonly RepresentedNotificationClauseRange[];
+}>) {
+  const sourceText = messages[event.sourceSpan.messageId];
+  if (typeof sourceText !== "string") return false;
+  const sourceCodePoints = Array.from(sourceText);
+  if (
+    details.hardSourceStartCodePoint < 0 ||
+    details.hardSourceEndCodePoint <
+      details.hardSourceStartCodePoint ||
+    details.hardSourceEndCodePoint > sourceCodePoints.length
+  ) {
+    return false;
+  }
+  return templateCopilotV3NotificationAdjacentAuthorityContextIsClosed({
+    sourceText,
+    clauseStartCodePoint: details.hardSourceStartCodePoint,
+    clauseEndCodePoint: details.hardSourceEndCodePoint,
+    representedClauseRanges,
+  });
+}
+
+function semanticRecoveredNotificationPolicyClauseIsClosed(
+  event: TemplateCopilotV3ReviewObservation,
+  recipient: TemplateCopilotV3ReviewObservation,
+  visibility: readonly TemplateCopilotV3ReviewObservation[],
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+  messages: Readonly<Record<string, string>>,
+  representedClauseRanges: readonly RepresentedNotificationClauseRange[],
+) {
+  const details = semanticObservationClauseDetails(event, semanticContexts);
+  if (!details) return false;
+  const normalized = templateCopilotV3NormalizeLexicalText(details.hardText);
+  if (
+    semanticNotificationQuestionPattern.test(details.hardText) ||
+    !semanticNotificationAdjacentAuthorityContextIsClosed({
+      event,
+      details,
+      messages,
+      representedClauseRanges,
+    }) ||
+    conditionAuthorityTextIsIllustrativeMeta(details.hardText) ||
+    semanticNotificationActionIsProhibited(normalized) ||
+    semanticNotificationClauseHasConditionalFraming(
+      normalized,
+      recipient.quote,
+    ) ||
+    semanticNotificationClauseHasMalformedListConnectors(normalized) ||
+    /\bnot\s+only\b/u.test(normalized) ||
+    /(?:不只|不僅|不仅|非僅|非仅)/u.test(normalized) ||
+    event.sourceSpan.messageId !== recipient.sourceSpan.messageId ||
+    recipient.sourceSpan.endCodePoint > event.sourceSpan.startCodePoint ||
+    event.sourceSpan.startCodePoint < details.hardSourceStartCodePoint ||
+    event.sourceSpan.endCodePoint > details.hardSourceEndCodePoint ||
+    recipient.sourceSpan.startCodePoint < details.hardSourceStartCodePoint ||
+    recipient.sourceSpan.endCodePoint > details.hardSourceEndCodePoint ||
+    exactSemanticOccurrenceCount(details.hardText, event.quote) !== 1 ||
+    exactSemanticOccurrenceCount(details.hardText, recipient.quote) !== 1 ||
+    !semanticNotificationClauseHasClosedVocabulary({
+      clauseText: details.hardText,
+      eventQuote: event.quote,
+      recipientQuote: recipient.quote,
+      visibilityQuote: visibility[0]?.quote ?? null,
+    })
+  ) {
+    return false;
+  }
+  const notificationActions = [
+    ...details.hardText.matchAll(
+      semanticNotificationActionPattern(),
+    ),
+  ];
+  if (notificationActions.length !== 1) return false;
+  const hardActionStartCodePoint = Array.from(
+    details.hardText.slice(0, notificationActions[0].index),
+  ).length;
+  const actionEndCodePoint =
+    details.hardSourceStartCodePoint + hardActionStartCodePoint +
+    Array.from(notificationActions[0][0]).length;
+  if (
+    actionEndCodePoint > recipient.sourceSpan.startCodePoint ||
+    semanticNotificationClauseHasCompetingRecipient(
+      details.hardText,
+      recipient.quote,
+    )
+  ) {
+    return false;
+  }
+  return visibility.every(
+    (entry) =>
+      entry.sourceSpan.messageId === event.sourceSpan.messageId &&
+      entry.sourceSpan.endCodePoint <= event.sourceSpan.startCodePoint &&
+      exactSemanticOccurrenceCount(details.hardText, entry.quote) === 1 &&
+      semanticNotificationVisibilityIsAffirmative(entry, semanticContexts) &&
+      semanticNotificationVisibilityHasRecipientAffinity(
+        entry,
+        recipient,
+        details,
+      ),
+  );
+}
+
+function semanticDirectNotificationPolicyClauseIsClosed(
+  event: TemplateCopilotV3ReviewObservation,
+  recipient: TemplateCopilotV3ReviewObservation,
+  visibility: readonly TemplateCopilotV3ReviewObservation[],
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+  messages: Readonly<Record<string, string>>,
+  representedClauseRanges: readonly RepresentedNotificationClauseRange[],
+) {
+  const details = semanticObservationClauseDetails(event, semanticContexts);
+  if (!details) return false;
+  const normalized = templateCopilotV3NormalizeLexicalText(details.hardText);
+  const observations = [event, recipient, ...visibility];
+  if (
+    semanticNotificationQuestionPattern.test(details.hardText) ||
+    !semanticNotificationAdjacentAuthorityContextIsClosed({
+      event,
+      details,
+      messages,
+      representedClauseRanges,
+    }) ||
+    conditionAuthorityTextIsIllustrativeMeta(details.hardText) ||
+    semanticNotificationActionIsProhibited(normalized) ||
+    semanticNotificationClauseHasConditionalFraming(
+      normalized,
+      recipient.quote,
+    ) ||
+    semanticNotificationClauseHasMalformedListConnectors(normalized) ||
+    /\bnot\s+only\b/u.test(normalized) ||
+    /(?:不只|不僅|不仅|非僅|非仅)/u.test(normalized) ||
+    observations.some(
+      (entry) =>
+        entry.sourceSpan.messageId !== event.sourceSpan.messageId ||
+        entry.sourceSpan.startCodePoint < details.hardSourceStartCodePoint ||
+        entry.sourceSpan.endCodePoint > details.hardSourceEndCodePoint ||
+        exactSemanticOccurrenceCount(details.hardText, entry.quote) !== 1,
+    ) ||
+    semanticNotificationClauseHasCompetingRecipient(
+      details.hardText,
+      recipient.quote,
+    ) ||
+    !semanticNotificationClauseHasClosedVocabulary({
+      clauseText: details.hardText,
+      eventQuote: event.quote,
+      recipientQuote: recipient.quote,
+      visibilityQuote: visibility[0]?.quote ?? null,
+    })
+  ) {
+    return false;
+  }
+  const notificationActions = [
+    ...details.hardText.matchAll(
+      semanticNotificationActionPattern(),
+    ),
+  ];
+  if (notificationActions.length > 1) return false;
+  const orderIsClosed = notificationActions.length === 0
+    ? recipient.sourceSpan.endCodePoint <= event.sourceSpan.startCodePoint
+    : (() => {
+        const actionStartCodePoint = details.hardSourceStartCodePoint +
+          Array.from(
+            details.hardText.slice(0, notificationActions[0].index),
+          ).length;
+        const actionEndCodePoint = actionStartCodePoint +
+          Array.from(notificationActions[0][0]).length;
+        return (
+          (
+            event.sourceSpan.endCodePoint <= actionStartCodePoint &&
+            actionEndCodePoint <= recipient.sourceSpan.startCodePoint
+          ) ||
+          (
+            actionEndCodePoint <= recipient.sourceSpan.startCodePoint &&
+            recipient.sourceSpan.endCodePoint <= event.sourceSpan.startCodePoint
+          )
+        );
+      })();
+  return orderIsClosed && visibility.every((entry) =>
+    semanticNotificationVisibilityIsAffirmative(entry, semanticContexts) &&
+    semanticNotificationVisibilityHasRecipientAffinity(
+      entry,
+      recipient,
+      details,
+    )
+  );
+}
+
+function semanticNotificationClauseHasCompetingRecipient(
+  clauseText: string,
+  recipientQuote: string,
+) {
+  const normalized = templateCopilotV3NormalizeLexicalText(clauseText);
+  const selected = templateCopilotV3NormalizeLexicalText(recipientQuote);
+  const residue = semanticNotificationStripClosedPhrase(normalized, selected);
+  const aliases = [
+    "requester",
+    "current stage participants",
+    "current step participants",
+    "previous stage participants",
+    "previous step participants",
+    "all participants",
+    "all workflow participants",
+    "workflow owner",
+    "申請人",
+    "申请人",
+    "發起人",
+    "发起人",
+    "目前步驟處理人",
+    "当前步骤处理人",
+    "上一個步驟處理人",
+    "上一步骤处理人",
+    "所有流程參與者",
+    "所有流程参与者",
+    "流程負責部門",
+    "流程负责部门",
+  ].map((alias) => templateCopilotV3NormalizeLexicalText(alias));
+  return aliases.some((alias) =>
+    semanticNotificationStripClosedPhrase(residue, alias) !== residue
+  );
+}
+
+const semanticNotificationClosedEventAliases = Object.freeze([
+  "request submitted",
+  "submitted",
+  "申請已提交",
+  "申请已提交",
+  "stage assigned",
+  "work assigned",
+  "assignment",
+  "assigned",
+  "獲指派",
+  "获指派",
+  "指派",
+  "分派",
+  "分配",
+  "工作已分派",
+  "工作已分配",
+  "stage completed",
+  "step completed",
+  "步驟已完成",
+  "步骤已完成",
+  "request rejected",
+  "rejection",
+  "rejected",
+  "拒絕",
+  "拒绝",
+  "被拒絕",
+  "被拒绝",
+  "申請被拒絕",
+  "申请被拒绝",
+  "correction requested",
+  "correction",
+  "corrected",
+  "要求更正",
+  "補正",
+  "补正",
+  "修正",
+  "修改",
+  "request completed",
+  "workflow completed",
+  "completion",
+  "complete",
+  "completed",
+  "完成",
+  "已完成",
+  "流程已完成",
+  "due soon",
+  "即將到期",
+  "即将到期",
+  "overdue",
+  "已逾期",
+  "逾期",
+]);
+
+function sourceSpanOverlapsNotificationRange(
+  span: TemplateCopilotV3SourceSpan,
+  range: RepresentedNotificationClauseRange,
+) {
+  return span.startCodePoint < range.endCodePoint &&
+    range.startCodePoint < span.endCodePoint;
+}
+
+function semanticNotificationClosedEventAtomRanges(
+  clauseText: string,
+  clauseStartCodePoint: number,
+) {
+  const codePoints = Array.from(clauseText);
+  const foldedCodePoints = codePoints.map((codePoint) =>
+    codePoint.replace(/[A-Z]/gu, (letter) => letter.toLowerCase())
+  );
+  const candidates: RepresentedNotificationClauseRange[] = [];
+  for (const alias of semanticNotificationClosedEventAliases) {
+    const aliasCodePoints = Array.from(alias);
+    const foldedAlias = aliasCodePoints.map((codePoint) =>
+      codePoint.replace(/[A-Z]/gu, (letter) => letter.toLowerCase())
+    );
+    const requiresLatinBoundary = /[a-z]/u.test(alias);
+    for (
+      let startCodePoint = 0;
+      startCodePoint + foldedAlias.length <= foldedCodePoints.length;
+      startCodePoint += 1
+    ) {
+      if (
+        !foldedAlias.every(
+          (codePoint, offset) =>
+            foldedCodePoints[startCodePoint + offset] === codePoint,
+        )
+      ) continue;
+      const endCodePoint = startCodePoint + foldedAlias.length;
+      if (
+        requiresLatinBoundary &&
+        (
+          /[A-Za-z0-9_]/u.test(codePoints[startCodePoint - 1] ?? "") ||
+          /[A-Za-z0-9_]/u.test(codePoints[endCodePoint] ?? "")
+        )
+      ) continue;
+      candidates.push(Object.freeze({
+        startCodePoint: clauseStartCodePoint + startCodePoint,
+        endCodePoint: clauseStartCodePoint + endCodePoint,
+      }));
+    }
+  }
+  candidates.sort(
+    (left, right) =>
+      left.startCodePoint - right.startCodePoint ||
+      right.endCodePoint - right.startCodePoint -
+        (left.endCodePoint - left.startCodePoint),
+  );
+  const selected: RepresentedNotificationClauseRange[] = [];
+  for (const candidate of candidates) {
+    if (
+      selected.some((existing) =>
+        candidate.startCodePoint < existing.endCodePoint &&
+        existing.startCodePoint < candidate.endCodePoint
+      )
+    ) continue;
+    selected.push(candidate);
+  }
+  return Object.freeze(selected);
+}
+
+function semanticNotificationClauseHasClosedVocabulary({
+  clauseText,
+  eventQuote,
+  recipientQuote,
+  visibilityQuote,
+}: Readonly<{
+  clauseText: string;
+  eventQuote: string;
+  recipientQuote: string;
+  visibilityQuote: string | null;
+}>) {
+  const selected = [eventQuote, recipientQuote, visibilityQuote]
+    .filter((value): value is string => value !== null)
+    .map((value) => templateCopilotV3NormalizeLexicalText(value));
+  if (
+    selected.some((value) => value.length === 0) ||
+    !semanticNotificationRecipientQuoteIsClosedSingleEntity(recipientQuote)
+  ) {
+    return false;
+  }
+  const notificationActions = [
+    ...selected,
+    "notify",
+    "notifies",
+    "notified",
+    "notification",
+    "notifications",
+    "alert",
+    "alerts",
+    "email",
+    "emails",
+    "inform",
+    "informs",
+    "通知",
+    "知會",
+    "知会",
+    "電郵",
+    "电邮",
+    "提醒",
+  ];
+  const closedGrammar = [
+    "to",
+    "of",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "以及",
+    "及",
+    "和",
+    "與",
+    "与",
+    "並",
+    "并",
+    "或",
+    "於",
+    "于",
+    "在",
+    "時",
+    "时",
+    "後",
+    "后",
+    "發生",
+    "发生",
+  ];
+  let residue = templateCopilotV3NormalizeLexicalText(clauseText);
+  for (const phrase of notificationActions) {
+    residue = semanticNotificationStripClosedPhrase(
+      residue,
+      templateCopilotV3NormalizeLexicalText(phrase),
+    );
+  }
+  const markers = [
+    ...residue.matchAll(
+      /\bevents?\s+(?:include|includes|included|including)\b|\bincluding\b|\b(?:for|on|upon|at|about)\b|事件包括/gu,
+    ),
+  ];
+  if (markers.length > 1) return false;
+  if (markers.length === 0) {
+    return semanticNotificationClosedResidueIsEmpty(
+      residue,
+      closedGrammar,
+    );
+  }
+  const marker = markers[0];
+  const markerStart = marker.index;
+  const markerEnd = markerStart + marker[0].length;
+  return (
+    semanticNotificationClosedResidueIsEmpty(
+      residue.slice(0, markerStart),
+      closedGrammar,
+    ) &&
+    semanticNotificationClosedResidueIsEmpty(
+      residue.slice(markerEnd),
+      [...semanticNotificationClosedEventAliases, ...closedGrammar],
+    )
+  );
+}
+
+const semanticNotificationCanonicalRecipientAliases = new Set([
+  "requester",
+  "current stage participants",
+  "current step participants",
+  "previous stage participants",
+  "previous step participants",
+  "all participants",
+  "all workflow participants",
+  "workflow owner",
+  "directly involved people",
+  "directly related people",
+  "owner group",
+  "requester group",
+  "board of directors",
+  "finance operations team",
+  "senior finance risk review committee",
+  "contract management department",
+  "people operations team",
+  "software engineering team",
+  "executive leadership team",
+  "vendor management office",
+  "risk management team",
+  "research and development team",
+  "research & development team",
+  "people and culture team",
+  "people & culture team",
+  "financial planning and analysis team",
+  "financial planning & analysis team",
+  "risk and compliance team",
+  "risk & compliance team",
+  "mergers and acquisitions team",
+  "mergers & acquisitions team",
+  "strategy and operations team",
+  "strategy & operations team",
+  "environmental health and safety team",
+  "environmental health & safety team",
+  "diversity and inclusion team",
+  "diversity & inclusion team",
+  "global research and development team",
+  "global research & development team",
+  "research and development center",
+  "research & development center",
+  "center of excellence",
+  "centre of excellence",
+  "research and development centre",
+  "research & development centre",
+  "r&d center",
+  "r&d centre",
+  "finance center of excellence",
+  "finance centre of excellence",
+  "corporate people and culture team",
+  "corporate people & culture team",
+  "regional financial planning and analysis team",
+  "regional financial planning & analysis team",
+  "global r&d team",
+  "learning and development team",
+  "learning & development team",
+  "學習與發展團隊",
+  "学习与发展团队",
+  "r&d",
+  "r&d team",
+  "information technology team",
+  "information technology department",
+  "information technology office",
+  "資訊科技部",
+  "信息技术部",
+  "合同管理部",
+  "財務營運團隊",
+  "财务运营团队",
+  "人力資源部",
+  "人力资源部",
+  "軟體工程團隊",
+  "软件工程团队",
+  "品質保證團隊",
+  "质量保证团队",
+  "供應鏈管理部",
+  "供应链管理部",
+  "公共關係部",
+  "公共关系部",
+  "風險管理團隊",
+  "风险管理团队",
+  "申請人",
+  "申请人",
+  "發起人",
+  "发起人",
+  "目前步驟處理人",
+  "当前步骤处理人",
+  "上一個步驟處理人",
+  "上一步骤处理人",
+  "所有流程參與者",
+  "所有流程参与者",
+  "流程負責部門",
+  "流程负责部门",
+  "直接相關人士",
+  "直接相关人士",
+  "直接相關人員",
+  "直接相关人员",
+]);
+
+const semanticNotificationLatinRecipientSeparators = new Set([
+  "after",
+  "also",
+  "alongside",
+  "and",
+  "all",
+  "any",
+  "before",
+  "besides",
+  "both",
+  "cum",
+  "e",
+  "either",
+  "each",
+  "en",
+  "et",
+  "every",
+  "everybody",
+  "everyone",
+  "except",
+  "excepting",
+  "excluding",
+  "followed",
+  "following",
+  "four",
+  "i",
+  "including",
+  "instead",
+  "iyo",
+  "many",
+  "multiple",
+  "next",
+  "nine",
+  "nor",
+  "o",
+  "och",
+  "of",
+  "og",
+  "or",
+  "ou",
+  "plus",
+  "prior",
+  "rather",
+  "several",
+  "seven",
+  "six",
+  "subsequently",
+  "ten",
+  "than",
+  "then",
+  "three",
+  "two",
+  "und",
+  "ve",
+  "versus",
+  "vs",
+  "with",
+  "without",
+  "y",
+  "eight",
+  "five",
+  "a",
+  "an",
+  "the",
+  "no",
+  "not",
+  "only",
+  "another",
+  "other",
+  "additional",
+  "different",
+  "separate",
+  "respective",
+  "remaining",
+  "some",
+  "various",
+  "numerous",
+  "few",
+  "dozen",
+  "dozens",
+  "zero",
+  "one",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+  "sixteen",
+  "seventeen",
+  "eighteen",
+  "nineteen",
+  "twenty",
+  "accompanied",
+  "by",
+  "joined",
+  "jointly",
+  "together",
+  "combined",
+  "coupled",
+  "paired",
+  "succeeded",
+  "compared",
+  "via",
+  "to",
+  "from",
+  "minus",
+]);
+
+const semanticNotificationLatinRecipientHeads = new Set([
+  "administrator",
+  "administrators",
+  "approver",
+  "approvers",
+  "auditor",
+  "auditors",
+  "board",
+  "boards",
+  "chair",
+  "chairs",
+  "center",
+  "centers",
+  "centre",
+  "centres",
+  "committee",
+  "committees",
+  "controller",
+  "controllers",
+  "coordinator",
+  "coordinators",
+  "council",
+  "councils",
+  "counsel",
+  "department",
+  "departments",
+  "director",
+  "directors",
+  "division",
+  "divisions",
+  "executive",
+  "executives",
+  "function",
+  "functions",
+  "group",
+  "groups",
+  "head",
+  "heads",
+  "lead",
+  "leads",
+  "manager",
+  "managers",
+  "member",
+  "members",
+  "office",
+  "offices",
+  "officer",
+  "officers",
+  "owner",
+  "owners",
+  "participant",
+  "participants",
+  "people",
+  "person",
+  "persons",
+  "representative",
+  "representatives",
+  "reviewer",
+  "reviewers",
+  "role",
+  "roles",
+  "secretaries",
+  "secretary",
+  "specialist",
+  "specialists",
+  "staff",
+  "supervisor",
+  "supervisors",
+  "team",
+  "teams",
+  "unit",
+  "units",
+  "users",
+  "workforce",
+]);
+
+const semanticNotificationPluralLatinRecipientHeads = new Set([
+  "administrators",
+  "approvers",
+  "auditors",
+  "boards",
+  "chairs",
+  "centers",
+  "centres",
+  "committees",
+  "controllers",
+  "coordinators",
+  "councils",
+  "departments",
+  "directors",
+  "divisions",
+  "executives",
+  "functions",
+  "groups",
+  "heads",
+  "leads",
+  "managers",
+  "members",
+  "offices",
+  "officers",
+  "owners",
+  "participants",
+  "persons",
+  "representatives",
+  "reviewers",
+  "roles",
+  "secretaries",
+  "specialists",
+  "supervisors",
+  "teams",
+  "units",
+  "users",
+]);
+
+const semanticNotificationLatinRecipientModifiers = new Set([
+  "account",
+  "accounts",
+  "accounting",
+  "administrative",
+  "advisory",
+  "analytics",
+  "application",
+  "applications",
+  "apac",
+  "approval",
+  "approvals",
+  "architecture",
+  "asset",
+  "assets",
+  "audit",
+  "auditing",
+  "billing",
+  "business",
+  "capital",
+  "change",
+  "client",
+  "commercial",
+  "communications",
+  "compliance",
+  "contract",
+  "contracts",
+  "corporate",
+  "credit",
+  "customer",
+  "data",
+  "delivery",
+  "digital",
+  "employee",
+  "engineering",
+  "enterprise",
+  "emea",
+  "ethics",
+  "executive",
+  "facilities",
+  "field",
+  "finance",
+  "financial",
+  "fraud",
+  "global",
+  "governance",
+  "growth",
+  "hr",
+  "human",
+  "information",
+  "infrastructure",
+  "internal",
+  "inventory",
+  "investment",
+  "it",
+  "legal",
+  "leadership",
+  "local",
+  "logistics",
+  "management",
+  "marketing",
+  "operations",
+  "organizational",
+  "payroll",
+  "payable",
+  "people",
+  "planning",
+  "policy",
+  "procurement",
+  "product",
+  "program",
+  "project",
+  "protection",
+  "privacy",
+  "quality",
+  "assurance",
+  "record",
+  "records",
+  "regional",
+  "reporting",
+  "request",
+  "requests",
+  "research",
+  "regulatory",
+  "affairs",
+  "resource",
+  "resources",
+  "review",
+  "risk",
+  "sales",
+  "security",
+  "senior",
+  "service",
+  "services",
+  "software",
+  "success",
+  "shared",
+  "strategy",
+  "support",
+  "supply",
+  "chain",
+  "systems",
+  "tax",
+  "technical",
+  "technology",
+  "transformation",
+  "treasury",
+  "vendor",
+  "culture",
+  "analysis",
+  "development",
+  "experience",
+  "investor",
+  "relations",
+  "design",
+  "cloud",
+  "cyber",
+  "network",
+  "cybersecurity",
+  "revenue",
+  "science",
+  "talent",
+  "acquisition",
+  "learning",
+  "mergers",
+  "acquisitions",
+  "excellence",
+  "workflow",
+  "workplace",
+]);
+
+const semanticNotificationLatinRecipientDomainFamilies = new Map<
+  string,
+  string
+>([
+  ["account", "finance"],
+  ["accounts", "finance"],
+  ["accounting", "finance"],
+  ["billing", "finance"],
+  ["credit", "finance"],
+  ["finance", "finance"],
+  ["financial", "finance"],
+  ["investment", "finance"],
+  ["payroll", "finance"],
+  ["tax", "finance"],
+  ["treasury", "finance"],
+  ["compliance", "compliance"],
+  ["contract", "legal"],
+  ["contracts", "legal"],
+  ["ethics", "compliance"],
+  ["fraud", "compliance"],
+  ["governance", "compliance"],
+  ["legal", "legal"],
+  ["policy", "legal"],
+  ["regulatory", "compliance"],
+  ["employee", "people"],
+  ["hr", "people"],
+  ["human", "people"],
+  ["people", "people"],
+  ["data", "technology"],
+  ["information", "technology"],
+  ["application", "technology"],
+  ["applications", "technology"],
+  ["infrastructure", "technology"],
+  ["it", "technology"],
+  ["software", "technology"],
+  ["privacy", "technology"],
+  ["protection", "technology"],
+  ["development", "technology"],
+  ["systems", "technology"],
+  ["network", "technology"],
+  ["cybersecurity", "technology"],
+  ["science", "technology"],
+  ["technology", "technology"],
+  ["client", "customer"],
+  ["customer", "customer"],
+  ["commercial", "commercial"],
+  ["marketing", "commercial"],
+  ["sales", "commercial"],
+  ["revenue", "commercial"],
+  ["procurement", "procurement"],
+  ["chain", "procurement"],
+  ["vendor", "procurement"],
+  ["audit", "compliance"],
+  ["auditing", "compliance"],
+  ["administrative", "operations"],
+  ["advisory", "advisory"],
+  ["analytics", "technology"],
+  ["approval", "operations"],
+  ["approvals", "operations"],
+  ["architecture", "technology"],
+  ["asset", "finance"],
+  ["assets", "finance"],
+  ["business", "operations"],
+  ["capital", "finance"],
+  ["change", "operations"],
+  ["communications", "commercial"],
+  ["delivery", "operations"],
+  ["digital", "technology"],
+  ["engineering", "technology"],
+  ["facilities", "operations"],
+  ["field", "operations"],
+  ["growth", "commercial"],
+  ["inventory", "procurement"],
+  ["leadership", "corporate"],
+  ["logistics", "procurement"],
+  ["management", "operations"],
+  ["operations", "operations"],
+  ["planning", "operations"],
+  ["product", "operations"],
+  ["program", "operations"],
+  ["project", "operations"],
+  ["quality", "quality"],
+  ["record", "records"],
+  ["records", "records"],
+  ["reporting", "operations"],
+  ["research", "technology"],
+  ["resource", "people"],
+  ["resources", "people"],
+  ["review", "operations"],
+  ["risk", "compliance"],
+  ["security", "technology"],
+  ["service", "customer"],
+  ["services", "customer"],
+  ["strategy", "operations"],
+  ["support", "technology"],
+  ["supply", "procurement"],
+  ["technical", "technology"],
+  ["transformation", "technology"],
+  ["workflow", "operations"],
+  ["workplace", "people"],
+  ["talent", "people"],
+  ["acquisition", "people"],
+  ["learning", "people"],
+]);
+
+const semanticNotificationLatinAllowedCompoundDomainSequences = new Set([
+  "commercial finance",
+  "business development",
+  "business finance",
+  "contract management",
+  "customer data",
+  "customer operations",
+  "data governance",
+  "data operations",
+  "engineering operations",
+  "finance operations",
+  "finance analytics",
+  "finance technology",
+  "finance planning",
+  "finance reporting",
+  "finance review",
+  "financial planning",
+  "financial reporting",
+  "financial operations",
+  "hr operations",
+  "hr technology",
+  "human resources technology",
+  "human resources operations",
+  "information technology operations",
+  "it operations",
+  "legal operations",
+  "legal technology",
+  "marketing operations",
+  "marketing analytics",
+  "marketing technology",
+  "people analytics",
+  "people operations",
+  "people technology",
+  "product security",
+  "product marketing",
+  "product analytics",
+  "product development",
+  "risk management",
+  "compliance operations",
+  "contract operations",
+  "business analytics",
+  "finance systems",
+  "network operations",
+  "sales finance",
+  "sales operations",
+  "revenue operations",
+  "security operations",
+  "supply chain finance",
+  "supply chain management",
+  "vendor management",
+  "vendor risk",
+  "vendor risk management",
+]);
+
+function semanticNotificationLatinDomainProfileFor(
+  tokens: readonly string[],
+) {
+  const domainTokens = tokens.filter((token) =>
+    semanticNotificationLatinRecipientDomainFamilies.has(token)
+  );
+  const firstDomainIndex = tokens.findIndex((token) =>
+    semanticNotificationLatinRecipientDomainFamilies.has(token)
+  );
+  return {
+    families: new Set(domainTokens.map((token) =>
+      semanticNotificationLatinRecipientDomainFamilies.get(token) ?? ""
+    )),
+    domainTokensAreContiguousSuffix: firstDomainIndex >= 0 &&
+      tokens.slice(firstDomainIndex).every((token) =>
+        semanticNotificationLatinRecipientDomainFamilies.has(token)
+      ),
+    tokenSequence: domainTokens.join(" "),
+  };
+}
+
+const semanticNotificationHanRecipientSeparators = new Set([
+  "和",
+  "及",
+  "與",
+  "与",
+  "並",
+  "并",
+  "或",
+  "同",
+  "暨",
+  "跟",
+  "還有",
+  "还有",
+  "以及",
+  "連同",
+  "连同",
+  "加",
+  "加上",
+  "會同",
+  "会同",
+  "同埋",
+  "又",
+  "亦",
+  "也",
+  "且",
+  "而且",
+  "再加",
+  "再",
+  "然後",
+  "然后",
+  "接著",
+  "接着",
+  "接續",
+  "接续",
+  "之後",
+  "之后",
+  "隨後",
+  "随后",
+  "繼而",
+  "继而",
+  "轉而",
+  "转而",
+  "偕同",
+  "夥同",
+  "伙同",
+  "協同",
+  "协同",
+  "外加",
+  "另加",
+  "聯同",
+  "联同",
+  "各",
+  "每",
+  "每個",
+  "每个",
+  "所有",
+  "全部",
+  "多個",
+  "多个",
+  "若干",
+  "數個",
+  "数个",
+  "兩",
+  "两",
+  "三",
+  "分別",
+  "分别",
+  "各自",
+]);
+
+const semanticNotificationHanRecipientHeads = [
+  "部門",
+  "部门",
+  "團隊",
+  "团队",
+  "小組",
+  "小组",
+  "委員會",
+  "委员会",
+  "辦公室",
+  "办公室",
+  "參與者",
+  "参与者",
+  "負責人",
+  "负责人",
+  "處理人",
+  "处理人",
+  "人士",
+  "人員",
+  "人员",
+  "中心",
+  "部",
+  "組",
+  "组",
+  "科",
+  "處",
+  "处",
+] as const;
+
+const semanticNotificationHanRecipientModifiers = new Set([
+  "財務",
+  "财务",
+  "法務",
+  "法务",
+  "合同",
+  "管理",
+  "和諧",
+  "和谐",
+  "服務",
+  "服务",
+  "及時",
+  "及时",
+  "支援",
+  "支持",
+  "國際",
+  "国际",
+  "和平",
+  "合規",
+  "合规",
+  "風險",
+  "风险",
+  "審核",
+  "审核",
+  "審批",
+  "审批",
+  "項目",
+  "项目",
+  "數據",
+  "数据",
+  "保護",
+  "保护",
+  "資訊",
+  "信息",
+  "安全",
+  "採購",
+  "采购",
+  "營運",
+  "运营",
+  "業務",
+  "业务",
+  "行政",
+  "人力",
+  "人力資源",
+  "人力资源",
+  "資源",
+  "资源",
+  "內部",
+  "内部",
+  "品質",
+  "质量",
+  "客戶",
+  "客户",
+  "成功",
+  "軟體",
+  "软件",
+  "保證",
+  "保证",
+  "法規",
+  "法规",
+  "事務",
+  "事务",
+  "供應",
+  "供应",
+  "鏈",
+  "链",
+  "公共",
+  "關係",
+  "关系",
+  "研發",
+  "研发",
+  "技術",
+  "技术",
+  "科技",
+  "策略",
+  "治理",
+  "高級",
+  "高级",
+  "資深",
+  "资深",
+  "工作流程",
+  "流程",
+  "企業",
+  "企业",
+  "商務",
+  "商务",
+  "會計",
+  "会计",
+  "稽核",
+  "审计",
+  "信用",
+  "設施",
+  "设施",
+  "記錄",
+  "记录",
+  "更新",
+  "市場",
+  "市场",
+  "營銷",
+  "营销",
+  "銷售",
+  "销售",
+  "產品",
+  "产品",
+  "研究",
+  "開發",
+  "开发",
+  "工程",
+  "數碼",
+  "数字",
+  "轉型",
+  "转型",
+  "體驗",
+  "体验",
+  "私隱",
+  "隐私",
+  "環境",
+  "环境",
+  "健康",
+  "系統",
+  "系统",
+  "科學",
+  "科学",
+  "網絡",
+  "网络",
+  "人才",
+  "招聘",
+  "學習",
+  "学习",
+  "發展",
+  "发展",
+  "營收",
+  "营收",
+  "亞太",
+  "亚太",
+  "全球",
+  "區域",
+  "区域",
+]);
+
+const semanticNotificationHanRecipientModifierTokens = [
+  ...semanticNotificationHanRecipientModifiers,
+].sort((left, right) =>
+  Array.from(right).length - Array.from(left).length
+);
+
+function semanticNotificationHanRecipientModifierSequenceIsClosed(
+  value: string,
+) {
+  let remainder = value;
+  if (remainder.length === 0) return false;
+  while (remainder.length > 0) {
+    const matched = semanticNotificationHanRecipientModifierTokens.find(
+      (token) => remainder.startsWith(token),
+    );
+    if (!matched) return false;
+    remainder = remainder.slice(matched.length);
+  }
+  return true;
+}
+
+const semanticNotificationHanRecipientDomainFamilies = new Map<
+  string,
+  string
+>([
+  ["財務", "finance"],
+  ["财务", "finance"],
+  ["會計", "finance"],
+  ["会计", "finance"],
+  ["信用", "finance"],
+  ["法務", "legal"],
+  ["法务", "legal"],
+  ["合同", "legal"],
+  ["合規", "compliance"],
+  ["合规", "compliance"],
+  ["治理", "compliance"],
+  ["法規", "compliance"],
+  ["法规", "compliance"],
+  ["人力", "people"],
+  ["人力資源", "people"],
+  ["人力资源", "people"],
+  ["人才", "people"],
+  ["招聘", "people"],
+  ["學習", "people"],
+  ["学习", "people"],
+  ["數據", "technology"],
+  ["数据", "technology"],
+  ["資訊", "technology"],
+  ["信息", "technology"],
+  ["私隱", "technology"],
+  ["隐私", "technology"],
+  ["技術", "technology"],
+  ["技术", "technology"],
+  ["系統", "technology"],
+  ["系统", "technology"],
+  ["科學", "technology"],
+  ["科学", "technology"],
+  ["網絡", "technology"],
+  ["网络", "technology"],
+  ["發展", "technology"],
+  ["发展", "technology"],
+  ["科技", "technology"],
+  ["軟體", "technology"],
+  ["软件", "technology"],
+  ["研發", "technology"],
+  ["研发", "technology"],
+  ["客戶", "customer"],
+  ["客户", "customer"],
+  ["商務", "commercial"],
+  ["商务", "commercial"],
+  ["市場", "commercial"],
+  ["市场", "commercial"],
+  ["營銷", "commercial"],
+  ["营销", "commercial"],
+  ["銷售", "commercial"],
+  ["销售", "commercial"],
+  ["營收", "commercial"],
+  ["营收", "commercial"],
+  ["採購", "procurement"],
+  ["采购", "procurement"],
+  ["稽核", "finance"],
+  ["审计", "finance"],
+  ["風險", "compliance"],
+  ["风险", "compliance"],
+  ["安全", "technology"],
+  ["工程", "technology"],
+  ["營運", "operations"],
+  ["运营", "operations"],
+  ["管理", "operations"],
+  ["服務", "customer"],
+  ["服务", "customer"],
+  ["支援", "technology"],
+  ["支持", "technology"],
+  ["行政", "operations"],
+  ["品質", "quality"],
+  ["质量", "quality"],
+  ["保證", "quality"],
+  ["保证", "quality"],
+  ["供應", "procurement"],
+  ["供应", "procurement"],
+  ["鏈", "procurement"],
+  ["链", "procurement"],
+  ["業務", "commercial"],
+  ["业务", "commercial"],
+  ["產品", "operations"],
+  ["产品", "operations"],
+  ["研究", "technology"],
+  ["開發", "technology"],
+  ["开发", "technology"],
+  ["數碼", "technology"],
+  ["数字", "technology"],
+  ["轉型", "technology"],
+  ["转型", "technology"],
+  ["策略", "operations"],
+  ["資源", "people"],
+  ["资源", "people"],
+  ["審核", "compliance"],
+  ["审核", "compliance"],
+  ["審批", "compliance"],
+  ["审批", "compliance"],
+  ["保護", "technology"],
+  ["保护", "technology"],
+  ["項目", "operations"],
+  ["项目", "operations"],
+  ["工作流程", "operations"],
+  ["流程", "operations"],
+  ["設施", "operations"],
+  ["设施", "operations"],
+  ["記錄", "operations"],
+  ["记录", "operations"],
+  ["更新", "operations"],
+]);
+
+const semanticNotificationHanAllowedCompoundDomainSequences = new Set([
+  "人力營運",
+  "人力运营",
+  "人力資源營運",
+  "人力资源运营",
+  "人力科技",
+  "人力資源科技",
+  "人力资源科技",
+  "供應鏈管理",
+  "供应链管理",
+  "供應鏈財務",
+  "供应链财务",
+  "合同管理",
+  "商務財務",
+  "商务财务",
+  "業務財務",
+  "业务财务",
+  "業務開發",
+  "业务开发",
+  "安全營運",
+  "安全运营",
+  "數據營運",
+  "数据运营",
+  "工程營運",
+  "工程运营",
+  "合同營運",
+  "合同运营",
+  "合規營運",
+  "合规运营",
+  "客戶數據",
+  "客户数据",
+  "客戶營運",
+  "客户运营",
+  "數據治理",
+  "数据治理",
+  "法務營運",
+  "法务运营",
+  "法務科技",
+  "法务科技",
+  "產品安全",
+  "产品安全",
+  "產品開發",
+  "产品开发",
+  "產品營銷",
+  "产品营销",
+  "營銷營運",
+  "营销运营",
+  "財務審核",
+  "财务审核",
+  "財務營運",
+  "财务运营",
+  "財務系統",
+  "财务系统",
+  "財務科技",
+  "财务科技",
+  "銷售營運",
+  "销售运营",
+  "銷售財務",
+  "销售财务",
+  "資訊科技營運",
+  "信息技术运营",
+  "營銷科技",
+  "营销科技",
+  "營收營運",
+  "营收运营",
+  "供應風險",
+  "供应风险",
+  "風險管理",
+  "风险管理",
+]);
+
+const semanticNotificationHanRecipientDomainTokens = [
+  ...semanticNotificationHanRecipientDomainFamilies.keys(),
+].sort((left, right) =>
+  Array.from(right).length - Array.from(left).length
+);
+
+function semanticNotificationHanRecipientDomainFamiliesFor(segment: string) {
+  let remainder = segment;
+  const entries: Array<{ family: string; token: string }> = [];
+  while (remainder.length > 0) {
+    const matched = semanticNotificationHanRecipientDomainTokens.find(
+      (token) => remainder.startsWith(token),
+    );
+    if (matched) {
+      const family = semanticNotificationHanRecipientDomainFamilies.get(
+        matched,
+      );
+      if (family) entries.push({ family, token: matched });
+      remainder = remainder.slice(matched.length);
+      continue;
+    }
+    remainder = Array.from(remainder).slice(1).join("");
+  }
+  return entries;
+}
+
+function semanticNotificationHanDomainProfileFor(
+  value: string,
+) {
+  const entries = semanticNotificationHanRecipientDomainFamiliesFor(value);
+  const tokenSequence = entries.map(({ token }) => token).join("");
+  const firstDomainOffset = entries.length > 0
+    ? value.indexOf(entries[0].token)
+    : -1;
+  return {
+    families: new Set(entries.map(({ family }) => family)),
+    domainTokensAreContiguousSuffix: firstDomainOffset >= 0 &&
+      value.slice(firstDomainOffset) === tokenSequence,
+    tokenSequence,
+  };
+}
+
+const semanticNotificationHanRecipientSegmenter =
+  typeof Intl.Segmenter === "function"
+    ? new Intl.Segmenter("zh-Hant", { granularity: "word" })
+    : null;
+
+function semanticNotificationHanRecipientSegmentIsClosedHead(
+  segment: string,
+) {
+  return (
+    semanticNotificationHanRecipientHeads.includes(
+      segment as typeof semanticNotificationHanRecipientHeads[number],
+    ) ||
+    semanticNotificationHanRecipientHeads.some((head) =>
+      segment.endsWith(head) &&
+      semanticNotificationHanRecipientModifierSequenceIsClosed(
+        segment.slice(0, -head.length),
+      )
+    )
+  );
+}
+
+function semanticNotificationRecipientQuoteIsClosedSingleEntity(
+  recipientQuote: string,
+) {
+  const normalized = templateCopilotV3NormalizeLexicalText(recipientQuote);
+  if (
+    normalized.length === 0 ||
+    /[\p{Cc}\p{Cf}]/u.test(normalized)
+  ) return false;
+  if (semanticNotificationCanonicalRecipientAliases.has(normalized)) {
+    return true;
+  }
+  if (/^[a-z0-9]+(?: [a-z0-9]+)*$/u.test(normalized)) {
+    const tokens = normalized.split(" ");
+    if (
+      tokens.length === 0 ||
+      tokens.length > 12 ||
+      tokens.some((token) => /^\d+$/u.test(token)) ||
+      tokens.some((token) =>
+        semanticNotificationLatinRecipientSeparators.has(token)
+      ) ||
+      /(?:^| )(?:along with|as well as|in addition to|together with|followed by)(?: |$)/u
+        .test(normalized)
+    ) {
+      return false;
+    }
+    if (tokens.length === 1) {
+      return (
+        (!semanticNotificationPluralLatinRecipientHeads.has(tokens[0]) &&
+          semanticNotificationLatinRecipientHeads.has(tokens[0])) ||
+        semanticNotificationLatinRecipientDomainFamilies.has(tokens[0])
+      );
+    }
+    const domainProfile = semanticNotificationLatinDomainProfileFor(
+      tokens.slice(0, -1),
+    );
+    if (
+      domainProfile.families.size > 1 &&
+      (!domainProfile.domainTokensAreContiguousSuffix ||
+        !semanticNotificationLatinAllowedCompoundDomainSequences.has(
+          domainProfile.tokenSequence,
+        ))
+    ) return false;
+    return (
+      semanticNotificationLatinRecipientHeads.has(tokens.at(-1) ?? "") &&
+      !semanticNotificationPluralLatinRecipientHeads.has(
+        tokens.at(-1) ?? "",
+      ) &&
+      tokens.slice(0, -1).every((token) =>
+        semanticNotificationLatinRecipientModifiers.has(token)
+      )
+    );
+  }
+  if (
+    !/^\p{Script=Han}+(?: \p{Script=Han}+)*$/u.test(normalized) ||
+    !semanticNotificationHanRecipientSegmenter
+  ) {
+    return false;
+  }
+  const segments = [
+    ...semanticNotificationHanRecipientSegmenter.segment(normalized),
+  ].filter((segment) => segment.isWordLike)
+    .map((segment) =>
+      templateCopilotV3NormalizeLexicalText(segment.segment)
+    );
+  if (
+    segments.length === 0 ||
+    segments.some((segment) =>
+      semanticNotificationHanRecipientSeparators.has(segment)
+    )
+  ) {
+    return false;
+  }
+  const compactRecipient = segments.join("");
+  const matchedRecipientHead = semanticNotificationHanRecipientHeads.find(
+    (head) => compactRecipient.endsWith(head),
+  );
+  const domainSource = matchedRecipientHead
+    ? compactRecipient.slice(0, -matchedRecipientHead.length)
+    : compactRecipient;
+  const domainProfile =
+    semanticNotificationHanDomainProfileFor(domainSource);
+  if (
+    domainProfile.families.size > 1 &&
+    (!domainProfile.domainTokensAreContiguousSuffix ||
+      !semanticNotificationHanAllowedCompoundDomainSequences.has(
+        domainProfile.tokenSequence,
+      ))
+  ) return false;
+  return (
+    semanticNotificationHanRecipientDomainFamilies.has(compactRecipient) ||
+    semanticNotificationHanRecipientSegmentIsClosedHead(
+      compactRecipient,
+    )
+  );
+}
+
+function semanticNotificationVisibilityHasRecipientAffinity(
+  visibility: TemplateCopilotV3ReviewObservation,
+  recipient: TemplateCopilotV3ReviewObservation,
+  details: Readonly<{
+    hardText: string;
+    hardSourceStartCodePoint: number;
+    hardSourceEndCodePoint: number;
+  }>,
+) {
+  if (
+    visibility.sourceSpan.messageId !== recipient.sourceSpan.messageId ||
+    visibility.sourceSpan.startCodePoint < details.hardSourceStartCodePoint ||
+    visibility.sourceSpan.endCodePoint > details.hardSourceEndCodePoint ||
+    recipient.sourceSpan.startCodePoint < details.hardSourceStartCodePoint ||
+    recipient.sourceSpan.endCodePoint > details.hardSourceEndCodePoint
+  ) {
+    return false;
+  }
+  const hardCodePoints = Array.from(details.hardText);
+  const bridge = (startCodePoint: number, endCodePoint: number) =>
+    hardCodePoints.slice(
+      startCodePoint - details.hardSourceStartCodePoint,
+      endCodePoint - details.hardSourceStartCodePoint,
+    ).join("");
+  if (visibility.sourceSpan.endCodePoint <= recipient.sourceSpan.startCodePoint) {
+    return semanticNotificationClosedResidueIsEmpty(
+      bridge(
+        visibility.sourceSpan.endCodePoint,
+        recipient.sourceSpan.startCodePoint,
+      ),
+      [
+        "notify",
+        "notifies",
+        "notified",
+        "notification",
+        "notifications",
+        "alert",
+        "alerts",
+        "email",
+        "emails",
+        "inform",
+        "informs",
+        "通知",
+        "知會",
+        "知会",
+        "電郵",
+        "电邮",
+        "提醒",
+        "the",
+        "a",
+        "an",
+      ],
+    );
+  }
+  if (recipient.sourceSpan.endCodePoint <= visibility.sourceSpan.startCodePoint) {
+    return semanticNotificationClosedResidueIsEmpty(
+      bridge(
+        recipient.sourceSpan.endCodePoint,
+        visibility.sourceSpan.startCodePoint,
+      ),
+      ["recipient", "recipients"],
+    );
+  }
+  return false;
+}
+
+function semanticNotificationClosedResidueIsEmpty(
+  value: string,
+  phrases: readonly string[],
+) {
+  const removable = phrases
+    .map((phrase) => templateCopilotV3NormalizeLexicalText(phrase))
+    .filter((phrase, index, values) =>
+      phrase.length > 0 && values.indexOf(phrase) === index
+    )
+    .sort((left, right) => right.length - left.length);
+  let residue = value;
+  for (const phrase of removable) {
+    residue = semanticNotificationStripClosedPhrase(residue, phrase);
+  }
+  residue = residue.replace(/[\p{P}\p{S}]/gu, " ");
+  return templateCopilotV3NormalizeLexicalText(residue).length === 0;
+}
+
+function semanticNotificationStripClosedPhrase(value: string, phrase: string) {
+  const escaped = escapeSemanticRegExp(phrase);
+  const asciiWordPhrase = /^[a-z0-9]/u.test(phrase) &&
+    /[a-z0-9]$/u.test(phrase);
+  const pattern = asciiWordPhrase
+    ? `(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`
+    : escaped;
+  return value.replace(new RegExp(pattern, "gu"), " ");
+}
+
+function recoveredConditionCoreEvidenceIsClosed({
+  item,
+  observation,
+  semanticContexts,
+}: Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem;
+  observation: TemplateCopilotV3ReviewObservation;
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[];
+}>) {
+  if (
+    item.kind !== "condition" ||
+    item.slot !== "conditions_exceptions" ||
+    item.ambiguity !== "none" ||
+    item.sameLocalClauseRecoveredLeafCount < 1 ||
+    item.sameLocalClauseRecoveredLeafCount > 2
+  ) {
+    return false;
+  }
+  const observations = item.leaves.map((leaf) =>
+    Object.freeze({
+      role: leaf.role,
+      quote: leaf.sourceSpan.exactText,
+      advisoryHint: leaf.hint,
+      sourceSpan: leaf.sourceSpan,
+    })
+  );
+  const role = (name: TemplateCopilotV3ProviderQuoteRole) =>
+    observations.filter((entry) => entry.role === name);
+  const fields = role("field");
+  const operators = role("operator");
+  const values = role("value");
+  const matchingRoutes = role("matching_route");
+  const otherwiseRoutes = role("otherwise_route");
+  const recoveredLeaves = item.leaves.filter(
+    (leaf) => leaf.sameLocalClauseRecovered === true,
+  );
+  const currentLeafWasRecovered = recoveredLeaves.some(
+    (leaf) =>
+      leaf.role === observation.role &&
+      leaf.sourceSpan.spanId === observation.sourceSpan.spanId,
+  );
+  const verifiedOperator = (entry: TemplateCopilotV3ReviewObservation) =>
+    entry.advisoryHint === "unsupported_predicate" ||
+    semanticHintIsVerified(
+      "workflow.conditions",
+      entry,
+      semanticContexts,
+    );
+  const verifiedRoute = (entry: TemplateCopilotV3ReviewObservation) =>
+    entry.advisoryHint === "unsupported_outcome" ||
+    semanticHintIsVerified(
+      "workflow.conditions",
+      entry,
+      semanticContexts,
+    );
+  return (
+    fields.length === 1 &&
+    operators.length === 1 &&
+    values.length === 1 &&
+    matchingRoutes.length === 1 &&
+    otherwiseRoutes.length <= 1 &&
+    recoveredLeaves.length === item.sameLocalClauseRecoveredLeafCount &&
+    recoveredLeaves.every(
+      (leaf) =>
+        leaf.role === "operator" || leaf.role === "matching_route",
+    ) &&
+    currentLeafWasRecovered &&
+    operators.every(verifiedOperator) &&
+    matchingRoutes.every(verifiedRoute) &&
+    otherwiseRoutes.every(verifiedRoute) &&
+    semanticContexts.every(
+      (context) => !conditionAuthorityTextIsIllustrativeMeta(context.exactText),
+    ) &&
+    semanticConditionPredicateGroupsHaveAffinity(
+      fields,
+      operators,
+      values,
+      semanticContexts,
+    ) &&
+    semanticConditionRoutesHaveAffinity(
+      fields,
+      operators,
+      values,
+      matchingRoutes,
+      otherwiseRoutes,
+      semanticContexts,
+    ) &&
+    !semanticConditionHasCompoundPredicateContext(
+      observations,
+      semanticContexts,
+    )
+  );
+}
+
+function contextualDirectCoreEvidenceCanRemainReviewOnly(
+  item: TemplateCopilotV3LocatedQuoteItem,
+  factId: TemplateCopilotV3FragmentFactId,
+  observation: TemplateCopilotV3ReviewObservation,
+  messages: Readonly<Record<string, string>>,
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+  semanticAuthorityBlocked: boolean,
+) {
+  const candidateRoles: Readonly<
+    Partial<
+      Record<
+        TemplateCopilotV3FragmentFactId,
+        readonly TemplateCopilotV3ProviderQuoteRole[]
+      >
+    >
+  > = {
+    "request.fields": ["required"],
+    "attachments.requirements": ["kind", "required"],
+  };
+  if (
+    !(candidateRoles[factId] ?? []).includes(observation.role) ||
+    item.anchorExpanded === true ||
+    item.sameLocalClauseRecoveredLeafCount !== 0 ||
+    item.leaves.some((leaf) => leaf.sameLocalClauseRecovered === true) ||
+    item.ambiguity !== "none" ||
+    semanticAuthorityBlocked ||
+    /[?？]/u.test(item.anchor.exactText) ||
+    conditionAuthorityTextIsIllustrativeMeta(item.anchor.exactText)
+  ) {
+    return false;
+  }
+  const observations = item.leaves.map((leaf) =>
+    Object.freeze({
+      role: leaf.role,
+      quote: leaf.sourceSpan.exactText,
+      advisoryHint: leaf.hint,
+      sourceSpan: leaf.sourceSpan,
+    })
+  );
+  const core = observations.filter((entry) =>
+    semanticCoreRole(factId, entry.role)
+  );
+  if (
+    core.length === 0 ||
+    core.some(
+      (entry) =>
+        !validSpan(entry.sourceSpan, messages) ||
+        entry.sourceSpan.messageId !== item.anchor.messageId ||
+        entry.sourceSpan.startCodePoint < item.anchor.startCodePoint ||
+        entry.sourceSpan.endCodePoint > item.anchor.endCodePoint,
+    )
+  ) {
+    return false;
+  }
+  const role = (name: TemplateCopilotV3ProviderQuoteRole) =>
+    observations.filter((entry) => entry.role === name);
+  const labels = role("label");
+  const required = role("required");
+  const kinds = role("kind");
+  const exactCoreCardinality =
+    (factId === "request.fields" &&
+      labels.length === 1 &&
+      required.length === 1) ||
+    (factId === "attachments.requirements" &&
+      labels.length === 1 &&
+      kinds.length === 1 &&
+      required.length === 1);
+  if (!exactCoreCardinality) return false;
+  if (
+    item.leaves.some(
+      (leaf) =>
+        (item.kind === "attachment" &&
+          leaf.role === "required" &&
+          [
+            "conditional",
+            "required_with_conditional_extension",
+            "optional_conditional",
+          ].includes(leaf.hint ?? "")),
+    )
+  ) {
+    return false;
+  }
+  const subjectObservation = labels[0] ?? null;
+  const hintBearingCore = core.filter((entry) =>
+    (factId === "request.fields" && entry.role === "required") ||
+    (factId === "attachments.requirements" &&
+      (entry.role === "kind" || entry.role === "required"))
+  );
+  return (
+    hintBearingCore.length > 0 &&
+    hintBearingCore.every((entry) =>
+      semanticHintIsVerified(
+        factId,
+        entry,
+        semanticContexts,
+        subjectObservation,
+      )
+    ) &&
+    semanticallyComplete(
+      factId,
+      observations,
+      semanticContexts,
+      item.ambiguity,
+      false,
+      semanticAuthorityBlocked,
+    )
+  );
+}
+
+function compileSemanticItem(
+  item: TemplateCopilotV3LocatedQuoteItem & { kind: keyof typeof semanticFactByKind },
+  messages: Readonly<Record<string, string>>,
+  order: ReadonlyMap<string, number>,
+  rejections: TemplateCopilotV3ReviewRejection[],
+): TemplateCopilotV3SemanticReviewItem | null {
+  if (!validSpan(item.anchor, messages)) {
+    rejections.push(rejection(item, "untraceable_span", `${item.kind}:anchor`));
+    return null;
+  }
+  const leaves = item.leaves.flatMap((leaf) => {
+    if (!validSpan(leaf.sourceSpan, messages)) {
+      rejections.push(rejection(item, "untraceable_span", `${item.kind}:${leaf.role}`));
+      return [];
+    }
+    return [Object.freeze({ role: leaf.role, quote: leaf.sourceSpan.exactText, advisoryHint: leaf.hint, sourceSpan: leaf.sourceSpan })];
+  });
+  const canonicalLeaves = canonicalSemanticProjectionLeaves(leaves);
+  if (canonicalLeaves.length === 0) {
+    rejections.push(rejection(item, "empty_item", item.kind));
+    return null;
+  }
+  const base = {
+    kind: item.kind,
+    factId: semanticFactByKind[item.kind],
+    quote: item.anchor.exactText,
+    sourceSpan: item.anchor,
+    leaves: Object.freeze(canonicalLeaves),
+    confidence: item.confidence,
+    ambiguity: item.ambiguity,
+    sourceOrder: orderFor(item.anchor, order),
+    reviewOnly: true,
+    persisted: false,
+    executable: false,
+    defaulted: false,
+  } as const;
+  return Object.freeze({
+    projectionId: templateCopilotV3SemanticProjectionId(base),
+    ...base,
+  });
+}
+
+function canonicalSemanticProjectionLeaves(
+  leaves: readonly TemplateCopilotV3ReviewObservation[],
+) {
+  const byIdentity = new Map<string, TemplateCopilotV3ReviewObservation>();
+  for (const leaf of leaves) {
+    const identity = `${leaf.role}|${leaf.advisoryHint ?? ""}|${leaf.sourceSpan.spanId}`;
+    if (!byIdentity.has(identity)) byIdentity.set(identity, leaf);
+  }
+  return [...byIdentity.values()].sort(
+    (left, right) =>
+      compareText(left.role, right.role) ||
+      compareText(left.advisoryHint ?? "", right.advisoryHint ?? "") ||
+      compareText(left.sourceSpan.spanId, right.sourceSpan.spanId),
+  );
+}
+function mappingFor(
+  kind: keyof typeof arrayFactByKind,
+  role: TemplateCopilotV3ProviderQuoteRole,
+  hint: string | null,
+): Mapping | null {
+  if (kind === "stage" && role === "kind" && hint === "record_update") {
+    return { kind: "semantic_only" };
+  }
+  if (
+    (kind === "attachment" &&
+      role === "required" &&
+      [
+        "conditional",
+        "required_with_conditional_extension",
+        "optional_conditional",
+      ].includes(hint ?? "")) ||
+    (kind === "condition" &&
+      role === "operator" &&
+      hint === "unsupported_predicate") ||
+    (kind === "condition" &&
+      (role === "matching_route" || role === "otherwise_route") &&
+      hint === "unsupported_outcome") ||
+    (kind === "notification" &&
+      role === "recipient" &&
+      hint === "source_named_group")
+  ) {
+    return { kind: "semantic_only" };
+  }
+  const maps: Record<keyof typeof arrayFactByKind, Partial<Record<TemplateCopilotV3ProviderQuoteRole, Mapping>>> = {
+    request_field: {
+      label: { kind: "scalar", path: "/label", mode: "text" },
+      type: { kind: "scalar", path: "/type", mode: "enum" },
+      required: { kind: "scalar", path: "/required", mode: "boolean" },
+      option: { kind: "array", path: "/options", mode: "text" },
+    },
+    attachment: {
+      label: { kind: "scalar", path: "/label", mode: "text" },
+      kind: { kind: "scalar", path: "/kind", mode: "enum" },
+      required: { kind: "scalar", path: "/required", mode: "boolean" },
+      format: { kind: "array", path: "/formats", mode: "enum" },
+      minimum_quantity: { kind: "scalar", path: "/minimumQuantity", mode: "number" },
+      maximum_quantity: { kind: "scalar", path: "/maximumQuantity", mode: "number" },
+      conditional_quantity_increment: { kind: "semantic_only" },
+      maximum_file_size_mb: { kind: "scalar", path: "/maximumFileSizeMb", mode: "number" },
+      stage: { kind: "scalar", path: "/stage", mode: "route" },
+      contributor_policy: { kind: "scalar", path: "/contributorPolicy", mode: "enum" },
+      confirmation_policy: { kind: "scalar", path: "/confirmationPolicy", mode: "enum" },
+    },
+    stage: {
+      label: { kind: "scalar", path: "/label", mode: "text" },
+      kind: { kind: "scalar", path: "/kind", mode: "enum" },
+      participant_mode: { kind: "scalar", path: "/participant/mode", mode: "enum" },
+      participant: { kind: "scalar", path: "/participant/value", mode: "text" },
+      sequence: { kind: "scalar", path: "/sequence", mode: "number" },
+      relationship: { kind: "relationship" },
+    },
+    condition: {
+      sequence: { kind: "scalar", path: "/sequence", mode: "number" },
+      field: { kind: "scalar", path: "/field", mode: "text" },
+      operator: { kind: "scalar", path: "/operator", mode: "enum" },
+      value: { kind: "scalar", path: "/value", mode: "condition_value" },
+      currency: { kind: "semantic_only" },
+      unit: { kind: "scalar", path: "/unit", mode: "text" },
+      matching_route: { kind: "scalar", path: "/matchingRoute", mode: "route" },
+      otherwise_route: { kind: "scalar", path: "/otherwiseRoute", mode: "route" },
+    },
+    notification: {
+      event: { kind: "scalar", path: "/event", mode: "enum" },
+      recipient: { kind: "array", path: "/recipients", mode: "enum" },
+      timing_mode: { kind: "scalar", path: "/timing/mode", mode: "enum" },
+      offset_hours: { kind: "scalar", path: "/timing/offsetHours", mode: "number" },
+      channel: { kind: "scalar", path: "/channel", mode: "enum" },
+      visibility: { kind: "scalar", path: "/visibility", mode: "enum" },
+      stage: { kind: "scalar", path: "/stage", mode: "route" },
+    },
+  };
+  return maps[kind][role] ?? null;
+}
+
+function deriveLeaf(factId: TemplateCopilotV3FragmentFactId, mapping: Exclude<Mapping, { kind: "relationship" } | { kind: "semantic_only" }>, hint: string | null, span: TemplateCopilotV3SourceSpan): Omit<Leaf, "spans"> | null {
+  let value: string | number | boolean;
+  let rule: Rule;
+  if (
+    hint === "unsupported_predicate" ||
+    hint === "unsupported_outcome" ||
+    hint === "conditional" ||
+    hint === "required_with_conditional_extension" ||
+    hint === "optional_conditional"
+  ) {
+    return null;
+  }
+  if (mapping.mode === "text") {
+    value = templateCopilotV3NormalizeTrimCollapseText(span.exactText);
+    if (!value) return null;
+    rule = "nfkc_trim_collapse";
+  } else if (mapping.mode === "enum") {
+    if (!hint || hint === "source_named_group") return null;
+    value = hint;
+    rule = "enum_lexical";
+  } else if (mapping.mode === "boolean") {
+    if (hint !== "true" && hint !== "false") return null;
+    value = hint === "true";
+    rule = "boolean_lexical";
+  } else if (mapping.mode === "number") {
+    const pointer = mapping.path;
+    const numeric = deriveNumericValue(factId, pointer, span.exactText);
+    if (numeric === null) return null;
+    value = numeric;
+    rule = "numeric_lexical";
+  } else if (mapping.mode === "condition_value") {
+    const canonical = templateCopilotV3CanonicalDecimalText(span.exactText);
+    if (canonical === null) {
+      value = templateCopilotV3NormalizeTrimCollapseText(span.exactText);
+      if (!value) return null;
+      rule = "nfkc_trim_collapse";
+    } else {
+      value = Number(canonical);
+      rule = "numeric_lexical";
+    }
+  } else {
+    if (hint === "stage_reference") {
+      const text = templateCopilotV3NormalizeTrimCollapseText(span.exactText);
+      value = text.startsWith("stage:") ? text : `stage:${text}`;
+    } else if (hint === "condition_reference") {
+      const text = templateCopilotV3NormalizeLexicalText(span.exactText);
+      if (!/^[a-z][a-z0-9_-]+$/.test(text)) return null;
+      value = `condition:${text}`;
+    } else if (hint === "request_submission" || hint === "complete" || hint === "return_for_correction") value = hint;
+    else return null;
+    rule = "enum_lexical";
+  }
+  const pointer = mapping.kind === "array" ? `${mapping.path}/0` : mapping.path;
+  const testValue: Record<string, unknown> = {};
+  setAt(testValue, pointer, value);
+  return templateCopilotV3DirectEvidenceDerivesLeaf({ factId, path: pointer, rule, value: testValue, sourceText: span.exactText }) ? { value, rule } : null;
+}
+
+function deriveClosedSimplifiedCjkYesOperatorObservation({
+  item,
+  supplied,
+  messages,
+  semanticAuthorityBlocked,
+  conditionAuthorityCoverage,
+  conditionAuthoritySymbols,
+}: Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem & {
+    kind: keyof typeof arrayFactByKind;
+  };
+  supplied: TemplateCopilotV3LocatedQuoteItem["leaves"][number];
+  messages: Readonly<Record<string, string>>;
+  semanticAuthorityBlocked: boolean;
+  conditionAuthorityCoverage: ReadonlySet<string>;
+  conditionAuthoritySymbols: ConditionAuthoritySymbols;
+}>): Readonly<{
+  observation: TemplateCopilotV3ReviewObservation;
+  authorityContext: TemplateCopilotV3SourceSpan | null;
+}> | null {
+  if (
+    item.kind !== "condition" ||
+    item.slot !== "conditions_exceptions" ||
+    item.ambiguity !== "none" ||
+    item.anchorExpanded === true ||
+    item.sameLocalClauseRecoveredLeafCount !== 0 ||
+    semanticAuthorityBlocked ||
+    supplied.role !== "operator" ||
+    supplied.hint !== "="
+  ) {
+    return null;
+  }
+  const fields = item.leaves.filter((leaf) => leaf.role === "field");
+  const operators = item.leaves.filter((leaf) => leaf.role === "operator");
+  const values = item.leaves.filter((leaf) => leaf.role === "value");
+  const matchingRoutes = item.leaves.filter(
+    (leaf) => leaf.role === "matching_route",
+  );
+  if (
+    fields.length !== 1 ||
+    operators.length !== 1 ||
+    values.length !== 1 ||
+    matchingRoutes.length !== 1 ||
+    item.leaves.some((leaf) => leaf.role === "otherwise_route")
+  ) {
+    return null;
+  }
+  const field = fields[0];
+  const operator = operators[0];
+  const value = values[0];
+  const matchingRoute = matchingRoutes[0];
+  if (
+    !field ||
+    !operator ||
+    !value ||
+    !matchingRoute ||
+    operator !== supplied ||
+    matchingRoute.hint !== "stage_reference" ||
+    value.sourceSpan.exactText !== "是" ||
+    (operator.sourceSpan.exactText !== "为" &&
+      operator.sourceSpan.exactText !== "是")
+  ) {
+    return null;
+  }
+  const messageId = item.anchor.messageId;
+  if (
+    [field, operator, value, matchingRoute].some(
+      (leaf) =>
+        leaf.sourceSpan.messageId !== messageId ||
+        !validSpan(leaf.sourceSpan, messages) ||
+        leaf.sourceSpan.startCodePoint < item.anchor.startCodePoint ||
+        leaf.sourceSpan.endCodePoint > item.anchor.endCodePoint,
+    )
+  ) {
+    return null;
+  }
+  const message = messages[messageId];
+  if (typeof message !== "string") return null;
+  const codePoints = Array.from(message);
+  const authorityEnvelope = deriveClosedConditionAuthorityEnvelope({
+    item,
+    field,
+    matchingRoute,
+    messages,
+    conditionAuthorityCoverage,
+    conditionAuthoritySymbols,
+  });
+  if (!authorityEnvelope) return null;
+  const comparatorStart = field.sourceSpan.endCodePoint;
+  const comparatorEnd = comparatorStart + 2;
+  const operatorIsLeadingCopula = operator.sourceSpan.exactText === "为";
+  const operatorCoordinatesMatch = operatorIsLeadingCopula
+    ? operator.sourceSpan.startCodePoint === comparatorStart &&
+      operator.sourceSpan.endCodePoint === comparatorStart + 1 &&
+      value.sourceSpan.startCodePoint === comparatorStart + 1 &&
+      value.sourceSpan.endCodePoint === comparatorEnd
+    : operator.sourceSpan.startCodePoint === comparatorStart + 1 &&
+      operator.sourceSpan.endCodePoint === comparatorEnd &&
+      value.sourceSpan.startCodePoint === operator.sourceSpan.startCodePoint &&
+      value.sourceSpan.endCodePoint === operator.sourceSpan.endCodePoint;
+  if (
+    !operatorCoordinatesMatch ||
+    comparatorStart < item.anchor.startCodePoint ||
+    comparatorEnd > item.anchor.endCodePoint ||
+    matchingRoute.sourceSpan.startCodePoint < comparatorEnd ||
+    codePoints.slice(comparatorStart, comparatorEnd).join("") !== "为是" ||
+    codePoints[comparatorEnd] === "否"
+  ) {
+    return null;
+  }
+  const spanInput = {
+    messageId,
+    startCodePoint: comparatorStart,
+    endCodePoint: comparatorEnd,
+    exactText: "为是",
+  };
+  const parsedSpan = templateCopilotV3SourceSpanSchema.safeParse({
+    spanId: templateCopilotV3SourceSpanId(spanInput),
+    ...spanInput,
+  });
+  if (
+    !parsedSpan.success ||
+    !validateTemplateCopilotV3SourceSpan(parsedSpan.data, messages)
+  ) {
+    return null;
+  }
+  const observation = Object.freeze({
+    role: "operator" as const,
+    quote: parsedSpan.data.exactText,
+    advisoryHint: "=",
+    sourceSpan: Object.freeze(parsedSpan.data),
+  });
+  const fieldObservation = Object.freeze({
+    role: "field" as const,
+    quote: field.sourceSpan.exactText,
+    advisoryHint: field.hint,
+    sourceSpan: field.sourceSpan,
+  });
+  const valueObservation = Object.freeze({
+    role: "value" as const,
+    quote: value.sourceSpan.exactText,
+    advisoryHint: value.hint,
+    sourceSpan: value.sourceSpan,
+  });
+  const routeObservation = Object.freeze({
+    role: "matching_route" as const,
+    quote: matchingRoute.sourceSpan.exactText,
+    advisoryHint: matchingRoute.hint,
+    sourceSpan: matchingRoute.sourceSpan,
+  });
+  const verificationSemanticContexts = [authorityEnvelope.context];
+  const clause = semanticObservationClause(
+    fieldObservation,
+    verificationSemanticContexts,
+  );
+  const normalizedClause = clause === null
+    ? ""
+    : templateCopilotV3NormalizeLexicalText(clause);
+  if (
+    clause === null ||
+    conditionAuthorityTextIsIllustrativeMeta(normalizedClause) ||
+    exactSemanticOccurrenceCount(clause, "为是") !== 1 ||
+    !semanticHintIsVerified(
+      "workflow.conditions",
+      observation,
+      verificationSemanticContexts,
+    ) ||
+    !semanticHintIsVerified(
+      "workflow.conditions",
+      routeObservation,
+      verificationSemanticContexts,
+    ) ||
+    !semanticConditionPredicateGroupsHaveAffinity(
+      [fieldObservation],
+      [observation],
+      [valueObservation],
+      verificationSemanticContexts,
+    ) ||
+    !semanticConditionRoutesHaveAffinity(
+      [fieldObservation],
+      [observation],
+      [valueObservation],
+      [routeObservation],
+      [],
+      verificationSemanticContexts,
+    ) ||
+    semanticConditionHasCompoundPredicateContext(
+      [fieldObservation, observation, valueObservation, routeObservation],
+      verificationSemanticContexts,
+    )
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    observation,
+    authorityContext: authorityEnvelope.context,
+  });
+}
+
+const conditionAuthorityClosingByOpening = Object.freeze({
+  '"': '"',
+  "“": "”",
+  "‘": "’",
+  "「": "」",
+  "『": "』",
+} as const);
+
+const conditionAuthorityClosingQuotes = new Set<string>(
+  Object.values(conditionAuthorityClosingByOpening),
+);
+
+function isDeferredSimplifiedCjkYesOperatorCandidate(
+  item: TemplateCopilotV3LocatedQuoteItem & {
+    kind: keyof typeof arrayFactByKind;
+  },
+) {
+  if (
+    !isSimplifiedCjkYesOperatorSplitShape(item) ||
+    item.slot !== "conditions_exceptions" ||
+    item.ambiguity !== "none" ||
+    item.anchorExpanded === true ||
+    item.sameLocalClauseRecoveredLeafCount !== 0 ||
+    item.leaves.some((leaf) => leaf.sameLocalClauseRecovered === true)
+  ) {
+    return false;
+  }
+  const operators = item.leaves.filter((leaf) => leaf.role === "operator");
+  const matchingRoutes = item.leaves.filter(
+    (leaf) => leaf.role === "matching_route",
+  );
+  const operator = operators[0];
+  return (
+    operator?.hint === "=" &&
+    matchingRoutes[0]?.hint === "stage_reference"
+  );
+}
+
+function isSimplifiedCjkYesOperatorSplitShape(
+  item: TemplateCopilotV3LocatedQuoteItem & {
+    kind: keyof typeof arrayFactByKind;
+  },
+) {
+  if (item.kind !== "condition") return false;
+  const fields = item.leaves.filter((leaf) => leaf.role === "field");
+  const operators = item.leaves.filter((leaf) => leaf.role === "operator");
+  const values = item.leaves.filter((leaf) => leaf.role === "value");
+  const matchingRoutes = item.leaves.filter(
+    (leaf) => leaf.role === "matching_route",
+  );
+  const operator = operators[0];
+  return (
+    fields.length === 1 &&
+    operators.length === 1 &&
+    values.length === 1 &&
+    matchingRoutes.length === 1 &&
+    !item.leaves.some((leaf) => leaf.role === "otherwise_route") &&
+    (operator?.sourceSpan.exactText === "为" ||
+      operator?.sourceSpan.exactText === "是") &&
+    values[0]?.sourceSpan.exactText === "是"
+  );
+}
+
+function conditionAuthorityUnits(
+  messageId: string,
+  message: string,
+): readonly ConditionAuthorityUnit[] {
+  const codePoints = Array.from(message);
+  const units: ConditionAuthorityUnit[] = [];
+  const quoteStack: string[] = [];
+  let startCodePoint = 0;
+  let blockIndex = 0;
+  let unitIndex = 0;
+  let quoteError = false;
+  let previousBoundaryWasNewline = false;
+
+  const finish = (
+    endCodePoint: number,
+    terminatorEndCodePoint: number,
+    terminator: string,
+  ) => {
+    let trimmedStart = startCodePoint;
+    let trimmedEnd = endCodePoint;
+    while (
+      trimmedStart < trimmedEnd &&
+      /\s/u.test(codePoints[trimmedStart] ?? "")
+    ) {
+      trimmedStart += 1;
+    }
+    while (
+      trimmedEnd > trimmedStart &&
+      /\s/u.test(codePoints[trimmedEnd - 1] ?? "")
+    ) {
+      trimmedEnd -= 1;
+    }
+    const hasContent = trimmedEnd > trimmedStart;
+    if (hasContent) {
+      units.push(Object.freeze({
+        messageId,
+        startCodePoint: trimmedStart,
+        endCodePoint: trimmedEnd,
+        terminatorEndCodePoint,
+        terminator,
+        blockIndex,
+        unitIndex,
+        balancedQuotes: quoteStack.length === 0 && !quoteError,
+      }));
+      unitIndex += 1;
+    }
+    const newlineBoundary = /[\r\n]/u.test(terminator);
+    if (
+      newlineBoundary &&
+      previousBoundaryWasNewline &&
+      !hasContent
+    ) {
+      blockIndex += 1;
+    }
+    previousBoundaryWasNewline = newlineBoundary;
+    startCodePoint = terminatorEndCodePoint;
+    quoteError = false;
+  };
+
+  for (let index = 0; index < codePoints.length; index += 1) {
+    const character = codePoints[index] ?? "";
+    const expectedClosing =
+      conditionAuthorityClosingByOpening[
+        character as keyof typeof conditionAuthorityClosingByOpening
+      ];
+    if (expectedClosing !== undefined) {
+      if (expectedClosing === character && quoteStack.at(-1) === character) {
+        quoteStack.pop();
+      } else {
+        quoteStack.push(expectedClosing);
+      }
+      continue;
+    }
+    if (conditionAuthorityClosingQuotes.has(character)) {
+      if (quoteStack.at(-1) === character) quoteStack.pop();
+      else quoteError = true;
+      continue;
+    }
+    if (
+      quoteStack.length > 0 ||
+      !semanticHardClauseSeparator(character)
+    ) {
+      continue;
+    }
+    let terminator = character;
+    let terminatorEndCodePoint = index + 1;
+    if (
+      character === "\r" &&
+      codePoints[index + 1] === "\n"
+    ) {
+      terminator = "\r\n";
+      terminatorEndCodePoint += 1;
+      index += 1;
+    }
+    finish(
+      terminatorEndCodePoint - Array.from(terminator).length,
+      terminatorEndCodePoint,
+      terminator,
+    );
+  }
+  finish(codePoints.length, codePoints.length, "");
+  return Object.freeze(units);
+}
+
+function conditionAuthorityUnitKey(unit: ConditionAuthorityUnit) {
+  return stableJson([
+    unit.messageId,
+    unit.blockIndex,
+    unit.unitIndex,
+    unit.startCodePoint,
+    unit.endCodePoint,
+  ]);
+}
+
+function conditionAuthorityTerminatorIsDeclarative(
+  terminator: string,
+) {
+  return /^(?:|[.!。！]|\r?\n)$/u.test(terminator);
+}
+
+function conditionAnchorExactlyConsumesUnit(
+  anchor: TemplateCopilotV3SourceSpan,
+  unit: ConditionAuthorityUnit,
+) {
+  if (
+    anchor.messageId !== unit.messageId ||
+    anchor.startCodePoint !== unit.startCodePoint
+  ) {
+    return false;
+  }
+  if (anchor.endCodePoint === unit.endCodePoint) return true;
+  return (
+    /^[.!。！]$/u.test(unit.terminator) &&
+    anchor.endCodePoint === unit.terminatorEndCodePoint
+  );
+}
+
+function conditionAuthorityUnitForAnchor(
+  anchor: TemplateCopilotV3SourceSpan,
+  units: readonly ConditionAuthorityUnit[],
+) {
+  const matches = units.filter((unit) =>
+    conditionAnchorExactlyConsumesUnit(anchor, unit)
+  );
+  return matches.length === 1 ? matches[0] ?? null : null;
+}
+
+function conditionAuthoritySymbolTerminatorIsDeclarative(
+  terminator: string,
+) {
+  return /^(?:|[.!;。！；]|\r?\n)$/u.test(terminator);
+}
+
+function conditionAuthoritySymbolUnitForAnchor(
+  anchor: TemplateCopilotV3SourceSpan,
+  units: readonly ConditionAuthorityUnit[],
+) {
+  const matches = units.filter((unit) =>
+    anchor.messageId === unit.messageId &&
+    anchor.startCodePoint === unit.startCodePoint &&
+    (
+      anchor.endCodePoint === unit.endCodePoint ||
+      (
+        /^[.!;。！；]$/u.test(unit.terminator) &&
+        anchor.endCodePoint === unit.terminatorEndCodePoint
+      )
+    )
+  );
+  return matches.length === 1 ? matches[0] ?? null : null;
+}
+
+function conditionAuthorityUnitSpan(
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (typeof message !== "string") return null;
+  const exactText = Array.from(message)
+    .slice(unit.startCodePoint, unit.endCodePoint)
+    .join("");
+  const supplied = {
+    messageId: unit.messageId,
+    startCodePoint: unit.startCodePoint,
+    endCodePoint: unit.endCodePoint,
+    exactText,
+  };
+  const parsed = templateCopilotV3SourceSpanSchema.safeParse({
+    spanId: templateCopilotV3SourceSpanId(supplied),
+    ...supplied,
+  });
+  return parsed.success &&
+      validateTemplateCopilotV3SourceSpan(parsed.data, messages)
+    ? Object.freeze(parsed.data)
+    : null;
+}
+
+function conditionAuthorityUnitBeginsConnector(
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (typeof message !== "string") return true;
+  const normalized = templateCopilotV3NormalizeLexicalText(
+    Array.from(message)
+      .slice(unit.startCodePoint, unit.endCodePoint)
+      .join(""),
+  );
+  return /^(?:and|or|also|moreover|furthermore|then|but|while|whereas)\b|^(?:并且|並且|且|以及|和|与|與|或|同时|同時|另外|此外|然后|然後|并|並)/u
+    .test(normalized);
+}
+
+function ordinaryDraftHasClosedSemanticCore(
+  ordinary: OrdinaryDraft,
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const { item, draft } = ordinary;
+  if (
+    (draft.factId !== "workflow.conditions" &&
+      draft.factId !== "workflow.stages") ||
+    isSimplifiedCjkYesOperatorSplitShape(item) ||
+    item.ambiguity !== "none" ||
+    item.anchorExpanded === true ||
+    item.sameLocalClauseRecoveredLeafCount !== 0 ||
+    draft.semanticAuthorityBlocked ||
+    !unit.balancedQuotes ||
+    !conditionAuthorityTerminatorIsDeclarative(unit.terminator) ||
+    !conditionAnchorExactlyConsumesUnit(item.anchor, unit) ||
+    conditionAuthorityUnitBeginsConnector(unit, messages)
+  ) {
+    return false;
+  }
+  const context = conditionAuthorityUnitSpan(unit, messages);
+  if (!context) return false;
+  if (!conditionAuthorityStructuralTextIsClean(context.exactText)) {
+    return false;
+  }
+  const core = draft.semanticObservations.filter((observation) =>
+    semanticCoreRole(draft.factId, observation.role)
+  );
+  if (
+    core.length === 0 ||
+    core.some(
+      (observation) =>
+        observation.sourceSpan.messageId !== unit.messageId ||
+        observation.sourceSpan.startCodePoint < unit.startCodePoint ||
+        observation.sourceSpan.endCodePoint > unit.endCodePoint,
+    )
+  ) {
+    return false;
+  }
+  const subject = draft.semanticObservations.find(
+    (observation) => observation.role === "label",
+  ) ?? null;
+  if (
+    core.some((observation) =>
+      semanticObservationIsContradicted(
+        draft.factId,
+        observation,
+        [context],
+        [context],
+        subject,
+      )
+    )
+  ) {
+    return false;
+  }
+  if (draft.factId === "workflow.stages") {
+    if (
+      !ordinaryStageAuthorityUnitIsClosed(
+        draft.semanticObservations,
+        unit,
+        messages,
+      )
+    ) {
+      return false;
+    }
+    return semanticallyComplete(
+      draft.factId,
+      draft.semanticObservations,
+      [context],
+      draft.ambiguity,
+      false,
+      false,
+    );
+  }
+  const raw = (role: TemplateCopilotV3ProviderQuoteRole) =>
+    draft.semanticObservations.filter(
+      (observation) =>
+        observation.role === role &&
+        templateCopilotV3NormalizeTrimCollapseText(observation.quote).length >
+          0,
+    );
+  const fields = raw("field");
+  const operators = raw("operator").filter(
+    (observation) =>
+      semanticHintIsVerified(
+        draft.factId,
+        observation,
+        [context],
+      ),
+  );
+  const values = raw("value");
+  const matchingRoutes = raw("matching_route").filter(
+    (observation) =>
+      semanticHintIsVerified(
+        draft.factId,
+        observation,
+        [context],
+      ) ||
+      observation.advisoryHint === "unsupported_outcome",
+  );
+  const otherwiseRoutes = raw("otherwise_route").filter(
+    (observation) =>
+      semanticHintIsVerified(
+        draft.factId,
+        observation,
+        [context],
+      ) ||
+      observation.advisoryHint === "unsupported_outcome",
+  );
+  return (
+    fields.length === 1 &&
+    operators.length === 1 &&
+    values.length === 1 &&
+    matchingRoutes.length === 1 &&
+    ordinaryConditionAuthorityUnitIsClosed(
+      fields[0],
+      operators[0],
+      values[0],
+      matchingRoutes[0],
+      unit,
+      messages,
+    ) &&
+    semanticConditionPredicateGroupsHaveAffinity(
+      fields,
+      operators,
+      values,
+      [context],
+    ) &&
+    semanticConditionRoutesHaveAffinity(
+      fields,
+      operators,
+      values,
+      matchingRoutes,
+      otherwiseRoutes,
+      [context],
+    ) &&
+    !semanticConditionHasCompoundPredicateContext(
+      [...fields, ...operators, ...values, ...matchingRoutes, ...otherwiseRoutes],
+      [context],
+    )
+  );
+}
+
+function buildConditionAuthorityCoverage(
+  ordinaryDrafts: readonly OrdinaryDraft[],
+  messages: Readonly<Record<string, string>>,
+) {
+  const coverage = new Set<string>();
+  const unitCache = new Map<string, readonly ConditionAuthorityUnit[]>();
+  for (const ordinary of ordinaryDrafts) {
+    const messageId = ordinary.item.anchor.messageId;
+    const message = messages[messageId];
+    if (typeof message !== "string") continue;
+    let units = unitCache.get(messageId);
+    if (!units) {
+      units = conditionAuthorityUnits(messageId, message);
+      unitCache.set(messageId, units);
+    }
+    const unit = conditionAuthorityUnitForAnchor(
+      ordinary.item.anchor,
+      units,
+    );
+    if (
+      unit &&
+      ordinaryDraftHasClosedSemanticCore(ordinary, unit, messages)
+    ) {
+      coverage.add(conditionAuthorityUnitKey(unit));
+    }
+  }
+  return coverage;
+}
+
+function requestFieldConditionAuthoritySymbolHasClosedRequiredScope(
+  item: TemplateCopilotV3LocatedQuoteItem & {
+    kind: keyof typeof arrayFactByKind;
+  },
+  draft: Draft,
+  labelSpan: TemplateCopilotV3SourceSpan,
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  const requiredLeaves = item.leaves.filter(
+    (leaf) => leaf.role === "required" && leaf.hint === "true",
+  );
+  const requiredObservations = draft.semanticObservations.filter(
+    (observation) =>
+      observation.role === "required" &&
+      observation.advisoryHint === "true",
+  );
+  const requiredLeaf = requiredLeaves[0];
+  const requiredObservation = requiredObservations[0];
+  const derivedRequired = draft.leaves.get("/required");
+  if (
+    typeof message !== "string" ||
+    requiredLeaves.length !== 1 ||
+    requiredObservations.length !== 1 ||
+    !requiredLeaf ||
+    !requiredObservation ||
+    requiredLeaf.sourceSpan.exactText !== "必填" ||
+    requiredObservation.sourceSpan.spanId !== requiredLeaf.sourceSpan.spanId ||
+    derivedRequired?.value !== true ||
+    !derivedRequired.spans.some(
+      (span) => span.spanId === requiredLeaf.sourceSpan.spanId,
+    ) ||
+    requiredLeaf.sourceSpan.messageId !== unit.messageId ||
+    labelSpan.messageId !== unit.messageId
+  ) {
+    return false;
+  }
+  if (
+    labelSpan.startCodePoint === unit.startCodePoint &&
+    labelSpan.endCodePoint === requiredLeaf.sourceSpan.startCodePoint &&
+    requiredLeaf.sourceSpan.endCodePoint === unit.endCodePoint
+  ) {
+    return true;
+  }
+  if (
+    requiredLeaf.sourceSpan.startCodePoint !== unit.startCodePoint ||
+    requiredLeaf.sourceSpan.endCodePoint > labelSpan.startCodePoint
+  ) {
+    return false;
+  }
+  const codePoints = Array.from(message);
+  const fieldList = codePoints
+    .slice(requiredLeaf.sourceSpan.endCodePoint, unit.endCodePoint)
+    .join("");
+  if (
+    !/^[\p{Script=Han}\p{N}]+(?:[、，,][\p{Script=Han}\p{N}]+)*$/u
+      .test(fieldList)
+  ) {
+    return false;
+  }
+  const beforeLabel = codePoints[labelSpan.startCodePoint - 1] ?? "";
+  const afterLabel = codePoints[labelSpan.endCodePoint] ?? "";
+  return (
+    labelSpan.startCodePoint === requiredLeaf.sourceSpan.endCodePoint ||
+    /[、，,和及与與或]/u.test(beforeLabel)
+  ) && (
+    labelSpan.endCodePoint === unit.endCodePoint ||
+    /[、，,和及与與或]/u.test(afterLabel)
+  );
+}
+
+function conditionAuthorityCompositeStageReferenceIsClosed(
+  labelSpan: TemplateCopilotV3SourceSpan,
+  kindSpan: TemplateCopilotV3SourceSpan,
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (
+    typeof message !== "string" ||
+    labelSpan.messageId !== unit.messageId ||
+    kindSpan.messageId !== unit.messageId ||
+    labelSpan.startCodePoint < unit.startCodePoint ||
+    kindSpan.endCodePoint > unit.endCodePoint ||
+    labelSpan.endCodePoint > kindSpan.startCodePoint ||
+    !conditionAuthorityTextIsUnobscured(labelSpan.exactText) ||
+    !conditionAuthorityTextIsUnobscured(kindSpan.exactText) ||
+    !observations.some(
+      (observation) =>
+        observation.role === "participant" &&
+        observation.quote === labelSpan.exactText &&
+        observation.sourceSpan.spanId === labelSpan.spanId,
+    )
+  ) {
+    return false;
+  }
+  const codePoints = Array.from(message);
+  const exactUnit = codePoints
+    .slice(unit.startCodePoint, unit.endCodePoint)
+    .join("");
+  if (
+    exactSemanticOccurrenceCount(exactUnit, labelSpan.exactText) !== 1 ||
+    exactSemanticOccurrenceCount(exactUnit, kindSpan.exactText) !== 1
+  ) {
+    return false;
+  }
+  const actorListPrefix = codePoints
+    .slice(unit.startCodePoint, labelSpan.startCodePoint)
+    .join("");
+  const relationship = codePoints
+    .slice(labelSpan.endCodePoint, kindSpan.startCodePoint)
+    .join("");
+  const scope = codePoints
+    .slice(kindSpan.endCodePoint, unit.endCodePoint)
+    .join("");
+  return (
+    actorListPrefix === "" ||
+    /^(?:[\p{Script=Han}\p{N}]+、)*[\p{Script=Han}\p{N}]+(?:和|及|与|與)$/u
+      .test(actorListPrefix)
+  ) && relationship === "并行" && scope === "各自影响";
+}
+
+function conditionAuthorityExactStageReferenceIsClosed(
+  labelSpan: TemplateCopilotV3SourceSpan,
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (
+    typeof message !== "string" ||
+    labelSpan.messageId !== unit.messageId ||
+    labelSpan.startCodePoint < unit.startCodePoint ||
+    labelSpan.endCodePoint > unit.endCodePoint
+  ) {
+    return false;
+  }
+  const codePoints = Array.from(message);
+  const exactUnit = codePoints
+    .slice(unit.startCodePoint, unit.endCodePoint)
+    .join("");
+  if (exactSemanticOccurrenceCount(exactUnit, labelSpan.exactText) !== 1) {
+    return false;
+  }
+  const sameParticipant = observations.some(
+    (observation) =>
+      observation.role === "participant" &&
+      observation.quote === labelSpan.exactText &&
+      observation.sourceSpan.spanId === labelSpan.spanId,
+  );
+  const participantModes = observations.filter(
+    (observation) =>
+      observation.role === "participant_mode" &&
+      observation.sourceSpan.messageId === unit.messageId &&
+      observation.sourceSpan.startCodePoint >= unit.startCodePoint &&
+      observation.sourceSpan.endCodePoint <= unit.endCodePoint &&
+      conditionAuthorityTextIsUnobscured(observation.quote),
+  );
+  if (!sameParticipant && participantModes.length === 0) return false;
+  for (const kind of observations.filter(
+    (observation) => observation.role === "kind",
+  )) {
+    if (
+      kind.sourceSpan.messageId !== unit.messageId ||
+      kind.sourceSpan.startCodePoint < labelSpan.endCodePoint ||
+      kind.sourceSpan.endCodePoint > unit.endCodePoint ||
+      !conditionAuthorityTextIsUnobscured(kind.quote) ||
+      exactSemanticOccurrenceCount(exactUnit, kind.quote) !== 1
+    ) {
+      continue;
+    }
+    const prefix = codePoints
+      .slice(unit.startCodePoint, labelSpan.startCodePoint)
+      .join("");
+    const bridge = codePoints
+      .slice(labelSpan.endCodePoint, kind.sourceSpan.startCodePoint)
+      .join("");
+    const suffix = codePoints
+      .slice(kind.sourceSpan.endCodePoint, unit.endCodePoint)
+      .join("");
+    const prefixIsClosed = prefix === "" ||
+      /^(?:涉及[\p{Script=Han}\p{N}]+时|之后|然后|随后|由|再由)$/u
+        .test(prefix);
+    const bridgeIsClosed = /^(?:|先|再|也)$/u.test(bridge);
+    const suffixIsClosed = sameParticipant
+      ? suffix === ""
+      : participantModes.some(
+        (mode) =>
+          mode.sourceSpan.startCodePoint === kind.sourceSpan.endCodePoint &&
+          mode.sourceSpan.endCodePoint === unit.endCodePoint &&
+          suffix === mode.quote,
+      );
+    if (prefixIsClosed && bridgeIsClosed && suffixIsClosed) return true;
+  }
+  return false;
+}
+
+function buildConditionAuthoritySymbols(
+  ordinaryDrafts: readonly OrdinaryDraft[],
+  messages: Readonly<Record<string, string>>,
+): ConditionAuthoritySymbols {
+  const fieldCandidates = new Map<string, Set<string>>();
+  const stageCandidates = new Map<string, Set<string>>();
+  for (const ordinary of ordinaryDrafts) {
+    const { item, draft, rejectionFree } = ordinary;
+    const isField = item.kind === "request_field" &&
+      item.slot === "initiators_fields";
+    const isStage = item.kind === "stage" &&
+      item.slot === "stages_participants";
+    if (
+      (!isField && !isStage) ||
+      !rejectionFree ||
+      item.ambiguity !== "none" ||
+      item.anchorExpanded === true ||
+      item.sameLocalClauseRecoveredLeafCount !== 0 ||
+      item.leaves.some((leaf) => leaf.sameLocalClauseRecovered === true) ||
+      draft.semanticAuthorityBlocked ||
+      !semanticallyComplete(
+        draft.factId,
+        draft.semanticObservations,
+        draft.semanticContexts,
+        draft.ambiguity,
+        false,
+        draft.semanticAuthorityBlocked,
+      )
+    ) {
+      continue;
+    }
+    const suppliedLabels = item.leaves.filter((leaf) => leaf.role === "label");
+    const observedLabels = draft.semanticObservations.filter(
+      (observation) => observation.role === "label",
+    );
+    const label = suppliedLabels[0];
+    const observation = observedLabels[0];
+    const derived = draft.leaves.get("/label");
+    const message = messages[item.anchor.messageId];
+    const symbolUnit = typeof message === "string"
+      ? conditionAuthoritySymbolUnitForAnchor(
+        item.anchor,
+        conditionAuthorityUnits(item.anchor.messageId, message),
+      )
+      : null;
+    const symbolContext = symbolUnit
+      ? conditionAuthorityUnitSpan(symbolUnit, messages)
+      : null;
+    if (
+      suppliedLabels.length !== 1 ||
+      observedLabels.length !== 1 ||
+      !label ||
+      !observation ||
+      !symbolUnit ||
+      !symbolContext ||
+      !symbolUnit.balancedQuotes ||
+      !conditionAuthoritySymbolTerminatorIsDeclarative(
+        symbolUnit.terminator,
+      ) ||
+      conditionAuthorityUnitBeginsConnector(symbolUnit, messages) ||
+      !conditionAuthoritySymbolTextHasClosedEdges(symbolContext.exactText) ||
+      !conditionAuthorityTextIsUnobscured(symbolContext.exactText) ||
+      conditionAuthorityTextBeforeTrustedSpanIsIllustrativeMeta(
+        symbolUnit,
+        label.sourceSpan,
+        messages,
+      ) ||
+      templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority(
+        templateCopilotV3NormalizeLexicalText(symbolContext.exactText),
+      ) ||
+      typeof derived?.value !== "string" ||
+      derived.value !== label.sourceSpan.exactText ||
+      observation.sourceSpan.spanId !== label.sourceSpan.spanId ||
+      exactSemanticOccurrenceCount(
+        item.anchor.exactText,
+        label.sourceSpan.exactText,
+      ) !== 1 ||
+      !conditionAuthorityTextIsUnobscured(label.sourceSpan.exactText) ||
+      Array.from(label.sourceSpan.exactText).some((character) =>
+        semanticHardClauseSeparator(character)
+      ) ||
+      templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority(
+        templateCopilotV3NormalizeLexicalText(label.sourceSpan.exactText),
+      )
+    ) {
+      continue;
+    }
+    if (
+      isField &&
+      !requestFieldConditionAuthoritySymbolHasClosedRequiredScope(
+        item,
+        draft,
+        label.sourceSpan,
+        symbolUnit,
+        messages,
+      )
+    ) {
+      continue;
+    }
+    const signature = stableJson([
+      item.anchor.spanId,
+      canonicalDraftContentKey(draft),
+    ]);
+    const candidates = (isField ? fieldCandidates : stageCandidates);
+    const aliases = new Set<string>();
+    if (
+      isField ||
+      conditionAuthorityExactStageReferenceIsClosed(
+        label.sourceSpan,
+        draft.semanticObservations,
+        symbolUnit,
+        messages,
+      )
+    ) {
+      aliases.add(label.sourceSpan.exactText);
+    }
+    if (isStage) {
+      // A CJK condition may name a stage as its accepted label plus its exact
+      // accepted kind (for example 安全 + 评审). Keep that reference closed to
+      // two clean observations from the same independently compiled stage.
+      for (const kind of draft.semanticObservations.filter(
+        (entry) => entry.role === "kind",
+      )) {
+        const labelText = templateCopilotV3NormalizeTrimCollapseText(
+          label.sourceSpan.exactText,
+        );
+        const kindText = templateCopilotV3NormalizeTrimCollapseText(
+          kind.quote,
+        );
+        if (
+          labelText.length > 0 &&
+          kindText.length > 0 &&
+          labelText.length + kindText.length <= 64 &&
+          labelText === label.sourceSpan.exactText &&
+          kindText === kind.quote &&
+          /^[\p{Script=Han}\p{N}]+$/u.test(labelText) &&
+          /^[\p{Script=Han}\p{N}]+$/u.test(kindText) &&
+          conditionAuthorityCompositeStageReferenceIsClosed(
+            label.sourceSpan,
+            kind.sourceSpan,
+            draft.semanticObservations,
+            symbolUnit,
+            messages,
+          )
+        ) {
+          aliases.add(
+            labelText.endsWith(kindText)
+              ? labelText
+              : labelText + kindText,
+          );
+        }
+      }
+    }
+    for (const alias of aliases) {
+      const current = candidates.get(alias) ?? new Set<string>();
+      current.add(signature);
+      candidates.set(alias, current);
+    }
+  }
+  const uniqueLabels = (candidates: ReadonlyMap<string, ReadonlySet<string>>) =>
+    new Set(
+      [...candidates.entries()]
+        .filter(([, signatures]) => signatures.size === 1)
+        .map(([label]) => label),
+    );
+  return Object.freeze({
+    fieldLabels: uniqueLabels(fieldCandidates),
+    stageReferences: uniqueLabels(stageCandidates),
+  });
+}
+
+function conditionAdjacentAuthorityUnitsAreCovered(
+  units: readonly ConditionAuthorityUnit[],
+  target: ConditionAuthorityUnit,
+  coverage: ReadonlySet<string>,
+  messages: Readonly<Record<string, string>>,
+) {
+  const targetKey = conditionAuthorityUnitKey(target);
+  const targetIndex = units.findIndex(
+    (unit) => conditionAuthorityUnitKey(unit) === targetKey,
+  );
+  if (targetIndex < 0) return false;
+  for (const offset of [-1, 1]) {
+    const adjacent = units[targetIndex + offset];
+    if (!adjacent || adjacent.blockIndex !== target.blockIndex) continue;
+    if (
+      conditionAuthorityUnitBeginsConnector(adjacent, messages) ||
+      !coverage.has(conditionAuthorityUnitKey(adjacent))
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function conditionAuthorityIntroducerIsClosed(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return normalized === "" ||
+    /^(?:if|when|whenever|如果|若|当|當|每当|每當)$/u.test(normalized);
+}
+
+function conditionAuthorityRouteTailIsClosed(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return normalized === "" ||
+    /^(?:(?:must|shall|will|has\s+to|is\s+required\s+to)\s+)?(?:block|stop|pause)(?:\s+the)?\s+(?:workflow|process)$/u
+      .test(normalized) ||
+    /^(?:(?:必须|須|须|需|應|应|应该)\s*)?(?:阻塞|暫停|暂停|停止)(?:該|该|本)?(?:流程|工作流)$/u
+      .test(normalized);
+}
+
+function conditionAuthorityEmptyGapIsClosed(value: string) {
+  return conditionAuthorityTextIsUnobscured(value) &&
+    templateCopilotV3NormalizeLexicalText(value) === "";
+}
+
+function conditionAuthorityOperatorValueGapIsClosed(value: string) {
+  if (!conditionAuthorityStructuralTextIsClean(value)) return false;
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return /^(?:|港币|港幣|人民币|人民幣|美元|欧元|歐元|hkd|rmb|cny|usd|eur|hk\$|us\$|[$¥￥])$/u
+    .test(normalized);
+}
+
+function conditionAuthorityValueRouteGapIsClosed(value: string) {
+  if (!conditionAuthorityStructuralTextIsClean(value)) return false;
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return /^(?:[,，])?(?:(?:时|時)(?:则|則)?)?(?:走|增加|加入|转至|轉至|送至|进入|進入|触发|觸發)$/u
+      .test(normalized) ||
+    /^(?:then\s+)?(?:routes?|sends?|goes?)\s+to$/u.test(normalized);
+}
+
+function ordinaryConditionAuthorityUnitIsClosed(
+  field: TemplateCopilotV3ReviewObservation | undefined,
+  operator: TemplateCopilotV3ReviewObservation | undefined,
+  value: TemplateCopilotV3ReviewObservation | undefined,
+  matchingRoute: TemplateCopilotV3ReviewObservation | undefined,
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (
+    typeof message !== "string" ||
+    !field ||
+    !operator ||
+    !value ||
+    !matchingRoute ||
+    field.sourceSpan.messageId !== unit.messageId ||
+    operator.sourceSpan.messageId !== unit.messageId ||
+    value.sourceSpan.messageId !== unit.messageId ||
+    matchingRoute.sourceSpan.messageId !== unit.messageId
+  ) {
+    return false;
+  }
+  if (
+    !conditionAuthorityObservationTextIsClean(field.quote) ||
+    !conditionAuthorityStructuralTextIsClean(operator.quote) ||
+    !conditionAuthorityStructuralTextIsClean(value.quote) ||
+    !conditionAuthorityObservationTextIsClean(matchingRoute.quote)
+  ) {
+    return false;
+  }
+  const codePoints = Array.from(message);
+  if (
+    field.sourceSpan.endCodePoint > operator.sourceSpan.startCodePoint ||
+    operator.sourceSpan.endCodePoint > value.sourceSpan.startCodePoint ||
+    value.sourceSpan.endCodePoint > matchingRoute.sourceSpan.startCodePoint
+  ) {
+    return false;
+  }
+  return conditionAuthorityIntroducerIsClosed(
+    codePoints
+      .slice(unit.startCodePoint, field.sourceSpan.startCodePoint)
+      .join(""),
+  ) && conditionAuthorityEmptyGapIsClosed(
+    codePoints
+      .slice(field.sourceSpan.endCodePoint, operator.sourceSpan.startCodePoint)
+      .join(""),
+  ) && conditionAuthorityOperatorValueGapIsClosed(
+    codePoints
+      .slice(operator.sourceSpan.endCodePoint, value.sourceSpan.startCodePoint)
+      .join(""),
+  ) && conditionAuthorityValueRouteGapIsClosed(
+    codePoints
+      .slice(value.sourceSpan.endCodePoint, matchingRoute.sourceSpan.startCodePoint)
+      .join(""),
+  ) && conditionAuthorityRouteTailIsClosed(
+    codePoints
+      .slice(matchingRoute.sourceSpan.endCodePoint, unit.endCodePoint)
+      .join(""),
+  );
+}
+
+function ordinaryStageAuthorityUnitIsClosed(
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  unit: ConditionAuthorityUnit,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (typeof message !== "string") return false;
+  const exactUnitText = Array.from(message)
+    .slice(unit.startCodePoint, unit.endCodePoint)
+    .join("");
+  if (!conditionAuthorityStructuralTextIsClean(exactUnitText)) return false;
+  if (
+    observations
+      .filter((observation) =>
+        observation.role === "label" ||
+        observation.role === "kind" ||
+        observation.role === "participant" ||
+        observation.role === "participant_mode"
+      )
+      .some((observation) =>
+        !conditionAuthorityObservationTextIsClean(observation.quote)
+      )
+  ) {
+    return false;
+  }
+  const unitText = templateCopilotV3NormalizeLexicalText(
+    exactUnitText,
+  ).replace(/\s/gu, "");
+  const kinds = observations
+    .filter((observation) => observation.role === "kind")
+    .map((observation) =>
+      templateCopilotV3NormalizeLexicalText(observation.quote)
+        .replace(/\s/gu, "")
+    )
+    .filter(Boolean);
+  const actors = observations
+    .filter(
+      (observation) =>
+        observation.role === "label" ||
+        observation.role === "participant" ||
+        observation.role === "participant_mode",
+    )
+    .map((observation) =>
+      templateCopilotV3NormalizeLexicalText(observation.quote)
+        .replace(/\s/gu, "")
+    )
+    .filter(Boolean);
+  if (kinds.length === 0 || actors.length === 0) return false;
+  for (const kind of kinds) {
+    for (const actor of actors) {
+      if (
+        unitText === actor + kind ||
+        unitText === kind + actor ||
+        unitText === "性能声明必须经过" + actor + kind ||
+        unitText === "性能聲明必須經過" + actor + kind
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function conditionAuthorityWrapperIsClosed(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return /^(?:enforce|apply|execute) the following quoted requirement$/u
+      .test(normalized) ||
+    /^(?:引用|引述)(?:并|並)(?:执行|執行)以下要求$/u.test(normalized);
+}
+
+function conditionAuthorityContainsQuoteDelimiter(value: string) {
+  return /["'`<>＜＞＂＇〝〞❝❞❛❜｟｠⟪⟫﹁﹂]|[\u2032-\u2037\u2057]|[\p{Pi}\p{Pf}\p{Ps}\p{Pe}]/u
+    .test(value);
+}
+
+function conditionAuthoritySymbolTextHasClosedEdges(value: string) {
+  const codePoints = Array.from(value.trim());
+  return codePoints.length > 0 &&
+    /[\p{L}\p{N}]/u.test(codePoints[0] ?? "") &&
+    /[\p{L}\p{N}]/u.test(codePoints.at(-1) ?? "");
+}
+
+function conditionAuthorityTextIsIllustrativeMeta(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  const compactCjk = conditionAuthorityCjkSecurityFold(value);
+  return /(?:^|\b)(?:example|for example|e\.g\.|historical|previously quoted|draft|archived?|demo|sample|hypothetical|memo|retelling|excerpt(?:ed)?)(?:\b|$)/u
+    .test(normalized) ||
+    /(?:示例|例子|例如|歷史|历史|供參考|供参考|參考資料|参考资料|背景資料|背景资料|示意|摘錄|摘录|原文|以下為引述|以下为引述|草稿|舊版|旧版|存檔|存档|演示|樣本|样本|假設|假设|備忘|备忘|轉述|转述|節選|节选|摘自)/u
+      .test(compactCjk);
+}
+
+function conditionAuthorityCjkSecurityFold(value: string) {
+  return value.normalize("NFKD")
+    .replace(
+      /[\p{White_Space}\p{Default_Ignorable_Code_Point}\p{M}\u00AD]+/gu,
+      "",
+    );
+}
+
+function conditionAuthorityTextHasObscuringCharacters(value: string) {
+  return /[\p{Cc}\p{Cf}\p{M}\p{Default_Ignorable_Code_Point}\u00AD]/u
+      .test(value) ||
+    /[\p{Script=Han}]\p{White_Space}+[\p{Script=Han}]/u.test(value);
+}
+
+function conditionAuthorityTextIsUnobscured(value: string) {
+  return !conditionAuthorityContainsQuoteDelimiter(value) &&
+    !conditionAuthorityTextHasObscuringCharacters(value);
+}
+
+function conditionAuthorityStructuralTextIsClean(value: string) {
+  return conditionAuthorityTextIsUnobscured(value) &&
+    !conditionAuthorityTextIsIllustrativeMeta(value);
+}
+
+function conditionAuthorityTextBeforeTrustedSpanIsIllustrativeMeta(
+  unit: ConditionAuthorityUnit,
+  trustedSpan: TemplateCopilotV3SourceSpan,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[unit.messageId];
+  if (
+    typeof message !== "string" ||
+    trustedSpan.messageId !== unit.messageId ||
+    trustedSpan.startCodePoint < unit.startCodePoint ||
+    trustedSpan.endCodePoint > unit.endCodePoint
+  ) {
+    return true;
+  }
+  const codePoints = Array.from(message);
+  const prefix = codePoints
+    .slice(unit.startCodePoint, trustedSpan.startCodePoint)
+    .join("");
+  return conditionAuthorityTextIsIllustrativeMeta(prefix);
+}
+
+function conditionAuthorityObservationTextIsClean(value: string) {
+  return conditionAuthorityStructuralTextIsClean(value) &&
+    !templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority(
+      templateCopilotV3NormalizeLexicalText(value),
+    );
+}
+
+function conditionAuthorityContextSpan(
+  messageId: string,
+  startCodePoint: number,
+  endCodePoint: number,
+  messages: Readonly<Record<string, string>>,
+) {
+  const message = messages[messageId];
+  if (typeof message !== "string" || endCodePoint <= startCodePoint) {
+    return null;
+  }
+  const exactText = Array.from(message)
+    .slice(startCodePoint, endCodePoint)
+    .join("");
+  const supplied = {
+    messageId,
+    startCodePoint,
+    endCodePoint,
+    exactText,
+  };
+  const parsed = templateCopilotV3SourceSpanSchema.safeParse({
+    spanId: templateCopilotV3SourceSpanId(supplied),
+    ...supplied,
+  });
+  return parsed.success &&
+      validateTemplateCopilotV3SourceSpan(parsed.data, messages)
+    ? Object.freeze(parsed.data)
+    : null;
+}
+
+function deriveClosedConditionAuthorityEnvelope({
+  item,
+  field,
+  matchingRoute,
+  messages,
+  conditionAuthorityCoverage,
+  conditionAuthoritySymbols,
+}: Readonly<{
+  item: TemplateCopilotV3LocatedQuoteItem & {
+    kind: keyof typeof arrayFactByKind;
+  };
+  field: TemplateCopilotV3LocatedQuoteItem["leaves"][number];
+  matchingRoute: TemplateCopilotV3LocatedQuoteItem["leaves"][number];
+  messages: Readonly<Record<string, string>>;
+  conditionAuthorityCoverage: ReadonlySet<string>;
+  conditionAuthoritySymbols: ConditionAuthoritySymbols;
+}>): Readonly<{
+  context: TemplateCopilotV3SourceSpan;
+  unit: ConditionAuthorityUnit;
+}> | null {
+  const messageId = item.anchor.messageId;
+  const message = messages[messageId];
+  if (typeof message !== "string") return null;
+  const codePoints = Array.from(message);
+  if (
+    item.leaves.length !== 4 ||
+    item.leaves.some((leaf) => leaf.sameLocalClauseRecovered === true) ||
+    !conditionAuthoritySymbols.fieldLabels.has(field.sourceSpan.exactText) ||
+    !conditionAuthoritySymbols.stageReferences.has(
+      matchingRoute.sourceSpan.exactText,
+    )
+  ) {
+    return null;
+  }
+  const units = conditionAuthorityUnits(messageId, message);
+  const unit = conditionAuthorityUnitForAnchor(item.anchor, units);
+  if (
+    !unit ||
+    !unit.balancedQuotes ||
+    !conditionAuthorityTerminatorIsDeclarative(unit.terminator) ||
+    !conditionAdjacentAuthorityUnitsAreCovered(
+      units,
+      unit,
+      conditionAuthorityCoverage,
+      messages,
+    )
+  ) {
+    return null;
+  }
+
+  const unitCodePoints = codePoints.slice(
+    unit.startCodePoint,
+    unit.endCodePoint,
+  );
+  const colonIndex = unitCodePoints.findIndex(
+    (character) => character === ":" || character === "：",
+  );
+  let payloadStartCodePoint = unit.startCodePoint;
+  let payloadEndCodePoint = unit.endCodePoint;
+  let governingWrapper = false;
+
+  if (colonIndex >= 0) {
+    const wrapper = unitCodePoints.slice(0, colonIndex).join("");
+    if (conditionAuthorityWrapperIsClosed(wrapper)) {
+      governingWrapper = true;
+      let payloadStart = colonIndex + 1;
+      while (
+        payloadStart < unitCodePoints.length &&
+        /\s/u.test(unitCodePoints[payloadStart] ?? "")
+      ) {
+        payloadStart += 1;
+      }
+      const opening = unitCodePoints[payloadStart] ?? "";
+      const closing =
+        conditionAuthorityClosingByOpening[
+          opening as keyof typeof conditionAuthorityClosingByOpening
+        ];
+      if (closing !== undefined) {
+        let closingIndex = unitCodePoints.length - 1;
+        while (
+          closingIndex > payloadStart &&
+          /\s/u.test(unitCodePoints[closingIndex] ?? "")
+        ) {
+          closingIndex -= 1;
+        }
+        if (
+          unitCodePoints[closingIndex] !== closing ||
+          closingIndex <= payloadStart + 1 ||
+          conditionAuthorityContainsQuoteDelimiter(
+            unitCodePoints
+              .slice(payloadStart + 1, closingIndex)
+              .join(""),
+          )
+        ) {
+          return null;
+        }
+        payloadStart += 1;
+        payloadEndCodePoint = unit.startCodePoint + closingIndex;
+      } else {
+        if (
+          conditionAuthorityContainsQuoteDelimiter(
+            unitCodePoints.slice(payloadStart).join(""),
+          )
+        ) {
+          return null;
+        }
+        payloadEndCodePoint = unit.endCodePoint;
+      }
+      payloadStartCodePoint = unit.startCodePoint + payloadStart;
+    }
+  }
+
+  if (!governingWrapper) {
+    if (
+      colonIndex >= 0 ||
+      conditionAuthorityContainsQuoteDelimiter(unitCodePoints.join(""))
+    ) {
+      return null;
+    }
+  }
+
+  while (
+    payloadStartCodePoint < payloadEndCodePoint &&
+    /\s/u.test(codePoints[payloadStartCodePoint] ?? "")
+  ) {
+    payloadStartCodePoint += 1;
+  }
+  while (
+    payloadEndCodePoint > payloadStartCodePoint &&
+    /\s/u.test(codePoints[payloadEndCodePoint - 1] ?? "")
+  ) {
+    payloadEndCodePoint -= 1;
+  }
+  if (
+    governingWrapper &&
+    /^[.!。！]$/u.test(codePoints[payloadEndCodePoint - 1] ?? "")
+  ) {
+    payloadEndCodePoint -= 1;
+    while (
+      payloadEndCodePoint > payloadStartCodePoint &&
+      /\s/u.test(codePoints[payloadEndCodePoint - 1] ?? "")
+    ) {
+      payloadEndCodePoint -= 1;
+    }
+  }
+  if (
+    payloadEndCodePoint <= payloadStartCodePoint ||
+    codePoints
+      .slice(payloadStartCodePoint, payloadEndCodePoint)
+      .some((character) => semanticHardClauseSeparator(character))
+  ) {
+    return null;
+  }
+  const coreLeaves = item.leaves.filter((leaf) =>
+    leaf.role === "field" ||
+    leaf.role === "operator" ||
+    leaf.role === "value" ||
+    leaf.role === "matching_route"
+  );
+  if (
+    coreLeaves.length !== 4 ||
+    coreLeaves.some(
+      (leaf) =>
+        leaf.sourceSpan.messageId !== messageId ||
+        leaf.sourceSpan.startCodePoint < payloadStartCodePoint ||
+        leaf.sourceSpan.endCodePoint > payloadEndCodePoint,
+    )
+  ) {
+    return null;
+  }
+  const prefix = codePoints
+    .slice(payloadStartCodePoint, field.sourceSpan.startCodePoint)
+    .join("");
+  const suffix = codePoints
+    .slice(matchingRoute.sourceSpan.endCodePoint, payloadEndCodePoint)
+    .join("");
+  if (
+    !conditionAuthorityIntroducerIsClosed(prefix) ||
+    !conditionAuthorityRouteTailIsClosed(suffix)
+  ) {
+    return null;
+  }
+  const context = conditionAuthorityContextSpan(
+    messageId,
+    payloadStartCodePoint,
+    payloadEndCodePoint,
+    messages,
+  );
+  return context ? Object.freeze({ context, unit }) : null;
+}
+
+function exactSemanticOccurrenceCount(value: string, needle: string) {
+  let count = 0;
+  let cursor = 0;
+  while (cursor <= value.length - needle.length) {
+    const offset = value.indexOf(needle, cursor);
+    if (offset < 0) break;
+    count += 1;
+    cursor = offset + Math.max(needle.length, 1);
+  }
+  return count;
+}
+
+function deriveNumericValue(factId: TemplateCopilotV3FragmentFactId, path: string, sourceText: string) {
+  const canonical = templateCopilotV3CanonicalDecimalText(sourceText);
+  if (canonical !== null) return Number(canonical);
+  const maximum = path === "/sequence" && factId === "workflow.stages" ? 100 : path === "/sequence" && factId === "workflow.conditions" ? 50 : 0;
+  for (let candidate = 1; candidate <= maximum; candidate += 1) {
+    const value: Record<string, unknown> = {};
+    setAt(value, path, candidate);
+    if (templateCopilotV3DirectEvidenceDerivesLeaf({ factId, path, rule: "numeric_lexical", value, sourceText })) return candidate;
+  }
+  return null;
+}
+
+function emptyCollectionDerives(factId: TemplateCopilotV3FragmentFactId, path: string, sourceText: string) {
+  const value: Record<string, unknown> = {};
+  setAt(value, path, []);
+  return templateCopilotV3DirectEvidenceDerivesLeaf({ factId, path, rule: "explicit_empty_collection", value, sourceText });
+}
+
+function deriveRelationship(hint: string | null, text: string): "sequential" | "parallel" | null {
+  if (hint !== "parallel" && hint !== "sequential") return null;
+  const wording = templateCopilotV3NormalizeLexicalText(text);
+  const aliases = hint === "parallel" ? ["parallel", "in parallel", "simultaneously", "同時", "同时", "並行", "并行"] : ["sequential", "sequentially", "in sequence", "依次", "順序", "顺序"];
+  return aliases.some((alias) => templateCopilotV3NormalizeLexicalText(alias) === wording) ? hint : null;
+}
+
+function groupKey(draft: Draft) {
+  const identityPath = draft.factId === "workflow.conditions"
+    ? "/sequence"
+    : draft.factId === "notifications.rules"
+      ? null
+      : "/label";
+  const identity = draft.factId === "notifications.rules"
+    ? verifiedNotificationGroupingIdentity(draft)
+    : identityPath
+      ? draft.leaves.get(identityPath)?.value
+      : undefined;
+  const sourceIdentity = `${draft.anchor.messageId}:${draft.anchor.startCodePoint}:${draft.anchor.endCodePoint}:${draft.anchor.spanId}`;
+  const local = `source:${sourceIdentity}|${identity === undefined ? "anonymous" : `identity:${stableJson(identity)}`}`;
+  return `${draft.factId}|${local}`;
+}
+
+function verifiedNotificationGroupingIdentity(draft: Draft) {
+  const verified = (role: TemplateCopilotV3ProviderQuoteRole) =>
+    draft.semanticObservations.filter(
+      (observation) =>
+        observation.role === role &&
+        semanticHintIsVerified(
+          "notifications.rules",
+          observation,
+          draft.semanticContexts,
+        ),
+    );
+  const events = verified("event");
+  const recipients = verified("recipient");
+  if (events.length !== 1 || recipients.length !== 1) return undefined;
+  return Object.freeze({
+    event: Object.freeze({
+      hint: events[0].advisoryHint,
+      messageId: events[0].sourceSpan.messageId,
+      startCodePoint: events[0].sourceSpan.startCodePoint,
+      endCodePoint: events[0].sourceSpan.endCodePoint,
+    }),
+    recipient: Object.freeze({
+      hint: recipients[0].advisoryHint,
+      messageId: recipients[0].sourceSpan.messageId,
+      startCodePoint: recipients[0].sourceSpan.startCodePoint,
+      endCodePoint: recipients[0].sourceSpan.endCodePoint,
+    }),
+  });
+}
+
+function clusterOf(groupingKey: string, draft: Draft): Cluster {
+  return { factId: draft.factId, anchor: draft.anchor, groupingKey, leaves: cloneLeaves(draft.leaves), arrays: cloneArrays(draft.arrays), relationships: [...draft.relationships], observedRoles: new Set(draft.observedRoles), semanticObservations: [...draft.semanticObservations], semanticAuthorityBlocked: draft.semanticAuthorityBlocked, semanticContexts: [...draft.semanticContexts], sourceAnchors: [...draft.sourceAnchors], confidence: draft.confidence, ambiguity: draft.ambiguity, itemIndexes: [draft.itemIndex] };
+}
+function findDraftConflictPaths(drafts: readonly Draft[]) {
+  const candidatePaths = new Set(
+    drafts.flatMap((draft) => [
+      ...draft.leaves.keys(),
+      ...semanticObservationConflictCandidatePaths(draft),
+    ]),
+  );
+  const valuesByPath = new Map<string, Set<string>>();
+  for (const path of candidatePaths) {
+    for (const draft of drafts) {
+      const conflictValue = draftConflictValue(draft, path);
+      if (!conflictValue.present) continue;
+      const values = valuesByPath.get(path) ?? new Set<string>();
+      values.add(stableJson(conflictValue.value));
+      valuesByPath.set(path, values);
+    }
+  }
+  return [...valuesByPath]
+    .filter(([, values]) => values.size > 1)
+    .map(([path]) => path)
+    .sort(compareText);
+}
+
+function semanticObservationConflictCandidatePaths(draft: Draft) {
+  return draft.factId === "workflow.stages" &&
+      semanticStageKindValues(draft).length > 0
+    ? ["/kind"]
+    : [];
+}
+
+function semanticObservationConflictPaths(draft: Draft) {
+  return semanticStageKindValues(draft).length > 1 ? ["/kind"] : [];
+}
+
+function semanticStageKindValues(draft: Draft) {
+  return [
+    ...new Set(
+      draft.semanticObservations
+        .filter(
+          (observation) =>
+            observation.role === "kind" &&
+            observation.advisoryHint !== null &&
+            semanticHintIsVerified(
+              draft.factId,
+              observation,
+              draft.semanticContexts,
+            ),
+        )
+        .map((observation) => observation.advisoryHint as string),
+    ),
+  ].sort(compareText);
+}
+
+function draftConflictValue(draft: Draft, path: string):
+  | Readonly<{ present: true; value: unknown }>
+  | Readonly<{ present: false }> {
+  const leaf = draft.leaves.get(path);
+  if (leaf) return { present: true, value: leaf.value };
+  if (draft.factId === "workflow.stages" && path === "/kind") {
+    const values = semanticStageKindValues(draft);
+    if (values.length === 1) return { present: true, value: values[0] };
+  }
+  return { present: false };
+}
+
+// The same notification is often quoted by more than one batch. A copy that
+// was blocked (for example because it dropped an "only" qualifier) and whose
+// evidence is strictly contained in an unblocked copy of the same group adds
+// nothing reviewable; merging it would only poison the complete copy.
+function withoutSubsumedBlockedNotificationDrafts(group: readonly Draft[]) {
+  const observationKeys = (draft: Draft) =>
+    new Set(
+      draft.semanticObservations.map((entry) =>
+        stableJson([entry.role, entry.advisoryHint ?? null, entry.sourceSpan.spanId])
+      ),
+    );
+  const unblocked = group
+    .filter((draft) => draft.kind === "notification" && !draft.semanticAuthorityBlocked)
+    .map(observationKeys);
+  if (unblocked.length === 0) return [...group];
+  return group.filter((draft) => {
+    if (draft.kind !== "notification" || !draft.semanticAuthorityBlocked) return true;
+    const keys = observationKeys(draft);
+    return !unblocked.some((superset) =>
+      superset.size > keys.size && [...keys].every((key) => superset.has(key))
+    );
+  });
+}
+
+function clusterDraftsDeterministically(
+  groupingKey: string,
+  drafts: readonly Draft[],
+  conflictPaths: readonly string[],
+  compareSpans: (
+    left: TemplateCopilotV3SourceSpan,
+    right: TemplateCopilotV3SourceSpan,
+  ) => number,
+) {
+  const partitions = new Map<string, Draft[]>();
+  for (const draft of drafts) {
+    const conflictSignature = draftConflictSignature(draft, conflictPaths);
+    const partitionKey =
+      conflictPaths.length === 0
+        ? "compatible"
+        : conflictSignature === null
+          ? `underspecified:${canonicalDraftContentKey(draft)}`
+          : `alternative:${conflictSignature}`;
+    partitions.set(partitionKey, [
+      ...(partitions.get(partitionKey) ?? []),
+      draft,
+    ]);
+  }
+  return [...partitions]
+    .sort(([left], [right]) => compareText(left, right))
+    .map(([, partition]) => {
+      const ordered = [...partition].sort(
+        (left, right) =>
+          compareText(
+            canonicalDraftContentKey(left),
+            canonicalDraftContentKey(right),
+          ) ||
+          compareSpans(left.anchor, right.anchor) ||
+          left.itemIndex - right.itemIndex,
+      );
+      const [first, ...remaining] = ordered;
+      if (!first) {
+        throw new Error("A deterministic conflict partition cannot be empty.");
+      }
+      const cluster = clusterOf(groupingKey, first);
+      for (const draft of remaining) {
+        mergeInto(cluster, draft, compareSpans);
+      }
+      return cluster;
+    });
+}
+
+function draftConflictSignature(
+  draft: Draft,
+  conflictPaths: readonly string[],
+) {
+  const entries: Array<readonly [string, unknown]> = [];
+  for (const path of conflictPaths) {
+    const conflictValue = draftConflictValue(draft, path);
+    if (!conflictValue.present) return null;
+    entries.push([path, conflictValue.value]);
+  }
+  return stableJson(entries);
+}
+
+function canonicalDraftContentKey(draft: Draft) {
+  return stableJson({
+    factId: draft.factId,
+    anchor: draft.anchor.spanId,
+    leaves: [...draft.leaves]
+      .map(([path, leaf]) => ({
+        path,
+        value: leaf.value,
+        rule: leaf.rule,
+        spanIds: [...new Set(leaf.spans.map((span) => span.spanId))].sort(
+          compareText,
+        ),
+      }))
+      .sort((left, right) => compareText(left.path, right.path)),
+    arrays: [...draft.arrays]
+      .map(([path, values]) => ({
+        path,
+        values: [...values.values()]
+          .map((leaf) => ({
+            value: leaf.value,
+            rule: leaf.rule,
+            spanIds: [...new Set(leaf.spans.map((span) => span.spanId))].sort(
+              compareText,
+            ),
+          }))
+          .sort((left, right) =>
+            compareText(stableJson(left), stableJson(right))
+          ),
+      }))
+      .sort((left, right) => compareText(left.path, right.path)),
+    relationships: draft.relationships
+      .map((entry) => ({
+        relationship: entry.relationship,
+        spanId: entry.sourceSpan.spanId,
+      }))
+      .sort(
+        (left, right) =>
+          compareText(left.relationship, right.relationship) ||
+          compareText(left.spanId, right.spanId),
+      ),
+    observedRoles: [...draft.observedRoles].sort(compareText),
+    semanticAuthorityBlocked: draft.semanticAuthorityBlocked,
+    semanticObservations: draft.semanticObservations
+      .map((entry) => ({
+        role: entry.role,
+        hint: entry.advisoryHint,
+        spanId: entry.sourceSpan.spanId,
+      }))
+      .sort(
+        (left, right) =>
+          compareText(left.role, right.role) ||
+          compareText(left.hint ?? "", right.hint ?? "") ||
+          compareText(left.spanId, right.spanId),
+      ),
+    semanticContexts: [
+      ...new Set(draft.semanticContexts.map((span) => span.spanId)),
+    ].sort(compareText),
+    sourceAnchors: [
+      ...new Set(draft.sourceAnchors.map((span) => span.spanId)),
+    ].sort(compareText),
+  });
+}
+function mergeInto(cluster: Cluster, draft: Draft, compareSpans: (left: TemplateCopilotV3SourceSpan, right: TemplateCopilotV3SourceSpan) => number) {
+  for (const [path, incoming] of draft.leaves) {
+    const current = cluster.leaves.get(path);
+    cluster.leaves.set(path, current ? { ...current, spans: dedupeSpans([...current.spans, ...incoming.spans], compareSpans) } : { ...incoming, spans: [...incoming.spans] });
+  }
+  for (const [path, incomingValues] of draft.arrays) {
+    const values = cluster.arrays.get(path) ?? new Map<string, Leaf>();
+    for (const [key, incoming] of incomingValues) {
+      const current = values.get(key);
+      values.set(key, current ? { ...current, spans: dedupeSpans([...current.spans, ...incoming.spans], compareSpans) } : { ...incoming, spans: [...incoming.spans] });
+    }
+    cluster.arrays.set(path, values);
+  }
+  cluster.relationships = dedupeRelationships([...cluster.relationships, ...draft.relationships], compareSpans);
+  for (const role of draft.observedRoles) cluster.observedRoles.add(role);
+  cluster.semanticObservations = dedupeObservations([...cluster.semanticObservations, ...draft.semanticObservations], compareSpans);
+  cluster.semanticContexts = dedupeSpans(
+    [...cluster.semanticContexts, ...draft.semanticContexts],
+    compareSpans,
+  );
+  cluster.sourceAnchors = dedupeSpans([...cluster.sourceAnchors, ...draft.sourceAnchors], compareSpans);
+  cluster.semanticAuthorityBlocked =
+    cluster.semanticAuthorityBlocked || draft.semanticAuthorityBlocked;
+  if (confidenceRank[draft.confidence] < confidenceRank[cluster.confidence]) cluster.confidence = draft.confidence;
+  if (ambiguityRank[draft.ambiguity] > ambiguityRank[cluster.ambiguity]) cluster.ambiguity = draft.ambiguity;
+  cluster.itemIndexes = [...new Set([...cluster.itemIndexes, draft.itemIndex])].sort((a, b) => a - b);
+}
+function finishCluster(
+  cluster: Cluster,
+  messages: Readonly<Record<string, string>>,
+  order: ReadonlyMap<string, number>,
+  compareSpans: (left: TemplateCopilotV3SourceSpan, right: TemplateCopilotV3SourceSpan) => number,
+  conflictGroupId: string | undefined,
+  rejections: TemplateCopilotV3ReviewRejection[],
+): { item: TemplateCopilotV3ReviewArrayItem; fragment: TemplateCopilotV3Fragment | null } | null {
+  const semanticObservations = withoutUnverifiedAttachmentKindBesideFormat(
+    cluster.factId,
+    cluster.semanticObservations,
+    cluster.semanticContexts,
+  );
+  const value: Record<string, unknown> = {};
+  const bindings: Binding[] = [];
+  for (const [path, leaf] of [...cluster.leaves].sort(([a], [b]) => compareText(a, b))) {
+    setAt(value, path, leaf.value);
+    bindings.push({ path, spanIds: leaf.spans.map((span) => span.spanId).sort(compareText), rule: leaf.rule });
+  }
+  for (const [path, values] of [...cluster.arrays].sort(([a], [b]) => compareText(a, b))) {
+    const entries = [...values.values()].sort((a, b) => compareSpans(a.spans[0], b.spans[0]) || compareText(stableJson(a.value), stableJson(b.value)));
+    setAt(value, path, entries.map((entry) => entry.value));
+    entries.forEach((entry, index) => bindings.push({ path: `${path}/${index}`, spanIds: entry.spans.map((span) => span.spanId).sort(compareText), rule: entry.rule }));
+  }
+  bindings.sort((a, b) => compareText(a.path, b.path));
+  if (cluster.factId === "workflow.conditions" && [">", ">=", "<", "<="].includes(String(value.operator ?? "")) && typeof value.value !== "number") {
+    delete value.value;
+    const valueBinding = bindings.findIndex((binding) => binding.path === "/value");
+    if (valueBinding >= 0) bindings.splice(valueBinding, 1);
+  }
+  const missingPaths = missingPathsFor(cluster.factId, value, bindings);
+  const boundSpans = dedupeSpans([
+    ...cluster.leaves.values().flatMap((leaf) => leaf.spans),
+    ...cluster.arrays.values().flatMap((values) => [...values.values()].flatMap((leaf) => leaf.spans)),
+  ], compareSpans);
+  const sourceSpans = dedupeSpans([...boundSpans, ...cluster.relationships.map((item) => item.sourceSpan), ...semanticObservations.map((item) => item.sourceSpan)], compareSpans);
+  if (sourceSpans.length === 0) return null;
+  const byId = new Map(boundSpans.map((span) => [span.spanId, span]));
+  const sourceBound = bindings.every((binding) => binding.spanIds.every((spanId) => {
+    const span = byId.get(spanId);
+    return span !== undefined && validateTemplateCopilotV3SourceSpan(span, messages) && templateCopilotV3DirectEvidenceDerivesLeaf({ factId: cluster.factId, path: binding.path, rule: binding.rule, value, sourceText: span.exactText });
+  }));
+  if (!sourceBound) {
+    rejections.push({ itemIndex: cluster.itemIndexes[0] ?? -1, kind: kindForFact(cluster.factId), code: "unverifiable_leaf", detail: `${cluster.factId}:assembled` });
+    return null;
+  }
+  let ambiguity = cluster.ambiguity;
+  let ambiguityNote: string | undefined;
+  if (conflictGroupId) {
+    ambiguity = "ambiguous";
+    ambiguityNote = "Conflicting source-backed alternatives require human review.";
+  } else if (ambiguity !== "none") {
+    ambiguityNote = ambiguity === "possible" ? "Provider marked the source-backed wording as possibly ambiguous." : "Provider marked the source-backed wording as ambiguous.";
+  }
+  const sourceAnchors = dedupeSpans(cluster.sourceAnchors, compareSpans);
+  const unsupportedBlockingReason = semanticUnsupportedAuthorityReason(
+    cluster.factId,
+    semanticObservations,
+    cluster.semanticContexts,
+  );
+  const compoundPredicateBlocked =
+    cluster.factId === "workflow.conditions" &&
+    semanticConditionHasCompoundPredicateContext(
+      semanticObservations,
+      cluster.semanticContexts,
+    );
+  const governedBlockingReason:
+    | TemplateCopilotV3ReviewBlockingReason
+    | undefined =
+    unsupportedBlockingReason ??
+    (compoundPredicateBlocked
+      ? "compound_predicate_not_executable"
+      : undefined);
+  const semanticComplete =
+    governedBlockingReason === undefined &&
+    semanticallyComplete(
+      cluster.factId,
+      semanticObservations,
+      cluster.semanticContexts,
+      ambiguity,
+      conflictGroupId !== undefined,
+      cluster.semanticAuthorityBlocked,
+    );
+  // A threshold branch whose only defect is a field carried from an earlier
+  // sentence ("申请额度不超过…。超过一百万元由财务总监批准") is held for review as
+  // non-executable instead of being left unresolved. Misreadings (negation,
+  // truncated fields, split predicates) still fail closed as unresolved.
+  const unprovenConditionHold =
+    cluster.factId === "workflow.conditions" &&
+    governedBlockingReason === undefined &&
+    !semanticComplete &&
+    ambiguity === "none" &&
+    conflictGroupId === undefined &&
+    semanticConditionOnlyCarriesFieldAcrossSentence(
+      semanticObservations,
+      cluster.semanticContexts,
+    );
+  const blockingReason: TemplateCopilotV3ReviewBlockingReason | undefined =
+    unprovenConditionHold
+      ? "unsupported_semantics_not_executable"
+      : governedBlockingReason;
+  const fragmentAuthorityBlocked =
+    cluster.semanticAuthorityBlocked ||
+    ambiguity !== "none" ||
+    blockingReason !== undefined;
+  const complete =
+    missingPaths.length === 0 && !fragmentAuthorityBlocked;
+  const observedRoles = [...cluster.observedRoles]
+    .filter(
+      (role) =>
+        role !== "kind" ||
+        semanticObservations === cluster.semanticObservations ||
+        semanticObservations.some((entry) => entry.role === "kind"),
+    )
+    .sort(compareText);
+  const base = {
+    factId: cluster.factId,
+    value,
+    bindings,
+    missingPaths,
+    complete,
+    semanticComplete,
+    persisted: false as const,
+    executable: false as const,
+    defaulted: false as const,
+    confidence: cluster.confidence,
+    ambiguity,
+    ...(blockingReason ? { blockingReason } : {}),
+    ...(ambiguityNote ? { ambiguityNote } : {}),
+    observedRoles,
+    semanticValue: semanticValue(semanticObservations, compareSpans),
+    semanticLeaves: dedupeObservations(semanticObservations, compareSpans),
+    semanticObservations: dedupeObservations(semanticObservations, compareSpans),
+    sourceAnchors,
+    relationships: cluster.relationships,
+    sourceSpans,
+    sourceMessageIds: [...new Set(sourceSpans.map((span) => span.messageId))],
+    sourceOrder: orderFor(sourceSpans[0], order),
+    providerItemIndexes: cluster.itemIndexes,
+    ...(conflictGroupId ? { conflictGroupId } : {}),
+  };
+  const finalize = (fragment: TemplateCopilotV3Fragment | null) => {
+    const withoutReviewItemId = {
+      fragmentId: fragment?.fragmentId ?? null,
+      ...base,
+    };
+    return {
+      item: Object.freeze({
+        reviewItemId: templateCopilotV3ReviewItemId(withoutReviewItemId),
+        ...withoutReviewItemId,
+      }),
+      fragment,
+    };
+  };
+  if (bindings.length === 0) return finalize(null);
+  if (fragmentAuthorityBlocked) {
+    return finalize(null);
+  }
+  if (complete) {
+    if (!validateCompleteItem(cluster.factId, value, bindings, boundSpans, ambiguity, ambiguityNote)) {
+      rejections.push({ itemIndex: cluster.itemIndexes[0] ?? -1, kind: kindForFact(cluster.factId), code: "invalid_fragment", detail: `${cluster.factId}:complete_review` });
+      return null;
+    }
+    return finalize(null);
+  }
+  const withoutId = {
+    evidenceVersion: templateCopilotV3EvidenceContractVersion,
+    compilerVersion: templateCopilotV3EvidenceCompilerVersion,
+    factId: cluster.factId,
+    fragmentKind: "array_item" as const,
+    state: "open" as const,
+    value,
+    bindings,
+    missingPaths,
+    confidence: cluster.confidence,
+    ambiguity,
+    ...(ambiguityNote ? { ambiguityNote } : {}),
+  };
+  const parsed = templateCopilotV3FragmentSchema.safeParse({ ...withoutId, fragmentId: templateCopilotV3FragmentId(withoutId) });
+  if (!parsed.success) {
+    rejections.push({ itemIndex: cluster.itemIndexes[0] ?? -1, kind: kindForFact(cluster.factId), code: "invalid_fragment", detail: `${cluster.factId}:${parsed.error.issues[0]?.path.join("/") || "schema"}` });
+    return null;
+  }
+  return finalize(parsed.data);
+}
+
+// "Allow an Excel line-item schedule": a verb quoted as the attachment kind is
+// dropped when a verified file format already establishes the upload, so the
+// review keeps no hint its own quote does not support.
+function withoutUnverifiedAttachmentKindBesideFormat(
+  factId: TemplateCopilotV3FragmentFactId,
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+) {
+  if (factId !== "attachments.requirements") return observations;
+  const verified = (observation: TemplateCopilotV3ReviewObservation) =>
+    semanticHintIsVerified(factId, observation, semanticContexts);
+  if (!observations.some((entry) => entry.role === "format" && verified(entry))) {
+    return observations;
+  }
+  return observations.filter(
+    (entry) =>
+      entry.role !== "kind" ||
+      entry.advisoryHint !== "attachment" ||
+      verified(entry),
+  );
+}
+
+function semanticallyComplete(
+  factId: TemplateCopilotV3FragmentFactId,
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+  ambiguity: Ambiguity,
+  conflicted: boolean,
+  authorityBlocked: boolean,
+) {
+  if (ambiguity !== "none" || conflicted || authorityBlocked) return false;
+  const leaves = (role: TemplateCopilotV3ProviderQuoteRole) =>
+    observations.filter((leaf) => leaf.role === role);
+  const raw = (role: TemplateCopilotV3ProviderQuoteRole) =>
+    leaves(role).filter(
+      (leaf) =>
+        templateCopilotV3NormalizeTrimCollapseText(leaf.quote).length > 0,
+    );
+  const semanticSubjectObservation = raw("label")[0] ?? null;
+  const verified = (role: TemplateCopilotV3ProviderQuoteRole) =>
+    leaves(role).filter((leaf) =>
+      semanticHintIsVerified(
+        factId,
+        leaf,
+        sourceAnchors,
+        semanticSubjectObservation,
+      )
+    );
+  if (factId === "request.fields") {
+    const groups = [raw("label"), verified("required")] as const;
+    return groups.every((group) => group.length > 0) &&
+      semanticRequestGroupsHaveAffinity(groups[0], groups[1], sourceAnchors);
+  }
+  if (factId === "attachments.requirements") {
+    // A verified file format ("PDF", "image") already establishes an upload
+    // when the provider quoted an unrelated word as its attachment kind.
+    const verifiedKind = verified("kind");
+    const kindEvidence =
+      verifiedKind.length > 0 ||
+      leaves("kind").some((leaf) => leaf.advisoryHint !== "attachment")
+        ? verifiedKind
+        : verified("format");
+    const groups = [
+      raw("label"),
+      kindEvidence,
+      verified("required"),
+    ] as const;
+    return groups.every((group) => group.length > 0) &&
+      semanticAttachmentGroupsHaveAffinity(
+        groups[0],
+        groups[1],
+        groups[2],
+        sourceAnchors,
+      );
+  }
+  if (factId === "workflow.stages") {
+    const label = raw("label");
+    const kind = verified("kind");
+    const participant = [
+      ...raw("participant"),
+      ...verified("participant_mode"),
+    ];
+    return label.length > 0 && kind.length > 0 && participant.length > 0 &&
+      semanticCoreGroupsShareClause([kind, participant], sourceAnchors);
+  }
+  if (factId === "workflow.conditions") {
+    const predicate = [raw("field"), verified("operator"), raw("value")] as const;
+    const matchingRoutes = verified("matching_route");
+    const otherwiseRoutes = verified("otherwise_route");
+    return (
+      predicate.every((group) => group.length > 0) &&
+      matchingRoutes.length > 0 &&
+      semanticConditionPredicateGroupsHaveAffinity(
+        predicate[0],
+        predicate[1],
+        predicate[2],
+        sourceAnchors,
+      ) &&
+      semanticConditionRoutesHaveAffinity(
+        predicate[0],
+        predicate[1],
+        predicate[2],
+        matchingRoutes,
+        otherwiseRoutes,
+        sourceAnchors,
+      )
+    );
+  }
+  const groups = [verified("event"), verified("recipient")] as const;
+  return groups.every((group) => group.length > 0) &&
+    semanticCoreGroupsShareClause(groups, sourceAnchors);
+}
+
+function semanticUnsupportedAuthorityReason(
+  factId: TemplateCopilotV3FragmentFactId,
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+): TemplateCopilotV3ReviewBlockingReason | null {
+  if (
+    factId === "workflow.conditions" &&
+    (
+      observations.some((entry) => entry.role === "currency") ||
+      observations.some(
+        (entry) =>
+          (entry.role === "operator" &&
+            entry.advisoryHint === "unsupported_predicate") ||
+          ((entry.role === "matching_route" ||
+            entry.role === "otherwise_route") &&
+            entry.advisoryHint === "unsupported_outcome"),
+      ) ||
+      semanticConditionHasSourceDerivedUnsupportedContext(
+        observations,
+        semanticContexts,
+      ) ||
+      semanticConditionHasOmittedAdjacentDefaultBranch(
+        observations,
+        semanticContexts,
+      )
+    )
+  ) {
+    return "unsupported_semantics_not_executable";
+  }
+  if (
+    factId === "workflow.stages" &&
+    (
+      observations.some(
+        (entry) =>
+          entry.role === "kind" && entry.advisoryHint === "record_update",
+      ) ||
+      semanticStageHasSourceDerivedRecordUpdate(
+        observations,
+        semanticContexts,
+      )
+    )
+  ) {
+    return "unsupported_semantics_not_executable";
+  }
+  if (
+    factId === "attachments.requirements" &&
+    semanticAttachmentHasConditionalRequirementContext(
+      observations,
+      semanticContexts,
+    )
+  ) {
+    return "unsupported_semantics_not_executable";
+  }
+  return null;
+}
+
+function semanticConditionHasSourceDerivedUnsupportedContext(
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const normalized = (value: string) =>
+    templateCopilotV3NormalizeLexicalText(value);
+  const routes = observations
+    .filter(
+      (entry) =>
+        entry.role === "matching_route" ||
+        entry.role === "otherwise_route",
+    )
+    .map((entry) => normalized(entry.quote));
+  const fields = observations
+    .filter((entry) => entry.role === "field")
+    .map((entry) => normalized(entry.quote));
+  const values = observations
+    .filter((entry) => entry.role === "value")
+    .map((entry) => normalized(entry.quote));
+
+  const unsupportedRoute = routes.some(
+    (route) =>
+      semanticConditionRouteLooksLikeNonStageOutcome(route) ||
+      /^(?:high-value\s+approver|board\s+fyi|blocks?\s+submission|does\s+not\s+skip\s+approval|end(?:s)?\s+(?:the\s+workflow\s+)?immediately\s+and\s+record(?:s)?\s+(?:the\s+)?reason|不可完成|不得結案|不得结案|額外審批|额外审批|醫生證明|医生证明|直接結束並記錄原因|直接结束并记录原因)$/u
+        .test(route) ||
+      /^(?:returns?\b|退回).*(?:confirm|difference|確認|确认|差異|差异)/u
+        .test(route) ||
+      /(?:\bfyi\b)/u.test(route) ||
+      /(?:approval|審批|审批|批准).*(?:clearance\s+proof|清除證明|清除证明)/u
+        .test(route) ||
+      /^(?:hr)\s*(?:and|&|和|與|与)\s*(?:security|安全)$/u
+        .test(route),
+  );
+  if (unsupportedRoute) return true;
+
+  const numericField = fields.some(
+    (field) =>
+      /^(?:(?:hkd|usd|rmb|cny)\s*)?[+-]?\d[\d,.]*(?:\s*(?:%|percent|days?|hours?|months?|years?))?$/u
+        .test(field) ||
+      /^(?:(?:港幣|港币|人民幣|人民币)\s*)?(?:百分之)?[零〇一二三四五六七八九十百千萬万億亿兆兩两]+(?:元|日|天|小時|小时|月|年|%)?$/u
+        .test(field),
+  );
+  if (numericField) return true;
+
+  const computedField = fields.some(
+    (field) =>
+      /\b(?:difference|variance)\b/u.test(field) ||
+      /(?:差異|差异)/u.test(field),
+  );
+  if (computedField) return true;
+
+  const outcomeUsedAsNumericField = fields.some((field) =>
+    routes.includes(field)
+  ) && values.some(
+    (value) =>
+      /(?:\d|[零〇一二三四五六七八九十百千萬万億亿兆兩两])/u.test(value),
+  );
+  if (outcomeUsedAsNumericField) return true;
+
+  const source = semanticContexts
+    .flatMap((context) => {
+      const relevantClauseIndexes = new Set(
+        observations
+          .map((observation) =>
+            semanticHardClauseIndexInAnchor(observation, context)
+          )
+          .filter((index): index is number => index !== null),
+      );
+      return semanticHardClauseSegments(context.exactText)
+        .filter((_, index) => relevantClauseIndexes.has(index))
+        .map((clause) => normalized(clause.text));
+    })
+    .join("\n");
+  if (source.length === 0) return false;
+  if (semanticConditionSourceHasClosedUnsupportedOutcome(source)) return true;
+  return /(?:生产数据库增加数据负责人|生產資料庫增加資料負責人)/u
+    .test(source);
+}
+
+function semanticConditionSourceHasClosedUnsupportedOutcome(source: string) {
+  return (
+    /\b(?:high-value\s+approver|board\s+fyi|blocks?\s+submission|does\s+not\s+skip\s+approval)\b/u
+      .test(source) ||
+    /\bend(?:s)?\s+(?:the\s+workflow\s+)?immediately\s+and\s+record(?:s)?\s+(?:the\s+)?reason\b/u
+      .test(source) ||
+    /(?:直接結束並記錄原因|直接结束并记录原因)/u.test(source) ||
+    /(?:不可完成|不得結案|不得结案|額外審批|额外审批|醫生證明|医生证明)/u
+      .test(source) ||
+    /(?:returns?\b|退回)[^。；;\r\n]{0,120}(?:confirm|difference|確認|确认|差異|差异)/u
+      .test(source) ||
+    /(?:security\s+approval|安全審批|安全审批)[^。；;\r\n]{0,80}(?:clearance\s+proof|清除證明|清除证明)/u
+      .test(source) ||
+    /\bhr\s*(?:and|&)\s*security\b/u.test(source) ||
+    /hr\s*(?:和|與|与)\s*(?:security|安全)/u.test(source) ||
+    /\b(?:requires?|needs?)\s+(?:(?:an?|the)\s+)?(?:[\p{L}\p{N}'’&/()\-]+\s+){0,6}(?:attachment|certificate|document|file|form|pdf|spreadsheet|proof|statement|quotation|quote|receipt|report|plan|photo|image|record|notification|email)\b/u
+      .test(source) ||
+    /(?:要求|需要|須|须)(?:[\p{L}\p{N}]{0,24})(?:附件|文件|檔案|档案|證明|证明|表格|表单|報告|报告|計劃|计划|方案|記錄|记录|圖片|图片|照片|通知|電郵|邮件)/u
+      .test(source)
+  );
+}
+
+function semanticConditionRouteLooksLikeNonStageOutcome(route: string) {
+  return /^(?:(?:an?|the)\s+)?(?:[\p{L}\p{N}'’&/()\-]+\s+){0,7}(?:attachment|certificate|document|file|form|pdf|spreadsheet|excel|proof|statement|quotation|quote|receipt|report|plan|photo|image|record)(?:\s+(?:attachment|document|file|form|pdf|spreadsheet|proof|statement|report|plan|photo|image|record))?$/u.test(route) || /^(?:(?:an?|the)\s+)?(?:email|notification)(?:\s+to\s+.+)?$/u.test(route) || /^(?:notify|notifies|email|emails)\b/u.test(route) || /(?:附件|文件|檔案|档案|證明|证明|表格|表单|報告|报告|計劃|计划|方案|記錄|记录|圖片|图片|照片|通知|電郵|邮件)$/u.test(route);
+}
+
+function semanticConditionHasOmittedAdjacentDefaultBranch(
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const governingRoles = new Set([
+    "field",
+    "operator",
+    "value",
+    "matching_route",
+  ]);
+  return semanticContexts.some((context) => {
+    const clauses = semanticHardClauseSegments(context.exactText);
+    const governingIndexes = new Set(
+      observations
+        .filter((entry) => governingRoles.has(entry.role))
+        .map((entry) => semanticHardClauseIndexInAnchor(entry, context))
+        .filter((index): index is number => index !== null),
+    );
+    return [...governingIndexes].some((index) => {
+      const adjacent = clauses[index + 1];
+      if (
+        adjacent === undefined ||
+        !semanticConditionClauseBeginsExplicitDefault(adjacent.text)
+      ) {
+        return false;
+      }
+      const startCodePoint =
+        context.startCodePoint + adjacent.startCodePoint;
+      const endCodePoint = context.startCodePoint + adjacent.endCodePoint;
+      return !observations.some(
+        (entry) =>
+          entry.role === "otherwise_route" &&
+          entry.sourceSpan.messageId === context.messageId &&
+          entry.sourceSpan.startCodePoint >= startCodePoint &&
+          entry.sourceSpan.endCodePoint <= endCodePoint,
+      );
+    });
+  });
+}
+
+function semanticConditionClauseBeginsExplicitDefault(wording: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(wording)
+    .replace(/^[\s,，:：\-–—]+/gu, "");
+  if (
+    /^(?:otherwise|else)\s+(?:noted|specified|stated|documented)\b/u
+      .test(normalized) ||
+    /^(?:否則|否则)(?:另有)?(?:說明|说明|註明|注明|規定|规定)/u
+      .test(normalized)
+  ) {
+    return false;
+  }
+  const ellipticalDefault =
+    /^if\s+not\s*(?:[,，:：\-–—]|$)/u.test(normalized) ||
+    /^(?:若非如此|如非如此|若不然|如不然|不然)(?:\s*[,，:：\-–—]|$)/u
+      .test(normalized);
+  if (ellipticalDefault) return true;
+  return /^(?:otherwise|else|by\s+default)\b/u.test(normalized) ||
+    /^(?:否則|否则)/u.test(normalized);
+}
+
+function semanticStageHasSourceDerivedRecordUpdate(
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const stageActions = observations.filter(
+    (entry) =>
+      entry.role === "kind" &&
+      (entry.advisoryHint === "review" ||
+        entry.advisoryHint === "approval"),
+  );
+  const participants = observations
+    .filter((entry) => entry.role === "participant")
+    .map((entry) => templateCopilotV3NormalizeLexicalText(entry.quote))
+    .filter(Boolean);
+  if (participants.length === 0) return false;
+  return semanticContexts.some((context) =>
+    stageActions.some((action) => {
+      if (
+        action.sourceSpan.messageId !== context.messageId ||
+        action.sourceSpan.startCodePoint < context.startCodePoint ||
+        action.sourceSpan.endCodePoint > context.endCodePoint
+      ) {
+        return false;
+      }
+      const relativeEnd =
+        action.sourceSpan.endCodePoint - context.startCodePoint;
+      const tail = Array.from(context.exactText).slice(relativeEnd).join("");
+      const normalized = templateCopilotV3NormalizeLexicalText(tail)
+        .replace(/^[\s,，:：\-–—.!?。！？；;]+/gu, "");
+      return semanticEnglishStageTailHasRecordUpdate(
+        normalized,
+        participants,
+      ) || semanticCjkStageTailHasRecordUpdate(normalized, participants);
+    })
+  );
+}
+
+function semanticEnglishStageTailHasRecordUpdate(
+  wording: string,
+  participants: readonly string[],
+) {
+  const safeTargetWords =
+    String.raw`(?:(?!(?:after|before|while|because|by|from|using|reading|consulting|referencing|based|when|where|which|that)\b)[\p{L}\p{N}'’\-]+\s+){0,3}`;
+  const recordTarget =
+    String.raw`(?:(?:the|an?)\s+)?${safeTargetWords}(?:record|ledger|database|profile|register|system)\b`;
+  const objectWords =
+    String.raw`(?:(?!(?:after|before|while|because|by|from|using|reading|consulting|referencing|based|when|where|which|that)\b)[\p{L}\p{N}'’\-]+\s+){0,4}`;
+  const mutation =
+    String.raw`(?:(?:updates?|amends?|modifies?)\s+${recordTarget}|records?\s+(?:(?:the|an?)\s+)?${objectWords}(?:(?:in|to)\s+)?${recordTarget}|writes?\s+(?:(?:the|an?)\s+)?${objectWords}(?:to|in)\s+${recordTarget})`;
+  const gerundMutation =
+    String.raw`(?:updating|amending|modifying)\s+${recordTarget}`;
+  const implicitSameSubject = new RegExp(
+    String.raw`^(?:(?:the|an?)\s+(?:request|application|submission|workflow|case|form)\s+)?(?:(?:and(?:\s+then)?|also|as\s+well\s+as|then)\s+(?:(?:also|must|shall|will|has\s+to|is\s+required\s+to)\s+)?${mutation}|before\s+${gerundMutation})`,
+    "u",
+  );
+  if (implicitSameSubject.test(wording)) return true;
+
+  const actor = participants
+    .map((participant) => escapeSemanticRegExp(participant))
+    .join("|");
+  if (actor.length === 0) return false;
+  const passiveSameActor = new RegExp(
+    String.raw`^after\s+which\s+${recordTarget}\s+(?:is|was|will\s+be|must\s+be)\s+(?:updated|amended|modified|recorded)\s+by\s+(?:${actor})(?:$|[^\p{L}\p{N}])`,
+    "u",
+  );
+  if (passiveSameActor.test(wording)) return true;
+  return new RegExp(
+    String.raw`^(?:${actor})(?:$|[^\p{L}\p{N}])\s*(?:then|subsequently)\s+${mutation}`,
+    "u",
+  ).test(wording);
+}
+
+function semanticCjkStageTailHasRecordUpdate(
+  wording: string,
+  participants: readonly string[],
+) {
+  const mutationRemainder = (value: string) => {
+    const matched = value.match(
+      /^(?:更新|修改|修訂|修订|寫入|写入|記錄|记录|登記|登记|新增)([^。！？；;，,\r\n]{0,20}?)(?:紀錄|记录|分類帳|分类账|資料庫|数据库|檔案|档案|個人檔案|个人档案|系統|系统|名冊|名册|台帳|台账)/u,
+    );
+    if (!matched) return false;
+    const bridge = matched[1] ?? "";
+    return !/(?:之後|之后|隨後|随后|然後|然后|接著|接着|讀取|读取|查閱|查阅|參考|参考|查看|檢視|检视)/u
+      .test(bridge);
+  };
+  const implicit = wording.match(
+    /^(?:(?:該|该)?(?:申請|申请|流程|表單|表单|個案|个案))?(?:並|并|並且|并且|以及|同時|同时|然後|然后|後|后)(?:再|亦|還|还|必須|必须|須|须|需|要)?(.*)$/u,
+  );
+  if (implicit && mutationRemainder(implicit[1] ?? "")) return true;
+
+  const actor = participants
+    .map((participant) => escapeSemanticRegExp(participant))
+    .join("|");
+  if (actor.length === 0) return false;
+  const passive = new RegExp(
+    String.raw`^(?:之後|之后|隨後|随后)?[^。！？；;，,\r\n]{0,20}(?:紀錄|记录|分類帳|分类账|資料庫|数据库|檔案|档案|個人檔案|个人档案|系統|系统|名冊|名册|台帳|台账)(?:隨後|随后)?由\s*(?:${actor})(?:$|[^\p{L}\p{N}])\s*(?:更新|修改|修訂|修订|寫入|写入|記錄|记录|登記|登记)`,
+    "u",
+  );
+  if (passive.test(wording)) return true;
+  const repeatedActor = new RegExp(
+    String.raw`^(?:${actor})(?:$|[^\p{L}\p{N}])\s*(?:隨後|随后|然後|然后|接著|接着)(.*)$`,
+    "u",
+  ).exec(wording);
+  return repeatedActor !== null && mutationRemainder(repeatedActor[1] ?? "");
+}
+
+function semanticAttachmentHasConditionalRequirementContext(
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+) {
+  if (
+    observations.some(
+      (entry) => entry.role === "conditional_quantity_increment",
+    )
+  ) {
+    return true;
+  }
+  if (
+    observations.some(
+      (entry) =>
+        entry.role === "required" &&
+        [
+          "conditional",
+          "required_with_conditional_extension",
+          "optional_conditional",
+        ].includes(entry.advisoryHint ?? ""),
+    )
+  ) {
+    return true;
+  }
+  const labels = observations
+    .filter((entry) => entry.role === "label")
+    .map((entry) => templateCopilotV3NormalizeLexicalText(entry.quote))
+    .filter(Boolean);
+  return semanticContexts.some((anchor) =>
+    semanticHardClauseSegments(anchor.exactText).some((
+      clause,
+      index,
+      clauses,
+    ) => {
+      const owned = observations.filter((entry) => {
+        if (entry.sourceSpan.messageId !== anchor.messageId) return false;
+        const start =
+          entry.sourceSpan.startCodePoint - anchor.startCodePoint;
+        const end = entry.sourceSpan.endCodePoint - anchor.startCodePoint;
+        return (
+          start >= clause.startCodePoint &&
+          end <= clause.endCodePoint
+        );
+      });
+      const wording = templateCopilotV3NormalizeLexicalText(clause.text);
+      const englishAction = wording.match(
+        /\b(?:must(?:\s+also)?\s+(?:include|provide|upload|attach|submit|add|fill)|is\s+required|are\s+required|requires?|upload|attach|submit|provide|include|fill)\b/u,
+      );
+      const cjkAction = wording.match(
+        /(?:必須|必须|須|须|要|另須|另须|才須|才须)?(?:上載|上传|填寫|填写|提供|提交|附上)|可(?:選|选)(?:擇|择)?(?:上載|上传|提供|提交|附上)/u,
+      );
+      const explicitConditional =
+        /\b(?:if|when|whenever|unless|only\s+if|provided(?:\s+that)?|in\s+case(?:\s+of)?|depending\s+on)\b/u
+          .test(wording) ||
+        /(?:若|如果|倘若|除非|只有|僅當|仅当|才)|(?:時|时)(?=.{0,24}(?:須|须|必須|必须|要|另須|另须|上載|上传|提供|提交|附上|填寫|填写))/u
+          .test(wording);
+      const actionNamesEntity =
+        semanticAttachmentActionNamesObservedEntity(
+          wording,
+          englishAction?.index ?? cjkAction?.index ?? null,
+          labels,
+        );
+      const previous = clauses[index - 1];
+      const previousOwned = previous !== undefined &&
+        observations.some((entry) => {
+          if (entry.sourceSpan.messageId !== anchor.messageId) return false;
+          const start =
+            entry.sourceSpan.startCodePoint - anchor.startCodePoint;
+          const end = entry.sourceSpan.endCodePoint - anchor.startCodePoint;
+          return (
+            start >= previous.startCodePoint &&
+            end <= previous.endCodePoint
+          );
+        });
+      const action = wording.slice(
+        englishAction?.index ?? cjkAction?.index ?? wording.length,
+      );
+      const cjkActionEnd = cjkAction?.index === undefined
+        ? null
+        : cjkAction.index + cjkAction[0].length;
+      const cjkObjectIsElided =
+        previousOwned &&
+        explicitConditional &&
+        cjkActionEnd !== null &&
+        templateCopilotV3NormalizeLexicalText(
+          wording.slice(cjkActionEnd),
+        ).replace(/^(?:了)?[\s,，:：\-–—.!?。！？；;]*$/gu, "").length === 0;
+      const carriesObservedEntity = previousOwned &&
+        (
+          (englishAction !== null &&
+            /\b(?:it|them|this|that|these|those|the\s+same(?:\s+(?:document|file|form|attachment|pdf))?)\b/u
+              .test(action)) ||
+          cjkObjectIsElided ||
+          (cjkAction !== null &&
+            /(?:它|其|該|该|此|上述)(?:附件|文件|檔案|档案|表格|表单|報告|报告|pdf)?/u
+              .test(action))
+        );
+      if (
+        owned.length === 0 &&
+        !actionNamesEntity &&
+        !carriesObservedEntity
+      ) {
+        return false;
+      }
+      const stageTimed =
+        /^(?:at|before|after|upon)\s+(?:request\s+)?(?:submission|completion)\b/u
+          .test(wording) ||
+        /^(?:申請時|申请时|提交時|提交时|呈交時|呈交时|最後呈交前|最后呈交前|最終呈交前|最终呈交前|完成後|完成后)(?:再)?/u
+          .test(wording);
+      if (stageTimed) return false;
+      if (explicitConditional) {
+        return !semanticAttachmentConditionalSegmentNamesCompetingEntity(
+          wording,
+          labels,
+        );
+      }
+
+      if (englishAction?.index !== undefined) {
+        const prefix = wording.slice(0, englishAction.index).trim();
+        const suffix = wording
+          .slice(englishAction.index + englishAction[0].length)
+          .trim();
+        return semanticAttachmentHasClosedConditionalState(
+          prefix,
+          suffix,
+          labels,
+        );
+      }
+
+      if (cjkAction?.index === undefined) return false;
+      const prefix = wording.slice(0, cjkAction.index).trim();
+      const suffix = wording
+        .slice(cjkAction.index + cjkAction[0].length)
+        .trim();
+      return semanticAttachmentHasClosedConditionalState(
+        prefix,
+        suffix,
+        labels,
+      );
+    })
+  );
+}
+
+function semanticAttachmentConditionalSegmentNamesCompetingEntity(
+  wording: string,
+  labels: readonly string[],
+) {
+  if (
+    /\b(?:replace|replaces|replacement|instead|substitute|substitution|alternative|supersede|supersedes|superseded)\b|\b(?:in\s+(?:lieu|place)\s+of|stand(?:s|ing)?\s+in\s+for|take(?:s|n|ing)?\s+the\s+place\s+of|serve(?:s|d|ing)?\s+as\s+(?:the\s+)?equivalent\s+of)\b|(?:取代|替代|代替|替換|替换|頂替|顶替|代用|抵替)/u.test(
+      wording,
+    )
+  ) {
+    return false;
+  }
+  const conditional = /\b(?:if|when|whenever|unless|only\s+if|provided(?:\s+that)?|in\s+case(?:\s+of)?|depending\s+on)\b|(?:若|如果|倘若|除非|只有|僅當|仅当|才)/u
+    .exec(wording);
+  if (conditional?.index === undefined) return false;
+  const fullConditionalTail = wording.slice(
+    conditional.index + conditional[0].length,
+  );
+  for (const label of labels) {
+    if (
+      label.length === 0 ||
+      !semanticAttachmentActionContainsLexicalTerm(fullConditionalTail, label)
+    ) continue;
+    let offset = fullConditionalTail.indexOf(label);
+    while (offset >= 0) {
+      const before = fullConditionalTail.slice(0, offset);
+      const after = fullConditionalTail.slice(offset + label.length);
+      const independentRequirement =
+        /(?:^|[,，;；])\s*(?:and|but|or|whereas|及|和|與|与|並|并|但)\s*$/u
+          .test(before) &&
+        /^(?:\s+(?:(?:is|are|was|were|remains?|becomes?)\s+)?(?:required|mandatory|compulsory)|\s+(?:must|shall|needs?\s+to|has\s+to)\s+(?:be\s+)?(?:provided|uploaded|required)|\s*(?:為|为|是)?(?:必填|必須|必须|需要|須|须))/u
+          .test(after);
+      if (!independentRequirement) return false;
+      offset = fullConditionalTail.indexOf(label, offset + label.length);
+    }
+  }
+  const preceding = wording.slice(0, conditional.index);
+  const boundary = [
+    ...preceding.matchAll(/\b(?:and|but|or|whereas|while)\b|[,，;；]/gu),
+  ].at(-1);
+  const segmentStart = boundary?.index === undefined
+    ? 0
+    : boundary.index + boundary[0].length;
+  const followingBoundary = /\b(?:and|but|or|whereas|while)\b|[,，;；]/u
+    .exec(wording.slice(conditional.index + conditional[0].length));
+  const segmentEnd = followingBoundary?.index === undefined
+    ? wording.length
+    : conditional.index + conditional[0].length + followingBoundary.index;
+  const segment = wording.slice(segmentStart, segmentEnd);
+  if (
+    labels.some((label) =>
+      label.length > 0 &&
+      semanticAttachmentActionContainsLexicalTerm(segment, label)
+    )
+  ) {
+    return false;
+  }
+  const beforeConditional = segment.slice(
+    0,
+    Math.max(0, conditional.index - segmentStart),
+  ).trim();
+  if (
+    /^(?!(?:it|this|that|the\s+(?:same\s+)?(?:attachment|document|file|form|upload))\b)[\p{L}\p{N}_'’\-]+(?:\s+[\p{L}\p{N}_'’\-]+){0,8}\s+(?:is|are|was|were|becomes?|remains?)\s+(?:optional|required|waived|exempt|unnecessary)\b/u
+      .test(beforeConditional)
+  ) {
+    return true;
+  }
+  return /\b(?:[\p{L}\p{N}_'’\-]+\s+){0,8}(?:pdf|document|file|attachment|form|spreadsheet|image|photo)\b/u
+      .test(segment) ||
+    /(?:[\p{L}\p{N}\p{M}]{1,32})(?:pdf|附件|文件|檔案|档案|表格|表单)/u
+      .test(segment);
+}
+
+function semanticAttachmentHasClosedConditionalState(
+  prefix: string,
+  suffix: string,
+  labels: readonly string[],
+) {
+  const stripLabels = (value: string) =>
+    labels.reduce(
+      (current, label) =>
+        label.length === 0
+          ? current
+          : current.replace(
+              new RegExp(escapeSemanticRegExp(label), "gu"),
+              " ",
+            ),
+      value,
+    );
+  const normalizedPrefix = templateCopilotV3NormalizeLexicalText(
+    stripLabels(prefix),
+  );
+  const normalizedSuffix = templateCopilotV3NormalizeLexicalText(
+    stripLabels(suffix),
+  );
+  const context = templateCopilotV3NormalizeLexicalText(
+    `${normalizedPrefix} ${normalizedSuffix}`,
+  );
+  const classifiedState =
+    /\b(?:classified|categorised|categorized|designated|marked|rated)\s+as\b/u
+      .test(normalizedPrefix) ||
+    /\b(?:for|on)\s+(?:[\p{L}\p{N}'’\-]+\s+){0,5}(?:classified|categorised|categorized|designated|marked|rated)\s+as\b/u
+      .test(normalizedSuffix) ||
+    /(?:列為|列为|分類為|分类为|評定為|评定为)/u
+      .test(normalizedPrefix) ||
+    /(?:針對|针对|適用於|适用于|就).{0,32}(?:列為|列为|分類為|分类为|評定為|评定为)/u
+      .test(normalizedSuffix);
+  return (
+    classifiedState ||
+    /\b(?:for|on)\b.{0,96}\b(?:or\s+(?:more|less|longer|shorter))\b/u
+      .test(normalizedSuffix) ||
+    /\b(?:above|below|over|under|at\s+least|at\s+most|more\s+than|less\s+than|selected|missing|present)\b/u
+      .test(context) ||
+    /\b(?:for|on)\s+(?:(?:high|low)[-\s]?risk|retrospective|emergency|international|restricted|regulated|personal|sensitive|production)\b/u
+      .test(context) ||
+    /\b(?:for|on|in)\s+(?:[\p{L}\p{N}'’\-]+\s+){0,7}(?:involving|containing|where|when|that|which|whose|with|without)\b/u
+      .test(context) ||
+    /^(?:the\s+|an?\s+)?retrospective\s+request\b/u.test(context) ||
+    /(?:或以上|以上|超過|超过|不超過|不超过|涉及|進入|进入|存有|提及|高風險|高风险|緊急|紧急|生產|生产|資料匯出|数据导出|監管事故|监管事故|實物捐贈|实物捐赠|病假|產假|产假|無薪假|无薪假)/u
+      .test(context)
+  );
+}
+
+function semanticAttachmentActionNamesObservedEntity(
+  wording: string,
+  actionIndex: number | null,
+  labels: readonly string[],
+) {
+  if (actionIndex === null) return false;
+  const action = wording.slice(actionIndex);
+  return labels.some((label) => {
+    if (label.length === 0) return false;
+    if (
+      semanticAttachmentActionContainsLexicalTerm(
+        action,
+        label,
+      )
+    ) {
+      return true;
+    }
+    if (!/^[a-z0-9]/u.test(label)) return false;
+    const significant = label
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(
+        (token) =>
+          token.length >= 4 &&
+          ![
+            "attachment",
+            "assessment",
+            "document",
+            "file",
+            "form",
+            "image",
+            "photo",
+            "proof",
+            "pdf",
+          ].includes(token),
+      )
+      .sort((left, right) => right.length - left.length);
+    const distinctive = significant.filter((token) => token.length >= 6);
+    const strongest = distinctive.length === 1 ? distinctive[0] : undefined;
+    return strongest !== undefined &&
+      semanticAttachmentActionContainsLexicalTerm(
+        action,
+        strongest,
+      );
+  });
+}
+
+function semanticAttachmentActionContainsLexicalTerm(
+  action: string,
+  term: string,
+) {
+  if (!/^[a-z0-9]/u.test(term)) return action.includes(term);
+  return new RegExp(
+    `(?:^|[^\\p{L}\\p{N}])${escapeSemanticRegExp(term)}(?:$|[^\\p{L}\\p{N}])`,
+    "u",
+  ).test(action);
+}
+
+function semanticConditionHasCompoundPredicateContext(
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const fields = observations.filter((entry) => entry.role === "field");
+  const values = observations.filter((entry) => entry.role === "value");
+  const routes = observations.filter(
+    (entry) => entry.role === "matching_route",
+  );
+  if (
+    values.some((entry) => {
+      const wording = templateCopilotV3NormalizeLexicalText(entry.quote);
+      return (
+        /^(?:both|either|neither)\b.+\b(?:and|or|nor)\b/u.test(wording) ||
+        /\b(?:as\s+well\s+as|along\s+with|together\s+with)\b/u.test(
+          wording,
+        ) ||
+        /^(?:兩者|两者|二者|同時|同时|均|皆).+(?:及|和|與|与).+/u.test(
+          wording,
+        )
+      );
+    })
+  ) {
+    return true;
+  }
+  return semanticContexts.some((anchor) =>
+    fields.some((field) =>
+      values.some((value) =>
+        routes.some((route) => {
+          if (
+            field.sourceSpan.messageId !== anchor.messageId ||
+            value.sourceSpan.messageId !== anchor.messageId ||
+            route.sourceSpan.messageId !== anchor.messageId
+          ) {
+            return false;
+          }
+          const fieldClause = semanticHardClauseIndexInAnchor(field, anchor);
+          const valueClause = semanticHardClauseIndexInAnchor(value, anchor);
+          const routeClause = semanticHardClauseIndexInAnchor(route, anchor);
+          if (
+            fieldClause === null ||
+            fieldClause !== valueClause ||
+            fieldClause !== routeClause
+          ) {
+            return false;
+          }
+          const clause = semanticHardClauseSegments(anchor.exactText)[
+            fieldClause
+          ];
+          if (!clause) return false;
+          const fieldStart =
+            field.sourceSpan.startCodePoint - anchor.startCodePoint;
+          const fieldEnd =
+            field.sourceSpan.endCodePoint - anchor.startCodePoint;
+          const operator = observations.find(
+            (entry) =>
+              entry.role === "operator" &&
+              entry.sourceSpan.messageId === anchor.messageId &&
+              semanticHardClauseIndexInAnchor(entry, anchor) === fieldClause,
+          );
+          const operatorStart = operator
+            ? operator.sourceSpan.startCodePoint - anchor.startCodePoint
+            : null;
+          const valueEnd =
+            value.sourceSpan.endCodePoint - anchor.startCodePoint;
+          const routeStart =
+            route.sourceSpan.startCodePoint - anchor.startCodePoint;
+          if (
+            fieldStart < clause.startCodePoint ||
+            valueEnd > routeStart ||
+            routeStart > clause.endCodePoint
+          ) {
+            return false;
+          }
+          const codePoints = Array.from(anchor.exactText);
+          const normalizeContext = (text: string) =>
+            templateCopilotV3NormalizeLexicalText(text)
+              .replace(
+                /^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu,
+                "",
+              );
+          const prefix = normalizeContext(
+            codePoints.slice(clause.startCodePoint, fieldStart).join(""),
+          );
+          const fieldToOperator =
+            operatorStart !== null && operatorStart >= fieldEnd
+              ? normalizeContext(
+                  codePoints.slice(fieldEnd, operatorStart).join(""),
+                )
+              : "";
+          const bridge = normalizeContext(
+            codePoints.slice(valueEnd, routeStart).join(""),
+          );
+          const englishLeading = prefix.match(
+            /^(.+?)\s+(and|or|as\s+well\s+as|along\s+with|together\s+with)$/u,
+          );
+          const englishLeadingPredicate = englishLeading?.[1];
+          const cjkLeading = prefix.match(
+            /^(.+?)(且|並且|并且|以及|及|和|與|与|或)$/u,
+          );
+          const cjkLeadingPredicate = cjkLeading?.[1];
+          const englishTrailingOperand = bridge.match(
+            /^(?:and|or|as\s+well\s+as|along\s+with|together\s+with)\s+(.+?)[\s,，:：\-–—]+(?:then\s+)?(?:routes?(?:\s+(?:the\s+)?(?:request|workflow|it))?\s+to|go(?:es)?(?:\s+from\s+[\p{L}\p{N}][\p{L}\p{N}\s'’&/()\-]{0,79})?\s+to|sends?(?:\s+(?:the\s+)?(?:request|workflow|it))?\s+to|(?:also\s+)?(?:adds?|requires?|seeks?|obtains?))$/u,
+          )?.[1];
+          const cjkTrailingOperand = bridge.match(
+            /^(?:且|並且|并且|以及|及|和|與|与|或)(.+?)(?:[\s,，:：\-–—]+|時|时)?(?:則|则)?(?:再?由|交由|送交|轉至|转至|增加|加入|要求|需要)$/u,
+          )?.[1];
+          const leadingCompoundPredicate =
+            (typeof englishLeadingPredicate === "string" &&
+              englishLeadingPredicate.trim().length > 0) ||
+            (typeof cjkLeadingPredicate === "string" &&
+              cjkLeadingPredicate.trim().length > 0);
+          const middleCompoundPredicate =
+            /^(?:and|or|as\s+well\s+as|along\s+with|together\s+with)\s+.+/u
+              .test(fieldToOperator) ||
+            /^(?:且|並且|并且|以及|及|和|與|与|或).+/u.test(fieldToOperator);
+          const trailingCompoundOperand =
+            (
+              (typeof englishTrailingOperand === "string" &&
+                englishTrailingOperand.trim().length > 0) ||
+              (typeof cjkTrailingOperand === "string" &&
+                cjkTrailingOperand.trim().length > 0)
+            );
+          return leadingCompoundPredicate ||
+            middleCompoundPredicate ||
+            trailingCompoundOperand ||
+            /^(?:本地|當地|当地)(?:低風險|低风险)且$/u.test(prefix) ||
+            /^且(?:風險|风险)低(?:時|时)可在$/u.test(bridge);
+        })
+      )
+    )
+  );
+}
+
+function semanticCoreRole(
+  factId: TemplateCopilotV3FragmentFactId,
+  role: TemplateCopilotV3ProviderQuoteRole,
+) {
+  const roles: Readonly<
+    Record<
+      TemplateCopilotV3FragmentFactId,
+      readonly TemplateCopilotV3ProviderQuoteRole[]
+    >
+  > = {
+    "request.fields": ["label", "required"],
+    "attachments.requirements": ["label", "kind", "required"],
+    "workflow.stages": ["label", "kind", "participant", "participant_mode"],
+    "workflow.conditions": [
+      "field",
+      "operator",
+      "value",
+      "matching_route",
+      "otherwise_route",
+    ],
+    "notifications.rules": ["event", "recipient"],
+  };
+  return roles[factId].includes(role);
+}
+
+function semanticCoreObservationsCrossHardClause(
+  factId: TemplateCopilotV3FragmentFactId,
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const role = (name: TemplateCopilotV3ProviderQuoteRole) =>
+    observations.filter((observation) => observation.role === name);
+  if (factId === "request.fields") {
+    const label = role("label");
+    const required = role("required");
+    return label.length > 0 && required.length > 0 &&
+      !semanticRequestGroupsHaveAffinity(label, required, sourceAnchors);
+  }
+  if (factId === "attachments.requirements") {
+    const label = role("label");
+    const kind = role("kind");
+    const required = role("required");
+    if (
+      label.length > 0 && kind.length > 0 &&
+      !semanticCoreGroupsShareClause([label, kind], sourceAnchors)
+    ) {
+      return true;
+    }
+    return label.length > 0 && kind.length > 0 && required.length > 0 &&
+      !semanticAttachmentGroupsHaveAffinity(
+        label,
+        kind,
+        required,
+        sourceAnchors,
+      );
+  }
+  if (factId === "workflow.stages") {
+    const kind = role("kind");
+    const participant = [...role("participant"), ...role("participant_mode")];
+    return kind.length > 0 && participant.length > 0 &&
+      !semanticCoreGroupsShareClause([kind, participant], sourceAnchors);
+  }
+  if (factId === "workflow.conditions") {
+    const field = role("field");
+    const operator = role("operator");
+    const value = role("value");
+    const matchingRoutes = role("matching_route");
+    const otherwiseRoutes = role("otherwise_route");
+    const predicate = [field, operator, value].filter(
+      (group) => group.length > 0,
+    );
+    if (predicate.length < 2) return false;
+    if (field.length > 0 && operator.length > 0 && value.length > 0) {
+      if (!semanticConditionPredicateGroupsHaveAffinity(
+        field,
+        operator,
+        value,
+        sourceAnchors,
+      )) {
+        return true;
+      }
+      return !semanticConditionRoutesHaveAffinity(
+        field,
+        operator,
+        value,
+        matchingRoutes,
+        otherwiseRoutes,
+        sourceAnchors,
+      );
+    }
+    return !semanticCoreGroupsShareClause(predicate, sourceAnchors);
+  }
+  const event = role("event");
+  const recipient = role("recipient");
+  return event.length > 0 && recipient.length > 0 &&
+    !semanticCoreGroupsShareClause([event, recipient], sourceAnchors);
+}
+
+function semanticRequestGroupsHaveAffinity(
+  labels: readonly TemplateCopilotV3ReviewObservation[],
+  required: readonly TemplateCopilotV3ReviewObservation[],
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return semanticCoreGroupsShareClause([labels, required], sourceAnchors) ||
+    labels.some((label) =>
+      required.some((requirement) =>
+        semanticStandaloneRequirementMarkerFollows(
+          label,
+          requirement,
+          sourceAnchors,
+        )
+      )
+    );
+}
+
+function semanticAttachmentGroupsHaveAffinity(
+  labels: readonly TemplateCopilotV3ReviewObservation[],
+  kinds: readonly TemplateCopilotV3ReviewObservation[],
+  required: readonly TemplateCopilotV3ReviewObservation[],
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  if (!semanticCoreGroupsShareClause([labels, kinds], sourceAnchors)) {
+    return false;
+  }
+  if (
+    semanticCoreGroupsShareClause(
+      [labels, kinds, required],
+      sourceAnchors,
+    )
+  ) {
+    return true;
+  }
+  return labels.some((label) =>
+    required.some((requirement) =>
+      semanticSupplementalRequirementNamesEntity(
+        label,
+        requirement,
+        sourceAnchors,
+      )
+    )
+  );
+}
+
+function semanticStandaloneRequirementMarkerFollows(
+  label: TemplateCopilotV3ReviewObservation,
+  requirement: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return sourceAnchors.some((anchor) => {
+    const labelIndex = semanticClauseIndexInAnchor(label, anchor);
+    const requirementIndex = semanticClauseIndexInAnchor(requirement, anchor);
+    if (
+      labelIndex === null ||
+      requirementIndex === null ||
+      requirementIndex !== labelIndex + 1
+    ) {
+      return false;
+    }
+    const clause = semanticObservationClause(requirement, [anchor]);
+    return clause !== null &&
+      templateCopilotV3NormalizeLexicalText(clause) ===
+        templateCopilotV3NormalizeLexicalText(requirement.quote);
+  });
+}
+
+function semanticSupplementalRequirementNamesEntity(
+  label: TemplateCopilotV3ReviewObservation,
+  requirement: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return sourceAnchors.some((anchor) => {
+    if (
+      semanticClauseIndexInAnchor(label, anchor) === null ||
+      semanticClauseIndexInAnchor(requirement, anchor) === null
+    ) {
+      return false;
+    }
+    const clause = semanticObservationClause(requirement, [anchor]);
+    const entity = templateCopilotV3NormalizeLexicalText(label.quote);
+    return clause !== null && entity.length > 0 &&
+      semanticSupplementalRequirementNamesExactEntity(
+        clause,
+        requirement.quote,
+        entity,
+      );
+  });
+}
+
+function semanticSupplementalRequirementNamesExactEntity(
+  clause: string,
+  requirementQuote: string,
+  entity: string,
+) {
+  const wording = templateCopilotV3NormalizeLexicalText(clause);
+  const marker = templateCopilotV3NormalizeLexicalText(requirementQuote);
+  if (marker.length === 0) return false;
+  let offset = wording.indexOf(marker);
+  while (offset >= 0) {
+    const before = semanticSupplementalEntityCandidate(
+      wording.slice(0, offset),
+    );
+    const after = semanticSupplementalEntityCandidate(
+      wording.slice(offset + marker.length),
+    );
+    if (before === entity || after === entity) return true;
+    offset = wording.indexOf(marker, offset + marker.length);
+  }
+  return false;
+}
+
+function semanticSupplementalEntityCandidate(value: string) {
+  const segments = value.split(/[,，:：]/u);
+  const local = segments[segments.length - 1] ?? value;
+  return local
+    .replace(/^[\s\-–—]+|[\s\-–—]+$/gu, "")
+    .replace(/^(?:the|an?|this|that)\s+/u, "")
+    .replace(/^(?:該|该|此|這個|这个)\s*/u, "")
+    .replace(
+      /\s+(?:is|are|was|were|be|must|shall|should|needs?|requires?)$/u,
+      "",
+    )
+    .replace(/(?:為|为|是|須|须|必須|必须|需要)$/u, "")
+    .trim();
+}
+
+function semanticConditionPredicateGroupsHaveAffinity(
+  fields: readonly TemplateCopilotV3ReviewObservation[],
+  operators: readonly TemplateCopilotV3ReviewObservation[],
+  values: readonly TemplateCopilotV3ReviewObservation[],
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  if (
+    !semanticConditionNumericValuesAreBounded(
+      operators,
+      values,
+      sourceAnchors,
+    )
+  ) {
+    return false;
+  }
+  if (
+    semanticCoreGroupsShareClause(
+      [fields, operators, values],
+      sourceAnchors,
+    ) &&
+    fields.every(
+      (field) =>
+        semanticConditionFieldHasClosedLeftBoundary(field, sourceAnchors) &&
+        semanticConditionFieldHasClosedRightBoundary(
+          field,
+          sourceAnchors,
+        ),
+    )
+  ) {
+    return true;
+  }
+  if (!semanticCoreGroupsShareClause([operators, values], sourceAnchors)) {
+    return false;
+  }
+  return fields.some((field) =>
+    operators.some((operator) =>
+      values.some((value) =>
+        semanticConditionFieldCarriesForward(
+          field,
+          operator,
+          value,
+          sourceAnchors,
+        )
+      )
+    )
+  );
+}
+
+function semanticConditionOnlyCarriesFieldAcrossSentence(
+  observations: readonly TemplateCopilotV3ReviewObservation[],
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const byRole = (role: TemplateCopilotV3ProviderQuoteRole) =>
+    observations.filter((entry) => entry.role === role);
+  const [fields, operators, values, routes] = [
+    byRole("field"),
+    byRole("operator"),
+    byRole("value"),
+    byRole("matching_route"),
+  ];
+  if (
+    fields.length !== 1 ||
+    operators.length !== 1 ||
+    values.length !== 1 ||
+    routes.length === 0
+  ) {
+    return false;
+  }
+  const [field] = fields;
+  if (
+    !semanticConditionFieldHasClosedLeftBoundary(field, sourceAnchors) ||
+    !semanticConditionFieldHasClosedRightBoundary(field, sourceAnchors) ||
+    !semanticCoreGroupsShareClause([operators, values, routes], sourceAnchors) ||
+    [...operators, ...values, ...routes].some((entry) =>
+      semanticObservationIsContradicted(
+        "workflow.conditions",
+        entry,
+        sourceAnchors,
+      )
+    )
+  ) {
+    return false;
+  }
+  return sourceAnchors.some((anchor) => {
+    const fieldIndex = semanticHardClauseIndexInAnchor(field, anchor);
+    const operatorIndex = semanticHardClauseIndexInAnchor(operators[0], anchor);
+    if (
+      fieldIndex === null ||
+      operatorIndex === null ||
+      fieldIndex >= operatorIndex
+    ) {
+      return false;
+    }
+    // The branch must be operator-led: a clause that names its own subject
+    // ("Discount amount > 100") never inherits an earlier field.
+    const clause = semanticHardClauseSegments(anchor.exactText)[operatorIndex];
+    if (!clause) return false;
+    const operatorStart =
+      operators[0].sourceSpan.startCodePoint - anchor.startCodePoint;
+    const prefix = Array.from(anchor.exactText)
+      .slice(clause.startCodePoint, operatorStart)
+      .join("");
+    return templateCopilotV3NormalizeLexicalText(prefix).length === 0;
+  });
+}
+
+function semanticConditionFieldHasClosedLeftBoundary(
+  field: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return sourceAnchors.some((anchor) => {
+    const clauseIndex = semanticHardClauseIndexInAnchor(field, anchor);
+    if (clauseIndex === null) return false;
+    const clause = semanticHardClauseSegments(anchor.exactText)[clauseIndex];
+    if (!clause) return false;
+    const fieldStart =
+      field.sourceSpan.startCodePoint - anchor.startCodePoint;
+    if (
+      fieldStart < clause.startCodePoint ||
+      fieldStart >= clause.endCodePoint
+    ) {
+      return false;
+    }
+    const codePoints = Array.from(anchor.exactText);
+    const immediateBefore = codePoints[fieldStart - 1] ?? "";
+    const fieldText = templateCopilotV3NormalizeLexicalText(field.quote);
+    if (
+      !/^\p{Script=Han}/u.test(fieldText) &&
+      /^[\p{L}\p{N}_]$/u.test(immediateBefore)
+    ) {
+      return false;
+    }
+    const prefix = templateCopilotV3NormalizeLexicalText(
+      codePoints.slice(clause.startCodePoint, fieldStart).join(""),
+    )
+      .replace(/[\s,，:：\-–—()[\]{}]+$/gu, "")
+      .trim();
+    if (prefix.length === 0) return true;
+
+    if (/^[A-Za-z0-9_]/u.test(fieldText)) {
+      return /(?:^|\s)(?:the|a|an|this|that|each|any|if|when|where|unless|otherwise|else|then|for|use|using|and|or|as\s+well\s+as|along\s+with|together\s+with|provided\s+that|as\s+long\s+as)$/u
+        .test(prefix);
+    }
+    return /(?:若|如果|如|當|当|凡|只要|否則|否则|則|则|且|並且|并且|以及|及|和|與|与|或|有|用|使用|按|對於|对于|需要|要求|該|该|此|本|這個|这个)$/u
+      .test(prefix);
+  });
+}
+
+function semanticConditionFieldHasClosedRightBoundary(
+  field: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return sourceAnchors.some((anchor) => {
+    const clauseIndex = semanticHardClauseIndexInAnchor(field, anchor);
+    if (clauseIndex === null) return false;
+    const clause = semanticHardClauseSegments(anchor.exactText)[clauseIndex];
+    if (!clause) return false;
+    const fieldEnd =
+      field.sourceSpan.endCodePoint - anchor.startCodePoint;
+    if (
+      fieldEnd <= clause.startCodePoint ||
+      fieldEnd > clause.endCodePoint
+    ) {
+      return false;
+    }
+    const codePoints = Array.from(anchor.exactText);
+    const immediateAfter = codePoints[fieldEnd] ?? "";
+    const fieldText = templateCopilotV3NormalizeLexicalText(field.quote);
+    if (
+      /[\p{L}\p{N}_]$/u.test(fieldText) &&
+      /^[\p{L}\p{N}_]$/u.test(immediateAfter) &&
+      !/\p{Script=Han}$/u.test(fieldText)
+    ) {
+      return false;
+    }
+    const suffix = templateCopilotV3NormalizeLexicalText(
+      codePoints.slice(fieldEnd, clause.endCodePoint).join(""),
+    ).replace(/^[\s,，:：\-–—()[\]{}]+/gu, "");
+    if (!/\p{Script=Han}$/u.test(fieldText)) {
+      return /^(?:is|are|was|were|equals?|does|has|have|applies|exceeds?|contains?|requires?|matches?|differs?|belongs?\s+to|in|within|outside|other\s+than|above|below|over|under|at\s+least|at\s+most|more\s+than|less\s+than|selected|missing|present|high[-\s]?risk|low[-\s]?risk|retrospective|personal|sensitive|>=|<=|>|<|=|為|为|是|有|無|无|非|不在|不等於|不等于|不超過|不超过|等於|等于|包含|超過|超过|不少於|不少于|不多於|不多于|高於|高于|低於|低于|至少|至多|已選|已选|未選|未选|缺少|遺失|丢失|必須|必须|需要|要求|增加|加入|走|阻塞|不可|不得|直接)/u.test(suffix);
+    }
+    if (
+      immediateAfter.length === 0 ||
+      /^[\s,，:：;；.\-–—()[\]{}]$/u.test(immediateAfter)
+    ) {
+      return true;
+    }
+    return /^(?:為|为|是|有|無|无|非|不在|不等於|不等于|不超過|不超过|等於|等于|包含|超過|超过|不少於|不少于|不多於|不多于|高於|高于|低於|低于|至少|至多|已選|已选|已選擇|已选择|未選|未选|缺少|遺失|丢失|必須|必须|需要|要求|要|另須|另须|增加|加入|走|阻塞|不可|不得|時|时|才|則|则|便|即|者|>=|<=|>|<|=)/u
+      .test(suffix);
+  });
+}
+
+function semanticConditionNumericValuesAreBounded(
+  operators: readonly TemplateCopilotV3ReviewObservation[],
+  values: readonly TemplateCopilotV3ReviewObservation[],
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return operators.every((operator) => {
+    if (![">", ">=", "<", "<="].includes(operator.advisoryHint ?? "")) {
+      return true;
+    }
+    return values.every((value) =>
+      semanticConditionNumericValueIsBounded(value, sourceAnchors)
+    );
+  });
+}
+
+function semanticConditionNumericValueIsBounded(
+  value: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const normalized =
+    templateCopilotV3NormalizeLexicalText(value.quote);
+  const cjkAmount =
+    /^(?:(?:港幣|港币|人民幣|人民币)\s*)?(?:百分之)?[零〇一二三四五六七八九十百千萬万億亿兆兩两]+(?:元|日|天|小時|小时|月|年|%)?$/u
+      .test(normalized);
+  const decimalMatch = normalized.match(
+    /^(?:(?:hkd|usd|rmb|cny)\s*)?([+-]?\d[\d,.]*)(?:\s*(?:%|percent|days?|hours?|months?|years?))?$/u,
+  );
+  const decimalText = decimalMatch?.[1];
+  const decimalAmount = decimalText !== undefined &&
+    templateCopilotV3CanonicalDecimalText(decimalText) !== null;
+  if (!cjkAmount && !decimalAmount) return false;
+
+  return sourceAnchors.some((anchor) => {
+    if (
+      anchor.messageId !== value.sourceSpan.messageId ||
+      value.sourceSpan.startCodePoint < anchor.startCodePoint ||
+      value.sourceSpan.endCodePoint > anchor.endCodePoint
+    ) {
+      return false;
+    }
+    const codePoints = Array.from(anchor.exactText);
+    const start = value.sourceSpan.startCodePoint - anchor.startCodePoint;
+    const end = value.sourceSpan.endCodePoint - anchor.startCodePoint;
+    const before = codePoints[start - 1] ?? "";
+    const after = codePoints[end] ?? "";
+    const afterNext = codePoints[end + 1] ?? "";
+    if (cjkAmount) {
+      return !/[零〇一二三四五六七八九十百千萬万億亿兆兩两元]/u
+          .test(before) &&
+        !/[零〇一二三四五六七八九十百千萬万億亿兆兩两元]/u
+          .test(after);
+    }
+    return !/[A-Za-z0-9_,.零〇一二三四五六七八九十百千萬万億亿兆兩两元]/u
+        .test(before) &&
+      !/[A-Za-z0-9_零〇一二三四五六七八九十百千萬万億亿兆兩两元]/u
+        .test(after) &&
+      (
+        (after !== "," && after !== ".") ||
+        !/\p{N}/u.test(afterNext)
+      );
+  });
+}
+
+function semanticConditionRoutesHaveAffinity(
+  fields: readonly TemplateCopilotV3ReviewObservation[],
+  operators: readonly TemplateCopilotV3ReviewObservation[],
+  values: readonly TemplateCopilotV3ReviewObservation[],
+  matchingRoutes: readonly TemplateCopilotV3ReviewObservation[],
+  otherwiseRoutes: readonly TemplateCopilotV3ReviewObservation[],
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return matchingRoutes.every((route) =>
+    semanticConditionMatchingRouteHasAffinity(
+      route,
+      fields,
+      operators,
+      values,
+      sourceAnchors,
+    )
+  ) && otherwiseRoutes.every((route) =>
+    semanticConditionOtherwiseRouteHasAffinity(
+      route,
+      fields,
+      operators,
+      values,
+      sourceAnchors,
+    )
+  );
+}
+
+function semanticConditionMatchingRouteHasAffinity(
+  route: TemplateCopilotV3ReviewObservation,
+  fields: readonly TemplateCopilotV3ReviewObservation[],
+  operators: readonly TemplateCopilotV3ReviewObservation[],
+  values: readonly TemplateCopilotV3ReviewObservation[],
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  if (
+    sourceAnchors.some((anchor) =>
+      fields.some((field) =>
+        operators.some((operator) =>
+          values.some((value) =>
+            semanticConditionSameClauseMatchingRouteHasAffinity(
+              route,
+              field,
+              operator,
+              value,
+              anchor,
+            )
+          )
+        )
+      )
+    )
+  ) {
+    return true;
+  }
+  if (
+    semanticConditionRouteIntroducesPredicate(
+      route,
+      fields,
+      operators,
+      values,
+      sourceAnchors,
+    )
+  ) {
+    return true;
+  }
+  return sourceAnchors.some((anchor) =>
+    operators.some((operator) =>
+      values.some((value) => {
+        const operatorIndex = semanticHardClauseIndexInAnchor(
+          operator,
+          anchor,
+        );
+        const valueIndex = semanticHardClauseIndexInAnchor(value, anchor);
+        const routeIndex = semanticHardClauseIndexInAnchor(route, anchor);
+        if (
+          operatorIndex === null ||
+          valueIndex === null ||
+          routeIndex === null ||
+          operatorIndex !== valueIndex ||
+          routeIndex !== operatorIndex + 1
+        ) {
+          return false;
+        }
+        const clause = semanticHardClauseSegments(anchor.exactText)[routeIndex];
+        if (
+          clause === undefined ||
+          semanticConditionClauseHasIndependentPredicate(clause.text)
+        ) {
+          return false;
+        }
+        const normalizedClause =
+          templateCopilotV3NormalizeLexicalText(clause.text)
+            .replace(/^[\s,，:：\-–—]+/gu, "");
+        if (
+          /^(?:if|when)\b/u.test(normalizedClause) ||
+          /^(?:若|如果|當|当)/u.test(normalizedClause)
+        ) {
+          return semanticConditionClauseIsDecisionBranch(
+            clause.text,
+            route.quote,
+          );
+        }
+        return semanticConditionRouteOnlyClauseHasAffinity(
+          route,
+          clause,
+          anchor,
+        );
+      })
+    )
+  );
+}
+
+
+function semanticConditionSameClauseMatchingRouteHasAffinity(
+  route: TemplateCopilotV3ReviewObservation,
+  field: TemplateCopilotV3ReviewObservation,
+  operator: TemplateCopilotV3ReviewObservation,
+  value: TemplateCopilotV3ReviewObservation,
+  anchor: TemplateCopilotV3SourceSpan,
+) {
+  const fieldIndex = semanticHardClauseIndexInAnchor(field, anchor);
+  const operatorIndex = semanticHardClauseIndexInAnchor(operator, anchor);
+  const valueIndex = semanticHardClauseIndexInAnchor(value, anchor);
+  const routeIndex = semanticHardClauseIndexInAnchor(route, anchor);
+  if (
+    operatorIndex === null ||
+    valueIndex === null ||
+    routeIndex === null ||
+    operatorIndex !== valueIndex ||
+    valueIndex !== routeIndex
+  ) {
+    return false;
+  }
+  const clause = semanticHardClauseSegments(anchor.exactText)[routeIndex];
+  if (
+    clause === undefined ||
+    !semanticConditionRouteInClauseIsAffirmative(route, clause, anchor)
+  ) {
+    return false;
+  }
+  const predicateEnd = Math.max(
+    operator.sourceSpan.endCodePoint,
+    value.sourceSpan.endCodePoint,
+    ...(
+      fieldIndex === routeIndex
+        ? [field.sourceSpan.endCodePoint]
+        : []
+    ),
+  );
+  if (predicateEnd > route.sourceSpan.startCodePoint) return false;
+  const bridgeStart =
+    predicateEnd - anchor.startCodePoint - clause.startCodePoint;
+  const bridgeEnd =
+    route.sourceSpan.startCodePoint -
+    anchor.startCodePoint -
+    clause.startCodePoint;
+  const bridge = Array.from(clause.text)
+    .slice(bridgeStart, bridgeEnd)
+    .join("");
+  const normalizedBridge =
+    templateCopilotV3NormalizeLexicalText(bridge)
+      .replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  if (
+    fieldIndex !== null &&
+    fieldIndex < routeIndex &&
+    routeIndex - fieldIndex === 2 &&
+    !/^(?:再由|再經|再经)$/u.test(normalizedBridge)
+  ) {
+    return false;
+  }
+  const parts = semanticConditionRouteClauseParts(route, clause, anchor);
+  return parts !== null &&
+    semanticConditionPredicateRouteBridgeIsAffirmative(bridge, parts);
+}
+
+function semanticConditionRouteOnlyClauseHasAffinity(
+  route: TemplateCopilotV3ReviewObservation,
+  clause: Readonly<{
+    startCodePoint: number;
+    endCodePoint: number;
+    text: string;
+  }>,
+  anchor: TemplateCopilotV3SourceSpan,
+) {
+  if (!semanticConditionRouteInClauseIsAffirmative(route, clause, anchor)) {
+    return false;
+  }
+  const parts = semanticConditionRouteClauseParts(route, clause, anchor);
+  return parts !== null &&
+    semanticConditionRouteOnlyPrefixIsAffirmative(parts);
+}
+
+function semanticConditionPredicateRouteBridgeIsAffirmative(
+  bridgeWording: string,
+  parts: Readonly<{ prefix: string; route: string; suffix: string }>,
+) {
+  const bridge = templateCopilotV3NormalizeLexicalText(bridgeWording)
+    .replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  const route = templateCopilotV3NormalizeLexicalText(parts.route)
+    .replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  const suffix = templateCopilotV3NormalizeLexicalText(parts.suffix)
+    .replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  if (
+    /^(?:blocks?\s+submission|does\s+not\s+skip\s+approval|不可完成|不得結案|不得结案)$/u
+      .test(route)
+  ) {
+    return /^(?:|when|then|時|时|則|则)$/u.test(bridge);
+  }
+  if (/^is\s+(?:the\s+)?final\s+approver$/u.test(suffix)) {
+    return bridge.length === 0;
+  }
+  if (
+    /(?:後|后)完成$/u.test(route) &&
+    bridge.length === 0 &&
+    suffix.length === 0
+  ) {
+    return true;
+  }
+  if (
+    /^(?:必須|必须)?阻塞流程$/u.test(suffix)
+  ) {
+    return /^(?:時|时)$/u.test(bridge);
+  }
+  if (
+    /^(?:批准|審批|审批|審查|审查|核對|核对)(?:後|后)完成$/u
+      .test(suffix)
+  ) {
+    return /^(?:且(?:風險|风险)低(?:時|时)可在)$/u.test(bridge);
+  }
+  if (
+    /^(?:退回)/u.test(route) &&
+    /^(?:必須先|必须先|先)$/u.test(bridge)
+  ) {
+    return true;
+  }
+  if (
+    /^(?:complete|complete the workflow|完成|完成流程)$/u.test(route) &&
+    bridge.length === 0 &&
+    suffix.length === 0
+  ) {
+    return true;
+  }
+  if (
+    /^(?:complete|complete the workflow)$/u.test(route) &&
+    /^(?:branches?)$/u.test(suffix) &&
+    /^(?:versus|vs\.?)\s+(?:at\s+least|or\s+above|or\s+more|or\s+higher|above|greater\s+than|exceeds|over|below|less\s+than|under|at\s+most|no\s+more\s+than|not\s+over)\s+(?:hkd\s+)?\d[\d,.]*\s+as$/u
+      .test(bridge)
+  ) {
+    return true;
+  }
+  const englishDirect =
+    /^(?:(?:and\s+)?then\s+|and\s+)?(?:(?:also\s+)?(?:adds?|requires?|seeks?|obtains?)|routes?(?:\s+(?:the\s+)?(?:request|workflow|it))?\s+to|go(?:es)?(?:\s+from\s+[\p{L}\p{N}][\p{L}\p{N}\s'’&/()\-]{0,79})?\s+to|sends?(?:\s+(?:the\s+)?(?:request|workflow|it))?\s+to)$/u
+      .test(bridge);
+  const englishCompound =
+    /^(?:(?:and\s+goods-received\s+total[\s,，:：\-–—]*)?skip\s+mismatch\s+review\s+and\s+go\s+to|or\s+a\s+receipt\s+is\s+missing[\s,，:：\-–—]*(?:then\s+)?(?:adds?|requires?)|or\s+sensitive\s+data\s+also\s+requires?)$/u
+      .test(bridge);
+  const cjkDirect =
+    /^(?:及|並|并|以及|且)?(?:(?:才|則|则|便|即|者|時|时)?(?:必須|必须)?(?:先|再)?(?:增加|加入|增設|增设|要求|需要|配對|配对|退回)|(?:才|則|则|便|即|者|時|时)?走(?:額外|额外)?|(?:才|則|则|便|即|者|時|时)?(?:必須|必须)?再?(?:經|经)|(?:才|則|则|便|即|者|時|时)?(?:由|再由|交由|送交|轉至|转至|完成)|(?:必須|必须)在[\p{L}\p{N}]{1,24}(?:前|後|后)完成)$/u
+      .test(bridge);
+  const cjkCompound =
+    /^(?:或期限(?:超過|超过)九十日者增加|或需要(?:監管報告|监管报告)(?:時|时)增加|或高(?:風險|风险)增加)$/u
+      .test(bridge);
+  return englishDirect || englishCompound || cjkDirect || cjkCompound;
+}
+
+function semanticConditionRouteOnlyPrefixIsAffirmative(
+  parts: Readonly<{ prefix: string; route: string; suffix: string }>,
+) {
+  const prefix = templateCopilotV3NormalizeLexicalText(parts.prefix)
+    .replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  if (prefix.length === 0) return true;
+  if (
+    /^(?:matching|qualifying)\s+(?:requests?|workflows?|branches?)\s+routes?\s+to$/u
+      .test(prefix)
+  ) {
+    return true;
+  }
+  return semanticConditionPredicateRouteBridgeIsAffirmative(prefix, parts);
+}
+
+function semanticConditionOtherwiseRouteHasAffinity(
+  route: TemplateCopilotV3ReviewObservation,
+  fields: readonly TemplateCopilotV3ReviewObservation[],
+  operators: readonly TemplateCopilotV3ReviewObservation[],
+  values: readonly TemplateCopilotV3ReviewObservation[],
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return sourceAnchors.some((anchor) =>
+    operators.some((operator) =>
+      values.some((value) => {
+        const operatorIndex = semanticHardClauseIndexInAnchor(
+          operator,
+          anchor,
+        );
+        const valueIndex = semanticHardClauseIndexInAnchor(value, anchor);
+        const routeIndex = semanticHardClauseIndexInAnchor(route, anchor);
+        if (
+          operatorIndex === null ||
+          valueIndex === null ||
+          routeIndex === null ||
+          operatorIndex !== valueIndex ||
+          Math.abs(routeIndex - operatorIndex) > 2
+        ) {
+          return false;
+        }
+        const clauses = semanticHardClauseSegments(anchor.exactText);
+        const governing = clauses[operatorIndex];
+        const branch = clauses[routeIndex];
+        if (
+          !governing ||
+          !branch ||
+          !semanticConditionOtherwiseRouteIsAffirmative(
+            route,
+            branch,
+            anchor,
+            operatorIndex,
+            routeIndex,
+          )
+        ) {
+          return false;
+        }
+        if (routeIndex === operatorIndex) return true;
+        if (
+          !semanticConditionClauseHasIndependentPredicate(branch.text) &&
+          semanticConditionDefaultBranchHasAffinity(
+            branch.text,
+            fields,
+            operators,
+            values,
+          )
+        ) {
+          return true;
+        }
+        if (
+          !semanticThresholdClauseHasComparison(governing.text) ||
+          !semanticThresholdClauseHasComparison(branch.text)
+        ) {
+          return false;
+        }
+        return fields.some((field) =>
+          semanticConditionThresholdOtherwiseBranchIsClosed(
+            field,
+            route,
+            operator,
+            value,
+            anchor,
+          )
+        );
+      })
+    )
+  );
+}
+
+function semanticConditionClauseHasIndependentPredicate(wording: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(wording);
+  return semanticThresholdClauseHasComparison(normalized) ||
+    /\b(?:equals?|equal\s+to|not\s+equal(?:\s+to)?|other\s+than|contains?)\b/u
+      .test(normalized) ||
+    /(?:等於|等于|不等於|不等于|包含|為是|为是|為真|为真|已選|已选|已選擇|已选择)/u
+      .test(normalized);
+}
+
+function semanticConditionRouteIntroducesPredicate(
+  route: TemplateCopilotV3ReviewObservation,
+  fields: readonly TemplateCopilotV3ReviewObservation[],
+  operators: readonly TemplateCopilotV3ReviewObservation[],
+  values: readonly TemplateCopilotV3ReviewObservation[],
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return sourceAnchors.some((anchor) =>
+    fields.some((field) =>
+      operators.some((operator) =>
+        values.some((value) => {
+          const routeIndex = semanticHardClauseIndexInAnchor(route, anchor);
+          const fieldIndex = semanticHardClauseIndexInAnchor(field, anchor);
+          const operatorIndex = semanticHardClauseIndexInAnchor(
+            operator,
+            anchor,
+          );
+          const valueIndex = semanticHardClauseIndexInAnchor(value, anchor);
+          if (
+            routeIndex === null ||
+            fieldIndex === null ||
+            operatorIndex === null ||
+            valueIndex === null ||
+            routeIndex !== fieldIndex ||
+            fieldIndex !== operatorIndex ||
+            operatorIndex !== valueIndex
+          ) {
+            return false;
+          }
+          const fieldSharesRouteSpan =
+            field.sourceSpan.messageId === route.sourceSpan.messageId &&
+            field.sourceSpan.startCodePoint ===
+              route.sourceSpan.startCodePoint &&
+            field.sourceSpan.endCodePoint === route.sourceSpan.endCodePoint;
+          const predicateStart = Math.min(
+            operator.sourceSpan.startCodePoint,
+            value.sourceSpan.startCodePoint,
+            ...(
+              fieldSharesRouteSpan
+                ? []
+                : [field.sourceSpan.startCodePoint]
+            ),
+          );
+          if (route.sourceSpan.endCodePoint > predicateStart) {
+            return false;
+          }
+          const clause =
+            semanticHardClauseSegments(anchor.exactText)[routeIndex];
+          const parts = clause === undefined
+            ? null
+            : semanticConditionRouteClauseParts(route, clause, anchor);
+          return parts !== null &&
+            templateCopilotV3RouteFirstPredicateIsAffirmative(parts);
+        })
+      )
+    )
+  );
+}
+
+function semanticConditionClauseIsDecisionBranch(
+  wording: string,
+  routeQuote: string,
+) {
+  const normalized = templateCopilotV3NormalizeLexicalText(wording)
+    .replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  const route = templateCopilotV3NormalizeLexicalText(routeQuote);
+  if (route.length === 0) return false;
+  const routeIndex = normalized.indexOf(route);
+  if (routeIndex < 0) return false;
+  const prefix = normalized
+    .slice(0, routeIndex)
+    .replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  const suffix = normalized
+    .slice(routeIndex + route.length)
+    .replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  if (
+    /\b(?:is|are|was|were|be|been|being|gets?|got)\s+(?:logged|recorded|noted|reported|stored|counted)$/u
+      .test(suffix) ||
+    /(?:會|会)?(?:被)?(?:記錄|记录|登記|登记|報告|报告|留存|保存)$/u
+      .test(suffix)
+  ) {
+    return false;
+  }
+  const englishPrefix =
+    /^(?:if|when)(?:\s+(?:either|both|the|any|all))?$/u.test(prefix);
+  const englishSuffix =
+    /^(?:approves?|approved|rejects?|rejected|endorses?|endorsed|reviews?|reviewed|confirms?|confirmed)\b(?:\s+(?:the\s+)?(?:request|workflow|it))?[\s,，:：\-–—]+(?:then\s+)?(?:returns?(?:\s+(?:the\s+)?(?:request|workflow|it))?\s+(?:to\s+(?:the\s+)?(?:requester|applicant|employee|initiator|submitter|sender|preparer|coordinator|vendor|supplier|subcontractor|accounts\s+payable|[\p{L}\p{N}][\p{L}\p{N}'’&/()\-]{0,23}(?:\s+[\p{L}\p{N}][\p{L}\p{N}'’&/()\-]{0,23}){0,3}\s+(?:owner|manager|coordinator|requester|applicant|team|officer))\s+)?for\s+correction|completes?(?:\s+(?:the\s+)?(?:request|workflow|it))?|(?:routes?|sends?)(?:\s+(?:the\s+)?(?:request|workflow|it))?\s+to\s+[\p{L}\p{N}][\p{L}\p{N}\s'’&/()\-]{0,79}|go(?:es)?\s+to\s+[\p{L}\p{N}][\p{L}\p{N}\s'’&/()\-]{0,79}|(?:adds?|requires?)\s+(?:an?\s+)?(?:approval|review|stage|step)(?:\s+[\p{L}\p{N}][\p{L}\p{N}\s'’&/()\-]{0,63})?)$/u
+      .test(suffix);
+  const chinesePrefix =
+    /^(?:若|如果|當|当)(?:任一|任何|兩者|两者|全部)?$/u.test(prefix);
+  const chineseSuffix =
+    /^(?:批准|拒絕|拒绝|審批|审批|認可|认可|審查|审查|確認|确认)(?:(?:該|该)?(?:申請|申请|流程))?[\s,，:：\-–—]*(?:則|则|便|即|後|后)?(?:退回(?:(?:該|该)?(?:申請人|申请人|發起人|发起人|提交人|員工|员工|編製人|编制人|分判商|供應商|供应商)|[\p{L}\p{N}]{1,16}(?:負責人|负责人|主管|經理|经理|協調員|协调员))?(?:修改|修正|補正|补正|更正|確認差異|确认差异)|(?:完成|結束|结束)(?:(?:該|该)?(?:申請|申请|流程))?|(?:轉至|转至|送交|交由|提交)[\p{L}\p{N}\s]{1,48}|(?:增加|加入|需要|要求)[\p{L}\p{N}\s]{0,40}(?:批准|審批|审批|審查|审查|評審|评审|核對|核对|流程|階段|阶段|步驟|步骤))$/u
+      .test(suffix);
+  return (englishPrefix && englishSuffix) ||
+    (chinesePrefix && chineseSuffix);
+}
+
+function semanticConditionRouteInClauseIsAffirmative(
+  route: TemplateCopilotV3ReviewObservation,
+  clause: Readonly<{
+    startCodePoint: number;
+    endCodePoint: number;
+    text: string;
+  }>,
+  anchor: TemplateCopilotV3SourceSpan,
+) {
+  const hint = semanticConditionRouteHint(route);
+  const parts = semanticConditionRouteClauseParts(route, clause, anchor);
+  return hint !== null &&
+    parts !== null &&
+    templateCopilotV3MatchingRouteIsAffirmative(parts, hint);
+}
+
+function semanticConditionOtherwiseRouteIsAffirmative(
+  route: TemplateCopilotV3ReviewObservation,
+  clause: Readonly<{
+    startCodePoint: number;
+    endCodePoint: number;
+    text: string;
+  }>,
+  anchor: TemplateCopilotV3SourceSpan,
+  governingHardClauseIndex: number,
+  routeHardClauseIndex: number,
+) {
+  const hint = semanticConditionRouteHint(route);
+  const parts = semanticConditionRouteClauseParts(route, clause, anchor);
+  if (hint === null || parts === null) return false;
+  if (
+    templateCopilotV3ImmediateDefaultRouteIsAffirmative({
+      ...parts,
+      hint,
+      governingHardClauseIndex,
+      routeHardClauseIndex,
+    })
+  ) {
+    return true;
+  }
+  if (hint !== "complete") {
+    return templateCopilotV3MatchingRouteIsAffirmative(parts, hint);
+  }
+  const prefix = templateCopilotV3NormalizeLexicalText(parts.prefix)
+    .replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  const suffix = templateCopilotV3NormalizeLexicalText(parts.suffix)
+    .replace(/^[\s,，:：\-–—]+|[\s,，:：\-–—]+$/gu, "");
+  const routeText = templateCopilotV3NormalizeLexicalText(parts.route);
+  const activePrefix =
+    /(?:^|\b)(?:otherwise|else|by\s+default|normal\s+visits?|ordinary\s+visits?|as)$/u
+      .test(prefix) ||
+    /(?:否則|否则)$/u.test(prefix) ||
+    /^(?:if\s+both\s+(?:approve|approved))$/u.test(prefix) ||
+    /^(?:其他|其它)(?:假別|假别)在\s*hr\s*(?:核對|核对)(?:後|后)$/u
+      .test(prefix) ||
+    /^(?:非高風險|非高风险)(?:則|则)?(?:項目經理|项目经理)(?:後|后)$/u
+      .test(prefix) ||
+    /^(?:普通辦公室到訪|普通办公室到访)在主管批准(?:後|后)$/u
+      .test(prefix);
+  const activeSuffix =
+    suffix.length === 0 ||
+    /^(?:after\b|the\s+workflow\b|branches?\b)/u.test(suffix);
+  return [
+    "complete",
+    "complete the workflow",
+    "完成",
+    "完成流程",
+  ].includes(routeText) && activePrefix && activeSuffix;
+}
+
+function semanticConditionRouteClauseParts(
+  route: TemplateCopilotV3ReviewObservation,
+  clause: Readonly<{
+    startCodePoint: number;
+    endCodePoint: number;
+    text: string;
+  }>,
+  anchor: TemplateCopilotV3SourceSpan,
+) {
+  return templateCopilotV3SliceConditionRouteClause(
+    clause.text,
+    route.sourceSpan.startCodePoint -
+      anchor.startCodePoint -
+      clause.startCodePoint,
+    route.sourceSpan.endCodePoint -
+      anchor.startCodePoint -
+      clause.startCodePoint,
+  );
+}
+
+function semanticConditionRouteHint(
+  route: TemplateCopilotV3ReviewObservation,
+): TemplateCopilotV3ConditionRouteHint | null {
+  const hint = route.advisoryHint;
+  return hint === "stage_reference" ||
+      hint === "condition_reference" ||
+      hint === "complete" ||
+      hint === "return_for_correction" ||
+      hint === "unsupported_outcome"
+    ? hint
+    : null;
+}
+
+function semanticConditionDefaultBranchHasAffinity(
+  wording: string,
+  fields: readonly TemplateCopilotV3ReviewObservation[],
+  operators: readonly TemplateCopilotV3ReviewObservation[],
+  values: readonly TemplateCopilotV3ReviewObservation[],
+) {
+  const normalized = templateCopilotV3NormalizeLexicalText(wording)
+    .replace(/^[\s,，:：\-–—]+/gu, "");
+  if (
+    /^(?:otherwise|else|by\s+default)\b/u.test(normalized) ||
+    /^(?:否則|否则)/u.test(normalized)
+  ) {
+    return true;
+  }
+  const predicateTerms = [...fields, ...operators, ...values]
+    .map((observation) =>
+      templateCopilotV3NormalizeLexicalText(observation.quote)
+    );
+  const hasExactPredicate = (...aliases: string[]) =>
+    predicateTerms.some((term) => aliases.includes(term));
+  const normalEnglishVisit =
+    hasExactPredicate("high-risk visit", "high-risk visits") &&
+    /^(?:normal|ordinary)\s+visits?\b/u.test(normalized);
+  const nonHighRiskProcess =
+    hasExactPredicate("高風險工序", "高风险工序") &&
+    /^(?:非高風險|非高风险)/u.test(normalized);
+  if (normalEnglishVisit || nonHighRiskProcess) return true;
+  const leave =
+    hasExactPredicate(
+      "sick leave",
+      "unpaid leave",
+      "病假日數",
+      "病假日数",
+      "無薪假",
+      "无薪假",
+    );
+  const otherLeave =
+    /^other\s+leave\s+types?\b/u.test(normalized) ||
+    /^(?:其他|其它)(?:假別|假别)/u.test(normalized);
+  if (leave && otherLeave) return true;
+  const restrictedArea = hasExactPredicate(
+    "restricted area",
+    "restricted areas",
+    "受限制區域",
+    "受限制区域",
+  );
+  const normalOfficeVisit =
+    /^(?:normal|ordinary)\s+office\s+visits?\b/u.test(normalized) ||
+    /^(?:普通|正常|一般)(?:辦公室到訪|办公室到访)/u.test(normalized);
+  return restrictedArea && normalOfficeVisit;
+}
+
+function semanticConditionThresholdOtherwiseBranchIsClosed(
+  field: TemplateCopilotV3ReviewObservation,
+  route: TemplateCopilotV3ReviewObservation,
+  operator: TemplateCopilotV3ReviewObservation,
+  value: TemplateCopilotV3ReviewObservation,
+  anchor: TemplateCopilotV3SourceSpan,
+) {
+  const fieldIndex = semanticHardClauseIndexInAnchor(field, anchor);
+  const routeIndex = semanticHardClauseIndexInAnchor(route, anchor);
+  const operatorIndex = semanticHardClauseIndexInAnchor(operator, anchor);
+  const valueIndex = semanticHardClauseIndexInAnchor(value, anchor);
+  if (
+    fieldIndex === null ||
+    routeIndex === null ||
+    operatorIndex === null ||
+    valueIndex === null ||
+    fieldIndex !== routeIndex ||
+    routeIndex + 1 !== operatorIndex ||
+    operatorIndex !== valueIndex
+  ) {
+    return false;
+  }
+  const complementary =
+    semanticComplementaryThresholdPattern(operator.advisoryHint);
+  const clause = semanticHardClauseSegments(anchor.exactText)[routeIndex];
+  if (complementary === null || clause === undefined) return false;
+  const normalized =
+    templateCopilotV3NormalizeLexicalText(clause.text);
+  const fieldText = escapeSemanticRegExp(
+    templateCopilotV3NormalizeLexicalText(field.quote),
+  );
+  const valueText = escapeSemanticRegExp(
+    templateCopilotV3NormalizeLexicalText(value.quote),
+  );
+  const routeText = escapeSemanticRegExp(
+    templateCopilotV3NormalizeLexicalText(route.quote),
+  );
+  if (
+    fieldText.length === 0 ||
+    valueText.length === 0 ||
+    routeText.length === 0
+  ) {
+    return false;
+  }
+  const routeAction =
+    "(?:routes?(?:\\s+(?:the\\s+)?(?:request|workflow|it))?\\s+to|go(?:es)?(?:\\s+from\\s+[\\p{L}\\p{N}][\\p{L}\\p{N}\\s'’&/()\\-]{0,79})?\\s+to|sends?(?:\\s+(?:the\\s+)?(?:request|workflow|it))?\\s+to)";
+  return new RegExp(
+    `^(?:otherwise|else|by\\s+default)\\s+(?:if|when)\\s+${fieldText}\\s+(?:is\\s+)?${complementary}\\s+(?:(?:hkd)\\s*)?${valueText}\\s*[,，]\\s*(?:(?:${routeAction})\\s+${routeText}|${routeText}\\s+is\\s+(?:the\\s+)?final\\s+approver)$`,
+    "u",
+  ).test(normalized);
+}
+
+function semanticConditionFieldCarriesForward(
+  field: TemplateCopilotV3ReviewObservation,
+  operator: TemplateCopilotV3ReviewObservation,
+  value: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return sourceAnchors.some((anchor) => {
+    const fieldIndex = semanticHardClauseIndexInAnchor(field, anchor);
+    const operatorIndex = semanticHardClauseIndexInAnchor(operator, anchor);
+    const valueIndex = semanticHardClauseIndexInAnchor(value, anchor);
+    if (
+      fieldIndex === null ||
+      operatorIndex === null ||
+      valueIndex === null ||
+      operatorIndex !== valueIndex
+    ) {
+      return false;
+    }
+    const clauses = semanticHardClauseSegments(anchor.exactText);
+    const target = clauses[operatorIndex];
+    if (!target) return false;
+    const targetText = templateCopilotV3NormalizeLexicalText(target.text);
+    const fieldText = templateCopilotV3NormalizeLexicalText(field.quote);
+    const operatorText = templateCopilotV3NormalizeLexicalText(operator.quote);
+    if (
+      fieldText.length > 0 &&
+      operatorText.length > 0 &&
+      new RegExp(
+        String.raw`^(?:(?:(?:otherwise|else)\s*[,，:：\-–—]?\s*|(?:否則|否则)\s*)?(?:(?:if|when)\s+(?:the\s+)?|(?:若|如果|當|当)\s*)?)?${escapeSemanticRegExp(fieldText)}(?:\s+is)?\s*${escapeSemanticRegExp(operatorText)}`,
+        "u",
+      ).test(targetText)
+    ) {
+      return true;
+    }
+    if (
+      fieldIndex >= operatorIndex ||
+      operatorIndex - fieldIndex > 2
+    ) {
+      return false;
+    }
+    const operatorRelativeStart =
+      operator.sourceSpan.startCodePoint - anchor.startCodePoint;
+    const prefix = Array.from(anchor.exactText)
+      .slice(target.startCodePoint, operatorRelativeStart)
+      .join("");
+    if (
+      templateCopilotV3NormalizeLexicalText(prefix).length > 0 ||
+      !semanticThresholdTargetPredicateIsClosed(
+        operator,
+        value,
+        target,
+        anchor,
+      )
+    ) {
+      return false;
+    }
+    const fieldClause = clauses[fieldIndex];
+    if (
+      !fieldClause ||
+      !semanticThresholdFieldClauseIsClosedCarry(
+        fieldClause.text,
+        field.quote,
+        operator.advisoryHint,
+      )
+    ) {
+      return false;
+    }
+    return clauses
+      .slice(fieldIndex + 1, operatorIndex)
+      .every((clause) =>
+        semanticThresholdContinuationClauseIsClosed(
+          clause.text,
+          operator.advisoryHint,
+        )
+      );
+  });
+}
+
+function semanticThresholdTargetPredicateIsClosed(
+  operator: TemplateCopilotV3ReviewObservation,
+  value: TemplateCopilotV3ReviewObservation,
+  clause: Readonly<{
+    startCodePoint: number;
+    endCodePoint: number;
+    text: string;
+  }>,
+  anchor: TemplateCopilotV3SourceSpan,
+) {
+  const operatorStart =
+    operator.sourceSpan.startCodePoint -
+    anchor.startCodePoint -
+    clause.startCodePoint;
+  const operatorEnd =
+    operator.sourceSpan.endCodePoint -
+    anchor.startCodePoint -
+    clause.startCodePoint;
+  const valueStart =
+    value.sourceSpan.startCodePoint -
+    anchor.startCodePoint -
+    clause.startCodePoint;
+  const valueEnd =
+    value.sourceSpan.endCodePoint -
+    anchor.startCodePoint -
+    clause.startCodePoint;
+  const codePoints = Array.from(clause.text);
+  if (
+    operatorStart < 0 ||
+    operatorEnd > valueStart ||
+    valueStart < 0 ||
+    valueEnd > codePoints.length
+  ) {
+    return false;
+  }
+  const bridge = codePoints.slice(operatorEnd, valueStart).join("");
+  return /^\s*(?:(?:hkd|港幣|港币)\s*)?$/u.test(
+    templateCopilotV3NormalizeLexicalText(bridge),
+  );
+}
+
+function semanticThresholdFieldClauseIsClosedCarry(
+  wording: string,
+  fieldQuote: string,
+  targetHint: string | null,
+) {
+  const complementary = semanticComplementaryThresholdPattern(targetHint);
+  if (complementary === null) return false;
+  const normalized = templateCopilotV3NormalizeLexicalText(wording);
+  const field = escapeSemanticRegExp(
+    templateCopilotV3NormalizeLexicalText(fieldQuote),
+  );
+  if (field.length === 0) return false;
+  const threshold =
+    "(?:(?:hkd)\\s*|(?:港幣|港币)\\s*)?(?:\\d[\\d,.]*|[零〇一二三四五六七八九十百千萬万億亿兆兩两]+元)";
+  const english = normalized.match(
+    new RegExp(
+      `^(?:if|when)\\s+${field}\\s+(?:is\\s+)?${complementary}\\s+${threshold}\\s*[,，]\\s*(?<route>[\\p{L}\\p{N}][\\p{L}\\p{N}\\s'’&/()\\-]{0,63})\\s+is\\s+(?:the\\s+)?final\\s+approver$`,
+      "u",
+    ),
+  );
+  if (
+    english?.groups?.route &&
+    semanticThresholdEnglishRouteNameIsClosed(english.groups.route)
+  ) {
+    return true;
+  }
+  const englishRoute = normalized.match(
+    new RegExp(
+      `^(?:if|when)\\s+${field}\\s+(?:is\\s+)?${complementary}\\s+${threshold}\\s*[,，]\\s*(?:routes?|go(?:es)?|sends?)(?:\\s+(?:the\\s+)?(?:request|workflow|it))?\\s+to\\s+(?<route>[\\p{L}\\p{N}][\\p{L}\\p{N}\\s'’&/()\\-]{0,63})$`,
+      "u",
+    ),
+  );
+  if (
+    englishRoute?.groups?.route &&
+    semanticThresholdEnglishRouteNameIsClosed(englishRoute.groups.route)
+  ) {
+    return true;
+  }
+  const lowRisk = normalized.match(
+    new RegExp(
+      `^${field}${complementary}\\s*${threshold}且(?:風險|风险)低(?:時|时)可在(?<route>[\\p{L}\\p{N}]{1,24})(?:批准|審批|审批|審查|审查)(?:後|后)完成$`,
+      "u",
+    ),
+  );
+  if (
+    lowRisk?.groups?.route &&
+    semanticThresholdCjkRouteNameIsClosed(lowRisk.groups.route)
+  ) {
+    return true;
+  }
+  const direct = normalized.match(
+    new RegExp(
+      `^${field}${complementary}\\s*${threshold}\\s*(?:由|交由|送交|轉至|转至)(?<route>[\\p{L}\\p{N}]{1,24})(?:批准|審批|审批|審查|审查)(?:(?:後|后)完成)?$`,
+      "u",
+    ),
+  );
+  if (
+    direct?.groups?.route &&
+    semanticThresholdCjkRouteNameIsClosed(direct.groups.route)
+  ) {
+    return true;
+  }
+  return new RegExp(
+    `^(?:本地|當地|当地)(?:低風險|低风险)且${field}${complementary}\\s*${threshold}\\s*[,，]\\s*(?:財務|财务)(?:審核|审核)?(?:後|后)完成$`,
+    "u",
+  ).test(normalized);
+}
+
+function semanticThresholdContinuationClauseIsClosed(
+  wording: string,
+  targetHint: string | null,
+) {
+  const operator = semanticThresholdPattern(targetHint);
+  if (operator === null) return false;
+  const normalized = templateCopilotV3NormalizeLexicalText(wording);
+  const threshold =
+    "(?:(?:hkd)\\s*|(?:港幣|港币)\\s*)?(?:\\d[\\d,.]*|[零〇一二三四五六七八九十百千萬万億亿兆兩两]+元)";
+  const matched = normalized.match(
+    new RegExp(
+      `^${operator}\\s*${threshold}\\s*(?:由|交由|送交|轉至|转至)(?<route>[\\p{L}\\p{N}]{1,24})(?:批准|審批|审批|審查|审查)(?:(?:後|后)完成)?$`,
+      "u",
+    ),
+  );
+  return Boolean(
+    matched?.groups?.route &&
+      semanticThresholdCjkRouteNameIsClosed(matched.groups.route),
+  );
+}
+
+function semanticThresholdEnglishRouteNameIsClosed(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  return /^(?:(?:general|finance|financial|legal|security|compliance|department|business|regional|country|project|procurement|operations|technical|executive|managing|senior|chief|credit|risk|sales|data|hr)\s+){0,3}(?:manager|director|controller|officer|head|chair|chairman|chairperson|approver|ceo|cfo|coo|president|committee|board|finance|legal|security|hr)$/u
+    .test(normalized);
+}
+
+function semanticThresholdCjkRouteNameIsClosed(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  const qualifier =
+    "(?:公司|集團|集团|董事會|董事会|財務|财务|法務|法务|合規|合规|信用|風險|风险|安全|資訊保安|信息安全|人力資源|人力资源|行政|銷售|销售|採購|采购|部門|部门|項目|项目|工程|品質|质量|營運|运营|總務|总务)";
+  const role =
+    "(?:經理|经理|總監|总监|主管|總裁|总裁|主席|主任|負責人|负责人|審批人|审批人|董事|高管|委員會|委员会)";
+  return new RegExp(`^(?:${qualifier}){0,3}${role}$`, "u").test(normalized) ||
+    /^(?:財務|财务|法務|法务|合規|合规|安全|資訊保安|信息安全|HR)$/u
+      .test(normalized);
+}
+
+function semanticComplementaryThresholdPattern(hint: string | null) {
+  switch (hint) {
+    case ">":
+      return "(?:at\\s+most|no\\s+more\\s+than|not\\s+over|does\\s+not\\s+exceed|不超過|不超过|不多於|不多于)";
+    case ">=":
+      return "(?:below|less\\s+than|under|低於|低于|小於|小于)";
+    case "<":
+      return "(?:at\\s+least|or\\s+above|or\\s+more|or\\s+higher|不少於|不少于|至少)";
+    case "<=":
+      return "(?:above|greater\\s+than|exceeds?|over|超過|超过|大於|大于)";
+    default:
+      return null;
+  }
+}
+
+function semanticThresholdPattern(hint: string | null) {
+  switch (hint) {
+    case ">":
+      return "(?:above|greater\\s+than|exceeds?|over|超過|超过|大於|大于)";
+    case ">=":
+      return "(?:at\\s+least|or\\s+above|or\\s+more|or\\s+higher|不少於|不少于|至少)";
+    case "<":
+      return "(?:below|less\\s+than|under|低於|低于|小於|小于)";
+    case "<=":
+      return "(?:at\\s+most|no\\s+more\\s+than|not\\s+over|does\\s+not\\s+exceed|不超過|不超过|不多於|不多于)";
+    default:
+      return null;
+  }
+}
+
+function escapeSemanticRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function semanticHardClauseIndexInAnchor(
+  observation: TemplateCopilotV3ReviewObservation,
+  anchor: TemplateCopilotV3SourceSpan,
+) {
+  if (
+    anchor.messageId !== observation.sourceSpan.messageId ||
+    observation.sourceSpan.startCodePoint < anchor.startCodePoint ||
+    observation.sourceSpan.endCodePoint > anchor.endCodePoint
+  ) {
+    return null;
+  }
+  const relativeStart =
+    observation.sourceSpan.startCodePoint - anchor.startCodePoint;
+  return Array.from(anchor.exactText)
+    .slice(0, relativeStart)
+    .filter((character) => semanticHardClauseSeparator(character)).length;
+}
+
+function semanticHardClauseSegments(text: string) {
+  const codePoints = Array.from(text);
+  const clauses: Array<
+    Readonly<{
+      startCodePoint: number;
+      endCodePoint: number;
+      text: string;
+    }>
+  > = [];
+  let startCodePoint = 0;
+  for (let index = 0; index < codePoints.length; index += 1) {
+    if (!semanticHardClauseSeparator(codePoints[index])) continue;
+    clauses.push({
+      startCodePoint,
+      endCodePoint: index,
+      text: codePoints.slice(startCodePoint, index).join(""),
+    });
+    startCodePoint = index + 1;
+  }
+  clauses.push({
+    startCodePoint,
+    endCodePoint: codePoints.length,
+    text: codePoints.slice(startCodePoint).join(""),
+  });
+  return clauses;
+}
+
+function semanticThresholdClauseHasComparison(wording: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(wording);
+  return /\b(?:above|below|over|under|at\s+least|at\s+most|more\s+than|less\s+than|exceeds?)\b/u
+    .test(normalized) ||
+    /(?:不超過|不超过|超過|超过|高於|高于|低於|低于|不少於|不少于|不多於|不多于)/u
+      .test(normalized);
+}
+
+function semanticCoreGroupsShareClause(
+  groups: readonly (readonly TemplateCopilotV3ReviewObservation[])[],
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const groupClauseKeys = groups.map(
+    (group) =>
+      new Set<string>(
+      group.flatMap((observation) =>
+        semanticClauseKeys(observation, sourceAnchors)
+      ),
+      ),
+  );
+  if (groupClauseKeys.some((keys) => keys.size === 0)) return false;
+  const [initialKeys, ...remainingKeys] = groupClauseKeys;
+  if (!initialKeys) return false;
+  let shared = new Set<string>(initialKeys);
+  for (const keys of remainingKeys) {
+    shared = new Set<string>(
+      [...shared].filter((key) => keys.has(key)),
+    );
+    if (shared.size === 0) return false;
+  }
+  return shared.size > 0;
+}
+
+function semanticClauseKeys(
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return sourceAnchors.flatMap((anchor) => {
+    if (
+      anchor.messageId !== observation.sourceSpan.messageId ||
+      observation.sourceSpan.startCodePoint < anchor.startCodePoint ||
+      observation.sourceSpan.endCodePoint > anchor.endCodePoint
+    ) {
+      return [];
+    }
+    const clauseIndex = semanticClauseIndexInAnchor(observation, anchor);
+    if (clauseIndex === null) return [];
+    return [`${anchor.spanId}:${clauseIndex}`];
+  });
+}
+
+function semanticClauseIndexInAnchor(
+  observation: TemplateCopilotV3ReviewObservation,
+  anchor: TemplateCopilotV3SourceSpan,
+) {
+  if (
+    anchor.messageId !== observation.sourceSpan.messageId ||
+    observation.sourceSpan.startCodePoint < anchor.startCodePoint ||
+    observation.sourceSpan.endCodePoint > anchor.endCodePoint
+  ) {
+    return null;
+  }
+  const relativeStart =
+    observation.sourceSpan.startCodePoint - anchor.startCodePoint;
+  const prefix = Array.from(anchor.exactText)
+    .slice(0, relativeStart)
+    .join("");
+  const hardBoundaries = Array.from(prefix)
+    .filter((character) => semanticHardClauseSeparator(character)).length;
+  const affirmativeContrast =
+    templateCopilotV3RequirementAffirmativeContrast(anchor.exactText);
+  const roleBoundaries = [...prefix.matchAll(semanticRoleClauseBoundaryPattern())]
+    .filter((match) =>
+      !(
+        affirmativeContrast &&
+        /^but$/iu.test(match[0])
+      )
+    ).length;
+  return hardBoundaries + roleBoundaries;
+}
+
+function semanticHardClauseSeparator(character: string) {
+  return templateCopilotV3HardClauseSeparator(character);
+}
+
+function semanticRoleClauseBoundaryPattern() {
+  return templateCopilotV3RoleClauseBoundaryPattern();
+}
+
+function semanticLocalClauseBoundaryPattern() {
+  return templateCopilotV3LocalClauseBoundaryPattern();
+}
+
+function semanticObservationClause(
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return semanticObservationClauseDetails(observation, sourceAnchors)?.text ??
+    null;
+}
+
+function semanticObservationClauseDetails(
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const containing = sourceAnchors
+    .filter(
+      (anchor) =>
+        anchor.messageId === observation.sourceSpan.messageId &&
+        observation.sourceSpan.startCodePoint >= anchor.startCodePoint &&
+        observation.sourceSpan.endCodePoint <= anchor.endCodePoint,
+    )
+    .sort(
+      (left, right) =>
+        left.endCodePoint - left.startCodePoint -
+          (right.endCodePoint - right.startCodePoint) ||
+        compareText(left.spanId, right.spanId),
+    )[0];
+  if (!containing) return null;
+  const codePoints = Array.from(containing.exactText);
+  const relativeStart =
+    observation.sourceSpan.startCodePoint - containing.startCodePoint;
+  const relativeEnd =
+    observation.sourceSpan.endCodePoint - containing.startCodePoint;
+  let start = relativeStart;
+  while (start > 0 && !semanticHardClauseSeparator(codePoints[start - 1])) {
+    start -= 1;
+  }
+  let end = relativeEnd;
+  while (
+    end < codePoints.length &&
+    !semanticHardClauseSeparator(codePoints[end])
+  ) {
+    end += 1;
+  }
+  const segment = codePoints.slice(start, end).join("");
+  const hardTerminator = codePoints[end] ?? "";
+  const observationStart = relativeStart - start;
+  const observationEnd = relativeEnd - start;
+  const segmentCodePointLength = Array.from(segment).length;
+  const affirmativeContrast =
+    templateCopilotV3RequirementAffirmativeContrast(segment);
+  const boundaries = [
+    0,
+    ...[...segment.matchAll(semanticLocalClauseBoundaryPattern())]
+      .filter((match) =>
+        !(
+          affirmativeContrast &&
+          /^but$/iu.test(match[0])
+        )
+      )
+      .map(
+        (match) => Array.from(segment.slice(0, match.index)).length,
+      ),
+    segmentCodePointLength,
+  ]
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .sort((left, right) => left - right);
+  for (let index = 0; index < boundaries.length - 1; index += 1) {
+    const localStart = boundaries[index];
+    const localEnd = boundaries[index + 1];
+    if (
+      observationStart >= localStart &&
+      observationEnd <= localEnd
+    ) {
+      return Object.freeze({
+        text: Array.from(segment).slice(localStart, localEnd).join(""),
+        observationStartCodePoint: observationStart - localStart,
+        observationEndCodePoint: observationEnd - localStart,
+        sourceStartCodePoint: containing.startCodePoint + start + localStart,
+        sourceEndCodePoint: containing.startCodePoint + start + localEnd,
+        hardText: segment,
+        hardSourceStartCodePoint: containing.startCodePoint + start,
+        hardSourceEndCodePoint: containing.startCodePoint + end,
+        hardTerminator,
+        authorityContinuation: codePoints
+          .slice(start + localEnd)
+          .join(""),
+        hardAuthorityContinuation: codePoints.slice(end).join(""),
+        terminator: localEnd === segmentCodePointLength
+          ? hardTerminator
+          : "",
+      });
+    }
+  }
+  return Object.freeze({
+    text: segment,
+    observationStartCodePoint: observationStart,
+    observationEndCodePoint: observationEnd,
+    sourceStartCodePoint: containing.startCodePoint + start,
+    sourceEndCodePoint: containing.startCodePoint + end,
+    hardText: segment,
+    hardSourceStartCodePoint: containing.startCodePoint + start,
+    hardSourceEndCodePoint: containing.startCodePoint + end,
+    hardTerminator,
+    authorityContinuation: codePoints.slice(end).join(""),
+    hardAuthorityContinuation: codePoints.slice(end).join(""),
+    terminator: hardTerminator,
+  });
+}
+
+function semanticObservationAuthorityClauseDetails(
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const ordered = sourceAnchors
+    .filter((anchor) => anchor.messageId === observation.sourceSpan.messageId)
+    .sort(
+      (left, right) =>
+        left.startCodePoint - right.startCodePoint ||
+        left.endCodePoint - right.endCodePoint ||
+        compareText(left.spanId, right.spanId),
+    );
+  if (ordered.length === 0) return null;
+  const startCodePoint = ordered[0].startCodePoint;
+  let endCodePoint = ordered[0].endCodePoint;
+  const stitchedCodePoints = Array.from(ordered[0].exactText);
+  for (let index = 1; index < ordered.length; index += 1) {
+    const next = ordered[index];
+    if (next.startCodePoint > endCodePoint) return null;
+    if (next.endCodePoint <= endCodePoint) continue;
+    const overlap = endCodePoint - next.startCodePoint;
+    stitchedCodePoints.push(...Array.from(next.exactText).slice(overlap));
+    endCodePoint = next.endCodePoint;
+  }
+  if (
+    observation.sourceSpan.startCodePoint < startCodePoint ||
+    observation.sourceSpan.endCodePoint > endCodePoint
+  ) {
+    return null;
+  }
+  const stitched = {
+    spanId: ordered[0].spanId,
+    messageId: observation.sourceSpan.messageId,
+    startCodePoint,
+    endCodePoint,
+    exactText: stitchedCodePoints.join(""),
+  } satisfies TemplateCopilotV3SourceSpan;
+  const details = semanticObservationClauseDetails(observation, [stitched]);
+  if (!details) return null;
+  const priorStartCodePoint = Math.max(
+    startCodePoint,
+    details.hardSourceStartCodePoint - 80_000,
+  );
+  return Object.freeze({
+    ...details,
+    hardAuthorityPrefix: stitchedCodePoints.slice(
+      priorStartCodePoint - startCodePoint,
+      details.hardSourceStartCodePoint - startCodePoint,
+    ).join(""),
+  });
+}
+
+function semanticObservationIsContradicted(
+  factId: TemplateCopilotV3FragmentFactId,
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+  authoritySourceAnchors: readonly TemplateCopilotV3SourceSpan[] = sourceAnchors,
+  subjectObservation: TemplateCopilotV3ReviewObservation | null = null,
+) {
+  const clause = semanticObservationClause(observation, sourceAnchors);
+  if (clause === null) return true;
+  const wording = templateCopilotV3NormalizeLexicalText(clause);
+  if (
+    factId === "request.fields" &&
+    observation.role === "required" &&
+    observation.advisoryHint === "true"
+  ) {
+    return !semanticRequiredTrueObservationIsAffirmed(
+      observation,
+      sourceAnchors,
+      authoritySourceAnchors,
+      subjectObservation,
+      "request_field",
+    );
+  }
+  if (factId === "attachments.requirements") {
+    if (observation.role === "required") {
+      return observation.advisoryHint === "true" &&
+        !semanticRequiredTrueObservationIsAffirmed(
+          observation,
+          sourceAnchors,
+          authoritySourceAnchors,
+          subjectObservation,
+          "attachment",
+        );
+    }
+  }
+  if (
+    factId === "workflow.conditions" &&
+    observation.role === "operator"
+  ) {
+    return semanticConditionOperatorIsExternallyNegated(
+      observation,
+      sourceAnchors,
+    );
+  }
+  if (
+    factId === "workflow.stages" &&
+    observation.role === "kind" &&
+    observation.advisoryHint !== null
+  ) {
+    return semanticStageActionIsNegated(
+      wording,
+      observation.advisoryHint,
+    );
+  }
+  if (
+    factId === "notifications.rules" &&
+    observation.role === "event"
+  ) {
+    return semanticNotificationActionIsProhibited(wording) ||
+      semanticNotificationEventIsNegated(wording, observation.quote);
+  }
+  if (
+    factId === "notifications.rules" &&
+    observation.role === "recipient"
+  ) {
+    return semanticNotificationActionIsProhibited(wording);
+  }
+  if (
+    factId === "notifications.rules" &&
+    observation.role === "visibility"
+  ) {
+    return !semanticNotificationVisibilityIsAffirmative(
+      observation,
+      sourceAnchors,
+    );
+  }
+  return false;
+}
+
+function semanticConditionOperatorIsExternallyNegated(
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const containing = sourceAnchors
+    .filter(
+      (anchor) =>
+        anchor.messageId === observation.sourceSpan.messageId &&
+        observation.sourceSpan.startCodePoint >= anchor.startCodePoint &&
+        observation.sourceSpan.endCodePoint <= anchor.endCodePoint,
+    )
+    .sort(
+      (left, right) =>
+        left.endCodePoint - left.startCodePoint -
+          (right.endCodePoint - right.startCodePoint) ||
+        compareText(left.spanId, right.spanId),
+    )[0];
+  if (!containing) return true;
+  const codePoints = Array.from(containing.exactText);
+  const relativeStart =
+    observation.sourceSpan.startCodePoint - containing.startCodePoint;
+  if (relativeStart < 0 || relativeStart > codePoints.length) return true;
+  let start = relativeStart;
+  while (start > 0 && !semanticHardClauseSeparator(codePoints[start - 1])) {
+    start -= 1;
+  }
+  const prefix = templateCopilotV3NormalizeLexicalText(
+    codePoints.slice(start, relativeStart).join(""),
+  );
+  return /(?:\b(?:(?:do|does|did|is|are|was|were|has|have|had|can|could|may|might|must|shall|should|will|would)\s+not|(?:don|doesn|didn|isn|aren|wasn|weren|hasn|haven|hadn|can|couldn|mayn|mightn|mustn|shalln|shouldn|wouldn|won|needn)(?:['’ʼ]|\s*)t|cannot|never|not|no|without|no\s+need\s+to|need\s+not|fails?\s+to))(?:\s+(?:directly|necessarily|actually|ever|explicitly|clearly|normally|usually|automatically|expected|likely|intended|permitted|allowed)){0,2}(?:\s+to)?\s*$/u
+    .test(prefix) ||
+    /(?:並非|并非|沒有|没有|不|未|無|无|毋|勿|非)(?:(?:直接|明確|明确|實際|实际|必然|一定|自動|自动)){0,2}\s*$/u
+      .test(prefix);
+}
+
+const semanticRequiredTrueAliases = Object.freeze([
+  "true", "yes", "required", "require", "requires", "mandatory", "must",
+  "must upload", "must provide", "must include", "must also include",
+  "must submit", "must attach", "required upload", "add", "include",
+  "upload", "attach", "submit", "provide", "fill in", "必須", "必须",
+  "需要", "必填", "上載", "上传", "提交", "附上", "提供", "填寫",
+  "填写", "要填", "須填", "须填", "必須填寫", "必须填写", "必須提供",
+  "必须提供", "必須上載", "必须上传", "須上載", "须上传", "要上載",
+  "要上传", "必須提交", "必须提交", "須提交", "须提交", "必須附上",
+  "必须附上", "是",
+].map((alias) => templateCopilotV3NormalizeLexicalText(alias)));
+
+function semanticRequiredTrueAliasMatches(value: string) {
+  return semanticRequiredTrueAliases.includes(
+    templateCopilotV3NormalizeLexicalText(value),
+  );
+}
+
+function semanticRequiredAuthorityExplicitlySupersedes(value: string) {
+  const normalized = templateCopilotV3NormalizeLexicalText(value);
+  if (!normalized || normalized.length > 1_000) return false;
+  const markers = [
+    ...normalized.matchAll(
+      /(?:^|[.!?;:，,。！？；：]\s*)(?:now\b|correction\b|corrected\b|updated\s+requirement\b|final\s+requirement\b|this\s+(?:supersedes?|overrides?)\s+(?:the\s+)?prior\s+requirement\b|replaces?\s+the\s+prior\s+requirement\b)/gu,
+    ),
+    ...normalized.matchAll(
+      /(?:^|[.!?;:，,。！？；：]\s*)(?:更正|修正|現改為|现改为|改為|改为|以此為準|以此为准|(?:此|本)?(?:要求|規定|规定)取代(?:先前|之前)(?:要求|規定|规定))/gu,
+    ),
+  ].sort((left, right) => (left.index ?? 0) - (right.index ?? 0));
+  const marker = markers.at(-1);
+  if (marker?.index === undefined) return false;
+  const suffix = normalized.slice(marker.index + marker[0].length)
+    .replace(/^[\s:：,，\-–—]+/u, "")
+    .trim();
+  if (!suffix || suffix.length > 240) return false;
+  if (
+    /^(?:rejected|denied|refused|withdrawn|cancelled|canceled|proposed|possible|potential|draft|tentative|pending|subject\s+to)\b/u.test(suffix) ||
+    /^(?:被拒|已拒絕|已拒绝|遭拒|建議|建议|擬議|拟议|可能|暫定|暂定|待定|有待)/u.test(suffix)
+  ) return false;
+  return !/[.!?;，,。！？；]/u.test(suffix) &&
+    !/\b(?:required|mandatory|compulsory|must|shall|optional|not\s+required)\b|(?:必填|必須|必须|需要|選填|选填|非必須|非必须)/u.test(
+      suffix,
+    );
+}
+
+function semanticRequiredTrueObservationIsAffirmed(
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+  authoritySourceAnchors: readonly TemplateCopilotV3SourceSpan[] = sourceAnchors,
+  subjectObservation: TemplateCopilotV3ReviewObservation | null = null,
+  subjectKind: "request_field" | "attachment" = "request_field",
+) {
+  const clause = semanticObservationClauseDetails(observation, sourceAnchors);
+  if (!clause) return false;
+  const marker = templateCopilotV3NormalizeLexicalText(
+    observation.sourceSpan.exactText,
+  );
+  const markerIsBareCjkNativeFormFill = marker === "填";
+  if (
+    !semanticRequiredTrueAliasMatches(marker) &&
+    !markerIsBareCjkNativeFormFill
+  ) return false;
+  const authorityClause = semanticObservationAuthorityClauseDetails(
+    observation,
+    authoritySourceAnchors,
+  );
+  if (!authorityClause) return false;
+  const subjectSharesLocalClause =
+    subjectObservation?.sourceSpan.messageId === observation.sourceSpan.messageId &&
+    subjectObservation.sourceSpan.startCodePoint >=
+      authorityClause.sourceStartCodePoint &&
+    subjectObservation.sourceSpan.endCodePoint <=
+      authorityClause.sourceEndCodePoint;
+  const pairStartCodePoint = subjectSharesLocalClause
+    ? Math.min(
+      observation.sourceSpan.startCodePoint,
+      subjectObservation.sourceSpan.startCodePoint,
+    )
+    : observation.sourceSpan.startCodePoint;
+  const pairEndCodePoint = subjectSharesLocalClause
+    ? Math.max(
+      observation.sourceSpan.endCodePoint,
+      subjectObservation.sourceSpan.endCodePoint,
+    )
+    : observation.sourceSpan.endCodePoint;
+  const hardCodePoints = Array.from(authorityClause.hardText);
+  const hardSlice = (startCodePoint: number, endCodePoint: number) =>
+    hardCodePoints.slice(
+      startCodePoint - authorityClause.hardSourceStartCodePoint,
+      endCodePoint - authorityClause.hardSourceStartCodePoint,
+    ).join("");
+  const fullAuthorityPrefix = hardSlice(
+    authorityClause.sourceStartCodePoint,
+    pairStartCodePoint,
+  );
+  const lastCoordination = [
+    ...fullAuthorityPrefix.matchAll(
+      /\b(?:and|or)\b|(?:及|和|與|与|並|并)/giu,
+    ),
+  ].at(-1);
+  const coordinationPrefix = lastCoordination?.index === undefined
+    ? ""
+    : fullAuthorityPrefix.slice(0, lastCoordination.index);
+  const coordinationStartsIndependentClause =
+    /[,，]\s*$/u.test(coordinationPrefix) ||
+    /\b(?:is|are|was|were|has|have|had|do|does|did|upload|attach|submit|provide|include|add|require|requires|required|optional|collect|enter|fill|record)\b/u
+      .test(templateCopilotV3NormalizeLexicalText(coordinationPrefix)) ||
+    /(?:是|為|为|需要|必須|必须|上載|上传|附上|提交|提供|加入|添加|填寫|填写|要求)/u
+      .test(coordinationPrefix);
+  const coordinationReducedAuthorityPrefix =
+      lastCoordination?.index === undefined ||
+      !coordinationStartsIndependentClause
+    ? fullAuthorityPrefix
+    : fullAuthorityPrefix.slice(
+      lastCoordination.index + lastCoordination[0].length,
+    );
+  const authorityPair = hardSlice(pairStartCodePoint, pairEndCodePoint);
+  const authorityTail = hardSlice(
+    pairEndCodePoint,
+    authorityClause.hardSourceEndCodePoint,
+  );
+  const requirementOrientation = !subjectSharesLocalClause ||
+      !subjectObservation
+    ? "unknown" as const
+    : observation.sourceSpan.endCodePoint <=
+        subjectObservation.sourceSpan.startCodePoint
+      ? "marker_before_subject" as const
+      : subjectObservation.sourceSpan.endCodePoint <=
+          observation.sourceSpan.startCodePoint
+        ? "subject_before_marker" as const
+        : "unknown" as const;
+  const positivePrefix = templateCopilotV3NormalizeLexicalText(
+    hardSlice(
+      subjectSharesLocalClause &&
+          subjectObservation.sourceSpan.startCodePoint <
+            observation.sourceSpan.startCodePoint
+        ? subjectObservation.sourceSpan.startCodePoint
+        : authorityClause.sourceStartCodePoint,
+      observation.sourceSpan.startCodePoint,
+    ),
+  );
+  const explicitPrecedence = semanticRequiredAuthorityExplicitlySupersedes(
+    `${fullAuthorityPrefix} ${positivePrefix}`,
+  );
+  const prefixNamesCompetingSibling =
+    subjectObservation !== null &&
+    templateCopilotV3RequirementPrefixNamesCompetingSibling(
+      fullAuthorityPrefix,
+      subjectObservation.quote,
+      subjectKind,
+    );
+  const authorityPrefix = explicitPrecedence || prefixNamesCompetingSibling
+    ? ""
+    : coordinationReducedAuthorityPrefix;
+  const currentPrefixContradictsSubject =
+    subjectObservation !== null &&
+    templateCopilotV3RequirementTextContainsSameSubjectContradiction(
+      fullAuthorityPrefix,
+      subjectObservation.quote,
+      subjectKind,
+    );
+  const priorAuthorityContradictsSubject =
+    subjectObservation !== null &&
+    (
+      templateCopilotV3RequirementTextContainsSameSubjectContradiction(
+        authorityClause.hardAuthorityPrefix,
+        subjectObservation.quote,
+        subjectKind,
+      ) ||
+      templateCopilotV3RequirementTextContainsUnresolvedSameSubjectAssertion(
+        authorityClause.hardAuthorityPrefix,
+        subjectObservation.quote,
+        subjectKind,
+      )
+    );
+  const subjectPrecedesMarker = subjectSharesLocalClause &&
+    subjectObservation !== null &&
+    subjectObservation.sourceSpan.endCodePoint <=
+      observation.sourceSpan.startCodePoint;
+  const subjectMarkerGap = subjectPrecedesMarker && subjectObservation
+    ? hardSlice(
+      subjectObservation.sourceSpan.endCodePoint,
+      observation.sourceSpan.startCodePoint,
+    )
+    : "";
+  const closedPunctuationGap = subjectPrecedesMarker &&
+    templateCopilotV3RequirementGapIsClosedPunctuation(
+      subjectMarkerGap,
+      authorityTail,
+    );
+  const wrappedPunctuationGap = closedPunctuationGap &&
+    /^[\s([{（【]+$/u.test(subjectMarkerGap);
+  const authorityTailForQualification = wrappedPunctuationGap
+    ? authorityTail.replace(/^\s*[)\]}）】]/u, "")
+    : authorityTail;
+  const markerRelativeTailForQualification =
+    requirementOrientation === "marker_before_subject"
+      ? hardSlice(
+        observation.sourceSpan.endCodePoint,
+        authorityClause.hardSourceEndCodePoint,
+      )
+      : "";
+  if (
+    markerIsBareCjkNativeFormFill &&
+    !(
+      subjectKind === "attachment" &&
+      requirementOrientation === "marker_before_subject" &&
+      subjectObservation !== null &&
+      /^原生[^。！？；;]{0,80}(?:表|表格|表單|表单|form)$/u.test(
+        templateCopilotV3NormalizeLexicalText(subjectObservation.quote),
+      ) &&
+      templateCopilotV3NormalizeLexicalText(authorityPrefix) === ""
+    )
+  ) {
+    return false;
+  }
+  const legitimateAuthorityAdditiveNegation =
+    /\bnot\s+(?:only|merely|simply)\b/u.test(
+      templateCopilotV3NormalizeLexicalText(authorityPair),
+    );
+  const legitimateAuthorityAffirmativeContrast =
+    templateCopilotV3RequirementAffirmativeContrast(authorityPair);
+  const authorityPairIsNonAffirmative = subjectSharesLocalClause &&
+      subjectObservation
+    ? templateCopilotV3RequirementAuthorityPairIsNonAffirmative(
+      authorityPair,
+      subjectObservation.sourceSpan.startCodePoint - pairStartCodePoint,
+      subjectObservation.sourceSpan.endCodePoint - pairStartCodePoint,
+      observation.sourceSpan.startCodePoint - pairStartCodePoint,
+      observation.sourceSpan.endCodePoint - pairStartCodePoint,
+    )
+    : templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority(
+      templateCopilotV3NormalizeLexicalText(authorityPair),
+    );
+  const legitimateAuthorityPrefixAdditiveNegation =
+    /\bnot\s+(?:only|merely|simply)\s*$/u.test(
+      templateCopilotV3NormalizeLexicalText(authorityPrefix),
+    );
+  if (
+    (
+      !explicitPrecedence &&
+      (currentPrefixContradictsSubject || priorAuthorityContradictsSubject)
+    ) ||
+    /[?？]/u.test(authorityClause.hardTerminator) ||
+    templateCopilotV3RequirementGoverningPrefixIsNonAffirmative(
+      authorityPrefix,
+    ) ||
+    (
+      !legitimateAuthorityPrefixAdditiveNegation &&
+      templateCopilotV3NormalizedTextContainsNonAffirmativeAuthority(
+        templateCopilotV3NormalizeLexicalText(authorityPrefix),
+      )
+    ) ||
+    (
+      !legitimateAuthorityAdditiveNegation &&
+      !legitimateAuthorityAffirmativeContrast &&
+      authorityPairIsNonAffirmative
+    ) ||
+    templateCopilotV3RequirementSameHardTailIsQualified(
+      authorityTailForQualification,
+      subjectObservation?.quote ?? "",
+      subjectKind,
+      requirementOrientation,
+    ) ||
+    (
+      requirementOrientation === "marker_before_subject" &&
+      templateCopilotV3RequirementSameHardTailIsQualified(
+        markerRelativeTailForQualification,
+        subjectObservation?.quote ?? "",
+        subjectKind,
+        requirementOrientation,
+      )
+    )
+  ) {
+    return false;
+  }
+  const authorityContinuation = semanticObservationAuthorityContinuation(
+    observation,
+    authoritySourceAnchors,
+  );
+  if (
+    authorityContinuation === null ||
+    templateCopilotV3RequirementAuthorityContinuationIsQualified(
+      authorityContinuation,
+      subjectObservation?.quote ?? "",
+      subjectKind,
+    )
+  ) {
+    return false;
+  }
+  if (
+    /[?？]/u.test(clause.terminator)
+  ) {
+    return false;
+  }
+
+  const legitimateAdditiveNegation =
+    /(?:\b(?:is|are|was|were)\s+)?not\s+(?:only|merely|simply)\s*$/u
+      .test(positivePrefix);
+
+  if (/^(?:true|yes|是)$/u.test(marker)) {
+    return /(?:[:：=]|\b(?:is|are|was|were)|為|为|是)\s*$/u.test(positivePrefix);
+  }
+  if (/^(?:required|mandatory)$/u.test(marker)) {
+    if (legitimateAdditiveNegation) return true;
+    if (legitimateAuthorityAffirmativeContrast) return true;
+    if (/^(?:(?:please|kindly|also|then|and|or)\s*)?$/u.test(positivePrefix)) {
+      return true;
+    }
+    if (/[:：=]\s*$/u.test(positivePrefix)) return true;
+    if (closedPunctuationGap) return true;
+    const terseLabelPrefix =
+      /^(?:[\p{L}\p{N}_'’ʼ\p{Pd}]+\s+){0,5}[\p{L}\p{N}_'’ʼ\p{Pd}]+$/u
+        .test(positivePrefix) &&
+      !/\b(?:is|are|was|were|be|been|being|to|from|have|has|had|do|does|did|become|remain|expect|expected|intend|intended|consider|considered|deem|deemed|regard|regarded|treat|treated|mark|marked)\b/u
+        .test(positivePrefix);
+    if (terseLabelPrefix) return true;
+    return /(?:\b(?:is|are|was|were)(?:\s+(?:absolutely|definitely|clearly|explicitly|always|still|indeed|invariably|categorically|normally|ordinarily|generally|legally|strictly|expressly|unequivocally))*|\b(?:will|shall|must|should)\s+(?:(?:always|definitely|clearly|explicitly|still|indeed|invariably|categorically|normally|ordinarily|generally|legally|strictly|expressly|unequivocally)\s+)*be|\b(?:has|have|needs?|need)\s+to\s+be|\bcontinues?\s+to\s+be|\b(?:is|are|was|were)\s+(?:expected|intended)\s+to\s+be|\b(?:is|are|was|were)\s+(?:considered|deemed)(?:\s+to\s+be)?|\b(?:is|are|was|were)\s+(?:regarded|treated)\s+as|\bmarked\s+as|\b(?:remains?|becomes?)|\bindeed|一律|一概|為|为|是)\s*$/u
+      .test(positivePrefix);
+  }
+  return true;
+}
+
+function semanticObservationAuthorityContinuation(
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  return semanticObservationAuthorityClauseDetails(observation, sourceAnchors)
+    ?.hardAuthorityContinuation ?? null;
+}
+
+function semanticStageActionIsNegated(
+  wording: string,
+  hint: string,
+) {
+  const aliases: Readonly<Record<string, readonly string[]>> = {
+    approval: [
+      "approve",
+      "approves",
+      "approval",
+      "approved",
+      "endorse",
+      "endorses",
+      "endorsed",
+      "confirm",
+      "confirms",
+      "confirmed",
+      "go/no-go",
+      "審批",
+      "审批",
+      "核准",
+      "批准",
+      "認可",
+      "认可",
+      "確認",
+      "确认",
+    ],
+    review: [
+      "review",
+      "reviews",
+      "reviewed",
+      "compare",
+      "compares",
+      "compared",
+      "audit",
+      "audits",
+      "audited",
+      "審核",
+      "审核",
+      "覆核",
+      "复核",
+      "審查",
+      "审查",
+      "評審",
+      "评审",
+      "核對",
+      "核对",
+    ],
+    for_information: ["fyi", "for information", "informational", "知會", "知会", "供參考", "供参考", "供知悉"],
+    submission: ["submit", "submits", "submission", "提交", "呈交"],
+    record_update: ["update", "updates", "updated", "更新"],
+  };
+  return (aliases[hint] ?? []).some((alias) =>
+    semanticPhraseIsImmediatelyNegated(wording, alias)
+  );
+}
+
+function semanticPhraseIsImmediatelyNegated(
+  wording: string,
+  phrase: string,
+) {
+  const normalizedPhrase = templateCopilotV3NormalizeLexicalText(phrase);
+  let offset = wording.indexOf(normalizedPhrase);
+  while (offset >= 0) {
+    const prefix = wording.slice(0, offset);
+    if (
+      templateCopilotV3NormalizedPrefixNegatesFollowingPredicate(prefix) ||
+      /(?:不|未|不要|不得|不准|禁止|切勿|毋須|毋须|無須|无须|毋需|無需|无需)\s*(?:由[^，。；;\r\n]{1,24})?\s*$/u
+        .test(prefix)
+    ) {
+      return true;
+    }
+    offset = wording.indexOf(normalizedPhrase, offset + normalizedPhrase.length);
+  }
+  return false;
+}
+
+function semanticNotificationActionIsProhibited(wording: string) {
+  return /\b(?:(?:do|does|did|must|shall|should|may|can|will|would)\s+not|(?:don|doesn|didn|mustn|shalln|shouldn|mayn|can|won|wouldn)(?:['’ʼ]|\s*)t|never|no\s+need\s+to|need\s+not)\s+(?:to\s+)?(?:email|inform|message|notify|send)\b/u
+    .test(wording) ||
+    /\bno\s+notifications?\s+(?:is|are)?\s*(?:allowed|required|sent)?\b/u
+      .test(wording) ||
+    /(?:不要|不得|不准|禁止|切勿|不應|不应|毋須|毋须|無須|无须|毋需|無需|无需)\s*(?:向[^，。；;\r\n]{1,24})?\s*(?:通知|知會|知会|電郵|电邮|發送|发送)/u
+      .test(wording);
+}
+
+function semanticNotificationEventIsNegated(
+  wording: string,
+  eventQuote: string,
+) {
+  const event = templateCopilotV3NormalizeLexicalText(eventQuote);
+  if (event.length === 0) return true;
+  let offset = wording.indexOf(event);
+  while (offset >= 0) {
+    const prefix = wording.slice(0, offset);
+    if (
+      templateCopilotV3NormalizedPrefixNegatesFollowingPredicate(prefix) ||
+      /(?:不|未|不要|不得|不准|禁止|切勿|毋須|毋须|無須|无须|毋需|無需|无需)(?:被)?\s*$/u.test(
+        prefix,
+      )
+    ) {
+      return true;
+    }
+    offset = wording.indexOf(event, offset + event.length);
+  }
+  return false;
+}
+
+function semanticNotificationVisibilityIsAffirmative(
+  observation: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+) {
+  const marker = templateCopilotV3NormalizeLexicalText(observation.quote);
+  const aliases: Readonly<Record<string, readonly string[]>> = {
+    recipients_only: ["only", "recipients only", "only recipients", "只", "僅", "仅"],
+    all_participants: [
+      "all participants",
+      "all workflow participants",
+      "所有流程參與者",
+      "所有流程参与者",
+    ],
+  };
+  if (
+    observation.advisoryHint === null ||
+    !(aliases[observation.advisoryHint] ?? []).includes(marker)
+  ) {
+    return false;
+  }
+  const details = semanticObservationClauseDetails(observation, sourceAnchors);
+  if (!details) return false;
+  const quoteStartInHardClause =
+    observation.sourceSpan.startCodePoint - details.hardSourceStartCodePoint;
+  const hardCodePoints = Array.from(details.hardText);
+  if (
+    quoteStartInHardClause < 0 ||
+    quoteStartInHardClause > hardCodePoints.length
+  ) {
+    return false;
+  }
+  const exactPrefix = templateCopilotV3NormalizeLexicalText(
+    hardCodePoints.slice(0, quoteStartInHardClause).join(""),
+  );
+  if (
+    templateCopilotV3NormalizedPrefixNegatesFollowingPredicate(exactPrefix)
+  ) {
+    return false;
+  }
+  return !(
+    observation.advisoryHint === "recipients_only" &&
+    /(?:不|非)\s*$/u.test(exactPrefix)
+  );
+}
+
+function semanticHintIsVerified(
+  factId: TemplateCopilotV3FragmentFactId,
+  leaf: TemplateCopilotV3ReviewObservation,
+  sourceAnchors: readonly TemplateCopilotV3SourceSpan[],
+  subjectObservation: TemplateCopilotV3ReviewObservation | null = null,
+) {
+  if (
+    semanticObservationIsContradicted(
+      factId,
+      leaf,
+      sourceAnchors,
+      sourceAnchors,
+      subjectObservation,
+    )
+  ) {
+    return false;
+  }
+  const directMapping = mappingFor(
+    kindForFact(factId),
+    leaf.role,
+    leaf.advisoryHint,
+  );
+  if (
+    directMapping &&
+    directMapping.kind !== "relationship" &&
+    directMapping.kind !== "semantic_only" &&
+    deriveLeaf(
+      factId,
+      directMapping,
+      leaf.advisoryHint,
+      leaf.sourceSpan,
+    ) !== null
+  ) {
+    return true;
+  }
+  const wording = templateCopilotV3NormalizeLexicalText(leaf.quote);
+  const matches = (...aliases: string[]) => aliases.some((alias) => templateCopilotV3NormalizeLexicalText(alias) === wording);
+  if (leaf.role === "required") {
+    return leaf.advisoryHint === "true"
+      ? semanticRequiredTrueAliasMatches(wording) ||
+        (factId === "attachments.requirements" && wording === "填")
+      : leaf.advisoryHint === "false" && matches("false", "no", "optional", "not required", "選填", "选填", "非必須", "非必须", "不需要", "毋須", "毋须", "無須", "无须", "可選擇上載", "可選上載", "可选上传", "可選擇", "可选择", "可選", "可选");
+  }
+  if (leaf.role === "kind" && factId === "attachments.requirements") {
+    return leaf.advisoryHint === "attachment"
+      ? matches("attachment", "document", "file", "uploaded file", "upload", "attach", "pdf", "excel", "csv", "spreadsheet", "image", "photo", "text", "proof", "附件", "檔案", "文件", "上載", "上传", "上載檔案", "上传文件", "試算表", "电子表格", "圖片", "图片", "相片", "照片", "文字", "文本", "證明", "证明", "補交", "补交")
+      : leaf.advisoryHint === "form" && matches("form", "native", "native form", "in-app form", "in app form", "原生", "原生表格", "原生表单", "應用程式內表格", "应用内表单", "表格", "表单", "填寫", "填写", "填");
+  }
+  if (leaf.role === "kind" && factId === "workflow.stages") {
+    const aliases: Readonly<Record<string, readonly string[]>> = {
+      approval: ["approve", "approves", "approval", "approved", "endorse", "endorses", "endorsed", "confirm", "confirms", "confirmed", "go/no-go", "審批", "审批", "核准", "批准", "認可", "认可", "確認", "确认"],
+      review: ["review", "reviews", "reviewed", "compare", "compares", "compared", "audit", "audits", "audited", "審核", "审核", "覆核", "复核", "審查", "审查", "評審", "评审", "核對", "核对"],
+      for_information: ["fyi", "for information", "informational", "知會", "知会", "供參考", "供参考", "供知悉"],
+      submission: ["submit", "submits", "submission", "提交", "呈交"],
+      record_update: ["update", "updates", "updated", "更新"],
+    };
+    return leaf.advisoryHint !== null && (aliases[leaf.advisoryHint] ?? []).some((alias) => matches(alias));
+  }
+  if (leaf.role === "participant_mode" && factId === "workflow.stages") {
+    const aliases: Readonly<Record<string, readonly string[]>> = {
+      fixed_email: ["fixed email", "固定電郵", "固定电子邮件", "固定電子郵件", "固定邮箱"],
+      directory_position: ["directory position", "目錄職位", "目录职位"],
+      request_field: ["request field", "申請欄位", "申请字段"],
+      requester: ["requester", "申請人", "申请人", "發起人", "发起人"],
+      unassigned_at_template: ["unassigned", "resolve later", "範本未指派", "模板未分配", "稍後指定", "稍后指定"],
+    };
+    return leaf.advisoryHint !== null &&
+      (aliases[leaf.advisoryHint] ?? []).some((alias) => matches(alias));
+  }
+  if (leaf.role === "operator") {
+    const aliases: Readonly<Record<string, readonly string[]>> = {
+      "=": [
+        "=", "equals", "equal", "is yes", "is true", "selected", "is selected", "is missing", "missing", "yes", "true",
+        "high-risk", "high risk", "restricted", "international", "production", "production database", "personal", "sensitive", "retrospective", "low-risk", "low risk",
+        "等於", "等于", "為是", "为是", "為高", "为高", "已選", "已选", "已選擇", "已选择",
+        "高風險", "高风险", "高風險工序", "高风险工序", "受限制區域", "受限制区域", "國際", "国际", "生產", "生产", "生產資料庫", "生产数据库",
+        "個人資料", "个人数据", "敏感資料", "敏感数据", "追溯", "低風險", "低风险", "風險低", "风险低",
+        "無薪假", "无薪假", "聯營投標", "联营投标", "法定培訓", "法定培训", "境外",
+        "申報有利益衝突", "申报有利益冲突", "有利益衝突", "有利益冲突", "有關聯人士", "有关联人士",
+        "含資料設備", "含数据设备", "需要監管報告", "需要监管报告", "未驗證", "未验证", "未能提供證書", "未能提供证书",
+      ],
+      "!=": [
+        "!=", "not equal", "not equal to", "is not", "not in", "outside", "outside of", "other than",
+        "不是", "並非", "并非", "不在", "不屬於", "不属于", "不等於", "不等于",
+        "非高風險", "非高风险", "非生產", "非生产", "非個人資料", "非个人数据",
+      ],
+      ">": [">", "greater than", "above", "exceed", "exceeds", "over", "大於", "大于", "超過", "超过"],
+      ">=": [">=", "at least", "or above", "or more", "or higher", "大於或等於", "大于或等于", "或以上", "三日或以上"],
+      "<": ["<", "less than", "below", "小於", "小于"],
+      "<=": ["<=", "at most", "not exceed", "does not exceed", "no more than", "not over", "小於或等於", "小于或等于", "不超過", "不超过"],
+      contains: ["contains", "包含"],
+    };
+    return leaf.advisoryHint !== null && (aliases[leaf.advisoryHint] ?? []).some((alias) => matches(alias));
+  }
+  if (leaf.role === "matching_route" || leaf.role === "otherwise_route") {
+    if (leaf.advisoryHint === "complete") return matches("complete", "complete the workflow", "完成", "完成流程");
+    if (leaf.advisoryHint === "return_for_correction") return matches("return for correction", "return to requester for correction", "退回更正", "退回申請人更正", "退回申请人更正");
+    return (leaf.advisoryHint === "stage_reference" || leaf.advisoryHint === "condition_reference") && wording.length > 0;
+  }
+  if (leaf.role === "event") {
+    const aliases: Readonly<Record<string, readonly string[]>> = {
+      request_submitted: ["request submitted", "submitted", "申請已提交", "申请已提交"], stage_assigned: ["stage assigned", "work assigned", "assignment", "assigned", "獲指派", "获指派", "指派", "分派", "分配", "工作已分派", "工作已分配"],
+      stage_completed: ["stage completed", "step completed", "步驟已完成", "步骤已完成"], request_rejected: ["request rejected", "rejection", "rejected", "拒絕", "拒绝", "被拒絕", "被拒绝", "申請被拒絕", "申请被拒绝"],
+      correction_requested: ["correction requested", "correction", "corrected", "要求更正", "補正", "补正", "修正", "修改"], request_completed: ["request completed", "workflow completed", "completion", "complete", "completed", "完成", "已完成", "流程已完成"], due_soon: ["due soon", "即將到期", "即将到期"], overdue: ["overdue", "已逾期", "逾期"],
+    };
+    return leaf.advisoryHint !== null && (aliases[leaf.advisoryHint] ?? []).some((alias) => matches(alias));
+  }
+  if (leaf.role === "recipient") {
+    if (leaf.advisoryHint === "source_named_group") return wording.length > 0;
+    const aliases: Readonly<Record<string, readonly string[]>> = {
+      requester: ["requester", "申請人", "申请人", "發起人", "发起人"], current_stage_participants: ["current stage participants", "current step participants", "目前步驟處理人", "当前步骤处理人"],
+      previous_stage_participants: ["previous stage participants", "previous step participants", "上一個步驟處理人", "上一步骤处理人"], all_participants: ["all participants", "all workflow participants", "所有流程參與者", "所有流程参与者"], workflow_owner: ["workflow owner", "流程負責部門", "流程负责部门"],
+    };
+    return leaf.advisoryHint !== null && (aliases[leaf.advisoryHint] ?? []).some((alias) => matches(alias));
+  }
+  return wording.length > 0;
+}
+
+function semanticValue(observations: readonly TemplateCopilotV3ReviewObservation[], compareSpans: (left: TemplateCopilotV3SourceSpan, right: TemplateCopilotV3SourceSpan) => number) {
+  const grouped: Partial<Record<TemplateCopilotV3ProviderQuoteRole, string[]>> = {};
+  for (const leaf of dedupeObservations(observations, compareSpans)) {
+    const values = grouped[leaf.role] ?? [];
+    if (!values.includes(leaf.quote)) values.push(leaf.quote);
+    grouped[leaf.role] = values;
+  }
+  return Object.freeze(Object.fromEntries(Object.entries(grouped).sort(([left], [right]) => compareText(left, right)).map(([role, values]) => [role, Object.freeze(values)]))) as Readonly<Partial<Record<TemplateCopilotV3ProviderQuoteRole, readonly string[]>>>;
+}
+
+function missingPathsFor(factId: TemplateCopilotV3FragmentFactId, value: Readonly<Record<string, unknown>>, bindings: readonly Binding[]) {
+  const present = (path: string) => bindings.some((binding) => binding.path === path || binding.path.startsWith(`${path}/`));
+  const missing = requiredPaths[factId].filter((path) => !present(path));
+  if (factId === "attachments.requirements" && value.kind === "attachment" && !present("/maximumFileSizeMb")) missing.push("/maximumFileSizeMb");
+  if (factId === "workflow.stages") {
+    const mode = valueAt(value, "/participant/mode");
+    if (["fixed_email", "directory_position", "request_field"].includes(String(mode)) && !present("/participant/value")) missing.push("/participant/value");
+  }
+  if (factId === "notifications.rules") {
+    const mode = valueAt(value, "/timing/mode");
+    if (["before_due", "after_due"].includes(String(mode)) && !present("/timing/offsetHours")) missing.push("/timing/offsetHours");
+    const recipients = Array.isArray(value.recipients) ? value.recipients : [];
+    const needsStage = ["stage_assigned", "stage_completed", "due_soon", "overdue"].includes(String(value.event ?? "")) || recipients.includes("current_stage_participants") || recipients.includes("previous_stage_participants");
+    if (needsStage && !present("/stage")) missing.push("/stage");
+  }
+  return [...new Set(missing)].sort(compareText);
+}
+
+function validateCompleteItem(factId: TemplateCopilotV3FragmentFactId, value: Record<string, unknown>, bindings: readonly Binding[], spans: readonly TemplateCopilotV3SourceSpan[], ambiguity: Ambiguity, ambiguityNote: string | undefined) {
+  if (factId !== "request.fields" && factId !== "workflow.stages") return false;
+  const omitted = factId === "request.fields" ? "/options" : "/sequence";
+  const partialValue = structuredClone(value);
+  deleteAt(partialValue, omitted);
+  const partialBindings = bindings.filter((binding) => binding.path !== omitted && !binding.path.startsWith(`${omitted}/`));
+  const partial = {
+    evidenceVersion: templateCopilotV3EvidenceContractVersion,
+    compilerVersion: templateCopilotV3EvidenceCompilerVersion,
+    factId,
+    fragmentKind: "array_item" as const,
+    state: "open" as const,
+    value: partialValue,
+    bindings: partialBindings,
+    missingPaths: [omitted],
+    confidence: "high" as const,
+    ambiguity,
+    ...(ambiguityNote ? { ambiguityNote } : {}),
+  };
+  if (!templateCopilotV3FragmentSchema.safeParse({ ...partial, fragmentId: templateCopilotV3FragmentId(partial) }).success) return false;
+  const byId = new Map(spans.map((span) => [span.spanId, span]));
+  return bindings.every((binding) => binding.spanIds.every((spanId) => {
+    const span = byId.get(spanId);
+    return span !== undefined && templateCopilotV3DirectEvidenceDerivesLeaf({ factId, path: binding.path, rule: binding.rule, value, sourceText: span.exactText });
+  }));
+}
+
+const maximumConditionSemanticContextCodePoints = 16_000;
+
+function semanticContextsForArrayItem(
+  factId: TemplateCopilotV3FragmentFactId,
+  anchor: TemplateCopilotV3SourceSpan,
+  messages: Readonly<Record<string, string>>,
+) {
+  if (factId === "attachments.requirements") {
+    const message = messages[anchor.messageId];
+    if (typeof message !== "string") return null;
+    const codePoints = Array.from(message);
+    if (
+      codePoints.length === 0 ||
+      codePoints.length > templateCopilotMaximumSourceCodePoints
+    ) return null;
+    const contexts: TemplateCopilotV3SourceSpan[] = [];
+    const anchorLength = anchor.endCodePoint - anchor.startCodePoint;
+    if (anchorLength < 0 || anchorLength > 8_000) return null;
+    const anchorAlignedStart = Math.max(
+      0,
+      Math.min(
+        Math.max(0, codePoints.length - 8_000),
+        anchor.startCodePoint - Math.floor((8_000 - anchorLength) / 2),
+      ),
+    );
+    const contextRanges: Array<readonly [number, number]> = [];
+    let backwardEnd = anchorAlignedStart;
+    while (backwardEnd > 0) {
+      const backwardStart = Math.max(0, backwardEnd - 8_000);
+      contextRanges.push([backwardStart, backwardEnd]);
+      backwardEnd = backwardStart;
+    }
+    let forwardStart = anchorAlignedStart;
+    while (forwardStart < codePoints.length) {
+      const forwardEnd = Math.min(codePoints.length, forwardStart + 8_000);
+      contextRanges.push([forwardStart, forwardEnd]);
+      forwardStart = forwardEnd;
+    }
+    for (const [startCodePoint, endCodePoint] of contextRanges.sort(
+      (left, right) => left[0] - right[0],
+    )) {
+      const supplied = {
+        messageId: anchor.messageId,
+        startCodePoint,
+        endCodePoint,
+        exactText: codePoints.slice(startCodePoint, endCodePoint).join(""),
+      };
+      const parsed = templateCopilotV3SourceSpanSchema.safeParse({
+        spanId: templateCopilotV3SourceSpanId(supplied),
+        ...supplied,
+      });
+      if (
+        !parsed.success ||
+        !validateTemplateCopilotV3SourceSpan(parsed.data, messages)
+      ) return null;
+      contexts.push(Object.freeze(parsed.data));
+    }
+    return contexts;
+  }
+  if (
+    factId !== "workflow.conditions" &&
+    factId !== "workflow.stages" &&
+    factId !== "notifications.rules"
+  ) {
+    return [anchor];
+  }
+  const message = messages[anchor.messageId];
+  if (typeof message !== "string") return null;
+  const codePoints = Array.from(message);
+  let startCodePoint = anchor.startCodePoint;
+  while (
+    startCodePoint > 0 &&
+    !semanticHardClauseSeparator(codePoints[startCodePoint - 1])
+  ) {
+    startCodePoint -= 1;
+  }
+  let endCodePoint = anchor.endCodePoint;
+  while (
+    endCodePoint < codePoints.length &&
+    !semanticHardClauseSeparator(codePoints[endCodePoint])
+  ) {
+    endCodePoint += 1;
+  }
+  if (
+    factId === "workflow.stages" &&
+    endCodePoint < codePoints.length
+  ) {
+    let nextStartCodePoint = endCodePoint + 1;
+    while (
+      nextStartCodePoint < codePoints.length &&
+      /\s/u.test(codePoints[nextStartCodePoint])
+    ) {
+      nextStartCodePoint += 1;
+    }
+    let nextEndCodePoint = nextStartCodePoint;
+    while (
+      nextEndCodePoint < codePoints.length &&
+      !semanticHardClauseSeparator(codePoints[nextEndCodePoint])
+    ) {
+      nextEndCodePoint += 1;
+    }
+    endCodePoint = nextEndCodePoint;
+  }
+  if (
+    factId === "workflow.conditions" &&
+    endCodePoint < codePoints.length
+  ) {
+    let nextStartCodePoint = endCodePoint + 1;
+    while (
+      nextStartCodePoint < codePoints.length &&
+      /\s/u.test(codePoints[nextStartCodePoint])
+    ) {
+      nextStartCodePoint += 1;
+    }
+    let nextEndCodePoint = nextStartCodePoint;
+    while (
+      nextEndCodePoint < codePoints.length &&
+      !semanticHardClauseSeparator(codePoints[nextEndCodePoint])
+    ) {
+      nextEndCodePoint += 1;
+    }
+    const nextClause = codePoints
+      .slice(nextStartCodePoint, nextEndCodePoint)
+      .join("");
+    if (semanticConditionClauseBeginsExplicitDefault(nextClause)) {
+      endCodePoint = nextEndCodePoint;
+    }
+  }
+  if (
+    endCodePoint - startCodePoint >
+    maximumConditionSemanticContextCodePoints
+  ) {
+    return null;
+  }
+  const exactText = codePoints
+    .slice(startCodePoint, endCodePoint)
+    .join("");
+  const supplied = {
+    messageId: anchor.messageId,
+    startCodePoint,
+    endCodePoint,
+    exactText,
+  };
+  const parsed = templateCopilotV3SourceSpanSchema.safeParse({
+    spanId: templateCopilotV3SourceSpanId(supplied),
+    ...supplied,
+  });
+  return parsed.success && validateTemplateCopilotV3SourceSpan(parsed.data, messages)
+    ? [Object.freeze(parsed.data)]
+    : null;
+}
+
+function semanticAuthorityContextsForArrayItem(
+  factId: TemplateCopilotV3FragmentFactId,
+  anchor: TemplateCopilotV3SourceSpan,
+  leafSpans: readonly TemplateCopilotV3SourceSpan[],
+  messages: Readonly<Record<string, string>>,
+  semanticContexts: readonly TemplateCopilotV3SourceSpan[],
+) {
+  if (
+    factId !== "request.fields" &&
+    factId !== "attachments.requirements"
+  ) {
+    return semanticContexts;
+  }
+  const message = messages[anchor.messageId];
+  if (typeof message !== "string") return null;
+  const codePoints = Array.from(message);
+  if (codePoints.length > templateCopilotMaximumSourceCodePoints) return null;
+  const validLeafSpans = leafSpans.filter(
+    (span) => span.messageId === anchor.messageId && validSpan(span, messages),
+  );
+  const authorityCoreSpans = validLeafSpans.length > 0
+    ? validLeafSpans
+    : [anchor];
+  const coreStartCodePoint = Math.min(
+    ...authorityCoreSpans.map((span) => span.startCodePoint),
+  );
+  let startCodePoint = coreStartCodePoint;
+  while (
+    startCodePoint > 0 &&
+    !semanticHardClauseSeparator(codePoints[startCodePoint - 1])
+  ) {
+    startCodePoint -= 1;
+  }
+  const currentHardStartCodePoint = startCodePoint;
+  startCodePoint = Math.max(0, currentHardStartCodePoint - 80_000);
+  while (
+    startCodePoint > 0 &&
+    startCodePoint < currentHardStartCodePoint &&
+    !semanticHardClauseSeparator(codePoints[startCodePoint - 1])
+  ) {
+    startCodePoint += 1;
+  }
+  const endCodePoint = codePoints.length;
+  if (endCodePoint <= startCodePoint) return null;
+  const maximumAuthoritySpanCodePoints = 8_000;
+  const chunks: TemplateCopilotV3SourceSpan[] = [];
+  for (
+    let chunkStartCodePoint = startCodePoint;
+    chunkStartCodePoint < endCodePoint;
+    chunkStartCodePoint += maximumAuthoritySpanCodePoints
+  ) {
+    const chunkEndCodePoint = Math.min(
+      endCodePoint,
+      chunkStartCodePoint + maximumAuthoritySpanCodePoints,
+    );
+    const supplied = {
+      messageId: anchor.messageId,
+      startCodePoint: chunkStartCodePoint,
+      endCodePoint: chunkEndCodePoint,
+      exactText: codePoints
+        .slice(chunkStartCodePoint, chunkEndCodePoint)
+        .join(""),
+    };
+    const parsed = templateCopilotV3SourceSpanSchema.safeParse({
+      spanId: templateCopilotV3SourceSpanId(supplied),
+      ...supplied,
+    });
+    if (
+      !parsed.success ||
+      !validateTemplateCopilotV3SourceSpan(parsed.data, messages)
+    ) {
+      return null;
+    }
+    chunks.push(Object.freeze(parsed.data));
+  }
+  return chunks.length > 0 ? Object.freeze(chunks) : null;
+}
+
+function validSpan(span: TemplateCopilotV3SourceSpan, messages: Readonly<Record<string, string>>) {
+  return templateCopilotV3SourceSpanSchema.safeParse(span).success && validateTemplateCopilotV3SourceSpan(span, messages);
+}
+function makeOrder(messages: Readonly<Record<string, string>>, supplied?: readonly string[]) {
+  const explicit = (supplied ?? []).filter((id, index, all) => Object.hasOwn(messages, id) && all.indexOf(id) === index);
+  const remainder = Object.keys(messages).filter((id) => !explicit.includes(id)).sort(compareText);
+  return new Map([...explicit, ...remainder].map((id, index) => [id, index]));
+}
+function orderFor(span: TemplateCopilotV3SourceSpan, order: ReadonlyMap<string, number>): SourceOrder {
+  return Object.freeze({ messageId: span.messageId, messageIndex: order.get(span.messageId) ?? Number.MAX_SAFE_INTEGER, startCodePoint: span.startCodePoint, endCodePoint: span.endCodePoint });
+}
+function valueAt(value: unknown, pointer: string): unknown {
+  let current = value;
+  for (const part of pointer.slice(1).split("/")) {
+    if (current === null || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+function setAt(target: Record<string, unknown>, pointer: string, value: unknown) {
+  const parts = pointer.slice(1).split("/");
+  let current: Record<string, unknown> | unknown[] = target;
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    const part = Array.isArray(current) ? Number(parts[index]) : parts[index];
+    const nextPart = parts[index + 1];
+    let next = (current as Record<string | number, unknown>)[part];
+    if (!next || typeof next !== "object") {
+      next = /^[0-9]+$/.test(nextPart) ? [] : {};
+      (current as Record<string | number, unknown>)[part] = next;
+    }
+    current = next as Record<string, unknown> | unknown[];
+  }
+  const last = Array.isArray(current) ? Number(parts.at(-1)) : String(parts.at(-1));
+  (current as Record<string | number, unknown>)[last] = value;
+}
+function deleteAt(target: Record<string, unknown>, pointer: string) {
+  const parts = pointer.slice(1).split("/");
+  let current: Record<string, unknown> | unknown[] = target;
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    const key = Array.isArray(current) ? Number(parts[index]) : parts[index];
+    const next = (current as Record<string | number, unknown>)[key];
+    if (!next || typeof next !== "object") return;
+    current = next as Record<string, unknown> | unknown[];
+  }
+  const last = Array.isArray(current) ? Number(parts.at(-1)) : String(parts.at(-1));
+  if (Array.isArray(current)) current.splice(Number(last), 1);
+  else delete current[String(last)];
+}
+
+function cloneLeaves(source: ReadonlyMap<string, Leaf>) {
+  return new Map([...source].map(([path, leaf]) => [path, { ...leaf, spans: [...leaf.spans] }]));
+}
+function cloneArrays(source: ReadonlyMap<string, ReadonlyMap<string, Leaf>>) {
+  return new Map([...source].map(([path, values]) => [path, new Map([...values].map(([key, leaf]) => [key, { ...leaf, spans: [...leaf.spans] }]))]));
+}
+function dedupeSpans(spans: readonly TemplateCopilotV3SourceSpan[], compareSpans: (left: TemplateCopilotV3SourceSpan, right: TemplateCopilotV3SourceSpan) => number) {
+  return [...new Map(spans.map((span) => [span.spanId, span])).values()].sort(compareSpans);
+}
+function dedupeObservations(values: readonly TemplateCopilotV3ReviewObservation[], compareSpans: (left: TemplateCopilotV3SourceSpan, right: TemplateCopilotV3SourceSpan) => number) {
+  return [...new Map(values.map((value) => [`${value.role}:${value.advisoryHint ?? ""}:${value.sourceSpan.spanId}`, value])).values()].sort((a, b) => compareSpans(a.sourceSpan, b.sourceSpan) || compareText(a.role, b.role));
+}
+function dedupeRelationships(values: readonly TemplateCopilotV3ReviewRelationship[], compareSpans: (left: TemplateCopilotV3SourceSpan, right: TemplateCopilotV3SourceSpan) => number) {
+  return [...new Map(values.map((value) => [`${value.relationship}:${value.sourceSpan.spanId}`, value])).values()].sort((a, b) => compareSpans(a.sourceSpan, b.sourceSpan) || compareText(a.relationship, b.relationship));
+}
+function dedupeSemantic(items: readonly TemplateCopilotV3SemanticReviewItem[]) {
+  return [...new Map(items.map((item) => [item.projectionId, item])).values()].sort((a, b) => a.sourceOrder.messageIndex - b.sourceOrder.messageIndex || a.sourceOrder.startCodePoint - b.sourceOrder.startCodePoint || compareText(a.projectionId, b.projectionId));
+}
+function compareReviewItems(a: TemplateCopilotV3ReviewArrayItem, b: TemplateCopilotV3ReviewArrayItem) {
+  return a.sourceOrder.messageIndex - b.sourceOrder.messageIndex || a.sourceOrder.startCodePoint - b.sourceOrder.startCodePoint || compareText(a.factId, b.factId) || compareText(a.reviewItemId, b.reviewItemId);
+}
+function kindForFact(factId: TemplateCopilotV3FragmentFactId): keyof typeof arrayFactByKind {
+  if (factId === "request.fields") return "request_field";
+  if (factId === "attachments.requirements") return "attachment";
+  if (factId === "workflow.stages") return "stage";
+  if (factId === "workflow.conditions") return "condition";
+  return "notification";
+}
+function rejection(item: Pick<TemplateCopilotV3LocatedQuoteItem, "itemIndex" | "kind">, code: TemplateCopilotV3ReviewRejection["code"], detail: string): TemplateCopilotV3ReviewRejection {
+  return Object.freeze({ itemIndex: item.itemIndex, kind: item.kind, code, detail });
+}
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  return `{${Object.keys(value as Record<string, unknown>).sort(compareText).map((key) => `${JSON.stringify(key)}:${stableJson((value as Record<string, unknown>)[key])}`).join(",")}}`;
+}
+function hashJson(value: unknown) { return createHash("sha256").update(stableJson(value), "utf8").digest("hex"); }
+function compareText(left: string, right: string) { return left < right ? -1 : left > right ? 1 : 0; }

@@ -840,7 +840,12 @@ function findNextActionableRoute(
 ) {
   const notifiedNodes: WorkflowGraphNode[] = [];
   let activeBranchId: string | undefined;
-  collectOutgoingNotifications(graph, fromNodeId, notifiedNodes);
+  collectOutgoingNotifications(
+    graph,
+    fromNodeId,
+    extractedFields,
+    notifiedNodes,
+  );
   const parallelTargets = findParallelOutgoingActionNodes(
     graph,
     fromNodeId,
@@ -873,7 +878,12 @@ function findNextActionableRoute(
       break;
     }
 
-    collectOutgoingNotifications(graph, node.id, notifiedNodes);
+    collectOutgoingNotifications(
+      graph,
+      node.id,
+      extractedFields,
+      notifiedNodes,
+    );
 
     if (node.kind === "return_reject") {
       return {
@@ -1123,10 +1133,17 @@ function chooseNextEdge(
 function collectOutgoingNotifications(
   graph: WorkflowGraph,
   sourceId: string,
+  extractedFields: Record<string, string>,
   notifiedNodes: WorkflowGraphNode[],
 ) {
   graph.edges
-    .filter((edge) => edge.sourceId === sourceId && edge.branchType === "for_information")
+    .filter(
+      (edge) =>
+        edge.sourceId === sourceId &&
+        edge.branchType === "for_information" &&
+        (!edge.rule ||
+          doesWorkflowNumericRuleMatch(edge.rule, extractedFields)),
+    )
     .forEach((edge) => {
       const notified = graph.nodes.find((node) => node.id === edge.targetId);
       if (notified && !notifiedNodes.some((node) => node.id === notified.id)) {

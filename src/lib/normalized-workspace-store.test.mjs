@@ -372,8 +372,40 @@ test("rejects template deactivation when no template version row is updated", as
   );
 });
 
-test("returns null when normalized load has no templates or requests", async () => {
+test("returns null when the normalized workspace has no persisted rows", async () => {
   assert.equal(await loadNormalizedWorkspaceState(new FakeSupabase()), null);
+});
+
+test("restores the business directory before the first template is created", async () => {
+  const supabase = new FakeSupabase({
+    business_units: [
+      {
+        id: "business-aai-db",
+        name: "Asia Allied Infrastructure",
+        is_active: true,
+      },
+    ],
+    business_departments: [
+      {
+        id: "department-finance-db",
+        business_unit_id: "business-aai-db",
+        name: "Finance",
+        is_active: true,
+      },
+    ],
+  });
+
+  const snapshot = await loadNormalizedWorkspaceState(supabase, "");
+
+  assert.deepEqual(snapshot.businessDirectory, [
+    {
+      id: "business-aai-db",
+      name: "Asia Allied Infrastructure",
+      departments: ["Finance"],
+    },
+  ]);
+  assert.deepEqual(snapshot.workflowTemplates, []);
+  assert.deepEqual(snapshot.approvalTasks, []);
 });
 
 test("restores template version numbers from normalized template rows", async () => {
