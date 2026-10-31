@@ -58,8 +58,9 @@ Two corrective migrations were needed (found by running the flow end to end):
   became `ready`, so create-draft always refused.
 
 The migrations in this repository cannot build a database from nothing (the
-base schema was created by hand in the live project). To test locally, dump the
-live structure (no data) and apply the Copilot migrations on top:
+base schema was created by hand in the live project). To test locally, `scripts/setup-local-copilot-test-db.mjs` does this in one
+command (needs `SUPABASE_DB_PASSWORD` and a folder where `supabase link` was
+run; it only reads the live structure). By hand it is:
 
 ```
 supabase db dump --linked --schema public,private -f baseline.sql   # read-only
@@ -111,3 +112,14 @@ created as drafts:
   moment later; wait for the swap before typing (the browser script does).
 - The screen lists only business units whose ids are database UUIDs, the same
   rule as the classic Copilot.
+
+## Database checks that were run on the local test database
+
+- `scripts/test-template-copilot-db.sql`, `test-template-authoring-db.sql`,
+  `test-template-authoring-rls.sql`, `test-template-copilot-v2-telemetry-db.sql`
+  and `npm run test:db:template-copilot-v2-reviewed-library` all pass.
+- The v3 PostgreSQL parity test needs one exact pinned image
+  (`RUN_TEMPLATE_COPILOT_V3_POSTGRES_PARITY=1`) and was not run here.
+- The 50-workflow run exercises sessions, fact mutations, readiness and draft
+  creation against this database.
+- Nothing in this document has been applied to the live Supabase project.
