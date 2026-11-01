@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "candidateSourceRevision": "884c70e0cac38744eade26557b5c99b3c6696232",
+  "questionLibraryVersion": "v2.2",
+  "conceptLibraryVersion": "concepts.v1.0",
+  "reviewPackageRows": 1176,
+  "conceptContentFingerprint": "fnv1a64:4a149e693daab18d",
+  "questionContentFingerprint": "fnv1a64:df415823535ac40f",
+  "locales": {
+    "en": {
+      "decision": "approved",
+      "reviewerName": "ST",
+      "reviewedAt": "2026-07-29T22:49:07+08:00",
+      "evidenceReference": "Co-Pilot Language/2026-07-28 step-8-language-reviewed by ST.xlsx#sha256=1d5dc68702e39470c3ff519d363ec46d235a3328e96d662df273d5611fd993ed",
+      "attestsAllRowsReviewed": true
+    },
+    "zh-Hant": {
+      "decision": "approved",
+      "reviewerName": "ST",
+      "reviewedAt": "2026-07-29T22:49:07+08:00",
+      "evidenceReference": "Co-Pilot Language/2026-07-28 step-8-language-reviewed by ST.xlsx#sha256=1d5dc68702e39470c3ff519d363ec46d235a3328e96d662df273d5611fd993ed",
+      "attestsAllRowsReviewed": true
+    },
+    "zh-Hans": {
+      "decision": "approved",
+      "reviewerName": "ST",
+      "reviewedAt": "2026-07-29T22:49:07+08:00",
+      "evidenceReference": "Co-Pilot Language/2026-07-28 step-8-language-reviewed by ST.xlsx#sha256=1d5dc68702e39470c3ff519d363ec46d235a3328e96d662df273d5611fd993ed",
+      "attestsAllRowsReviewed": true
+    }
+  }
+}

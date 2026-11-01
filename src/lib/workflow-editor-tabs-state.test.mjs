@@ -5,15 +5,15 @@ import {
   workflowEditorTabs,
 } from "./workflow-editor-tabs-state.ts";
 
-test("puts Builder before Canvas in the workflow editor tabs", () => {
+test("puts Copilot before Builder and Canvas in the workflow editor tabs", () => {
   assert.deepEqual(
     workflowEditorTabs.map((tab) => tab.id),
-    ["builder", "canvas", "library"],
+    ["copilot", "builder", "canvas", "library"],
   );
 });
 
-test("opens Builder first when entering workflow editing", () => {
-  assert.equal(defaultWorkflowEditorTab, "builder");
+test("opens Copilot first when entering workflow editing", () => {
+  assert.equal(defaultWorkflowEditorTab, "copilot");
 });
 
 test("keeps publishing as a canvas action instead of an editor tab", () => {

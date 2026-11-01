@@ -277,7 +277,12 @@ export async function loadNormalizedWorkspaceState(
       )
     : [];
 
-  if (!templates.length && !requests.length) {
+  if (
+    !businesses.length &&
+    !departments.length &&
+    !templates.length &&
+    !requests.length
+  ) {
     return null;
   }
 

@@ -8,6 +8,7 @@ import { useAuthoritativeAdminDirectory } from "@/app/use-authoritative-admin-di
 export default function WorkspaceAdminTab() {
   const { core, records } = useWorkspaceAdminController();
   const email = useWorkspaceEmailDelivery({
+    canReadOutbox: core.activeUser.role === "superuser",
     requestConfirmation: core.requestConfirmation,
   });
   const directory = useAuthoritativeAdminDirectory();

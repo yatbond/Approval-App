@@ -20,23 +20,27 @@ import {
 } from "@/lib/workspace-email-delivery-state";
 
 export function useWorkspaceEmailDelivery({
+  canReadOutbox = false,
   requestConfirmation,
 }: {
+  canReadOutbox?: boolean;
   requestConfirmation: (request: ConfirmationRequest) => Promise<boolean>;
 }) {
   const [emailDeliveryMessage, setEmailDeliveryMessage] = useState("");
   const [emailOutboxEntries, setEmailOutboxEntries] = useState<EmailOutboxEntry[]>([]);
 
   const refreshOutbox = useCallback(async () => {
+    if (!canReadOutbox) return;
     const response = await fetch("/api/email/outbox", { cache: "no-store" });
     if (!response.ok) return;
     const payload = (await response.json()) as { entries?: ServerOutboxEntry[] };
     setEmailOutboxEntries((payload.entries || []).map(mapServerOutboxEntry));
-  }, []);
+  }, [canReadOutbox]);
 
   useEffect(() => {
+    if (!canReadOutbox) return;
     queueMicrotask(() => void refreshOutbox());
-  }, [refreshOutbox]);
+  }, [canReadOutbox, refreshOutbox]);
 
   async function sendWorkflowEmailNotifications(
     task: ApprovalTask,

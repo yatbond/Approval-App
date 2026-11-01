@@ -27,6 +27,7 @@ test("browser build identity is embedded and checked against the live alias", as
   assert.match(config, /NEXT_PUBLIC_APP_BUILD_ARTIFACT_ID/);
   assert.match(config, /Build identity validation failed/);
   assert.match(config, /release\.json must declare schemaVersion 1/);
+  assert.match(config, /outputFileTracingRoot:\s*process\.cwd\(\)/);
   assert.match(hook, /fetch\("\/api\/version", \{ cache: "no-store" \}\)/);
   assert.match(hook, /visibilitychange/);
 });
