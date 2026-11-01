@@ -136,3 +136,24 @@ The simulation tool refuses any Supabase URL except a local one or the project n
 in the git-ignored `.env.copilot-test`; the app's `.env.local` points at this project (the
 Docker copy is saved as `.env.local.docker`). It bills as a micro instance: pause or delete it
 in the Supabase dashboard when no longer needed.
+
+## Putting the branch preview on v3 (needs the Vercel project owner)
+
+Vercel already builds this branch's preview (it showed Ready for the latest
+commit). It has no Copilot settings, so it shows the classic Copilot against the
+live database. To switch it to v3 against the hosted TEST project and the home
+model:
+
+1. `node scripts/make-vercel-preview-env.mjs --login <your email>` writes the
+   git-ignored `output/vercel-preview-v3.env` (16 variables, plus a sign-in for
+   that address in the TEST project only). Nothing is printed or sent.
+2. In Vercel: Project → Settings → Environment Variables → Import .env, choose
+   Preview, and limit the variables to the Git branch
+   `codex/template-authoring-copilot` where possible (otherwise every preview
+   uses the test database). The file contains the test project's service key and
+   the model server's API key: only the project owner should paste it, then
+   delete the file.
+3. Redeploy the branch preview, sign in with the printed login, open Workflow →
+   Copilot.
+
+The preview needs the home model PC and its Cloudflare tunnel to be on.
