@@ -1203,40 +1203,45 @@ export function WorkflowView({
             </p>
           )}
         </div>
-        {workflowEditorTab === "copilot" && (
-          <div className="p-4">
-            {(() => {
-              const openDraft = (template: Parameters<typeof onCreateTemplate>[0]) => {
-                onCreateTemplate(template);
-                setTemplateName(template.name);
-                const business = businessDirectory.find(
-                  (item) => item.name === template.business,
-                );
-                if (business) setBusinessId(business.id);
-                setDepartmentName(template.department);
-                setIsCreatingTemplate(false);
-                setSelectedTemplateId(template.id);
-                setWorkflowEditorTab("canvas");
-                setWorkflowActionMessage(
-                  "Copilot draft created. Review the generated workflow before requesting publication.",
-                );
-              };
-              // The sectioned v3 Describe replaces the classic Copilot only where
-              // it is switched on (it is built into the page at build time).
-              return process.env.NEXT_PUBLIC_TEMPLATE_COPILOT_V3_DESCRIBE === "true" ? (
+        {(() => {
+          const openDraft = (template: Parameters<typeof onCreateTemplate>[0]) => {
+            onCreateTemplate(template);
+            setTemplateName(template.name);
+            const business = businessDirectory.find(
+              (item) => item.name === template.business,
+            );
+            if (business) setBusinessId(business.id);
+            setDepartmentName(template.department);
+            setIsCreatingTemplate(false);
+            setSelectedTemplateId(template.id);
+            setWorkflowEditorTab("canvas");
+            setWorkflowActionMessage(
+              "Copilot draft created. Review the generated workflow before requesting publication.",
+            );
+          };
+          // The sectioned v3 Describe replaces the classic Copilot only where
+          // it is switched on (it is built into the page at build time). It stays
+          // mounted and is only hidden on the other tabs, so what the author has
+          // typed and the proposal being reviewed survive a look at the Builder.
+          if (process.env.NEXT_PUBLIC_TEMPLATE_COPILOT_V3_DESCRIBE === "true") {
+            return (
+              <div className={workflowEditorTab === "copilot" ? "p-4" : "hidden"}>
                 <TemplateCopilotV3Sectioned
                   businessDirectory={businessDirectory}
                   onDraftCreated={openDraft}
                 />
-              ) : (
-                <TemplateCopilot
-                  businessDirectory={businessDirectory}
-                  onDraftCreated={openDraft}
-                />
-              );
-            })()}
-          </div>
-        )}
+              </div>
+            );
+          }
+          return workflowEditorTab === "copilot" ? (
+            <div className="p-4">
+              <TemplateCopilot
+                businessDirectory={businessDirectory}
+                onDraftCreated={openDraft}
+              />
+            </div>
+          ) : null;
+        })()}
         {workflowEditorTab === "builder" && (
           <WorkflowTemplateBuilder
             templateName={templateName}
