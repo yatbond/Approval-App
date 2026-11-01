@@ -123,3 +123,16 @@ created as drafts:
 - The 50-workflow run exercises sessions, fact mutations, readiness and draft
   creation against this database.
 - Nothing in this document has been applied to the live Supabase project.
+
+## Hosted test project
+
+`approval-copilot-test` (ref `uvgjjmuqcreultmqxdzq`, organisation yatbond, ap-southeast-1, micro) was created on 2026-11-01 and holds the live
+structure (no data) plus the 18 Copilot migrations (19 files with the baseline). The four SQL
+database checks and the v3 PostgreSQL parity test pass; six simulated workflows (all
+three languages) went from description to a saved draft against it. The live project
+wlbxrdmpwuupjyarjcxb was not touched (newest live migration is still 20260721084727).
+The simulation tool refuses any Supabase URL except a local one or the project named in
+`SIM_ALLOWED_SUPABASE_REF`, and always refuses the live project. The database password is
+in the git-ignored `.env.copilot-test`; the app's `.env.local` points at this project (the
+Docker copy is saved as `.env.local.docker`). It bills as a micro instance: pause or delete it
+in the Supabase dashboard when no longer needed.

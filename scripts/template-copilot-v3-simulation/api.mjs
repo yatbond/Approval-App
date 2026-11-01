@@ -11,8 +11,16 @@ export async function connectSimulatedUser({
   serviceKey,
   label = "sim",
 }) {
-  if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/u.test(supabaseUrl)) {
-    throw new Error("Simulated users only run against a local Supabase.");
+  // Simulated users create accounts and workflows. They run against a local
+  // database, or against one named hosted TEST project (SIM_ALLOWED_SUPABASE_REF),
+  // and never against the live project.
+  const liveProjectRef = "wlbxrdmpwuupjyarjcxb";
+  const allowedRef = process.env.SIM_ALLOWED_SUPABASE_REF?.trim();
+  const isLocal = /^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/u.test(supabaseUrl);
+  const isNamedTestProject = Boolean(allowedRef) && allowedRef !== liveProjectRef &&
+    new URL(supabaseUrl).hostname === `${allowedRef}.supabase.co`;
+  if (supabaseUrl.includes(liveProjectRef) || (!isLocal && !isNamedTestProject)) {
+    throw new Error("Simulated users only run against a local Supabase or the named hosted test project.");
   }
   const service = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
